@@ -1,0 +1,52 @@
+id: mage-claude-orchestrator-roadmap
+title: Mage Claude Orchestrator Roadmap
+
+releases:
+  - version: "01.0"
+    name: Core Orchestrator and Workflows
+    status: done
+    description: |
+      Core orchestrator library with Config, constructor, flag parsing,
+      generation lifecycle, and cobbler measure+stitch workflows. This
+      release delivers the complete automation loop from task proposal
+      through isolated execution to merge.
+    use_cases:
+      - id: rel01.0-uc001-orchestrator-initialization
+        summary: Config struct, constructor with defaults, beads initialization
+        status: done
+      - id: rel01.0-uc002-generation-lifecycle
+        summary: Generation start, run, stop, reset, list, switch
+        status: done
+      - id: rel01.0-uc003-measure-workflow
+        summary: Measure phase with prompt templates and issue import
+        status: done
+      - id: rel01.0-uc004-stitch-workflow
+        summary: Stitch phase with worktree isolation and task execution
+        status: done
+      - id: rel01.0-uc005-resume-recovery
+        summary: Generation resume with stale task recovery
+        status: done
+
+  - version: "02.0"
+    name: Container Execution and Metrics
+    status: done
+    description: |
+      Container runtime detection, image building, container-based
+      Claude execution with direct fallback, and structured metrics
+      collection (InvocationRecords, LOC snapshots, diff stats).
+    use_cases:
+      - id: rel02.0-uc001-container-execution
+        summary: Container runtime detection, image building, isolated Claude execution
+        status: done
+
+  - version: "99.0"
+    name: Unscheduled
+    status: not started
+    description: |
+      Work items not yet assigned to a release.
+    use_cases: []
+
+prioritization:
+  - Focus on earliest incomplete release
+  - Later use cases can be partially implemented if they share functionality with the current release
+  - Each issue should map to a use case in the roadmap

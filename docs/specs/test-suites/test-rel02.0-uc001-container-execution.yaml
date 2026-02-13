@@ -1,0 +1,68 @@
+id: test-rel02.0-uc001-container-execution
+title: Container-based Claude execution
+traces:
+  - rel02.0-uc001-container-execution
+  - prd004-container-execution
+tags:
+  - integration
+
+preconditions:
+  - At least one container runtime (podman or docker) available on the system
+  - Container image built from Dockerfile.claude
+
+test_cases:
+  - name: ContainerRuntime detects podman first
+    description: When both podman and docker are available, podman takes priority
+    inputs:
+      command: |
+        runtime := orchestrator.ContainerRuntime()
+    expected:
+      state:
+        runtime_is_podman_or_docker: true
+
+  - name: ContainerRuntime returns empty when none available
+    description: When neither podman nor docker is on PATH, returns empty string
+    inputs:
+      env:
+        PATH: "/usr/bin"
+      command: |
+        runtime := orchestrator.ContainerRuntime()
+    expected:
+      state:
+        runtime_empty: true
+
+  - name: Container execution mounts workspace
+    inputs:
+      command: mage cobbler:measure --max-issues 1
+    expected:
+      exit_code: 0
+      state:
+        container_used: true
+
+  - name: No-container flag uses direct binary
+    inputs:
+      command: mage cobbler:measure --max-issues 1 --no-container
+    expected:
+      exit_code: 0
+      state:
+        direct_binary_used: true
+
+  - name: Direct fallback when no container runtime
+    description: Remove container runtimes from PATH; orchestrator should fall back to direct claude
+    inputs:
+      command: mage cobbler:measure --max-issues 1
+    expected:
+      exit_code: 0
+      state:
+        fallback_to_direct: true
+
+  - name: Token parsing from container output
+    inputs:
+      command: mage cobbler:measure --max-issues 1
+    expected:
+      exit_code: 0
+      state:
+        tokens_parsed: true
+
+cleanup:
+  - Reset cobbler scratch directory

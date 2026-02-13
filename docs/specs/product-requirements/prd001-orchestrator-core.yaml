@@ -1,0 +1,99 @@
+id: prd001-orchestrator-core
+title: Orchestrator Core Interface
+
+problem: |
+  Consuming projects need a stable entry point to configure and use
+  the orchestrator. Without a well-defined Config struct and constructor,
+  each project would handle initialization differently, leading to
+  inconsistent defaults, duplicated flag parsing, and fragile wiring
+  between Mage targets and orchestrator methods.
+
+goals:
+  - G1: Define a Config struct that covers all project-specific settings
+  - G2: Provide a constructor that applies sensible defaults to zero-value fields
+  - G3: Define the Orchestrator struct as the single entry point for all operations
+  - G4: Provide flag interception so Mage targets can parse per-target flags
+  - G5: Provide initialization and reset operations for the project
+
+requirements:
+  R1:
+    title: Config Struct
+    items:
+      - R1.1: Config must include ModulePath (string) for the Go module path
+      - R1.2: Config must include BinaryName (string) for the compiled binary name
+      - R1.3: Config must include BinaryDir (string, default "bin") for binary output
+      - R1.4: Config must include MainPackage (string) for the main.go entry point path
+      - R1.5: Config must include GoSourceDirs ([]string) listing directories with Go source
+      - R1.6: Config must include VersionFile (string) for the version.go path
+      - R1.7: Config must include GenPrefix (string, default "generation-") for generation branch names
+      - R1.8: Config must include BeadsDir (string, default ".beads/") for the issue tracker directory
+      - R1.9: Config must include CobblerDir (string, default ".cobbler/") for the scratch directory
+      - R1.10: Config must include MagefilesDir (string, default "magefiles") for the directory skipped during Go file deletion
+      - R1.11: Config must include ContainerImage (string) for the container image name
+      - R1.12: Config must include ContainerTag (string, default "latest") for the image tag
+      - R1.13: Config must include DockerfileDir (string, default "magefiles") for the Dockerfile location
+      - R1.14: Config must include SecretsDir (string, default ".secrets") for token files
+      - R1.15: Config must include DefaultTokenFile (string, default "claude.json") for the credential filename
+      - R1.16: Config must include ContainerCredDst (string) for the container credential path
+      - R1.17: Config must include SpecGlobs (map[string]string) for documentation word-count globs
+      - R1.18: Config must include SeedFiles (map[string]string) mapping file paths to Go template strings
+      - R1.19: Config must include MeasurePrompt (string) for custom measure prompt override
+      - R1.20: Config must include StitchPrompt (string) for custom stitch prompt override
+
+  R2:
+    title: Constructor and Defaults
+    items:
+      - R2.1: New(Config) must return an *Orchestrator with defaults applied to zero-value fields
+      - R2.2: applyDefaults must set BinaryDir to "bin" when empty
+      - R2.3: applyDefaults must set GenPrefix to "generation-" when empty
+      - R2.4: applyDefaults must set BeadsDir to ".beads/" when empty
+      - R2.5: applyDefaults must set CobblerDir to ".cobbler/" when empty
+      - R2.6: applyDefaults must set MagefilesDir to "magefiles" when empty
+      - R2.7: applyDefaults must set ContainerTag to "latest" when empty
+      - R2.8: applyDefaults must set DockerfileDir to "magefiles" when empty
+      - R2.9: applyDefaults must set SecretsDir to ".secrets" when empty
+      - R2.10: applyDefaults must set DefaultTokenFile to "claude.json" when empty
+
+  R3:
+    title: Logging
+    items:
+      - R3.1: logf must print timestamped messages to stderr in RFC3339 format
+      - R3.2: When a generation is active, logf must include the generation name after the timestamp
+      - R3.3: setGeneration and clearGeneration must control the generation tag in log output
+
+  R4:
+    title: Flag Interception
+    items:
+      - R4.1: InitFlags must capture flags from os.Args before Mage processes them
+      - R4.2: ParseTargetFlags must parse a flag.FlagSet from captured arguments
+      - R4.3: TargetArgs must return unparsed positional arguments after flag parsing
+      - R4.4: Flag names must use kebab-case (e.g., --silence-agent, --max-issues)
+
+  R5:
+    title: Initialization and Reset
+    items:
+      - R5.1: Init must initialize the beads issue tracker
+      - R5.2: FullReset must reset cobbler, generator, and beads in sequence
+      - R5.3: BeadsInit must create the beads database directory
+      - R5.4: BeadsReset must remove and reinitialize the beads database
+
+  R6:
+    title: Seed Files
+    items:
+      - R6.1: SeedData must provide Version (string) and ModulePath (string) as template data
+      - R6.2: seedFiles must create files from SeedFiles templates, creating parent directories as needed
+      - R6.3: seedFiles must execute templates with SeedData containing the generation name as Version
+
+non_goals:
+  - This PRD does not define the generation lifecycle (see prd002)
+  - This PRD does not define measure or stitch workflows (see prd003)
+  - This PRD does not define container execution (see prd004)
+  - This PRD does not define metrics collection (see prd005)
+
+acceptance_criteria:
+  - Config struct includes all fields listed in R1
+  - New() returns a configured Orchestrator with defaults applied
+  - logf produces timestamped output with optional generation tag
+  - Flag interception captures arguments before Mage processing
+  - Init and FullReset operate without errors on a clean repository
+  - Seed files are created from templates with correct data

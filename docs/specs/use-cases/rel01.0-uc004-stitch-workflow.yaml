@@ -1,0 +1,50 @@
+id: rel01.0-uc004-stitch-workflow
+title: Stitch Workflow Task Execution
+
+summary: |
+  The stitch phase picks ready tasks from beads, creates isolated git
+  worktrees, invokes Claude to implement each task, merges the results
+  back, records metrics, and closes the tasks. A developer triggers
+  this through mage cobbler:stitch or as part of a generation run.
+
+actor: Orchestrator (automated, triggered by developer via Mage)
+
+trigger: Running mage cobbler:stitch or as part of GeneratorRun
+
+flow:
+  - F1: "Verify preconditions: confirm beads is initialized and resolve the target branch"
+  - F2: "Recover stale tasks: clean up any orphaned worktrees or in_progress issues from interrupted runs"
+  - F3: "Pick task: call bd ready -n 1 --type task to get the next ready task"
+  - F4: "Claim task: set the task status to in_progress"
+  - F5: "Create worktree: create a git worktree on branch task/{baseBranch}-{issueID}"
+  - F6: "Capture LOC before: snapshot production and test line counts"
+  - F7: "Build prompt: render the stitch template with task title, ID, type, and description"
+  - F8: "Invoke Claude: run Claude in the worktree directory"
+  - F9: "Merge branch: merge the task branch back to the base branch"
+  - F10: "Capture metrics: LOC after, git diff stats, token usage"
+  - F11: "Clean up: remove the worktree and delete the task branch"
+  - F12: "Close task: record InvocationRecord and close the issue in beads"
+  - F13: "Repeat: go to F3 until no ready tasks remain or MaxIssues is reached"
+
+touchpoints:
+  - T1: "StitchConfig and CobblerConfig: prd003-cobbler-workflows R1, R3"
+  - T2: "Worktree management: task branch naming per prd003 R3.8"
+  - T3: "Claude invocation: prd003-cobbler-workflows R6"
+  - T4: "Recovery: prd003-cobbler-workflows R4"
+  - T5: "InvocationRecord: prd005-metrics-collection R1"
+
+success_criteria:
+  - S1: Ready tasks are picked and claimed one at a time
+  - S2: Each task runs in its own isolated worktree
+  - S3: Task branches are merged back to the base branch after completion
+  - S4: Worktrees and task branches are cleaned up after merge
+  - S5: InvocationRecords with LOC and diff data are stored on each task
+  - S6: Tasks are closed in beads after successful execution
+  - S7: Stitch stops when no ready tasks remain or MaxIssues is reached
+
+out_of_scope:
+  - Claude behavior and code quality (we test the workflow, not Claude output)
+  - Task proposal (see rel01.0-uc003)
+  - Container execution details (see rel02.0-uc001)
+
+test_suite: test-rel01.0-uc004-stitch-workflow

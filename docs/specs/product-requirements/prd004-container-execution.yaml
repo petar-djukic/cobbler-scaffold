@@ -1,0 +1,65 @@
+id: prd004-container-execution
+title: Container-Based Claude Execution
+
+problem: |
+  Running Claude Code directly on the host gives the AI agent full access
+  to the developer's filesystem, credentials, and system tools. Without
+  container isolation, a misbehaving Claude session could modify files
+  outside the project, exhaust system resources, or access sensitive data.
+  Developers need a way to run Claude in a controlled environment while
+  maintaining the ability to fall back to direct execution when containers
+  are unavailable.
+
+goals:
+  - G1: Detect available container runtimes automatically
+  - G2: Build container images for Claude execution
+  - G3: Run Claude inside containers with mounted workspace and credentials
+  - G4: Fall back to direct claude binary when no container runtime is available
+
+requirements:
+  R1:
+    title: Container Runtime Detection
+    items:
+      - R1.1: ContainerRuntime must check for podman first, then docker
+      - R1.2: ContainerRuntime must return the name of the first available runtime
+      - R1.3: ContainerRuntime must return empty string when no runtime is found
+      - R1.4: Detection must use exec.LookPath to check binary availability
+
+  R2:
+    title: Image Building
+    items:
+      - R2.1: BuildImage must build a container image from Dockerfile.claude in the configured DockerfileDir
+      - R2.2: BuildImage must tag the image as {ContainerImage}:{ContainerTag}
+      - R2.3: BuildImage must use the detected container runtime for building
+
+  R3:
+    title: Container Execution
+    items:
+      - R3.1: runClaudeContainer must mount the workspace directory into the container
+      - R3.2: runClaudeContainer must mount credentials from SecretsDir/{TokenFile} to ContainerCredDst
+      - R3.3: runClaudeContainer must pass the prompt via stdin
+      - R3.4: runClaudeContainer must capture stdout for token parsing
+      - R3.5: runClaudeContainer must respect the silence flag for stdout/stderr handling
+      - R3.6: runClaudeContainer must use the configured ContainerImage and ContainerTag
+      - R3.7: When a worktree directory is specified, it must be used as the container working directory
+
+  R4:
+    title: Fallback Behavior
+    items:
+      - R4.1: When NoContainer is true, container detection must be skipped entirely
+      - R4.2: When no container runtime is available, execution must fall back to direct claude binary
+      - R4.3: Direct execution must use the same prompt, stdin, and stdout handling as container execution
+      - R4.4: Direct execution must set the working directory to the worktree when specified
+
+non_goals:
+  - This PRD does not define network policies or resource limits for containers
+  - This PRD does not define container registry or image distribution
+  - This PRD does not define multi-architecture image builds
+  - This PRD does not define container orchestration (Kubernetes, Compose)
+
+acceptance_criteria:
+  - ContainerRuntime detects podman and docker in priority order
+  - BuildImage creates a tagged container image from Dockerfile.claude
+  - Container execution mounts workspace and credentials correctly
+  - Direct fallback works identically to container execution minus isolation
+  - The --no-container flag bypasses container detection entirely

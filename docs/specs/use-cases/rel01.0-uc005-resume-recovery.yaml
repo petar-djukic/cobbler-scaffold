@@ -1,0 +1,44 @@
+id: rel01.0-uc005-resume-recovery
+title: Generation Resume and Task Recovery
+
+summary: |
+  A developer's generation run is interrupted (process killed, machine
+  rebooted). They run GeneratorResume to recover state: stale worktrees
+  are pruned, orphaned in_progress issues are reset to ready, and the
+  generation continues with remaining cycles.
+
+actor: Developer recovering from an interrupted generation
+
+trigger: Running mage generator:resume after an interrupted generator:run
+
+flow:
+  - F1: "Resolve branch: determine the generation branch from positional arg or auto-detect"
+  - F2: "Save state: commit any uncommitted work on the current branch"
+  - F3: "Switch: check out the generation branch"
+  - F4: "Prune worktrees: remove stale git worktrees and the worktree base directory"
+  - F5: "Recover tasks: scan for stale task branches, remove them, reset their issues to ready"
+  - F6: "Reset orphans: find in_progress issues without task branches and reset them to ready"
+  - F7: "Reset scratch: clear the cobbler scratch directory"
+  - F8: "Drain ready: execute stitch on any existing ready issues before starting new cycles"
+  - F9: "Continue: run the requested number of measure+stitch cycles"
+
+touchpoints:
+  - T1: "GeneratorResume: prd002-generation-lifecycle R4"
+  - T2: "recoverStaleTasks: prd003-cobbler-workflows R4"
+  - T3: "resetOrphanedIssues: prd003-cobbler-workflows R4.4, R4.5"
+  - T4: "Branch resolution: prd002-generation-lifecycle R9"
+
+success_criteria:
+  - S1: Resume resolves the correct generation branch
+  - S2: Uncommitted work is saved before switching branches
+  - S3: Stale worktrees and task branches are removed
+  - S4: Orphaned in_progress issues are reset to ready
+  - S5: Existing ready issues are executed before new cycles start
+  - S6: Generation continues without data loss
+
+out_of_scope:
+  - Initial generation start (see rel01.0-uc002)
+  - Container execution details (see rel02.0-uc001)
+  - Multiple concurrent generations (one at a time)
+
+test_suite: test-rel01.0-uc005-resume-recovery

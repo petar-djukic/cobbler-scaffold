@@ -1,0 +1,79 @@
+id: test-rel01.0-uc004-stitch-workflow
+title: Stitch workflow task execution
+traces:
+  - rel01.0-uc004-stitch-workflow
+  - prd003-cobbler-workflows
+tags:
+  - integration
+
+preconditions:
+  - Clean git repository on a generation branch
+  - Beads initialized with at least one ready task
+  - Claude binary or container runtime available
+
+test_cases:
+  - name: Stitch picks and executes a ready task
+    inputs:
+      command: mage cobbler:stitch --max-issues 1 --no-container
+    expected:
+      exit_code: 0
+      state:
+        task_closed: true
+        task_branch_deleted: true
+        worktree_cleaned: true
+
+  - name: Stitch fails when beads not initialized
+    inputs:
+      command: |
+        rm -rf .beads
+        mage cobbler:stitch --no-container
+    expected:
+      exit_code: 1
+      stderr_contains: "beads not initialized"
+
+  - name: Stitch stops when no ready tasks
+    inputs:
+      command: mage cobbler:stitch --no-container
+    expected:
+      exit_code: 0
+      stdout_contains: "completed 0 task(s)"
+
+  - name: Stitch respects --max-issues limit
+    inputs:
+      command: mage cobbler:stitch --max-issues 2 --no-container
+    expected:
+      exit_code: 0
+      state:
+        tasks_executed_lte: 2
+
+  - name: Stitch creates worktree on task branch
+    description: During execution, a worktree should exist at the temp path on a task/ branch
+    inputs:
+      command: mage cobbler:stitch --max-issues 1 --no-container
+    expected:
+      exit_code: 0
+      state:
+        task_branch_pattern: "task/{baseBranch}-*"
+
+  - name: Stitch merges task branch back to base
+    inputs:
+      command: |
+        mage cobbler:stitch --max-issues 1 --no-container
+        git log --oneline -5
+    expected:
+      exit_code: 0
+      stdout_contains: "Merge branch"
+
+  - name: Stitch records InvocationRecord with diff stats
+    inputs:
+      command: mage cobbler:stitch --max-issues 1 --no-container
+    expected:
+      exit_code: 0
+      state:
+        invocation_record_has_diff: true
+        invocation_record_has_loc: true
+
+cleanup:
+  - Remove any remaining worktrees
+  - Delete task branches
+  - Reset beads

@@ -1,0 +1,63 @@
+id: test-rel01.0-uc003-measure-workflow
+title: Measure workflow task proposal
+traces:
+  - rel01.0-uc003-measure-workflow
+  - prd003-cobbler-workflows
+tags:
+  - integration
+
+preconditions:
+  - Clean git repository on a generation branch
+  - Beads initialized with no existing issues
+  - Claude binary or container runtime available
+
+test_cases:
+  - name: Measure queries existing issues
+    inputs:
+      command: mage cobbler:measure --max-issues 3 --no-container
+    expected:
+      exit_code: 0
+      state:
+        cobbler_dir_contains_no_old_files: true
+
+  - name: Measure fails when beads not initialized
+    inputs:
+      command: |
+        rm -rf .beads
+        mage cobbler:measure --no-container
+    expected:
+      exit_code: 1
+      stderr_contains: "beads not initialized"
+
+  - name: Measure imports proposed issues into beads
+    description: After a successful measure, beads should contain the proposed issues
+    inputs:
+      command: |
+        mage cobbler:measure --max-issues 3 --no-container
+        bd list --json
+    expected:
+      exit_code: 0
+      state:
+        issues_created: true
+
+  - name: Measure respects --max-issues limit
+    inputs:
+      command: mage cobbler:measure --max-issues 2 --no-container
+    expected:
+      exit_code: 0
+      state:
+        issues_count_lte: 2
+
+  - name: Measure records InvocationRecord on created issues
+    inputs:
+      command: |
+        mage cobbler:measure --max-issues 1 --no-container
+        bd list --json
+    expected:
+      exit_code: 0
+      state:
+        invocation_record_present: true
+
+cleanup:
+  - Remove cobbler scratch directory
+  - Reset beads

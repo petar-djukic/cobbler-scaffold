@@ -1,0 +1,71 @@
+id: prd005-metrics-collection
+title: Metrics Collection and Reporting
+
+problem: |
+  Without visibility into what each Claude invocation produces, developers
+  cannot assess the efficiency of the generation process. Token counts,
+  lines of code changed, and git diff statistics are scattered across
+  Claude output and git history. We need structured metrics collection
+  that records per-invocation data and provides aggregate project statistics.
+
+goals:
+  - G1: Collect per-invocation metrics (tokens, LOC, diff stats) and store them on beads issues
+  - G2: Provide aggregate project statistics (Go LOC, documentation word counts)
+  - G3: Support LOC snapshots before and after each Claude invocation
+
+requirements:
+  R1:
+    title: InvocationRecord
+    items:
+      - R1.1: InvocationRecord must include Caller (string) identifying "measure" or "stitch"
+      - R1.2: InvocationRecord must include StartedAt (string, RFC3339) for the invocation timestamp
+      - R1.3: InvocationRecord must include DurationS (int) for total duration in seconds
+      - R1.4: InvocationRecord must include Tokens with Input and Output counts
+      - R1.5: InvocationRecord must include LOCBefore with Production and Test counts
+      - R1.6: InvocationRecord must include LOCAfter with Production and Test counts
+      - R1.7: InvocationRecord must include Diff with Files, Insertions, and Deletions counts
+      - R1.8: recordInvocation must serialize InvocationRecord to JSON and add it as a beads comment
+
+  R2:
+    title: LOC Snapshots
+    items:
+      - R2.1: captureLOC must return a LocSnapshot with Production and Test line counts
+      - R2.2: LOC counting must use the configured GoSourceDirs
+      - R2.3: Production LOC must exclude test files (*_test.go)
+      - R2.4: Test LOC must count only test files (*_test.go)
+      - R2.5: captureLOC must swallow errors (best-effort collection)
+
+  R3:
+    title: Stats Collection
+    items:
+      - R3.1: CollectStats must count Go production LOC across GoSourceDirs
+      - R3.2: CollectStats must count Go test LOC across GoSourceDirs
+      - R3.3: CollectStats must count documentation words using SpecGlobs patterns
+      - R3.4: Stats must print results in a human-readable format
+
+  R4:
+    title: Token Parsing
+    items:
+      - R4.1: parseClaudeTokens must extract token usage from Claude stream-json output
+      - R4.2: parseClaudeTokens must find the last JSON line with type "result"
+      - R4.3: parseClaudeTokens must return zero values when no result line is found
+
+  R5:
+    title: Git Diff Statistics
+    items:
+      - R5.1: Git diff stats must be captured between pre-merge and post-merge HEAD
+      - R5.2: Diff stats must include files changed, insertions, and deletions
+      - R5.3: gitDiffShortstat must parse the output of git diff --shortstat
+
+non_goals:
+  - This PRD does not define dashboards or visualization of metrics
+  - This PRD does not define historical trend analysis
+  - This PRD does not define metrics export to external systems (Prometheus, Grafana)
+  - This PRD does not define cost estimation from token counts
+
+acceptance_criteria:
+  - Every Claude invocation produces an InvocationRecord stored on the beads issue
+  - LOC snapshots capture production and test counts before and after each invocation
+  - Stats prints Go LOC and documentation word counts
+  - Token parsing extracts input and output counts from Claude output
+  - Diff stats capture files changed, insertions, and deletions per task

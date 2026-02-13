@@ -1,0 +1,76 @@
+id: test-rel01.0-uc001-orchestrator-initialization
+title: Orchestrator initialization and configuration
+traces:
+  - rel01.0-uc001-orchestrator-initialization
+  - prd001-orchestrator-core
+tags:
+  - unit
+  - smoke
+
+preconditions:
+  - Clean git repository with no beads directory
+  - Go module initialized
+
+test_cases:
+  - name: New applies defaults to zero-value Config
+    inputs:
+      command: |
+        cfg := orchestrator.Config{ModulePath: "example.com/test", BinaryName: "test"}
+        o := orchestrator.New(cfg)
+    expected:
+      state:
+        binary_dir: "bin"
+        gen_prefix: "generation-"
+        beads_dir: ".beads/"
+        cobbler_dir: ".cobbler/"
+        magefiles_dir: "magefiles"
+        container_tag: "latest"
+        dockerfile_dir: "magefiles"
+        secrets_dir: ".secrets"
+        default_token_file: "claude.json"
+
+  - name: New preserves explicitly set Config values
+    inputs:
+      command: |
+        cfg := orchestrator.Config{
+          ModulePath: "example.com/test",
+          BinaryName: "mybin",
+          BinaryDir: "out",
+          GenPrefix: "gen-",
+          BeadsDir: ".issues/",
+        }
+        o := orchestrator.New(cfg)
+    expected:
+      state:
+        binary_dir: "out"
+        gen_prefix: "gen-"
+        beads_dir: ".issues/"
+
+  - name: New returns non-nil Orchestrator
+    inputs:
+      command: |
+        o := orchestrator.New(orchestrator.Config{ModulePath: "example.com/test", BinaryName: "test"})
+    expected:
+      state:
+        orchestrator_not_nil: true
+
+  - name: Init creates beads directory
+    inputs:
+      command: mage init
+    expected:
+      exit_code: 0
+      state:
+        beads_dir_exists: true
+
+  - name: FullReset clears all orchestrator state
+    inputs:
+      command: mage fullreset
+    expected:
+      exit_code: 0
+      state:
+        cobbler_dir_exists: false
+        generation_branches: 0
+
+cleanup:
+  - Remove the test beads directory
+  - Remove the cobbler scratch directory

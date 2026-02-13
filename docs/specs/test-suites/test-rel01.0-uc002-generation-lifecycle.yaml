@@ -1,0 +1,89 @@
+id: test-rel01.0-uc002-generation-lifecycle
+title: Generation lifecycle from start to stop
+traces:
+  - rel01.0-uc002-generation-lifecycle
+  - prd002-generation-lifecycle
+tags:
+  - integration
+
+preconditions:
+  - Clean git repository on main branch
+  - Beads initialized
+  - At least one Go source directory configured
+
+test_cases:
+  - name: GeneratorStart creates tagged generation branch
+    inputs:
+      command: mage generator:start
+    expected:
+      exit_code: 0
+      state:
+        current_branch_prefix: "generation-"
+        tag_exists_suffix: "-start"
+        go_files_deleted: true
+        go_mod_exists: true
+
+  - name: GeneratorStart fails when not on main
+    inputs:
+      command: |
+        git checkout -b feature
+        mage generator:start
+    expected:
+      exit_code: 1
+      stderr_contains: "switching to main"
+
+  - name: GeneratorRun executes specified cycles
+    description: After generator:start, run with --cycles 1 to execute one measure+stitch cycle
+    inputs:
+      command: mage generator:run --cycles 1 --no-container --max-issues 1
+    expected:
+      exit_code: 0
+      stdout_contains: "complete, ran 1 cycle(s)"
+
+  - name: GeneratorStop merges to main and tags
+    inputs:
+      command: mage generator:stop
+    expected:
+      exit_code: 0
+      state:
+        current_branch: "main"
+        tag_exists_suffix: "-finished"
+        tag_exists_suffix_2: "-merged"
+        generation_branch_deleted: true
+
+  - name: GeneratorList shows active generations
+    inputs:
+      command: mage generator:list
+    expected:
+      exit_code: 0
+      stdout_contains: "generation-"
+
+  - name: GeneratorList with --all shows abandoned
+    inputs:
+      command: mage generator:list --all
+    expected:
+      exit_code: 0
+
+  - name: GeneratorReset returns to clean main
+    inputs:
+      command: mage generator:reset
+    expected:
+      exit_code: 0
+      state:
+        current_branch: "main"
+        generation_branches: 0
+
+  - name: GeneratorSwitch saves work and changes branch
+    inputs:
+      command: |
+        mage generator:start
+        mage generator:switch main
+    expected:
+      exit_code: 0
+      state:
+        current_branch: "main"
+
+cleanup:
+  - Switch to main
+  - Delete all generation branches
+  - Remove generation tags

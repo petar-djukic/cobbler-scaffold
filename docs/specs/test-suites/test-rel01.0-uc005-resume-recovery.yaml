@@ -1,0 +1,81 @@
+id: test-rel01.0-uc005-resume-recovery
+title: Generation resume and task recovery
+traces:
+  - rel01.0-uc005-resume-recovery
+  - prd002-generation-lifecycle
+  - prd003-cobbler-workflows
+tags:
+  - integration
+
+preconditions:
+  - Git repository with a generation branch
+  - At least one stale task branch or orphaned in_progress issue simulating an interrupted run
+
+test_cases:
+  - name: Resume resolves generation branch from argument
+    inputs:
+      command: mage generator:resume generation-2026-01-01-00-00-00 --cycles 0
+    expected:
+      exit_code: 0
+      state:
+        current_branch: "generation-2026-01-01-00-00-00"
+
+  - name: Resume auto-detects single generation branch
+    inputs:
+      command: mage generator:resume --cycles 0
+    expected:
+      exit_code: 0
+      state:
+        current_branch_prefix: "generation-"
+
+  - name: Resume fails with multiple generation branches
+    inputs:
+      command: |
+        git branch generation-a
+        git branch generation-b
+        mage generator:resume --cycles 0
+    expected:
+      exit_code: 1
+      stderr_contains: "multiple generation branches"
+
+  - name: Resume recovers stale task branches
+    description: Create a stale task branch, then resume; the branch should be deleted and issue reset to ready
+    inputs:
+      command: |
+        git branch task/generation-test-stale-id
+        mage generator:resume --cycles 0
+    expected:
+      exit_code: 0
+      state:
+        stale_branch_deleted: true
+
+  - name: Resume resets orphaned in_progress issues
+    description: Set an issue to in_progress without a task branch, then resume; the issue should be reset to ready
+    inputs:
+      command: mage generator:resume --cycles 0
+    expected:
+      exit_code: 0
+      state:
+        orphaned_issues_reset: true
+
+  - name: Resume commits work before switching branches
+    inputs:
+      command: |
+        echo "test" > uncommitted.txt
+        mage generator:resume --cycles 0
+    expected:
+      exit_code: 0
+      state:
+        uncommitted_work_saved: true
+
+  - name: Resume drains ready issues before new cycles
+    inputs:
+      command: mage generator:resume --cycles 1 --no-container --max-issues 1
+    expected:
+      exit_code: 0
+
+cleanup:
+  - Switch to main
+  - Delete all generation and task branches
+  - Remove worktrees
+  - Reset beads

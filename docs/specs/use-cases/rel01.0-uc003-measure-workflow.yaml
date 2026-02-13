@@ -1,0 +1,45 @@
+id: rel01.0-uc003-measure-workflow
+title: Measure Workflow Task Proposal
+
+summary: |
+  The measure phase analyzes the project state, queries existing issues,
+  invokes Claude with a prompt template, and imports the proposed tasks
+  into beads with dependency wiring. A developer triggers this through
+  mage cobbler:measure or as part of a generation run.
+
+actor: Orchestrator (automated, triggered by developer via Mage)
+
+trigger: Running mage cobbler:measure or as part of GeneratorRun
+
+flow:
+  - F1: "Verify preconditions: confirm beads is initialized and resolve the target branch"
+  - F2: "Query state: call bd list to get existing issues as JSON"
+  - F3: "Clean scratch: remove old proposed-issues files from the cobbler directory"
+  - F4: "Build prompt: render the measure template with existing issues, task limit, output path, and user input"
+  - F5: "Invoke Claude: run Claude with the prompt, capturing token usage"
+  - F6: "Parse output: read the JSON file written by Claude"
+  - F7: "Import issues: create tasks in beads for each proposed issue"
+  - F8: "Wire dependencies: link dependent issues using bd dep add"
+  - F9: "Record metrics: store InvocationRecord on each created issue"
+  - F10: "Commit: commit beads changes"
+
+touchpoints:
+  - T1: "MeasureConfig and CobblerConfig: prd003-cobbler-workflows R1, R2"
+  - T2: "Prompt templates: prd003-cobbler-workflows R5"
+  - T3: "Claude invocation: prd003-cobbler-workflows R6"
+  - T4: "Issue import: prd003-cobbler-workflows R7"
+  - T5: "InvocationRecord: prd005-metrics-collection R1"
+
+success_criteria:
+  - S1: Measure queries existing issues and includes them in the prompt
+  - S2: Claude receives a well-formed prompt with project context
+  - S3: Proposed issues are imported into beads with correct titles and descriptions
+  - S4: Dependencies between issues are wired correctly
+  - S5: InvocationRecords are stored on each created issue
+
+out_of_scope:
+  - Claude behavior and prompt quality (we test the workflow, not Claude output)
+  - Stitch execution of proposed tasks (see rel01.0-uc004)
+  - Container execution details (see rel02.0-uc001)
+
+test_suite: test-rel01.0-uc003-measure-workflow

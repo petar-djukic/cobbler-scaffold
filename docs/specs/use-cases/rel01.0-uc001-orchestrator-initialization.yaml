@@ -1,0 +1,36 @@
+id: rel01.0-uc001-orchestrator-initialization
+title: Orchestrator Initialization and Configuration
+
+summary: |
+  A consuming project creates a Config struct with project-specific
+  settings, passes it to New() to get an Orchestrator, and calls Init()
+  to initialize the beads issue tracker. The orchestrator applies defaults
+  to zero-value fields and is ready to receive generation commands.
+
+actor: Developer integrating the orchestrator into a consuming project
+
+trigger: First-time setup of the orchestrator in a magefile
+
+flow:
+  - F1: "Create Config: construct a Config struct with ModulePath, BinaryName, GoSourceDirs, and other project-specific fields"
+  - F2: "Construct Orchestrator: call New(config) to get an *Orchestrator with defaults applied"
+  - F3: "Initialize: call orchestrator.Init() to set up the beads issue tracker"
+  - F4: "Verify: confirm beads directory exists and git status shows tracked files"
+
+touchpoints:
+  - T1: "Config struct: all fields defined in prd001-orchestrator-core R1"
+  - T2: "New constructor: applies defaults per prd001-orchestrator-core R2"
+  - T3: "Init method: initializes beads per prd001-orchestrator-core R5"
+
+success_criteria:
+  - S1: New(config) returns a non-nil *Orchestrator
+  - S2: Zero-value Config fields receive their documented defaults
+  - S3: Init() creates the beads database directory without error
+  - S4: The orchestrator is ready to accept generation commands
+
+out_of_scope:
+  - Generation lifecycle operations (see rel01.0-uc002)
+  - Measure and stitch workflows (see rel01.0-uc003, rel01.0-uc004)
+  - Container setup (see rel02.0-uc001)
+
+test_suite: test-rel01.0-uc001-orchestrator-initialization

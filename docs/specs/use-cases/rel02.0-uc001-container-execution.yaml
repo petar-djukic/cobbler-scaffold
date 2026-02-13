@@ -1,0 +1,41 @@
+id: rel02.0-uc001-container-execution
+title: Container-Based Claude Execution
+
+summary: |
+  The orchestrator detects available container runtimes (podman or docker),
+  builds a container image, and runs Claude inside the container with
+  the workspace and credentials mounted. When no container runtime is
+  available or --no-container is set, Claude runs directly via the
+  local binary.
+
+actor: Orchestrator (automated, during measure or stitch)
+
+trigger: Claude invocation during measure or stitch phase
+
+flow:
+  - F1: "Check NoContainer: if true, skip to F5"
+  - F2: "Detect runtime: call ContainerRuntime() to find podman or docker"
+  - F3: "If runtime found: run Claude via container with mounted workspace and credentials"
+  - F4: "Capture output: parse stdout for token usage; return"
+  - F5: "Direct fallback: run claude binary directly with prompt on stdin"
+  - F6: "Capture output: parse stdout for token usage; return"
+
+touchpoints:
+  - T1: "ContainerRuntime: prd004-container-execution R1"
+  - T2: "runClaudeContainer: prd004-container-execution R3"
+  - T3: "Direct fallback: prd004-container-execution R4"
+  - T4: "Token parsing: prd005-metrics-collection R4"
+
+success_criteria:
+  - S1: ContainerRuntime detects podman first, then docker
+  - S2: Container execution mounts workspace and credentials
+  - S3: Direct fallback works when no container runtime is available
+  - S4: Token usage is captured from both container and direct execution
+  - S5: The --no-container flag bypasses container detection
+
+out_of_scope:
+  - Container image contents and Dockerfile authoring
+  - Network isolation or resource limits
+  - Multi-architecture builds
+
+test_suite: test-rel02.0-uc001-container-execution
