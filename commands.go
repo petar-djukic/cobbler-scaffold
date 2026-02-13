@@ -20,18 +20,9 @@ const (
 	binLint   = "golangci-lint"
 )
 
-// Flag names for cobbler targets.
-const (
-	flagSilenceAgent     = "silence-agent"
-	flagMaxIssues        = "max-issues"
-	flagUserPrompt       = "user-prompt"
-	flagGenerationBranch = "generation-branch"
-	flagCycles           = "cycles"
-	flagTokenFile        = "token-file"
-)
-
-// claudeArgs are the CLI arguments for automated Claude execution.
-var claudeArgs = []string{
+// defaultClaudeArgs are the CLI arguments for automated Claude execution.
+// Used by Config.applyDefaults when ClaudeArgs is empty.
+var defaultClaudeArgs = []string{
 	"--dangerously-skip-permissions",
 	"-p",
 	"--verbose",

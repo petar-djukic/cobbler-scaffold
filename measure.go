@@ -7,7 +7,6 @@ import (
 	"bytes"
 	_ "embed"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"os"
 	"os/exec"
@@ -19,38 +18,24 @@ import (
 //go:embed prompts/measure.tmpl
 var defaultMeasurePromptTmpl string
 
-// MeasureConfig holds options for the Measure target.
-type MeasureConfig struct {
-	CobblerConfig
-}
-
-func (o *Orchestrator) parseMeasureFlags() MeasureConfig {
-	var cfg MeasureConfig
-	fs := flag.NewFlagSet("cobbler:measure", flag.ContinueOnError)
-	o.registerCobblerFlags(fs, &cfg.CobblerConfig)
-	ParseTargetFlags(fs)
-	resolveCobblerBranch(&cfg.CobblerConfig, fs)
-	return cfg
-}
-
 // Measure assesses project state and proposes new tasks via Claude.
-// Parses flags from the command line.
+// Reads all options from Config.
 func (o *Orchestrator) Measure() error {
-	return o.RunMeasure(o.parseMeasureFlags())
+	return o.RunMeasure()
 }
 
-// RunMeasure runs the measure workflow with explicit config.
-func (o *Orchestrator) RunMeasure(cfg MeasureConfig) error {
+// RunMeasure runs the measure workflow using Config settings.
+func (o *Orchestrator) RunMeasure() error {
 	measureStart := time.Now()
 	logf("measure: starting")
-	cfg.logConfig("measure")
+	o.logConfig("measure")
 
 	if err := o.requireBeads(); err != nil {
 		logf("measure: beads not initialized: %v", err)
 		return err
 	}
 
-	branch, err := o.resolveBranch(cfg.GenerationBranch)
+	branch, err := o.resolveBranch(o.cfg.GenerationBranch)
 	if err != nil {
 		logf("measure: resolveBranch failed: %v", err)
 		return err
@@ -80,7 +65,7 @@ func (o *Orchestrator) RunMeasure(cfg MeasureConfig) error {
 	existingIssues := getExistingIssues()
 
 	issueCount := countJSONArray(existingIssues)
-	logf("measure: found %d existing issue(s), maxIssues=%d", issueCount, cfg.MaxIssues)
+	logf("measure: found %d existing issue(s), maxIssues=%d", issueCount, o.cfg.MaxIssues)
 	logf("measure: outputFile=%s", outputFile)
 
 	// Snapshot LOC before Claude.
@@ -88,12 +73,12 @@ func (o *Orchestrator) RunMeasure(cfg MeasureConfig) error {
 	logf("measure: locBefore prod=%d test=%d", locBefore.Production, locBefore.Test)
 
 	// Build and run prompt.
-	prompt := o.buildMeasurePrompt(cfg.UserPrompt, existingIssues, cfg.MaxIssues, outputFile)
+	prompt := o.buildMeasurePrompt(o.cfg.UserPrompt, existingIssues, o.cfg.MaxIssues, outputFile)
 	logf("measure: prompt built, length=%d bytes", len(prompt))
 
 	logf("measure: invoking Claude")
 	claudeStart := time.Now()
-	tokens, err := o.runClaude(prompt, "", cfg.SilenceAgent)
+	tokens, err := o.runClaude(prompt, "", o.cfg.Silence())
 	if err != nil {
 		logf("measure: Claude failed after %s: %v", time.Since(claudeStart).Round(time.Second), err)
 		return fmt.Errorf("running Claude: %w", err)

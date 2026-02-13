@@ -7,7 +7,6 @@ import (
 	"bytes"
 	_ "embed"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -19,38 +18,24 @@ import (
 //go:embed prompts/stitch.tmpl
 var defaultStitchPromptTmpl string
 
-// StitchConfig holds options for the Stitch target.
-type StitchConfig struct {
-	CobblerConfig
-}
-
-func (o *Orchestrator) parseStitchFlags() StitchConfig {
-	var cfg StitchConfig
-	fs := flag.NewFlagSet("cobbler:stitch", flag.ContinueOnError)
-	o.registerCobblerFlags(fs, &cfg.CobblerConfig)
-	ParseTargetFlags(fs)
-	resolveCobblerBranch(&cfg.CobblerConfig, fs)
-	return cfg
-}
-
 // Stitch picks ready tasks from beads and invokes Claude to execute them.
-// Parses flags from the command line.
+// Reads all options from Config.
 func (o *Orchestrator) Stitch() error {
-	return o.RunStitch(o.parseStitchFlags())
+	return o.RunStitch()
 }
 
-// RunStitch runs the stitch workflow with explicit config.
-func (o *Orchestrator) RunStitch(cfg StitchConfig) error {
+// RunStitch runs the stitch workflow using Config settings.
+func (o *Orchestrator) RunStitch() error {
 	stitchStart := time.Now()
 	logf("stitch: starting")
-	cfg.logConfig("stitch")
+	o.logConfig("stitch")
 
 	if err := o.requireBeads(); err != nil {
 		logf("stitch: beads not initialized: %v", err)
 		return err
 	}
 
-	branch, err := o.resolveBranch(cfg.GenerationBranch)
+	branch, err := o.resolveBranch(o.cfg.GenerationBranch)
 	if err != nil {
 		logf("stitch: resolveBranch failed: %v", err)
 		return err
@@ -85,8 +70,8 @@ func (o *Orchestrator) RunStitch(cfg StitchConfig) error {
 
 	totalTasks := 0
 	for {
-		if cfg.MaxIssues > 0 && totalTasks >= cfg.MaxIssues {
-			logf("stitch: reached max-issues limit (%d), stopping", cfg.MaxIssues)
+		if o.cfg.MaxIssues > 0 && totalTasks >= o.cfg.MaxIssues {
+			logf("stitch: reached max-issues limit (%d), stopping", o.cfg.MaxIssues)
 			break
 		}
 
@@ -99,7 +84,7 @@ func (o *Orchestrator) RunStitch(cfg StitchConfig) error {
 
 		taskStart := time.Now()
 		logf("stitch: executing task %d: id=%s title=%q", totalTasks+1, task.id, task.title)
-		if err := o.doOneTask(task, baseBranch, repoRoot, cfg.SilenceAgent); err != nil {
+		if err := o.doOneTask(task, baseBranch, repoRoot); err != nil {
 			logf("stitch: task %s failed after %s: %v", task.id, time.Since(taskStart).Round(time.Second), err)
 			return fmt.Errorf("executing task %s: %w", task.id, err)
 		}
@@ -279,7 +264,7 @@ func pickTask(baseBranch, worktreeBase string) (stitchTask, error) {
 	return task, nil
 }
 
-func (o *Orchestrator) doOneTask(task stitchTask, baseBranch, repoRoot string, silence bool) error {
+func (o *Orchestrator) doOneTask(task stitchTask, baseBranch, repoRoot string) error {
 	taskStart := time.Now()
 	logf("doOneTask: starting task %s (%s)", task.id, task.title)
 
@@ -308,7 +293,7 @@ func (o *Orchestrator) doOneTask(task stitchTask, baseBranch, repoRoot string, s
 
 	logf("doOneTask: invoking Claude for task %s", task.id)
 	claudeStart := time.Now()
-	tokens, err := o.runClaude(prompt, task.worktreeDir, silence)
+	tokens, err := o.runClaude(prompt, task.worktreeDir, o.cfg.Silence())
 	if err != nil {
 		logf("doOneTask: Claude failed for %s after %s: %v", task.id, time.Since(claudeStart).Round(time.Second), err)
 		return fmt.Errorf("running Claude: %w", err)

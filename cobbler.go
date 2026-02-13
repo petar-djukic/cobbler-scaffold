@@ -6,7 +6,6 @@ package orchestrator
 import (
 	"bytes"
 	"encoding/json"
-	"flag"
 	"io"
 	"os"
 	"os/exec"
@@ -14,41 +13,6 @@ import (
 	"strings"
 	"time"
 )
-
-// CobblerConfig holds options shared by measure and stitch targets.
-type CobblerConfig struct {
-	SilenceAgent     bool
-	MaxIssues        int
-	UserPrompt       string
-	GenerationBranch string
-	TokenFile        string
-}
-
-// logConfig prints the resolved configuration for debugging.
-func (c *CobblerConfig) logConfig(target string) {
-	logf("%s config: silenceAgent=%v maxIssues=%d tokenFile=%s generationBranch=%q",
-		target, c.SilenceAgent, c.MaxIssues, c.TokenFile, c.GenerationBranch)
-	if c.UserPrompt != "" {
-		logf("%s config: userPrompt=%q", target, c.UserPrompt)
-	}
-}
-
-// registerCobblerFlags adds the shared flags to fs.
-func (o *Orchestrator) registerCobblerFlags(fs *flag.FlagSet, cfg *CobblerConfig) {
-	fs.BoolVar(&cfg.SilenceAgent, flagSilenceAgent, true, "suppress Claude output")
-	fs.IntVar(&cfg.MaxIssues, flagMaxIssues, 10, "max issues to process")
-	fs.StringVar(&cfg.UserPrompt, flagUserPrompt, "", "user prompt text")
-	fs.StringVar(&cfg.GenerationBranch, flagGenerationBranch, "", "generation branch to work on")
-	fs.StringVar(&cfg.TokenFile, flagTokenFile, o.cfg.DefaultTokenFile, "token file name in .secrets/")
-}
-
-// resolveCobblerBranch sets cfg.GenerationBranch from the first positional arg
-// if the flag was not provided.
-func resolveCobblerBranch(cfg *CobblerConfig, fs *flag.FlagSet) {
-	if cfg.GenerationBranch == "" && fs.NArg() > 0 {
-		cfg.GenerationBranch = fs.Arg(0)
-	}
-}
 
 // ClaudeResult holds token usage from a Claude invocation.
 type ClaudeResult struct {
@@ -138,8 +102,8 @@ func parseClaudeTokens(output []byte) ClaudeResult {
 // runClaude executes Claude with the given prompt and returns token usage.
 func (o *Orchestrator) runClaude(prompt, dir string, silence bool) (ClaudeResult, error) {
 	logf("runClaude: promptLen=%d dir=%q silence=%v", len(prompt), dir, silence)
-	logf("runClaude: exec %s %v", binClaude, claudeArgs)
-	cmd := exec.Command(binClaude, claudeArgs...)
+	logf("runClaude: exec %s %v", binClaude, o.cfg.ClaudeArgs)
+	cmd := exec.Command(binClaude, o.cfg.ClaudeArgs...)
 	cmd.Stdin = strings.NewReader(prompt)
 	if dir != "" {
 		cmd.Dir = dir
@@ -159,6 +123,15 @@ func (o *Orchestrator) runClaude(prompt, dir string, silence bool) (ClaudeResult
 	logf("runClaude: finished in %s tokens(in=%d out=%d) (err=%v)",
 		time.Since(start).Round(time.Second), result.InputTokens, result.OutputTokens, err)
 	return result, err
+}
+
+// logConfig prints the resolved configuration for debugging.
+func (o *Orchestrator) logConfig(target string) {
+	logf("%s config: silence=%v maxIssues=%d generationBranch=%q",
+		target, o.cfg.Silence(), o.cfg.MaxIssues, o.cfg.GenerationBranch)
+	if o.cfg.UserPrompt != "" {
+		logf("%s config: userPrompt=%q", target, o.cfg.UserPrompt)
+	}
 }
 
 // worktreeBasePath returns the directory used for stitch worktrees.
