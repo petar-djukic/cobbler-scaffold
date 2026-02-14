@@ -18,6 +18,7 @@ const (
 	binClaude = "claude"
 	binGo     = "go"
 	binLint   = "golangci-lint"
+	binMage   = "mage"
 	binPodman = "podman"
 )
 
