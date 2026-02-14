@@ -52,16 +52,8 @@ func (o *Orchestrator) GeneratorResume() error {
 
 	logf("resume: target branch=%s", branch)
 
-	// Commit uncommitted work on the current branch before switching.
-	if err := gitStageAll(); err != nil {
-		return fmt.Errorf("staging changes: %w", err)
-	}
-	if err := gitCommit(fmt.Sprintf("WIP: save state before resuming on %s", branch)); err != nil {
-		_ = gitUnstageAll()
-	}
-
-	// Switch to the generation branch.
-	if err := ensureOnBranch(branch); err != nil {
+	// Commit or stash uncommitted work, then switch to the generation branch.
+	if err := saveAndSwitchBranch(branch); err != nil {
 		return fmt.Errorf("switching to %s: %w", branch, err)
 	}
 
@@ -462,6 +454,38 @@ func (o *Orchestrator) resolveBranch(explicit string) (string, error) {
 	}
 }
 
+// saveAndSwitchBranch commits or stashes uncommitted changes on the
+// current branch, then checks out the target branch. It tries a WIP
+// commit first; if that fails and the tree is still dirty, it stashes
+// changes so the checkout can succeed.
+func saveAndSwitchBranch(target string) error {
+	current, err := gitCurrentBranch()
+	if err != nil {
+		return err
+	}
+	if current == target {
+		return nil
+	}
+
+	if err := gitStageAll(); err != nil {
+		return fmt.Errorf("staging changes: %w", err)
+	}
+
+	msg := fmt.Sprintf("WIP: save state before switching to %s", target)
+	if err := gitCommit(msg); err != nil {
+		// Commit failed (e.g. nothing to commit). Unstage and fall
+		// back to stash if the tree is still dirty.
+		_ = gitUnstageAll()
+		if gitHasChanges() {
+			logf("saveAndSwitchBranch: commit failed, stashing dirty tree")
+			_ = gitStash(msg)
+		}
+	}
+
+	logf("saveAndSwitchBranch: %s -> %s", current, target)
+	return gitCheckout(target)
+}
+
 // ensureOnBranch switches to the given branch if not already on it.
 func ensureOnBranch(branch string) error {
 	current, err := gitCurrentBranch()
@@ -561,15 +585,7 @@ func (o *Orchestrator) GeneratorSwitch() error {
 		return nil
 	}
 
-	if err := gitStageAll(); err != nil {
-		return fmt.Errorf("staging changes: %w", err)
-	}
-	if err := gitCommit(fmt.Sprintf("WIP: save state before switching to %s", target)); err != nil {
-		_ = gitUnstageAll()
-	}
-
-	logf("generator:switch: %s -> %s", current, target)
-	if err := gitCheckout(target); err != nil {
+	if err := saveAndSwitchBranch(target); err != nil {
 		return fmt.Errorf("switching to %s: %w", target, err)
 	}
 

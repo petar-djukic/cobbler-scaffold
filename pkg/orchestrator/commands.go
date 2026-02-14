@@ -114,6 +114,17 @@ func gitUnstageAll() error {
 	return exec.Command(binGit, "reset", "HEAD").Run()
 }
 
+// gitHasChanges returns true if the working tree has staged or unstaged
+// changes (tracked files only).
+func gitHasChanges() bool {
+	// --quiet exits 1 when there are changes.
+	return exec.Command(binGit, "diff", "--quiet", "HEAD").Run() != nil
+}
+
+func gitStash(msg string) error {
+	return exec.Command(binGit, "stash", "push", "-m", msg).Run()
+}
+
 func gitStageDir(dir string) error {
 	return exec.Command(binGit, "add", dir).Run()
 }
