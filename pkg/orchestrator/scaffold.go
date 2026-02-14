@@ -5,7 +5,9 @@ package orchestrator
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -26,12 +28,13 @@ func (o *Orchestrator) Scaffold(targetDir, orchestratorRoot string) error {
 
 	mageDir := filepath.Join(targetDir, "magefiles")
 
-	// 1. Copy orchestrator.go template into magefiles/.
-	dst := filepath.Join(mageDir, "orchestrator.go")
-	if _, err := os.Stat(dst); err == nil {
-		return fmt.Errorf("magefiles/orchestrator.go already exists in %s", targetDir)
+	// 1. Remove existing .go files in magefiles/ (the orchestrator
+	//    template replaces the target's build system) and copy ours.
+	if err := clearMageGoFiles(mageDir); err != nil {
+		return fmt.Errorf("clearing magefiles: %w", err)
 	}
 	src := filepath.Join(orchestratorRoot, "orchestrator.go")
+	dst := filepath.Join(mageDir, "orchestrator.go")
 	logf("scaffold: copying %s -> %s", src, dst)
 	if err := copyFile(src, dst); err != nil {
 		return fmt.Errorf("copying orchestrator.go: %w", err)
@@ -83,6 +86,30 @@ func (o *Orchestrator) Scaffold(targetDir, orchestratorRoot string) error {
 	}
 
 	logf("scaffold: done")
+	return nil
+}
+
+// clearMageGoFiles removes all .go files from mageDir, preserving
+// go.mod, go.sum, and non-Go files. If mageDir does not exist, this
+// is a no-op.
+func clearMageGoFiles(mageDir string) error {
+	entries, err := os.ReadDir(mageDir)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".go") {
+			continue
+		}
+		path := filepath.Join(mageDir, e.Name())
+		logf("scaffold: removing existing %s", path)
+		if err := os.Remove(path); err != nil {
+			return fmt.Errorf("removing %s: %w", path, err)
+		}
+	}
 	return nil
 }
 
@@ -215,9 +242,168 @@ func scaffoldMageGoMod(mageDir, rootModule, orchestratorRoot string) error {
 // verifyMage runs mage -l in the target directory to confirm the
 // orchestrator template is correctly wired.
 func verifyMage(targetDir string) error {
-	cmd := exec.Command(binMage, "-l")
+	magePath, err := findMage()
+	if err != nil {
+		return err
+	}
+	cmd := exec.Command(magePath, "-l")
 	cmd.Dir = targetDir
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
+}
+
+// findMage locates the mage binary. It checks PATH first, then falls
+// back to $(go env GOPATH)/bin/mage for installations via go install.
+func findMage() (string, error) {
+	if p, err := exec.LookPath(binMage); err == nil {
+		return p, nil
+	}
+	out, err := exec.Command(binGo, "env", "GOPATH").Output()
+	if err != nil {
+		return "", fmt.Errorf("mage not found on PATH and cannot determine GOPATH: %w", err)
+	}
+	gopath := strings.TrimSpace(string(out))
+	candidate := filepath.Join(gopath, "bin", binMage)
+	if _, err := os.Stat(candidate); err != nil {
+		return "", fmt.Errorf("mage not found on PATH or at %s", candidate)
+	}
+	return candidate, nil
+}
+
+// goModDownloadResult holds the fields we need from go mod download -json.
+type goModDownloadResult struct {
+	Dir string `json:"Dir"`
+}
+
+// goModDownload fetches a Go module at the specified version using the
+// Go module proxy and returns the path to the cached source directory.
+// The cache directory is read-only; callers must copy before modifying.
+func goModDownload(module, version string) (string, error) {
+	// go mod download requires a module context; create a temporary one.
+	tmpDir, err := os.MkdirTemp("", "gomod-dl-*")
+	if err != nil {
+		return "", fmt.Errorf("creating temp dir: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	initCmd := exec.Command(binGo, "mod", "init", "temp")
+	initCmd.Dir = tmpDir
+	if err := initCmd.Run(); err != nil {
+		return "", fmt.Errorf("go mod init: %w", err)
+	}
+
+	ref := module + "@" + version
+	dlCmd := exec.Command(binGo, "mod", "download", "-json", ref)
+	dlCmd.Dir = tmpDir
+	out, err := dlCmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("go mod download %s: %w", ref, err)
+	}
+
+	var result goModDownloadResult
+	if err := json.Unmarshal(out, &result); err != nil {
+		return "", fmt.Errorf("parsing go mod download output: %w", err)
+	}
+	if result.Dir == "" {
+		return "", fmt.Errorf("go mod download %s: empty Dir in output", ref)
+	}
+	return result.Dir, nil
+}
+
+// copyDir recursively copies src to dst, making all files writable.
+// The Go module cache is read-only, so this produces a mutable copy.
+func copyDir(src, dst string) error {
+	return filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(dst, rel)
+		if d.IsDir() {
+			return os.MkdirAll(target, 0o755)
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(target, data, 0o644)
+	})
+}
+
+// PrepareTestRepo downloads a Go module at the given version, copies it
+// to a temporary working directory, initializes a fresh git repository,
+// and runs Scaffold. Returns the path to the ready-to-use repo directory.
+// The caller is responsible for removing the parent temp directory when done.
+func (o *Orchestrator) PrepareTestRepo(module, version, orchestratorRoot string) (string, error) {
+	logf("prepareTestRepo: downloading %s@%s", module, version)
+
+	cacheDir, err := goModDownload(module, version)
+	if err != nil {
+		return "", fmt.Errorf("downloading module: %w", err)
+	}
+	logf("prepareTestRepo: cached at %s", cacheDir)
+
+	workDir, err := os.MkdirTemp("", "test-clone-*")
+	if err != nil {
+		return "", fmt.Errorf("creating work dir: %w", err)
+	}
+	repoDir := filepath.Join(workDir, "repo")
+
+	logf("prepareTestRepo: copying to %s", repoDir)
+	if err := copyDir(cacheDir, repoDir); err != nil {
+		os.RemoveAll(workDir)
+		return "", fmt.Errorf("copying module source: %w", err)
+	}
+
+	// Initialize a fresh git repository.
+	logf("prepareTestRepo: initializing git")
+	initCmd := exec.Command(binGit, "init")
+	initCmd.Dir = repoDir
+	if err := initCmd.Run(); err != nil {
+		os.RemoveAll(workDir)
+		return "", fmt.Errorf("git init: %w", err)
+	}
+
+	addCmd := exec.Command(binGit, "add", "-A")
+	addCmd.Dir = repoDir
+	if err := addCmd.Run(); err != nil {
+		os.RemoveAll(workDir)
+		return "", fmt.Errorf("git add: %w", err)
+	}
+
+	commitCmd := exec.Command(binGit, "commit", "-m", "Initial commit from test-clone")
+	commitCmd.Dir = repoDir
+	if err := commitCmd.Run(); err != nil {
+		os.RemoveAll(workDir)
+		return "", fmt.Errorf("git commit: %w", err)
+	}
+
+	// Scaffold the orchestrator into the repo.
+	logf("prepareTestRepo: scaffolding")
+	if err := o.Scaffold(repoDir, orchestratorRoot); err != nil {
+		os.RemoveAll(workDir)
+		return "", fmt.Errorf("scaffold: %w", err)
+	}
+
+	// Commit scaffold artifacts so the working tree is clean.
+	addCmd2 := exec.Command(binGit, "add", "-A")
+	addCmd2.Dir = repoDir
+	if err := addCmd2.Run(); err != nil {
+		os.RemoveAll(workDir)
+		return "", fmt.Errorf("git add scaffold: %w", err)
+	}
+
+	commitCmd2 := exec.Command(binGit, "commit", "-m", "Add orchestrator scaffold")
+	commitCmd2.Dir = repoDir
+	if err := commitCmd2.Run(); err != nil {
+		os.RemoveAll(workDir)
+		return "", fmt.Errorf("git commit scaffold: %w", err)
+	}
+
+	logf("prepareTestRepo: ready at %s", repoDir)
+	return repoDir, nil
 }

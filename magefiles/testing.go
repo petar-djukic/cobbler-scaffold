@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 
 	"github.com/mesh-intelligence/mage-claude-orchestrator/pkg/orchestrator"
 )
@@ -15,13 +16,30 @@ import (
 // --- Test targets (integration) ---
 
 // Scaffold sets up a target Go repository to use the orchestrator.
-// Usage: mage test:scaffold /path/to/target
-func (Test) Scaffold(targetDir string) error {
+// The argument is either a local directory path or a Go module reference
+// in module@version format (e.g., github.com/org/repo@v0.20260214.1).
+// When a module@version is given, the source is fetched via go mod download,
+// copied to a temp directory, git-initialized, and scaffolded. The temp
+// directory path is printed to stdout.
+func (Test) Scaffold(target string) error {
 	orchRoot, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("getting orchestrator root: %w", err)
 	}
-	return newOrch().Scaffold(targetDir, orchRoot)
+
+	// If target contains @, treat as module@version.
+	if parts := strings.SplitN(target, "@", 2); len(parts) == 2 && parts[1] != "" {
+		module, version := parts[0], parts[1]
+		logf("test:scaffold: using go mod download for %s@%s", module, version)
+		repoDir, err := newOrch().PrepareTestRepo(module, version, orchRoot)
+		if err != nil {
+			return err
+		}
+		fmt.Println(repoDir)
+		return nil
+	}
+
+	return newOrch().Scaffold(target, orchRoot)
 }
 
 // Cobbler runs the full cobbler regression suite. Requires Claude.

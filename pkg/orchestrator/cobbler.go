@@ -102,14 +102,40 @@ func parseClaudeTokens(output []byte) ClaudeResult {
 }
 
 // checkClaude verifies that Claude can be invoked. When PodmanImage is set,
-// it checks that podman is available and can start containers. When
-// PodmanImage is empty, it checks that the claude binary is on PATH.
+// it checks that podman is available, the image exists, and credentials
+// are present. When PodmanImage is empty, it checks that the claude
+// binary is on PATH.
 func (o *Orchestrator) checkClaude() error {
 	if o.cfg.PodmanImage != "" {
-		return o.checkPodman()
+		if err := o.checkPodman(); err != nil {
+			return err
+		}
+		return o.ensureCredentials()
 	}
 	if _, err := exec.LookPath(binClaude); err != nil {
 		return fmt.Errorf("claude not found on PATH; install Claude Code or set podman_image in configuration.yaml")
+	}
+	return nil
+}
+
+// ensureCredentials checks that the credential file exists in SecretsDir.
+// If missing, it attempts to extract credentials from the macOS Keychain.
+// Returns an error if the file still does not exist after the attempt.
+func (o *Orchestrator) ensureCredentials() error {
+	credPath := filepath.Join(o.cfg.SecretsDir, o.cfg.EffectiveTokenFile())
+	if _, err := os.Stat(credPath); err == nil {
+		return nil
+	}
+
+	logf("ensureCredentials: %s not found, attempting keychain extraction", credPath)
+	if err := o.ExtractCredentials(); err != nil {
+		logf("ensureCredentials: keychain extraction failed: %v", err)
+	}
+
+	if _, err := os.Stat(credPath); err != nil {
+		return fmt.Errorf("claude credentials not found at %s; "+
+			"run 'mage credentials' on the host or place a valid credential file at %s",
+			credPath, credPath)
 	}
 	return nil
 }
