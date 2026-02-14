@@ -114,16 +114,14 @@ func (o *Orchestrator) checkClaude() error {
 	return nil
 }
 
-// checkPodman verifies that podman is available and can start containers.
+// checkPodman verifies that podman is available and that the configured
+// image exists locally. If the image is missing, it builds it from the
+// embedded Dockerfile.
 func (o *Orchestrator) checkPodman() error {
 	if _, err := exec.LookPath(binPodman); err != nil {
 		return fmt.Errorf("podman not found on PATH; see README.md")
 	}
-	out, err := exec.Command(binPodman, "run", "--rm", o.cfg.PodmanImage, "echo", "ok").CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("podman cannot start containers: %s\n%s\nSee README.md for setup instructions", err, string(out))
-	}
-	return nil
+	return o.ensureImage()
 }
 
 // clearClaudeHistory removes Claude conversation history files from $HOME.
