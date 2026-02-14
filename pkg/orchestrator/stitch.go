@@ -21,39 +21,48 @@ var defaultStitchPromptTmpl string
 // Stitch picks ready tasks from beads and invokes Claude to execute them.
 // Reads all options from Config.
 func (o *Orchestrator) Stitch() error {
-	return o.RunStitch()
+	_, err := o.RunStitch()
+	return err
 }
 
 // RunStitch runs the stitch workflow using Config settings.
-func (o *Orchestrator) RunStitch() error {
+// It processes up to MaxStitchIssuesPerCycle tasks and returns the count
+// of tasks completed. The caller (RunCycles) uses this to track the
+// total across all cycles against MaxStitchIssues.
+func (o *Orchestrator) RunStitch() (int, error) {
+	return o.RunStitchN(o.cfg.MaxStitchIssuesPerCycle)
+}
+
+// RunStitchN processes up to n tasks and returns the count completed.
+func (o *Orchestrator) RunStitchN(limit int) (int, error) {
 	stitchStart := time.Now()
-	logf("stitch: starting")
+	logf("stitch: starting (limit=%d)", limit)
 	o.logConfig("stitch")
 
 	if err := o.checkClaude(); err != nil {
-		return err
+		return 0, err
 	}
 
 	if err := o.requireBeads(); err != nil {
 		logf("stitch: beads not initialized: %v", err)
-		return err
+		return 0, err
 	}
 
 	branch, err := o.resolveBranch(o.cfg.GenerationBranch)
 	if err != nil {
 		logf("stitch: resolveBranch failed: %v", err)
-		return err
+		return 0, err
 	}
 	logf("stitch: resolved branch=%s", branch)
 
 	if err := ensureOnBranch(branch); err != nil {
 		logf("stitch: ensureOnBranch failed: %v", err)
-		return fmt.Errorf("switching to branch: %w", err)
+		return 0, fmt.Errorf("switching to branch: %w", err)
 	}
 
 	repoRoot, err := os.Getwd()
 	if err != nil {
-		return fmt.Errorf("getting working directory: %w", err)
+		return 0, fmt.Errorf("getting working directory: %w", err)
 	}
 	logf("stitch: repoRoot=%s", repoRoot)
 
@@ -62,20 +71,20 @@ func (o *Orchestrator) RunStitch() error {
 
 	baseBranch, err := gitCurrentBranch()
 	if err != nil {
-		return fmt.Errorf("getting current branch: %w", err)
+		return 0, fmt.Errorf("getting current branch: %w", err)
 	}
 	logf("stitch: baseBranch=%s", baseBranch)
 
 	logf("stitch: recovering stale tasks")
 	if err := o.recoverStaleTasks(baseBranch, worktreeBase); err != nil {
 		logf("stitch: recovery failed: %v", err)
-		return fmt.Errorf("recovery: %w", err)
+		return 0, fmt.Errorf("recovery: %w", err)
 	}
 
 	totalTasks := 0
 	for {
-		if o.cfg.MaxStitchIssues > 0 && totalTasks >= o.cfg.MaxStitchIssues {
-			logf("stitch: reached max-stitch-issues limit (%d), stopping", o.cfg.MaxStitchIssues)
+		if limit > 0 && totalTasks >= limit {
+			logf("stitch: reached per-cycle limit (%d), pausing for measure", limit)
 			break
 		}
 
@@ -90,7 +99,7 @@ func (o *Orchestrator) RunStitch() error {
 		logf("stitch: executing task %d: id=%s title=%q", totalTasks+1, task.id, task.title)
 		if err := o.doOneTask(task, baseBranch, repoRoot); err != nil {
 			logf("stitch: task %s failed after %s: %v", task.id, time.Since(taskStart).Round(time.Second), err)
-			return fmt.Errorf("executing task %s: %w", task.id, err)
+			return totalTasks, fmt.Errorf("executing task %s: %w", task.id, err)
 		}
 		logf("stitch: task %s completed in %s", task.id, time.Since(taskStart).Round(time.Second))
 
@@ -98,7 +107,7 @@ func (o *Orchestrator) RunStitch() error {
 	}
 
 	logf("stitch: completed %d task(s) in %s", totalTasks, time.Since(stitchStart).Round(time.Second))
-	return nil
+	return totalTasks, nil
 }
 
 // taskBranchName returns the git branch name for a stitch task.

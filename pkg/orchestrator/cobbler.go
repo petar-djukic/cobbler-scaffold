@@ -221,8 +221,8 @@ func (o *Orchestrator) buildDirectCmd(ctx context.Context, workDir string) *exec
 
 // logConfig prints the resolved configuration for debugging.
 func (o *Orchestrator) logConfig(target string) {
-	logf("%s config: silence=%v stitch=%d measure=%d generationBranch=%q",
-		target, o.cfg.Silence(), o.cfg.MaxStitchIssues, o.cfg.MaxMeasureIssues, o.cfg.GenerationBranch)
+	logf("%s config: silence=%v stitchTotal=%d stitchPerCycle=%d measure=%d generationBranch=%q",
+		target, o.cfg.Silence(), o.cfg.MaxStitchIssues, o.cfg.MaxStitchIssuesPerCycle, o.cfg.MaxMeasureIssues, o.cfg.GenerationBranch)
 	if o.cfg.UserPrompt != "" {
 		logf("%s config: userPrompt=%q", target, o.cfg.UserPrompt)
 	}

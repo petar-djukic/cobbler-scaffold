@@ -89,7 +89,7 @@ func (o *Orchestrator) GeneratorResume() error {
 
 	// Drain existing ready issues before starting measure+stitch cycles.
 	logf("resume: draining existing ready issues")
-	if err := o.RunStitch(); err != nil {
+	if _, err := o.RunStitch(); err != nil {
 		logf("resume: drain stitch warning: %v", err)
 	}
 
@@ -97,22 +97,39 @@ func (o *Orchestrator) GeneratorResume() error {
 }
 
 // RunCycles runs stitch→measure cycles until no open issues remain.
-// Each cycle stitches up to MaxStitchIssues tasks, then measures up to
-// MaxMeasureIssues new issues. The loop continues while open issues exist.
-// If Config.Cycles > 0, it acts as a safety limit (max cycles before forced stop).
-// If Config.Cycles == 0, cycles run until all issues are closed.
+// Each cycle stitches up to MaxStitchIssuesPerCycle tasks, then measures
+// up to MaxMeasureIssues new issues. The loop continues while open issues
+// exist. MaxStitchIssues caps total stitch iterations across all cycles
+// (0 = unlimited). Cycles caps the number of stitch+measure rounds
+// (0 = unlimited).
 func (o *Orchestrator) RunCycles(label string) error {
-	logf("generator %s: starting (stitch=%d measure=%d safety=%d cycles)",
-		label, o.cfg.MaxStitchIssues, o.cfg.MaxMeasureIssues, o.cfg.Cycles)
+	logf("generator %s: starting (stitchTotal=%d stitchPerCycle=%d measure=%d safetyCycles=%d)",
+		label, o.cfg.MaxStitchIssues, o.cfg.MaxStitchIssuesPerCycle, o.cfg.MaxMeasureIssues, o.cfg.Cycles)
 
+	totalStitched := 0
 	for cycle := 1; ; cycle++ {
 		if o.cfg.Cycles > 0 && cycle > o.cfg.Cycles {
 			logf("generator %s: reached max cycles (%d), stopping", label, o.cfg.Cycles)
 			break
 		}
 
-		logf("generator %s: cycle %d — stitch", label, cycle)
-		if err := o.RunStitch(); err != nil {
+		// Determine how many tasks this cycle can stitch.
+		perCycle := o.cfg.MaxStitchIssuesPerCycle
+		if o.cfg.MaxStitchIssues > 0 {
+			remaining := o.cfg.MaxStitchIssues - totalStitched
+			if remaining <= 0 {
+				logf("generator %s: reached total stitch limit (%d), stopping", label, o.cfg.MaxStitchIssues)
+				break
+			}
+			if perCycle == 0 || remaining < perCycle {
+				perCycle = remaining
+			}
+		}
+
+		logf("generator %s: cycle %d — stitch (limit=%d, stitched so far=%d)", label, cycle, perCycle, totalStitched)
+		n, err := o.RunStitchN(perCycle)
+		totalStitched += n
+		if err != nil {
 			return fmt.Errorf("cycle %d stitch: %w", cycle, err)
 		}
 
@@ -128,7 +145,7 @@ func (o *Orchestrator) RunCycles(label string) error {
 		logf("generator %s: open issues remain, continuing to cycle %d", label, cycle+1)
 	}
 
-	logf("generator %s: complete", label)
+	logf("generator %s: complete (total stitched=%d)", label, totalStitched)
 	return nil
 }
 
