@@ -8,16 +8,16 @@ We use Go text/template for both the measure and stitch prompts. Default templat
 
 ## Embedded Defaults
 
-The orchestrator embeds two templates from the `prompts/` directory.
+The orchestrator embeds two templates from the `pkg/orchestrator/prompts/` directory.
 
 Table 1 Embedded Prompt Templates
 
-| Template | File | Data Type | Purpose |
-|----------|------|-----------|---------|
-| Measure | prompts/measure.tmpl | MeasurePromptData | Propose new tasks from project state |
-| Stitch | prompts/stitch.tmpl | StitchPromptData | Execute a single task |
+| Template | File                                   | Data Type         | Purpose                              |
+|----------|----------------------------------------|-------------------|--------------------------------------|
+| Measure  | pkg/orchestrator/prompts/measure.tmpl  | MeasurePromptData | Propose new tasks from project state |
+| Stitch   | pkg/orchestrator/prompts/stitch.tmpl   | StitchPromptData  | Execute a single task                |
 
-We embed these files using `//go:embed` directives in measure.go and stitch.go. The embedded strings serve as defaults when Config.MeasurePrompt or Config.StitchPrompt is empty.
+We embed these files using `//go:embed` directives in pkg/orchestrator/measure.go and pkg/orchestrator/stitch.go. The embedded strings serve as defaults when Config.MeasurePrompt or Config.StitchPrompt is empty.
 
 ## Template Data Contracts
 

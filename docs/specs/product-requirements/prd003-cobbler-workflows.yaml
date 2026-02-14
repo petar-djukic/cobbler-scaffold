@@ -70,8 +70,8 @@ requirements:
   R5:
     title: Prompt Templates
     items:
-      - R5.1: Default measure template must be embedded via go:embed from prompts/measure.tmpl
-      - R5.2: Default stitch template must be embedded via go:embed from prompts/stitch.tmpl
+      - R5.1: Default measure template must be embedded via go:embed from pkg/orchestrator/prompts/measure.tmpl
+      - R5.2: Default stitch template must be embedded via go:embed from pkg/orchestrator/prompts/stitch.tmpl
       - R5.3: Custom templates from Config must override the embedded defaults
       - R5.4: MeasurePromptData must provide ExistingIssues, Limit, OutputPath, and UserInput
       - R5.5: StitchPromptData must provide Title, ID, IssueType, and Description

@@ -23,7 +23,7 @@ touchpoints:
   - T2: "GeneratorRun/RunCycles: prd002-generation-lifecycle R3"
   - T3: "GeneratorStop: prd002-generation-lifecycle R5"
   - T4: "GeneratorList: prd002-generation-lifecycle R7"
-  - T5: "Git operations: tags, branches, merges via commands.go"
+  - T5: "Git operations: tags, branches, merges via pkg/orchestrator/commands.go"
 
 success_criteria:
   - S1: GeneratorStart creates a generation branch with clean state and start tag

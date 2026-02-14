@@ -148,7 +148,7 @@ Table 2 Orchestrator Operations
 
 ### Prompt Templates
 
-Prompts are Go text/template strings embedded from `prompts/measure.tmpl` and `prompts/stitch.tmpl`. Consuming projects can override them via Config.MeasurePrompt and Config.StitchPrompt.
+Prompts are Go text/template strings embedded from `pkg/orchestrator/prompts/measure.tmpl` and `pkg/orchestrator/prompts/stitch.tmpl`. Consuming projects can override them via Config.MeasurePrompt and Config.StitchPrompt.
 
 Table 3 Template Data Types
 
@@ -175,23 +175,23 @@ Table 4 InvocationRecord Fields
 
 ## System Components
 
-**Orchestrator (orchestrator.go)**: Entry point. Holds Config, provides New() constructor, manages logging with optional generation tagging. All other components are methods on this struct or package-level functions.
+**Orchestrator (pkg/orchestrator/orchestrator.go)**: Entry point. Holds Config, provides New() constructor, manages logging with optional generation tagging. All other components are methods on this struct or package-level functions.
 
-**Generator (generator.go)**: Manages the generation lifecycle. Creates generation branches, runs cycles, merges results to main, handles resume from interrupted runs. Uses git tags to mark lifecycle events. Resets Go sources and re-seeds template files on start and reset.
+**Generator (pkg/orchestrator/generator.go)**: Manages the generation lifecycle. Creates generation branches, runs cycles, merges results to main, handles resume from interrupted runs. Uses git tags to mark lifecycle events. Resets Go sources and re-seeds template files on start and reset.
 
-**Cobbler - Measure (measure.go)**: Builds the measure prompt from existing issues and project state, invokes Claude, parses the JSON output, and imports proposed issues into beads with dependency wiring. Records invocation metrics.
+**Cobbler - Measure (pkg/orchestrator/measure.go)**: Builds the measure prompt from existing issues and project state, invokes Claude, parses the JSON output, and imports proposed issues into beads with dependency wiring. Records invocation metrics.
 
-**Cobbler - Stitch (stitch.go)**: Picks ready tasks from beads, creates worktrees, invokes Claude, merges branches, records metrics, and closes tasks. Handles recovery of stale tasks from interrupted runs.
+**Cobbler - Stitch (pkg/orchestrator/stitch.go)**: Picks ready tasks from beads, creates worktrees, invokes Claude, merges branches, records metrics, and closes tasks. Handles recovery of stale tasks from interrupted runs.
 
-**Cobbler Common (cobbler.go)**: Claude invocation (runClaude), token parsing, LOC capture, invocation recording, configuration logging, and worktree path management.
+**Cobbler Common (pkg/orchestrator/cobbler.go)**: Claude invocation (runClaude), token parsing, LOC capture, invocation recording, configuration logging, and worktree path management.
 
-**Commands (commands.go)**: Wrapper functions for external tools. Over 50 functions wrapping git, beads (bd), and Go CLI commands. Centralizes binary names as constants and provides structured access to command output.
+**Commands (pkg/orchestrator/commands.go)**: Wrapper functions for external tools. Over 50 functions wrapping git, beads (bd), and Go CLI commands. Centralizes binary names as constants and provides structured access to command output.
 
-**Stats (stats.go)**: Collects Go LOC counts (production and test) and documentation word counts. Uses the configured GoSourceDirs and SpecGlobs. Output is used for invocation records and the `mage stats` target.
+**Stats (pkg/orchestrator/stats.go)**: Collects Go LOC counts (production and test) and documentation word counts. Uses the configured GoSourceDirs and SpecGlobs. Output is used for invocation records and the `mage stats` target.
 
-**Beads (beads.go)**: Initializes and resets the beads issue tracker. Manages the beads database directory and provides helpers for beads lifecycle operations.
+**Beads (pkg/orchestrator/beads.go)**: Initializes and resets the beads issue tracker. Manages the beads database directory and provides helpers for beads lifecycle operations.
 
-**Config (config.go)**: Config struct with YAML tags, LoadConfig() for reading configuration.yaml, SeedData template data, Silence() and EffectiveTokenFile() helpers, and applyDefaults() for zero-value fields.
+**Config (pkg/orchestrator/config.go)**: Config struct with YAML tags, LoadConfig() for reading configuration.yaml, SeedData template data, Silence() and EffectiveTokenFile() helpers, and applyDefaults() for zero-value fields.
 
 ## Design Decisions
 
@@ -228,22 +228,26 @@ Table 5 Technology Choices
 
 ```
 mage-claude-orchestrator/
-  orchestrator.go     # Orchestrator struct, New(), NewFromFile(), logging
-  config.go           # Config struct, LoadConfig(), YAML parsing, defaults
-  cobbler.go          # runClaude, token parsing, LOC capture, metrics
-  measure.go          # Measure phase: prompt, Claude, import
-  stitch.go           # Stitch phase: worktree, Claude, merge
-  generator.go        # Generation lifecycle: start/run/resume/stop/reset
-  commands.go         # Git, beads, Go command wrappers
-  beads.go            # Beads initialization and reset
-  stats.go            # LOC and documentation metrics
-  go.mod              # Module definition (gopkg.in/yaml.v3)
-  prompts/
-    measure.tmpl      # Default measure prompt template
-    stitch.tmpl       # Default stitch prompt template
+  go.mod                # Module definition (gopkg.in/yaml.v3)
+  pkg/orchestrator/     # Library package
+    orchestrator.go     # Orchestrator struct, New(), NewFromFile(), logging
+    config.go           # Config struct, LoadConfig(), YAML parsing, defaults
+    cobbler.go          # runClaude, token parsing, LOC capture, metrics
+    measure.go          # Measure phase: prompt, Claude, import
+    stitch.go           # Stitch phase: worktree, Claude, merge
+    generator.go        # Generation lifecycle: start/run/resume/stop/reset
+    commands.go         # Git, beads, Go command wrappers
+    beads.go            # Beads initialization and reset
+    stats.go            # LOC and documentation metrics
+    prompts/
+      measure.tmpl      # Default measure prompt template
+      stitch.tmpl       # Default stitch prompt template
+  vscode-extension/     # VS Code status dashboard (TypeScript)
+    src/extension.ts    # Extension entry point
+  docs/                 # Documentation and specifications
 ```
 
-All code lives in a single `orchestrator` package. Consuming projects import it and wire it into their magefiles.
+All code lives in the `pkg/orchestrator` package. Consuming projects import it as `github.com/mesh-intelligence/mage-claude-orchestrator/pkg/orchestrator` and wire it into their magefiles.
 
 ## Implementation Status
 
