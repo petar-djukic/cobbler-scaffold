@@ -280,10 +280,11 @@ func (o *Orchestrator) mergeGenerationIntoMain(branch string) error {
 		return fmt.Errorf("tagging merge: %w", err)
 	}
 
-	// Create versioned tags on main for the requirements and code states.
-	if date := o.generationDate(branch); date != "" {
-		codeTag := "v" + date + "-code"
-		reqTag := "v" + date + "-requirements"
+	// Create versioned tags using v[REL].[DATE].[REVISION] convention.
+	if date := o.generationDateCompact(branch); date != "" {
+		revision := o.generationRevision(branch)
+		codeTag := fmt.Sprintf("v0.%s.%d", date, revision)
+		reqTag := fmt.Sprintf("v0.%s.%d-requirements", date, revision)
 
 		logf("generator:stop: tagging code as %s", codeTag)
 		if err := gitTag(codeTag); err != nil {
@@ -321,6 +322,47 @@ func (o *Orchestrator) generationDate(branch string) string {
 		return ""
 	}
 	return rest[:10]
+}
+
+// generationDateCompact extracts the date in YYYYMMDD format from a
+// generation branch name like "generation-2026-02-12-07-13-55".
+func (o *Orchestrator) generationDateCompact(branch string) string {
+	date := o.generationDate(branch)
+	if date == "" {
+		return ""
+	}
+	return strings.ReplaceAll(date, "-", "")
+}
+
+// generationRevision returns the 0-indexed position of a generation
+// among all generations started on the same date. Counts unique
+// generation names from tags and branches matching the date.
+func (o *Orchestrator) generationRevision(branch string) int {
+	date := o.generationDate(branch) // "2026-02-12"
+	if date == "" {
+		return 0
+	}
+
+	nameSet := make(map[string]bool)
+	for _, t := range gitListTags(o.cfg.GenPrefix + date + "-*") {
+		nameSet[generationName(t)] = true
+	}
+	for _, b := range gitListBranches(o.cfg.GenPrefix + date + "-*") {
+		nameSet[b] = true
+	}
+
+	var names []string
+	for n := range nameSet {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+
+	for i, n := range names {
+		if n == branch {
+			return i
+		}
+	}
+	return 0
 }
 
 // generationName strips the lifecycle suffix from a tag to recover
