@@ -110,7 +110,9 @@ Table 1 Config Fields
 | StitchPrompt | string | stitch_prompt | (embedded) | File path to custom stitch prompt template |
 | ClaudeArgs | []string | claude_args | (standard flags) | CLI arguments for Claude execution |
 | SilenceAgent | *bool | silence_agent | true | Suppress Claude stdout |
-| MaxIssues | int | max_issues | 10 | Maximum tasks per measure or stitch phase |
+| MaxStitchIssues | int | max_stitch_issues | 0 | Total maximum stitch iterations for entire run (0 = unlimited) |
+| MaxStitchIssuesPerCycle | int | max_stitch_issues_per_cycle | 10 | Maximum tasks per stitch cycle before calling measure again |
+| MaxMeasureIssues | int | max_measure_issues | 1 | Maximum new issues per measure pass |
 | Cycles | int | cycles | 0 | Safety limit for cycles (0 = run until all issues closed) |
 | UserPrompt | string | user_prompt | "" | Additional context for the measure prompt |
 | GenerationBranch | string | generation_branch | "" | Explicit branch to work on (auto-detect if empty) |

@@ -28,7 +28,7 @@ Table 2 MeasurePromptData Fields
 | Field | Type | Source |
 |-------|------|--------|
 | ExistingIssues | string (JSON) | bd list output |
-| Limit | int | Config.MaxIssues |
+| Limit | int | Config.MaxMeasureIssues |
 | OutputPath | string | Computed file path in Config.CobblerDir |
 | UserInput | string | Config.UserPrompt |
 | LinesMin | int | Config.EstimatedLinesMin |
