@@ -174,20 +174,54 @@ Default claude_args: `--dangerously-skip-permissions -p --verbose --output-forma
 
 ## Quick Start
 
-### Automated Setup (Recommended)
+### Prerequisites
 
-From **this orchestrator repository**, scaffold your target project:
+Your target project must have:
+
+- ✅ Go module initialized (`go.mod` exists)
+- ✅ Git repository initialized
+- ✅ On the `main` branch with a clean working tree
+
+### Step 1: Clone the Orchestrator
 
 ```bash
-# Clone the orchestrator
 git clone https://github.com/mesh-intelligence/mage-claude-orchestrator.git
 cd mage-claude-orchestrator
-
-# Scaffold your target repository (must have go.mod)
-mage test:scaffold /path/to/your/project
 ```
 
-This automatically:
+### Step 2: Prepare Your Target Repository
+
+```bash
+# Navigate to your project
+cd /path/to/your/project
+
+# Initialize Go module (if not already done)
+go mod init github.com/your-username/your-project
+
+# Initialize git (if not already done)
+git init
+git add .
+git commit -m "Initial commit"
+
+# Ensure you're on main branch
+git checkout -b main 2>/dev/null || git checkout main
+```
+
+### Step 3: Scaffold Your Project
+
+From the **orchestrator repository**:
+
+```bash
+cd /path/to/mage-claude-orchestrator
+
+# Absolute path
+mage test:scaffold /path/to/your/project
+
+# OR relative path (both work)
+mage test:scaffold ../your-project
+```
+
+The scaffold automatically:
 
 - Copies `orchestrator.go` to `magefiles/orchestrator.go` in your project
 - Detects project structure (module path, main package, source directories)
@@ -196,14 +230,18 @@ This automatically:
 - Copies design constitution to `docs/CONSTITUTION-design.yaml`
 - Creates version template if main package detected
 
-### After Scaffolding
+### Step 4: Initialize and Run
 
 In **your target repository**:
 
 ```bash
-# Review and edit configuration.yaml (Claude credentials, etc.)
+cd /path/to/your/project
+
 # Initialize beads issue tracker
 mage init
+
+# Configure Claude credentials (see Configuration section below)
+# Edit configuration.yaml and add your Claude API key or session
 
 # Start your first generation
 mage generator:start       # Create generation branch from main
