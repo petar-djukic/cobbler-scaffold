@@ -78,6 +78,9 @@ func Clean() error { return newOrch().Clean() }
 // Credentials extracts Claude credentials from the macOS Keychain.
 func Credentials() error { return newOrch().ExtractCredentials() }
 
+// Analyze performs cross-artifact consistency checks (PRDs, use cases, test suites, roadmap).
+func Analyze() error { return newOrch().Analyze() }
+
 // --- Test targets (standard) ---
 
 // Unit runs go test on all packages.
