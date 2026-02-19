@@ -11,6 +11,10 @@ introduction: |
   template data contracts, customization patterns, and conventions for writing
   effective prompts.
 
+  Templates are Go text/template files with parameters (e.g., {{.FieldName}})
+  that get filled in at runtime with dynamic data. Constitutions are static
+  YAML files that get embedded and passed as string parameters to the templates.
+
 sections:
   - title: Embedded Defaults
     content: |

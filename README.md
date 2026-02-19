@@ -122,7 +122,7 @@ The execution constitution includes:
 - Error handling, concurrency, testing, naming conventions
 - Session completion workflow and git conventions
 
-When you run `mage scaffold`, the design constitution is automatically copied to the consuming project. The planning and execution constitutions are embedded in the orchestrator binary and injected into measure and stitch prompts respectively.
+When you run `mage scaffold`, the design constitution is automatically copied to the consuming project. The planning and execution constitutions are embedded in the orchestrator binary and injected into the measure (`pkg/orchestrator/prompts/measure.tmpl`) and stitch (`pkg/orchestrator/prompts/stitch.tmpl`) prompt templates respectively.
 
 ## Configuration
 
@@ -157,8 +157,8 @@ Alternatively, create `configuration.yaml` manually and set the project-specific
 | max_stitch_issues_per_cycle | 10 | Maximum tasks stitch processes before calling measure again |
 | max_measure_issues | 1 | Maximum new issues to create per measure pass |
 | user_prompt | | Additional context for the measure prompt |
-| measure_prompt | (embedded) | File path to custom measure prompt template |
-| stitch_prompt | (embedded) | File path to custom stitch prompt template |
+| measure_prompt | pkg/orchestrator/prompts/measure.tmpl | File path to custom measure prompt template (defaults to embedded template) |
+| stitch_prompt | pkg/orchestrator/prompts/stitch.tmpl | File path to custom stitch prompt template (defaults to embedded template) |
 | estimated_lines_min | 250 | Minimum estimated lines per task (passed to measure template) |
 | estimated_lines_max | 350 | Maximum estimated lines per task (passed to measure template) |
 | podman_image | (required) | Container image for Claude execution |
