@@ -4,7 +4,9 @@
 
 I'm starting a new project and need you to help me create the initial epics and issues to structure the work.
 
-Ask me questions to understand:
+First, read **docs/CONSTITUTION-design.yaml** to understand the documentation format rules and available document types (VISION, ARCHITECTURE, PRD, use case, test suite, etc.).
+
+Then ask me questions to understand:
 1. What problem I'm trying to solve
 2. What the solution will do
 3. What success looks like
