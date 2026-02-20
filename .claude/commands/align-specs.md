@@ -29,7 +29,7 @@ For each file, read it, then apply the constitution's format rules for that docu
 
 **Style**: Apply the style rules from the constitution — active voice, present tense, remove forbidden terms, no bold in prose paragraphs, no horizontal rules. Do not rewrite substance; fix only what violates a rule.
 
-**Naming conventions**: Rename the file if its name does not follow the convention for its document type. Update any cross-references in other files that point to the old name.
+**Naming conventions**: Check each file's name against the `naming_conventions` block in the constitution (e.g. `prd[NNN]-[feature-name].yaml`, `rel[NN].[N]-uc[NNN]-[short-name].yaml`). Rename the file if it does not match. Update any cross-references in other files that point to the old name.
 
 **Traceability**: Every PRD must appear in at least one use case touchpoint. Every use case must appear in at least one test suite `traces` list. Flag gaps as `# TODO: link missing` on the relevant field — do not fabricate links.
 
