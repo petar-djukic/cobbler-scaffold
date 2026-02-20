@@ -173,21 +173,32 @@ All project specifications are written in YAML, not in prose documents or extern
 
 ```text
 docs/
-├── VISION.yaml          # Goals, personas, roadmap, release definitions
-├── ARCHITECTURE.yaml    # Components, interfaces, protocols, data flows
+├── VISION.yaml                 # Goals, personas, release definitions
+├── ARCHITECTURE.yaml           # Components, interfaces, protocols, data flows
+├── road-map.yaml               # Releases and which use cases each delivers
 └── specs/
     ├── product-requirements/   # prd-*.yaml  — feature requirements
-    ├── use-cases/              # uc-NNN-slug.yaml  — concrete user flows
-    └── test-suites/            # test-*.yaml — acceptance criteria
+    └── use-cases/              # uc-NNN-slug.yaml  — concrete user flows
+
+tests/
+└── rel-NNN/                    # One directory per release
+    └── rel-NNN_test.go         # Use cases as sub-tests (TestRelNNN/uc-NNN-slug)
 ```
 
 ### Releases and use cases
 
-Releases are defined in `VISION.yaml` (the roadmap section). Each release lists which use cases and PRDs it delivers. Use cases are named `uc-NNN-slug.yaml` with a stable numeric ID that does not encode the release — re-prioritizing a use case to a later release does not rename the file. The roadmap is the single source of truth for release membership.
+Release membership is tracked in `docs/road-map.yaml`, maintained during the design phase alongside VISION and ARCHITECTURE. Each release entry lists which use case IDs it delivers. Use cases themselves are named `uc-NNN-slug.yaml` with a stable numeric ID that does not encode the release — re-prioritizing a use case to a later release does not rename the file. `road-map.yaml` is the single source of truth for release membership.
 
 ### Use cases order development
 
-The measure phase reads the roadmap in VISION.yaml to determine which release is next and proposes tasks that advance the use cases for that release. This keeps the generation cycle tied to the product roadmap rather than to an ad-hoc backlog.
+The measure phase reads `road-map.yaml` to determine which release is next and proposes tasks that advance the use cases for that release. This keeps the generation cycle tied to the product roadmap rather than to an ad-hoc backlog.
+
+### Testing
+
+Tests are structured in two tiers:
+
+- **Unit tests** live alongside the code they test (`pkg/*/`) and correspond to PRDs. A unit test exercises the behaviour specified by a PRD, and its commit message references the PRD (e.g. `prd-feature-name`).
+- **Release acceptance tests** live in `tests/rel-NNN/` — one directory per release. Each file runs the use cases for that release as Go sub-tests (`t.Run("uc-NNN-slug", ...)`), providing a tracer-bullet check that the full release is working.
 
 ## Three-Phase Constitution Architecture
 
