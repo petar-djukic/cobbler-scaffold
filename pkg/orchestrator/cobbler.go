@@ -101,21 +101,13 @@ func parseClaudeTokens(output []byte) ClaudeResult {
 	return ClaudeResult{}
 }
 
-// checkClaude verifies that Claude can be invoked. When PodmanImage is set,
-// it checks that podman is available, the image exists, and credentials
-// are present. When PodmanImage is empty, it checks that the claude
-// binary is on PATH.
+// checkClaude verifies that Claude can be invoked: podman is available,
+// the container image exists, and credentials are present.
 func (o *Orchestrator) checkClaude() error {
-	if o.cfg.Podman.Image != "" {
-		if err := o.checkPodman(); err != nil {
-			return err
-		}
-		return o.ensureCredentials()
+	if err := o.checkPodman(); err != nil {
+		return err
 	}
-	if _, err := exec.LookPath(binClaude); err != nil {
-		return fmt.Errorf("claude not found on PATH; install Claude Code or set podman.image in configuration.yaml")
-	}
-	return nil
+	return o.ensureCredentials()
 }
 
 // ensureCredentials checks that the credential file exists in SecretsDir.
@@ -164,13 +156,10 @@ func clearClaudeHistory() {
 	}
 }
 
-// runClaude executes Claude and returns token usage. When PodmanImage is
-// set, Claude runs inside a podman container. When PodmanImage is empty,
-// Claude runs directly on the host. The process is killed if
-// ClaudeMaxTimeSec is exceeded.
+// runClaude executes Claude inside a podman container and returns token
+// usage. The process is killed if ClaudeMaxTimeSec is exceeded.
 func (o *Orchestrator) runClaude(prompt, dir string, silence bool) (ClaudeResult, error) {
-	logf("runClaude: promptLen=%d dir=%q silence=%v container=%v",
-		len(prompt), dir, silence, o.cfg.Podman.Image != "")
+	logf("runClaude: promptLen=%d dir=%q silence=%v", len(prompt), dir, silence)
 
 	clearClaudeHistory()
 
@@ -187,12 +176,7 @@ func (o *Orchestrator) runClaude(prompt, dir string, silence bool) (ClaudeResult
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	var cmd *exec.Cmd
-	if o.cfg.Podman.Image != "" {
-		cmd = o.buildPodmanCmd(ctx, workDir)
-	} else {
-		cmd = o.buildDirectCmd(ctx, workDir)
-	}
+	cmd := o.buildPodmanCmd(ctx, workDir)
 
 	cmd.Stdin = strings.NewReader(prompt)
 
@@ -243,17 +227,6 @@ func (o *Orchestrator) buildPodmanCmd(ctx context.Context, workDir string) *exec
 
 	logf("runClaude: exec %s %v (timeout=%s)", binPodman, args, o.cfg.ClaudeTimeout())
 	return exec.CommandContext(ctx, binPodman, args...)
-}
-
-// buildDirectCmd constructs the exec.Cmd for running Claude directly
-// on the host.
-func (o *Orchestrator) buildDirectCmd(ctx context.Context, workDir string) *exec.Cmd {
-	args := append([]string{}, o.cfg.Claude.Args...)
-
-	logf("runClaude: exec %s %v (timeout=%s)", binClaude, args, o.cfg.ClaudeTimeout())
-	cmd := exec.CommandContext(ctx, binClaude, args...)
-	cmd.Dir = workDir
-	return cmd
 }
 
 // logConfig prints the resolved configuration for debugging.
