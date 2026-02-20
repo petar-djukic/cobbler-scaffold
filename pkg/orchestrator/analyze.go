@@ -14,11 +14,11 @@ import (
 
 // AnalyzeResult holds the results of the Analyze operation.
 type AnalyzeResult struct {
-	OrphanedPRDs         []string // PRDs with no use cases referencing them
-	UseCasesWithoutTests []string // Use cases missing test suites
-	OrphanedTestSuites   []string // Test suites not referenced by any use case
-	BrokenTouchpoints    []string // Use case touchpoints referencing non-existent PRDs
-	UseCasesNotInRoadmap []string // Use cases not listed in road-map.yaml
+	OrphanedPRDs              []string // PRDs with no use cases referencing them
+	ReleasesWithoutTestSuites []string // Releases in road-map.yaml with no test-rel-*.yaml file
+	OrphanedTestSuites        []string // Test suites whose traces don't match any known use case
+	BrokenTouchpoints         []string // Use case touchpoints referencing non-existent PRDs
+	UseCasesNotInRoadmap      []string // Use cases not listed in road-map.yaml
 }
 
 // Analyze performs cross-artifact consistency checks.
@@ -48,8 +48,7 @@ func (o *Orchestrator) Analyze() error {
 		return fmt.Errorf("globbing use cases: %w", err)
 	}
 	ucIDs := make(map[string]bool)
-	ucToPRDs := make(map[string][]string)  // use case ID -> PRD IDs from touchpoints
-	ucToTestSuite := make(map[string]string) // use case ID -> test suite ID
+	ucToPRDs := make(map[string][]string) // use case ID -> PRD IDs from touchpoints
 	for _, path := range ucFiles {
 		uc, err := loadUseCase(path)
 		if err != nil {
@@ -58,12 +57,11 @@ func (o *Orchestrator) Analyze() error {
 		}
 		ucIDs[uc.ID] = true
 		ucToPRDs[uc.ID] = extractPRDsFromTouchpoints(uc.Touchpoints)
-		ucToTestSuite[uc.ID] = uc.TestSuite
 	}
 	logf("analyze: found %d use cases", len(ucIDs))
 
-	// 3. Load all test suites
-	testFiles, err := filepath.Glob("docs/specs/test-suites/test*.yaml")
+	// 3. Load all test suites (per-release YAML specs)
+	testFiles, err := filepath.Glob("docs/specs/test-suites/test-rel-*.yaml")
 	if err != nil {
 		return fmt.Errorf("globbing test suites: %w", err)
 	}
@@ -80,11 +78,13 @@ func (o *Orchestrator) Analyze() error {
 	}
 	logf("analyze: found %d test suites", len(testSuiteIDs))
 
-	// 4. Load road-map.yaml
+	// 4. Load road-map.yaml — collect release IDs and use case IDs
 	roadmapUCs := make(map[string]bool)
+	roadmapReleaseIDs := make(map[string]bool)
 	if data, err := os.ReadFile("docs/road-map.yaml"); err == nil {
 		var roadmap struct {
 			Releases []struct {
+				ID       string `yaml:"id"`
 				UseCases []struct {
 					ID string `yaml:"id"`
 				} `yaml:"use_cases"`
@@ -92,11 +92,12 @@ func (o *Orchestrator) Analyze() error {
 		}
 		if err := yaml.Unmarshal(data, &roadmap); err == nil {
 			for _, release := range roadmap.Releases {
+				roadmapReleaseIDs[release.ID] = true
 				for _, uc := range release.UseCases {
 					roadmapUCs[uc.ID] = true
 				}
 			}
-			logf("analyze: found %d use cases in roadmap", len(roadmapUCs))
+			logf("analyze: found %d releases, %d use cases in roadmap", len(roadmapReleaseIDs), len(roadmapUCs))
 		}
 	}
 
@@ -113,34 +114,24 @@ func (o *Orchestrator) Analyze() error {
 		}
 	}
 
-	// Check 2: Use cases without test suites
-	for ucID, testSuiteID := range ucToTestSuite {
-		if testSuiteID == "" || !testSuiteIDs[testSuiteID] {
-			result.UseCasesWithoutTests = append(result.UseCasesWithoutTests, ucID)
+	// Check 2: Releases in road-map.yaml without a test suite file
+	for releaseID := range roadmapReleaseIDs {
+		if !testSuiteIDs["test-"+releaseID] {
+			result.ReleasesWithoutTestSuites = append(result.ReleasesWithoutTestSuites, releaseID)
 		}
 	}
 
-	// Check 3: Orphaned test suites (no use case references them)
-	testSuiteReferencedByUC := make(map[string]bool)
-	for _, testSuiteID := range ucToTestSuite {
-		if testSuiteID != "" {
-			testSuiteReferencedByUC[testSuiteID] = true
+	// Check 3: Orphaned test suites (traces don't reference any known use case)
+	for testSuiteID, traces := range testSuiteToUCs {
+		valid := false
+		for _, ucID := range traces {
+			if ucIDs[ucID] {
+				valid = true
+				break
+			}
 		}
-	}
-	for testSuiteID := range testSuiteIDs {
-		if !testSuiteReferencedByUC[testSuiteID] {
-			// Also check if test suite traces back to a valid use case
-			traces := testSuiteToUCs[testSuiteID]
-			valid := false
-			for _, ucID := range traces {
-				if ucIDs[ucID] {
-					valid = true
-					break
-				}
-			}
-			if !valid {
-				result.OrphanedTestSuites = append(result.OrphanedTestSuites, testSuiteID)
-			}
+		if !valid {
+			result.OrphanedTestSuites = append(result.OrphanedTestSuites, testSuiteID)
 		}
 	}
 
@@ -169,16 +160,16 @@ func (o *Orchestrator) Analyze() error {
 			fmt.Printf("  - %s\n", prd)
 		}
 	}
-	if len(result.UseCasesWithoutTests) > 0 {
+	if len(result.ReleasesWithoutTestSuites) > 0 {
 		hasIssues = true
-		fmt.Printf("\n⚠️  Use cases without test suites:\n")
-		for _, uc := range result.UseCasesWithoutTests {
-			fmt.Printf("  - %s\n", uc)
+		fmt.Printf("\n⚠️  Releases without test suites (no docs/specs/test-suites/test-<release>.yaml):\n")
+		for _, rel := range result.ReleasesWithoutTestSuites {
+			fmt.Printf("  - %s\n", rel)
 		}
 	}
 	if len(result.OrphanedTestSuites) > 0 {
 		hasIssues = true
-		fmt.Printf("\n⚠️  Orphaned test suites (not referenced by any use case):\n")
+		fmt.Printf("\n⚠️  Orphaned test suites (traces don't reference any known use case):\n")
 		for _, ts := range result.OrphanedTestSuites {
 			fmt.Printf("  - %s\n", ts)
 		}
@@ -220,18 +211,15 @@ func extractID(path string) string {
 func loadUseCase(path string) (*struct {
 	ID          string
 	Touchpoints []string
-	TestSuite   string
 }, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
 
-	// Parse the full YAML structure
 	var raw struct {
-		ID          string                   `yaml:"id"`
-		Touchpoints []map[string]string      `yaml:"touchpoints"`
-		TestSuite   string                   `yaml:"test_suite"`
+		ID          string              `yaml:"id"`
+		Touchpoints []map[string]string `yaml:"touchpoints"`
 	}
 	if err := yaml.Unmarshal(data, &raw); err != nil {
 		return nil, err
@@ -249,11 +237,9 @@ func loadUseCase(path string) (*struct {
 	return &struct {
 		ID          string
 		Touchpoints []string
-		TestSuite   string
 	}{
 		ID:          raw.ID,
 		Touchpoints: touchpointStrings,
-		TestSuite:   raw.TestSuite,
 	}, nil
 }
 

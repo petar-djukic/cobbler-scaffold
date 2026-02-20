@@ -112,9 +112,9 @@ issue_structure:
         when: Tracer-bullet flows, actor/trigger, demo criteria
 
       - type: Test suite
-        location: "docs/specs/test-suites/test-[use-case-id].yaml"
+        location: "docs/specs/test-suites/test-rel-[release-id].yaml"
         format_rule: test-case-format
-        when: Test cases with inputs and expected outputs
+        when: Release-level test coverage spec; use cases as sub-sections
 
       - type: Engineering guideline
         location: "docs/engineering/eng[NN]-[short-name].md"

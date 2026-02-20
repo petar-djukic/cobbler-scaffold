@@ -136,7 +136,8 @@ traceability:
     - "Architecture: docs/ARCHITECTURE.yaml"
     - "PRDs: docs/specs/product-requirements/prd*.yaml"
     - "Use cases: docs/specs/use-cases/rel*-uc*-*.yaml"
-    - "Test suites: docs/specs/test-suites/test*.yaml"
+    - "Test suites (YAML specs): docs/specs/test-suites/test-rel-*.yaml"
+    - "Release tests (Go): tests/rel-*/rel-*_test.go"
     - "Engineering guidelines: docs/engineering/eng*.md"
     - "Vision: docs/VISION.yaml"
 

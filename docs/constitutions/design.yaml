@@ -152,7 +152,6 @@ document_types:
       - touchpoints (T1, T2, ..., architecture elements exercised)
       - success_criteria (S1, S2, ..., checkable outcomes)
       - out_of_scope
-      - test_suite (ID of corresponding test suite)
     numbering:
       flow_steps: "F1, F2, F3, ..."
       touchpoints: "T1, T2, T3, ..."
@@ -160,22 +159,22 @@ document_types:
     purpose: |
       Describes a concrete usage of the architecture. One end-to-end path
       (tracer bullet) through the system. Leads to a proof-of-concept or demo.
-      Every use case must have a corresponding test suite.
+      Every use case must be covered by its release test suite.
 
   test_suite:
-    location: "docs/specs/test-suites/test-[use-case-id].yaml"
+    location: "docs/specs/test-suites/test-rel-[release-id].yaml"
     format_rule: test-case-format
     required_fields:
-      - id (matching filename)
+      - id (matching filename, e.g. test-rel01.0)
       - title
-      - traces (use case IDs or PRD requirement IDs)
-      - preconditions (shared setup)
-      - test_cases (list with name, inputs, expected outputs)
+      - release (release ID this suite covers)
+      - traces (list of use case IDs covered by this suite)
+      - test_cases (list organized by use case sub-sections, each with name, inputs, expected outputs)
     purpose: |
-      Groups related test cases under shared preconditions. Each test suite
-      validates one or more use cases or PRD requirements. Test cases have
-      explicit inputs (commands, args, stdin, env, files) and expected outputs
-      (exit_code, stdout_contains, state, files).
+      Groups test cases for a full release. Each use case in the release appears
+      as a sub-section within the suite. The YAML provides quick human/Claude
+      consumption of test coverage; Go tests in tests/rel-NNN/ implement the
+      cases with use cases as sub-tests (t.Run("uc-NNN-slug", ...)).
 
   engineering_guideline:
     location: "docs/engineering/eng[NN]-[short-name].yaml"

@@ -25,7 +25,7 @@ Use this workflow when the deliverable is **YAML documentation** under `docs/`: 
 
 The issue `deliverable_type` field will be `documentation` and will specify a `format_rule` (e.g., prd-format, use-case-format, architecture-format).
 
-Read VISION.yaml and ARCHITECTURE.yaml for context. For PRDs scan existing `docs/specs/product-requirements/`; for use cases `docs/specs/use-cases/`; for test suites `docs/specs/test-suites/`.
+Read VISION.yaml and ARCHITECTURE.yaml for context. For PRDs scan existing `docs/specs/product-requirements/`; for use cases `docs/specs/use-cases/`; for test suites (release-level YAML specs) `docs/specs/test-suites/`; for generated Go tests `tests/`.
 
 ## 1. Select a documentation task
 
@@ -58,7 +58,7 @@ Read VISION.yaml and ARCHITECTURE.yaml for context. For PRDs scan existing `docs
 1. **Check completeness** against the issue Acceptance Criteria and the format rule checklist
 2. **Run `mage analyze`** to validate the documentation:
    - No orphaned PRDs (all PRDs referenced by use cases)
-   - No missing test suites (all use cases have test suites)
+   - No releases without test suites (all releases in road-map.yaml have a test-rel-*.yaml)
    - No broken references (touchpoints reference valid PRDs)
    - All use cases in roadmap
 
