@@ -1,16 +1,16 @@
 # mage-claude-orchestrator
 
-Mage-based prototype of the cobbler measure-stitch workflow; this repository will evolve into the scaffolding layer for initializing [cobbler](https://github.com/petar-djukic/cobbler)-based projects.
+Specification constitutions for cobbler-based projects and tooling to validate their correctness; the Mage library implements the measure-stitch workflow to exercise and refine them before the core moves to [cobbler](https://github.com/petar-djukic/cobbler).
 
 ## Architectural Thesis
 
 AI coding assistants handle individual edits well but break down across sessions that require sequenced tasks, dependency management, and clean commit history. Running Claude directly on a working branch conflates exploration with production commits and leaves recovery from failures to the developer.
 
-The cobbler workflow solves this by separating task proposal (measure) from task execution (stitch). Measure invokes Claude with the project's specification tree and produces a dependency-ordered task list in the issue tracker. Stitch executes each task in an isolated git worktree, merges the result to the generation branch, and records metrics. The generation branch accumulates only finished work; the loop runs unattended until the backlog is empty or the cycle budget is exhausted.
+The primary contribution of this repository is three YAML constitutions — design, planning, and execution — that govern Claude's behavior in each phase of the cobbler workflow. Constitutions enforce specification-first development: Claude may not write code that does not trace to a PRD, must size tasks within defined LOC bounds, and must close the issue with a traceable commit before ending a session. The analyze command validates that produced specifications are internally consistent — no orphaned PRDs, no missing test-suite linkage, no broken use-case references.
 
-This repository implements the workflow as a Mage library to validate the design and accumulate operational experience. Once the core is stable, the orchestration logic moves to [cobbler](https://github.com/petar-djukic/cobbler) and this repository becomes the scaffolding layer that initializes cobbler-based projects with constitutions, configuration, and Mage targets.
+The cobbler workflow that the constitutions govern separates task proposal (measure) from task execution (stitch). Measure invokes Claude with the project's specification tree and produces a dependency-ordered task list. Stitch executes each task in an isolated git worktree, merges the result to the generation branch, and records metrics. The generation branch accumulates only finished work; the loop runs unattended until the backlog is empty or the cycle budget is exhausted.
 
-The design contract for Claude's behavior in each phase is expressed as constitutions — YAML documents injected into the measure and stitch prompts. Constitutions enforce specification-first development: Claude may not write code that does not trace to a PRD, and must close the issue with a traceable commit before ending a task session.
+This repository implements the workflow as a Mage library to accumulate operational experience with the constitutions. Once the design is stable, the orchestration logic moves to [cobbler](https://github.com/petar-djukic/cobbler) and this repository becomes the scaffolding layer that initializes cobbler-based projects with constitutions, configuration, and Mage targets.
 
 ## System
 
