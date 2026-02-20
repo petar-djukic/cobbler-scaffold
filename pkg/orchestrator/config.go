@@ -123,7 +123,7 @@ type CobblerConfig struct {
 
 // PodmanConfig holds settings for the podman container runtime.
 type PodmanConfig struct {
-	// Image is the container image for Claude execution (required).
+	// Image is the container image for Claude execution (default "claude-cli").
 	// Claude runs inside a podman container for isolation.
 	Image string `yaml:"image"`
 
@@ -272,6 +272,9 @@ func (c *Config) applyDefaults() {
 	}
 	if c.Claude.MaxTimeSec == 0 {
 		c.Claude.MaxTimeSec = 300
+	}
+	if c.Podman.Image == "" {
+		c.Podman.Image = "claude-cli"
 	}
 }
 
