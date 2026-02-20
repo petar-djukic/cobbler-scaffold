@@ -162,7 +162,7 @@ document_types:
       Every use case must be covered by its release test suite.
 
   test_suite:
-    location: "docs/specs/test-suites/test-rel-[release-id].yaml"
+    location: "docs/specs/test-suites/test-[release-id].yaml"
     format_rule: test-case-format
     required_fields:
       - id (matching filename, e.g. test-rel01.0)
@@ -222,7 +222,7 @@ document_types:
 naming_conventions:
   prd: "prd[NNN]-[feature-name].yaml (e.g., prd001-cupboard-core.yaml)"
   use_case: "rel[NN].[N]-uc[NNN]-[short-name].yaml (e.g., rel01.0-uc001-cupboard-lifecycle.yaml)"
-  test_suite: "test-rel-[release-id].yaml (e.g., test-rel01.0.yaml)"
+  test_suite: "test-[release-id].yaml (e.g., test-rel01.0.yaml)"
   engineering_guideline: "eng[NN]-[short-name].yaml (e.g., eng01-git-integration.yaml)"
   architecture: "ARCHITECTURE.yaml"
   vision: "VISION.yaml"
@@ -338,4 +338,4 @@ completeness_checklists:
     - Each test case has name, inputs, expected outputs
     - Inputs use real commands and data
     - Expected outputs are specific and checkable
-    - File saved as test-rel-[release-id].yaml in docs/specs/test-suites/
+    - File saved as test-[release-id].yaml in docs/specs/test-suites/

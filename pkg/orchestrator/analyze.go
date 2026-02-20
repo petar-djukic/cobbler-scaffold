@@ -15,7 +15,7 @@ import (
 // AnalyzeResult holds the results of the Analyze operation.
 type AnalyzeResult struct {
 	OrphanedPRDs              []string // PRDs with no use cases referencing them
-	ReleasesWithoutTestSuites []string // Releases in road-map.yaml with no test-rel-*.yaml file
+	ReleasesWithoutTestSuites []string // Releases in road-map.yaml with no test-rel*.yaml file
 	OrphanedTestSuites        []string // Test suites whose traces don't match any known use case
 	BrokenTouchpoints         []string // Use case touchpoints referencing non-existent PRDs
 	UseCasesNotInRoadmap      []string // Use cases not listed in road-map.yaml
@@ -61,7 +61,7 @@ func (o *Orchestrator) Analyze() error {
 	logf("analyze: found %d use cases", len(ucIDs))
 
 	// 3. Load all test suites (per-release YAML specs)
-	testFiles, err := filepath.Glob("docs/specs/test-suites/test-rel-*.yaml")
+	testFiles, err := filepath.Glob("docs/specs/test-suites/test-rel*.yaml")
 	if err != nil {
 		return fmt.Errorf("globbing test suites: %w", err)
 	}
