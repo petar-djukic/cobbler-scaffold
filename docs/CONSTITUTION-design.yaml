@@ -1,0 +1,294 @@
+# Design Constitution
+#
+# This constitution governs the design/architecting phase: creating VISION,
+# ARCHITECTURE, PRDs, use cases, test suites, and other documentation. It is
+# scaffolded into consuming projects so Claude knows how to write specs that
+# match the project's documentation standards.
+
+articles:
+  - id: D1
+    title: Specification-driven development
+    rule: |
+      Specifications are the source of truth. Code serves specifications, not
+      the other way around. No implementation code before the PRD and use case
+      exist. No implementation issue before a test suite exists for its use case.
+
+  - id: D2
+    title: YAML-first for structured docs
+    rule: |
+      Use YAML for structured documents (VISION, ARCHITECTURE, PRDs, use cases,
+      test suites). Use markdown for prose-heavy guidelines and specifications
+      summaries. YAML is machine-readable by design.
+
+  - id: D3
+    title: Test suite linkage is mandatory
+    rule: |
+      Every use case must have a corresponding test suite. The test suite
+      validates the use case's success criteria with explicit inputs and
+      expected outputs.
+
+  - id: D4
+    title: Traceability
+    rule: |
+      Every PRD traces to VISION and ARCHITECTURE. Every use case traces to
+      PRDs (via touchpoints). Every test suite traces to use cases (via the
+      traces field). Code traces to PRDs via commit messages and comments.
+
+  - id: D5
+    title: Roadmap-driven releases
+    rule: |
+      Use cases are assigned to releases in road-map.yaml. Releases are
+      numbered rel[NN].[N] (e.g., rel01.0, rel02.1). Minor releases validate
+      completed major releases without renumbering existing use cases.
+
+documentation_standards:
+  style: |
+    Write in the style of The Elements of Style by Strunk and White: concise,
+    active voice, specific and concrete language, no unnecessary words.
+
+  voice: |
+    Use the royal "we" in active voice. GOOD: "We implement the feature..."
+    BAD: "This document describes..." or "The architecture implements..."
+
+  forbidden_terms:
+    - critical, critically, key, deliberate, strategic
+    - precisely, absolutely, fundamental, breakthrough
+    - principled, honest, at the heart of, grounded
+    - standards-aligned (unless absolutely necessary)
+
+  formatting:
+    paragraphs: |
+      Use paragraph form unless not possible. Vary sentence length for
+      readability. Use short paragraphs only to emphasize a point. DO NOT use
+      bold text or horizontal rules.
+
+    lists_and_tables: |
+      Use tables instead of lists for short entries. Name all tables. DO NOT
+      use colons except to introduce lists.
+
+    abbreviations: |
+      Explain abbreviations at least once per document section. Define
+      domain-specific abbreviations on first use.
+
+  figures_and_diagrams: |
+    All diagrams MUST be written in PlantUML and defined inline in markdown
+    using fenced code blocks. Do not create separate .puml files or PNG images.
+    Use centered table format for captioning:
+    ```plantuml
+    @startuml
+    ... diagram source ...
+    @enduml
+    ```
+
+document_types:
+  vision:
+    location: docs/VISION.yaml
+    format_rule: vision-format
+    required_fields:
+      - id
+      - title
+      - executive_summary
+      - problem
+      - what_this_does
+      - why_we_build_this
+      - success_criteria
+      - implementation_phases
+      - risks
+      - not (explicit boundaries)
+    purpose: |
+      States what the project is, why it exists, how success is measured, and
+      what it is not. Orients stakeholders, new contributors, and downstream
+      docs (ARCHITECTURE, PRDs).
+
+  architecture:
+    location: docs/ARCHITECTURE.yaml
+    format_rule: architecture-format
+    required_fields:
+      - id
+      - title
+      - overview (summary, lifecycle, coordination_pattern)
+      - interfaces (data_structures, operations, announcements)
+      - components (name, responsibility, capabilities, references)
+      - design_decisions (id, title, decision, benefits, alternatives_rejected)
+      - technology_choices
+      - project_structure
+      - implementation_status
+      - related_documents
+    purpose: |
+      Describes how the system is built: components, interfaces, protocols,
+      data flow, design decisions. Bridge between vision (what and why) and
+      PRDs (numbered requirements).
+
+  prd:
+    location: "docs/specs/product-requirements/prd[NNN]-[feature-name].yaml"
+    format_rule: prd-format
+    required_fields:
+      - id
+      - title
+      - problem (multi-line, why it matters)
+      - goals (G1, G2, ...)
+      - requirements (R1.1, R1.2, ..., grouped by R1, R2, ...)
+      - non_goals
+      - acceptance_criteria
+    numbering:
+      goals: "G1, G2, G3, ..."
+      requirement_groups: "R1, R2, R3, ..."
+      requirement_items: "R1.1, R1.2, R2.1, ..."
+    purpose: |
+      Defines product requirements with numbered goals and requirements. Each
+      requirement starts with "must" or "must not" or a concrete verb. No scope
+      creep - non_goals define explicit boundaries.
+
+  use_case:
+    location: "docs/specs/use-cases/rel[NN].[N]-uc[NNN]-[short-name].yaml"
+    format_rule: use-case-format
+    required_fields:
+      - id
+      - title
+      - summary
+      - actor
+      - trigger
+      - flow (F1, F2, ..., end-to-end steps)
+      - touchpoints (T1, T2, ..., architecture elements exercised)
+      - success_criteria (S1, S2, ..., checkable outcomes)
+      - out_of_scope
+      - test_suite (ID of corresponding test suite)
+    numbering:
+      flow_steps: "F1, F2, F3, ..."
+      touchpoints: "T1, T2, T3, ..."
+      success_criteria: "S1, S2, S3, ..."
+    purpose: |
+      Describes a concrete usage of the architecture. One end-to-end path
+      (tracer bullet) through the system. Leads to a proof-of-concept or demo.
+      Every use case must have a corresponding test suite.
+
+  test_suite:
+    location: "docs/specs/test-suites/test-[use-case-id].yaml"
+    format_rule: test-case-format
+    required_fields:
+      - id (matching filename)
+      - title
+      - traces (use case IDs or PRD requirement IDs)
+      - preconditions (shared setup)
+      - test_cases (list with name, inputs, expected outputs)
+    purpose: |
+      Groups related test cases under shared preconditions. Each test suite
+      validates one or more use cases or PRD requirements. Test cases have
+      explicit inputs (commands, args, stdin, env, files) and expected outputs
+      (exit_code, stdout_contains, state, files).
+
+  engineering_guideline:
+    location: "docs/engineering/eng[NN]-[short-name].yaml"
+    format_rule: engineering-guideline-format
+    required_fields:
+      - id
+      - title
+      - introduction (multi-line text)
+      - sections (list with title and content)
+    optional_fields:
+      - references
+    purpose: |
+      Documents conventions, practices, and patterns above the code and
+      architecture. Not PRDs (no numbered requirements). Not architecture (no
+      component descriptions).
+
+  specification:
+    location: docs/SPECIFICATIONS.yaml
+    format_rule: specification-format
+    required_fields:
+      - id
+      - title
+      - overview (multi-line text)
+      - roadmap_summary (list: version, name, use_cases_done, use_cases_total, status)
+      - prd_index (list: id, title, summary, path)
+      - use_case_index (list: id, title, release, status, test_suite, path)
+      - test_suite_index (list: id, title, traces, test_case_count, path)
+      - prd_to_use_case_mapping (list: use_case, prd, why_required, coverage)
+      - coverage_gaps (list or multi-line text)
+    optional_fields:
+      - traceability_diagram (PlantUML as multi-line string)
+      - references
+    purpose: |
+      Human-readable summary tying together PRDs, use cases, test suites, and
+      roadmap into one navigable page. Does not duplicate content; summarizes
+      and shows relationships. Regenerate when any artifact changes.
+
+  roadmap:
+    location: docs/road-map.yaml
+    purpose: |
+      Defines releases with version, name, focus, and list of use cases with
+      status. Use cases are assigned to releases. Release numbering: rel[NN].[N]
+      (major.minor). Minor releases validate completed major releases.
+
+naming_conventions:
+  prd: "prd[NNN]-[feature-name].yaml (e.g., prd001-cupboard-core.yaml)"
+  use_case: "rel[NN].[N]-uc[NNN]-[short-name].yaml (e.g., rel01.0-uc001-cupboard-lifecycle.yaml)"
+  test_suite: "test-[use-case-id].yaml (e.g., test-rel01.0-uc001-cupboard-lifecycle.yaml)"
+  engineering_guideline: "eng[NN]-[short-name].yaml (e.g., eng01-git-integration.yaml)"
+  architecture: "ARCHITECTURE.yaml"
+  vision: "VISION.yaml"
+  specification: "SPECIFICATIONS.yaml"
+
+writing_guidelines:
+  audience: Developers, agents, reviewers. Assume readers need to build or extend the system.
+  tone: "Use 'we' in active voice. Follow documentation-standards: concise, active voice, no forbidden terms."
+  scope: Describe structure and contracts; do not duplicate. Point to upstream docs for detail.
+  tables: Name all tables per documentation-standards.
+  figures: Per documentation-standards. Define PlantUML inline; do not create separate .puml files.
+
+traceability_model:
+  vision: Goals and boundaries
+  architecture: Components and interfaces (implements vision)
+  prds: Numbered requirements (architecture points to PRDs for detail)
+  use_cases: Tracer bullets (exercise architecture components via touchpoints)
+  test_suites: Validation (validate use case success criteria)
+  code: Implementation (traces to PRDs via commit messages)
+
+completeness_checklists:
+  vision:
+    - id matches project name
+    - executive_summary states what the project is and what it is not
+    - problem covers context, why current solutions fall short, what this does differently
+    - success_criteria covers meaningful dimensions
+    - implementation_phases lists phases with focus and deliverables
+    - risks lists known risks with impact, likelihood, mitigation
+    - not lists explicit boundaries
+    - File saved as VISION.yaml in docs/
+
+  architecture:
+    - id matches project name
+    - overview.summary states what the system does and core insight
+    - interfaces list data structures, operations, announcements; link to PRD for full spec
+    - components list each major component with responsibility; link to PRD or use case
+    - design_decisions are numbered with decision statement and benefits
+    - project_structure shows directory paths and roles
+    - File saved as ARCHITECTURE.yaml in docs/
+
+  prd:
+    - id matches filename without extension
+    - problem states what we solve and why it matters
+    - goals are numbered (G1, G2, ...) and measurable
+    - requirements are grouped (R1, R2, ...) with numbered items (R1.1, R1.2, ...)
+    - Each requirement is specific and actionable
+    - non_goals define what is out of scope
+    - acceptance_criteria are checkable without ambiguity
+    - File saved as prd[NNN]-[feature-name].yaml
+
+  use_case:
+    - id matches filename without extension
+    - flow steps are numbered (F1, F2, ...), end-to-end, map to real components
+    - touchpoints are numbered (T1, T2, ...) and list interfaces, components, protocols
+    - success_criteria are numbered (S1, S2, ...) and checkable without ambiguity
+    - test_suite references a corresponding test suite ID
+    - Test suite YAML exists and traces back to this use case
+    - Use case added to appropriate release in road-map.yaml
+    - File saved as rel[NN].[N]-uc[NNN]-[short-name].yaml
+
+  test_suite:
+    - id matches filename
+    - traces lists at least one use case or PRD requirement
+    - preconditions describe shared starting state
+    - Each test case has name, inputs, expected outputs
+    - Inputs use real commands and data
+    - Expected outputs are specific and checkable
+    - File saved as test-[use-case-id].yaml
