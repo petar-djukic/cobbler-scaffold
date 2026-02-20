@@ -159,6 +159,10 @@ func (Test) Generator() error {
 	return nil
 }
 
+// E2E runs the E2E test suite against target repositories. Requires Claude.
+// Sets E2E_CLAUDE=1 so all tests including Claude-gated ones are executed.
+func (Test) E2E() error { return newOrch().TestE2E() }
+
 // Resume runs the resume recovery test. Requires Claude.
 // Creates a generation, measures 1 issue, switches to main
 // (simulating an interruption), then calls resume.

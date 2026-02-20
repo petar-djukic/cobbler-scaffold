@@ -84,6 +84,25 @@ func (o *Orchestrator) TestAll() error {
 	return o.TestIntegration()
 }
 
+// TestE2E runs the E2E test suite in tests/e2e/ against real target
+// repositories with Claude enabled (E2E_CLAUDE=1). If the directory does
+// not exist, the target prints a skip message and returns nil.
+func (o *Orchestrator) TestE2E() error {
+	if _, err := os.Stat("tests/e2e"); os.IsNotExist(err) {
+		fmt.Println("No E2E test directory found (tests/e2e/)")
+		return nil
+	}
+	logf("test:e2e: running go test -v -timeout 1800s ./tests/e2e/...")
+	cmd := exec.Command(binGo, "test", "-v", "-timeout", "1800s", "./tests/e2e/...")
+	cmd.Env = append(os.Environ(), "E2E_CLAUDE=1")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("e2e tests failed: %w", err)
+	}
+	return nil
+}
+
 // Install runs go install for the main package. If MainPackage
 // is empty, the target is skipped.
 func (o *Orchestrator) Install() error {

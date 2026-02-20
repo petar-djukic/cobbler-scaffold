@@ -3,6 +3,13 @@ title: Mage init/reset target isolation and orchestration
 traces:
   - eng02-generation-workflow
 
+target_repositories:
+  - module: github.com/petar-djukic/mcp-calc
+    version: v0.20260214.2
+    description: >
+      Simple Go CLI with cmd/mcp-server. Exercises the default scaffold
+      path (cmd/ subdir with main.go) and the full cobbler workflow.
+
 preconditions:
   - On main branch with clean working tree
   - bd CLI available on PATH
