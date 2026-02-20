@@ -165,6 +165,30 @@ podman_args:
 
 The orchestrator runs a pre-flight check before every measure and stitch phase. If podman is not installed or cannot start a container, it exits with instructions pointing here.
 
+## Specification Approach
+
+All project specifications are written in YAML, not in prose documents or external tooling such as [spec-kit](https://github.com/github/spec-kit). YAML is preferred because it is structured, machine-readable, diff-friendly, and unambiguous — properties that matter when Claude is reading and generating specifications autonomously.
+
+### Document hierarchy
+
+```text
+docs/
+├── VISION.yaml          # Goals, personas, roadmap, release definitions
+├── ARCHITECTURE.yaml    # Components, interfaces, protocols, data flows
+└── specs/
+    ├── product-requirements/   # prd-*.yaml  — feature requirements
+    ├── use-cases/              # uc-NNN-slug.yaml  — concrete user flows
+    └── test-suites/            # test-*.yaml — acceptance criteria
+```
+
+### Releases and use cases
+
+Releases are defined in `VISION.yaml` (the roadmap section). Each release lists which use cases and PRDs it delivers. Use cases are named `uc-NNN-slug.yaml` with a stable numeric ID that does not encode the release — re-prioritizing a use case to a later release does not rename the file. The roadmap is the single source of truth for release membership.
+
+### Use cases order development
+
+The measure phase reads the roadmap in VISION.yaml to determine which release is next and proposes tasks that advance the use cases for that release. This keeps the generation cycle tied to the product roadmap rather than to an ad-hoc backlog.
+
 ## Three-Phase Constitution Architecture
 
 The orchestrator uses three constitutions aligned with the three workflow phases:
