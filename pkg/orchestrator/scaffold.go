@@ -49,7 +49,7 @@ func (o *Orchestrator) Scaffold(targetDir, orchestratorRoot string) error {
 	if err := os.MkdirAll(docsDir, 0o755); err != nil {
 		return fmt.Errorf("creating docs directory: %w", err)
 	}
-	constitutionPath := filepath.Join(docsDir, "CONSTITUTION-design.yaml")
+	constitutionPath := filepath.Join(docsDir, "constitutions", "design.yaml")
 	logf("scaffold: writing design constitution to %s", constitutionPath)
 	if err := os.WriteFile(constitutionPath, []byte(designConstitution), 0o644); err != nil {
 		return fmt.Errorf("writing design constitution: %w", err)

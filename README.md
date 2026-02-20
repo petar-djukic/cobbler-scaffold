@@ -2,6 +2,101 @@
 
 Go library for automating AI code generation via Claude Code. Consuming projects import this library through their Magefile and run generation cycles that propose tasks (measure) and execute them in isolated git worktrees (stitch). Claude runs inside a podman container for process isolation.
 
+## Quick Start
+
+### Prerequisites
+
+Your target project must have:
+
+- ✅ Go module initialized (`go.mod` exists)
+- ✅ Git repository initialized
+- ✅ On the `main` branch with a clean working tree
+
+### Step 1: Clone the Orchestrator
+
+```bash
+git clone https://github.com/mesh-intelligence/mage-claude-orchestrator.git
+cd mage-claude-orchestrator
+```
+
+### Step 2: Prepare Your Target Repository
+
+```bash
+# Navigate to your project
+cd /path/to/your/project
+
+# Initialize Go module (if not already done)
+go mod init github.com/your-username/your-project
+
+# Initialize git (if not already done)
+git init
+git add .
+git commit -m "Initial commit"
+
+# Ensure you're on main branch
+git checkout -b main 2>/dev/null || git checkout main
+```
+
+### Step 3: Scaffold Your Project
+
+From the **orchestrator repository**:
+
+```bash
+cd /path/to/mage-claude-orchestrator
+
+# Absolute path
+mage test:scaffold /path/to/your/project
+
+# OR relative path (both work)
+mage test:scaffold ../your-project
+```
+
+The scaffold automatically:
+
+- Copies `orchestrator.go` to `magefiles/orchestrator.go` in your project
+- Detects project structure (module path, main package, source directories)
+- Generates `configuration.yaml` with detected settings
+- Wires `magefiles/go.mod` with orchestrator dependency
+- Copies design constitution to `docs/constitutions/design.yaml`
+- Creates version template if main package detected
+
+### Step 4: Initialize and Run
+
+In **your target repository**:
+
+```bash
+cd /path/to/your/project
+
+# Initialize beads issue tracker
+mage init
+
+# Configure Claude credentials (see Configuration section below)
+# Edit configuration.yaml and add your Claude API key or session
+
+# Start your first generation
+mage generator:start       # Create generation branch from main
+mage generator:run         # Run measure+stitch cycles
+mage generator:stop        # Merge generation into main
+```
+
+If a run is interrupted, `mage generator:resume` recovers state and continues. To discard a generation, `mage generator:reset` returns to a clean main.
+
+### Files Created by Scaffold
+
+```text
+your-project/
+├── configuration.yaml          # Auto-generated config
+├── docs/
+│   └── constitutions/design.yaml       # Format rules for specs
+└── magefiles/
+    ├── orchestrator.go         # Mage targets (template from orchestrator repo)
+    ├── version.go.tmpl         # Seed template (if main package detected)
+    ├── go.mod                  # Separate module for build tooling
+    └── go.sum
+```
+
+The `magefiles/` directory keeps build tooling dependencies separate from your project dependencies.
+
 ## Prerequisites
 
 | Tool | Purpose |
@@ -75,7 +170,7 @@ The orchestrator uses three constitutions aligned with the three workflow phases
 
 **Phase:** Interactive design/architecting (writing VISION, ARCHITECTURE, PRDs, use cases, test suites)
 
-**Location:** Scaffolded to consuming projects as `docs/CONSTITUTION-design.yaml`
+**Location:** Scaffolded to consuming projects as `docs/constitutions/design.yaml`
 
 **Contains:** Documentation standards, format schemas for all document types, traceability model
 
@@ -172,101 +267,6 @@ Alternatively, create `configuration.yaml` manually and set the project-specific
 
 Default claude_args: `--dangerously-skip-permissions -p --verbose --output-format stream-json`
 
-## Quick Start
-
-### Prerequisites
-
-Your target project must have:
-
-- ✅ Go module initialized (`go.mod` exists)
-- ✅ Git repository initialized
-- ✅ On the `main` branch with a clean working tree
-
-### Step 1: Clone the Orchestrator
-
-```bash
-git clone https://github.com/mesh-intelligence/mage-claude-orchestrator.git
-cd mage-claude-orchestrator
-```
-
-### Step 2: Prepare Your Target Repository
-
-```bash
-# Navigate to your project
-cd /path/to/your/project
-
-# Initialize Go module (if not already done)
-go mod init github.com/your-username/your-project
-
-# Initialize git (if not already done)
-git init
-git add .
-git commit -m "Initial commit"
-
-# Ensure you're on main branch
-git checkout -b main 2>/dev/null || git checkout main
-```
-
-### Step 3: Scaffold Your Project
-
-From the **orchestrator repository**:
-
-```bash
-cd /path/to/mage-claude-orchestrator
-
-# Absolute path
-mage test:scaffold /path/to/your/project
-
-# OR relative path (both work)
-mage test:scaffold ../your-project
-```
-
-The scaffold automatically:
-
-- Copies `orchestrator.go` to `magefiles/orchestrator.go` in your project
-- Detects project structure (module path, main package, source directories)
-- Generates `configuration.yaml` with detected settings
-- Wires `magefiles/go.mod` with orchestrator dependency
-- Copies design constitution to `docs/CONSTITUTION-design.yaml`
-- Creates version template if main package detected
-
-### Step 4: Initialize and Run
-
-In **your target repository**:
-
-```bash
-cd /path/to/your/project
-
-# Initialize beads issue tracker
-mage init
-
-# Configure Claude credentials (see Configuration section below)
-# Edit configuration.yaml and add your Claude API key or session
-
-# Start your first generation
-mage generator:start       # Create generation branch from main
-mage generator:run         # Run measure+stitch cycles
-mage generator:stop        # Merge generation into main
-```
-
-If a run is interrupted, `mage generator:resume` recovers state and continues. To discard a generation, `mage generator:reset` returns to a clean main.
-
-### Files Created by Scaffold
-
-```text
-your-project/
-├── configuration.yaml          # Auto-generated config
-├── docs/
-│   └── CONSTITUTION-design.yaml  # Format rules for specs
-└── magefiles/
-    ├── orchestrator.go         # Mage targets (template from orchestrator repo)
-    ├── version.go.tmpl         # Seed template (if main package detected)
-    ├── go.mod                  # Separate module for build tooling
-    └── go.sum
-```
-
-The `magefiles/` directory keeps build tooling dependencies separate from your project dependencies.
-
 ## Mage Targets
 
 | Target | Description |
@@ -280,7 +280,7 @@ The `magefiles/` directory keeps build tooling dependencies separate from your p
 | clean | Remove build artifacts |
 | credentials | Extract Claude credentials from macOS Keychain |
 | analyze | Check cross-artifact consistency (orphaned PRDs, missing test suites, broken references) |
-| tag | Create documentation release tag (v0.YYYYMMDD.N) and build container image |
+| tag | Create a release tag (v0.YYYYMMDD.N) and build container image |
 | test:unit | Run go test on all packages |
 | test:integration | Run go test in tests/ directory |
 | test:all | Run unit and integration tests |
@@ -307,7 +307,7 @@ The orchestrator ships with Claude Code slash commands for interactive workflows
 
 | Skill | Description |
 |-------|-------------|
-| /bootstrap | Initialize a new project: ask clarifying questions, create epics and issues |
+| /bootstrap | Initialize a new project: ask clarifying questions, write VISION.yaml and ARCHITECTURE.yaml |
 | /make-work | Analyze project state and propose next work based on roadmap priorities |
 | /do-work | Route to /do-work-docs or /do-work-code based on the issue type |
 | /do-work-docs | Documentation workflow: pick a docs issue, write the deliverable per format rules, close the issue |

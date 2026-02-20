@@ -1,10 +1,10 @@
-<\!-- Copyright (c) 2026 Petar Djukic. All rights reserved. SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 Petar Djukic. All rights reserved. SPDX-License-Identifier: MIT -->
 
 # Command: Bootstrap Project
 
-I'm starting a new project and need you to help me create the initial epics and issues to structure the work.
+I'm starting a new project and need you to help me create the initial documentation.
 
-First, read **docs/CONSTITUTION-design.yaml** to understand the documentation format rules and available document types (VISION, ARCHITECTURE, PRD, use case, test suite, etc.).
+First, read **docs/constitutions/design.yaml** to understand the documentation format rules for VISION and ARCHITECTURE documents.
 
 Then ask me questions to understand:
 1. What problem I'm trying to solve
@@ -14,32 +14,21 @@ Then ask me questions to understand:
 5. How those components fit together
 6. Key design decisions and why
 
-Based on my answers, create epics and issues using the bead system:
+Based on my answers, write two documents:
 
-## Epic Structure
-Create a main epic that captures the overall project vision and scope.
+## VISION.yaml
 
-## Child Issues
+Capture the project's purpose, goals, and success criteria following the format rules in docs/constitutions/design.yaml.
 
-Break down the work into specific issues for:
+## ARCHITECTURE.yaml
 
-- **Documentation**: VISION.yaml, ARCHITECTURE.yaml, PRDs
-- **Core Implementation**: Major components and features
-- **Infrastructure**: Build, test, deployment setup
-- **Integration**: Component wiring and data flow
+Capture the major components, their responsibilities, interfaces between them, and key design decisions following the format rules in docs/constitutions/design.yaml.
 
-## Issue Creation
-Follow the detailed process in `.claude/commands/make-work.md` for:
-- Issue format and structure
-- Using `bd create` and dependency management
-- Proper syncing and committing
+Write both files to the `docs/` directory. Do not create any issues, epics, or tasks — documentation only.
 
 ## Validation
-After creating initial documentation, run **`mage analyze`** to check for:
-- Orphaned PRDs (not referenced by use cases)
-- Missing test suites (use cases without test suites)
-- Broken references (invalid touchpoints, missing files)
-- Use cases not in roadmap
+
+After writing the documents, run **`mage analyze`** to check for broken references or missing fields.
 
 Fix any issues before finalizing.
 

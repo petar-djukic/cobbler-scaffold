@@ -7,7 +7,7 @@ Read the following files to understand the project:
 1. **VISION.yaml** - Project goals and boundaries
 2. **ARCHITECTURE.yaml** - System design and components
 3. **road-map.yaml** - Release schedule and use case status
-4. **docs/CONSTITUTION-design.yaml** - Documentation format rules and standards
+4. **docs/constitutions/design.yaml** - Documentation format rules and standards
 5. **docs/specs/product-requirements/README.md** (if exists)
 6. **docs/specs/use-cases/README.md** (if exists)
 

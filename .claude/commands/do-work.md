@@ -41,7 +41,7 @@ Read VISION.yaml and ARCHITECTURE.yaml for context. For PRDs scan existing `docs
    - **Required fields** or sections from the format rule
    - **Scope or content hints** (Problem, Goals, requirements, non-goals, etc.)
 
-2. **Read the format rule** from `docs/CONSTITUTION-design.yaml` (document_types section) and follow its structure
+2. **Read the format rule** from `docs/constitutions/design.yaml` (document_types section) and follow its structure
 
 3. If the doc references or extends existing content (e.g., ARCHITECTURE, another PRD), read the relevant sections so the new doc is consistent
 
