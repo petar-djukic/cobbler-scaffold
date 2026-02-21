@@ -82,6 +82,7 @@ type progressWriter struct {
 	buf     *bytes.Buffer
 	start   time.Time
 	partial []byte
+	turn    int
 }
 
 func newProgressWriter(dst *bytes.Buffer, start time.Time) *progressWriter {
@@ -105,8 +106,8 @@ func (pw *progressWriter) Write(p []byte) (int, error) {
 	return n, nil
 }
 
-// logLine parses a single JSON line and logs tool_use blocks and the
-// final result event.
+// logLine parses a single JSON line and logs assistant turns, tool calls,
+// and the final result event.
 func (pw *progressWriter) logLine(line []byte) {
 	if len(line) == 0 {
 		return
@@ -116,6 +117,7 @@ func (pw *progressWriter) logLine(line []byte) {
 		Message struct {
 			Content []struct {
 				Type  string          `json:"type"`
+				Text  string          `json:"text"`
 				Name  string          `json:"name"`
 				Input json.RawMessage `json:"input"`
 			} `json:"content"`
@@ -131,13 +133,35 @@ func (pw *progressWriter) logLine(line []byte) {
 	elapsed := time.Since(pw.start).Round(time.Second)
 	switch msg.Type {
 	case "assistant":
+		pw.turn++
+		// Count tools in this turn.
+		nTools := 0
 		for _, b := range msg.Message.Content {
 			if b.Type == "tool_use" {
-				logf("[%s] tool: %s %s", elapsed, b.Name, toolSummary(b.Input))
+				nTools++
+			}
+		}
+		// Log a brief text snippet from the first text block.
+		for _, b := range msg.Message.Content {
+			if b.Type == "text" && b.Text != "" {
+				snippet := b.Text
+				if len(snippet) > 120 {
+					snippet = snippet[:120] + "..."
+				}
+				// Replace newlines for single-line logging.
+				snippet = strings.ReplaceAll(snippet, "\n", " ")
+				logf("[%s] turn %d: %s", elapsed, pw.turn, snippet)
+				break
+			}
+		}
+		// Log each tool call.
+		for _, b := range msg.Message.Content {
+			if b.Type == "tool_use" {
+				logf("[%s] turn %d: tool %s %s", elapsed, pw.turn, b.Name, toolSummary(b.Input))
 			}
 		}
 	case "result":
-		logf("[%s] result: tokens(in=%d out=%d)", elapsed,
+		logf("[%s] done: %d turn(s), tokens(in=%d out=%d)", elapsed, pw.turn,
 			msg.Usage.InputTokens, msg.Usage.OutputTokens)
 	}
 }
