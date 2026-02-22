@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"text/template"
@@ -321,6 +322,18 @@ func (o *Orchestrator) doOneTask(task stitchTask, baseBranch, repoRoot string) e
 	}
 	logf("doOneTask: Claude completed for %s in %s", task.id, time.Since(claudeStart).Round(time.Second))
 
+	// Commit Claude's changes in the worktree. Claude does not run git;
+	// the orchestrator manages all git operations externally.
+	if err := commitWorktreeChanges(task); err != nil {
+		logf("doOneTask: worktree commit failed for %s: %v", task.id, err)
+		logf("doOneTask: resetting task %s to ready", task.id)
+		bdUpdateStatus(task.id, "ready")
+		cleanupWorktree(task)
+		gitForceDeleteBranch(task.branchName)
+		o.beadsCommit(fmt.Sprintf("Reset %s after worktree commit failure", task.id))
+		return nil
+	}
+
 	// Capture pre-merge HEAD for diffstat.
 	preMergeRef, _ := gitRevParseHEAD()
 
@@ -476,6 +489,38 @@ func mergeBranch(branchName, baseBranch, repoRoot string) error {
 	}
 
 	logf("mergeBranch: merge successful")
+	return nil
+}
+
+// commitWorktreeChanges stages and commits all changes Claude made in the
+// worktree. Claude does not run git commands; the orchestrator handles git
+// externally. Returns nil if there are no changes to commit.
+func commitWorktreeChanges(task stitchTask) error {
+	logf("commitWorktreeChanges: staging changes in %s", task.worktreeDir)
+
+	addCmd := exec.Command(binGit, "add", "-A")
+	addCmd.Dir = task.worktreeDir
+	if out, err := addCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("git add -A: %w\n%s", err, out)
+	}
+
+	// Check if there are staged changes to commit.
+	diffCmd := exec.Command(binGit, "diff", "--cached", "--quiet")
+	diffCmd.Dir = task.worktreeDir
+	if diffCmd.Run() == nil {
+		logf("commitWorktreeChanges: no changes to commit for %s", task.id)
+		return nil
+	}
+
+	msg := fmt.Sprintf("Task %s: %s", task.id, task.title)
+	logf("commitWorktreeChanges: committing %q", msg)
+	commitCmd := exec.Command(binGit, "commit", "--no-verify", "-m", msg)
+	commitCmd.Dir = task.worktreeDir
+	if out, err := commitCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("git commit: %w\n%s", err, out)
+	}
+
+	logf("commitWorktreeChanges: committed in worktree for %s", task.id)
 	return nil
 }
 

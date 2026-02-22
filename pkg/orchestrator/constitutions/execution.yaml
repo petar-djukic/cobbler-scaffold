@@ -30,8 +30,9 @@ articles:
   - id: E4
     title: Session completion
     rule: |
-      Work is NOT complete until changes are committed locally. Do NOT leave
-      uncommitted changes. All work must be committed before finishing.
+      Work is complete when all files are written and tests pass. Do NOT run
+      any git commands. Git operations (add, commit, status, init) are handled
+      externally by the orchestrator.
 
   - id: E5
     title: Quality gates
@@ -142,24 +143,19 @@ traceability:
     - "Vision: docs/VISION.yaml"
 
 session_completion:
-  offline: true  # No git push during sessions
-  commit_required: true  # Every session must end with a commit
+  git_managed_externally: true  # Do NOT run any git commands
   token_tracking: true  # Log tokens used per issue
 
   workflow:
-    - File issues for remaining work
     - Run quality gates if code changed (tests, linters, builds)
-    - Update issue status and log tokens (cupboard comments add <id> "tokens: N")
-    - Close finished work (cupboard close <id>)
-    - COMMIT CHANGES (git add -A && git commit -m "message")
-    - Verify all changes committed (git status)
-    - Hand off with context for next session
+    - Ensure all files are written and saved
+    - Verify code compiles and tests pass
 
   critical_rules:
-    - Work is NOT complete until changes are committed locally
-    - NEVER leave uncommitted changes - commit everything
-    - After creating or editing any files, commit before ending your turn
-    - We work offline - do not push; local commit required
+    - Do NOT run any git commands (add, commit, status, init, rm .git)
+    - Git is managed externally by the orchestrator
+    - Your job is to write code and verify it works
+    - Do NOT use bd or cupboard commands
 
 technology:
   primary_language: Go
@@ -170,10 +166,4 @@ technology:
   issue_tracker: cupboard (migrating from beads)
 
 git_conventions:
-  tagging: "v[REL].[DATE].[REVISION] (e.g., v0.20260213.0, v1.20260301.0)"
-  commit_stats: |
-    Include full stats in commit message:
-    Stats:
-      Lines of code (Go, production): 520 (+79)
-      Lines of code (Go, tests):      45 (+45)
-      Words (documentation):          21900 (+868)
+  note: Git is managed externally. Do NOT run any git commands.
