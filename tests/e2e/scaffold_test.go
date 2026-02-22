@@ -101,6 +101,25 @@ func TestStats(t *testing.T) {
 	}
 }
 
+// TestScaffold_RejectSelfTarget verifies that scaffold:push and scaffold:pop
+// refuse to operate on the orchestrator repository itself. Both targets should
+// exit non-zero with an error mentioning "refusing to scaffold".
+func TestScaffold_RejectSelfTarget(t *testing.T) {
+	for _, target := range []string{"scaffold:push", "scaffold:pop"} {
+		t.Run(target, func(t *testing.T) {
+			cmd := exec.Command("mage", "-d", ".", target, ".")
+			cmd.Dir = orchRoot
+			out, err := cmd.CombinedOutput()
+			if err == nil {
+				t.Fatalf("%s . should have failed but succeeded:\n%s", target, out)
+			}
+			if !strings.Contains(string(out), "refusing to scaffold") {
+				t.Errorf("expected 'refusing to scaffold' in error output, got:\n%s", out)
+			}
+		})
+	}
+}
+
 // TestScaffold_PushPopRoundTrip creates an empty Go repository, scaffolds the
 // orchestrator into it, verifies all expected files exist and mage targets are
 // available, then removes the scaffold with Uninstall and verifies all

@@ -31,9 +31,8 @@ This repository scaffolds orchestration into target Go repositories.
 
 - `mage scaffold:push <target>` installs the orchestrator (template, constitutions, prompts, config, go.mod wiring)
 - `mage scaffold:pop <target>` removes all scaffolded files from the target
-- Both accept `.` for the current directory
+- Both accept `.` for the current directory, but self-targeting is blocked (push/pop refuse when the target resolves to the orchestrator repo)
 - `configuration.yaml` is auto-created with defaults if missing when any mage target runs
-- Do not run `scaffold:push .` against this repository in production — it replaces the development magefile
 
 ## Documentation
 

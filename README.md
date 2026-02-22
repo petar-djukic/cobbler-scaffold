@@ -98,9 +98,7 @@ mage scaffold:pop /path/to/target-repo
 
 Pop removes `magefiles/orchestrator.go`, `docs/constitutions/`, `docs/prompts/`, and `configuration.yaml`. It also drops the orchestrator replace directive from `magefiles/go.mod`. The target's own code and `magefiles/go.mod` are preserved.
 
-Both targets accept `.` for the current directory.
-
-**Self-scaffolding warning**: running `mage scaffold:push .` from this repository replaces `magefiles/magefile.go` (the development build file with Push and Podman targets) with the template `magefiles/orchestrator.go`. This breaks the ability to scaffold other repos. Use a separate target repository for scaffolding; if you do scaffold into self for testing, restore `magefiles/magefile.go` from git afterward.
+Both targets accept `.` for the current directory, but **self-targeting is blocked**: running `scaffold:push .` or `scaffold:pop .` from this repository exits with an error. Push would replace the development magefile with the template; pop would delete source constitutions, prompts, and configuration. Use a separate target repository.
 
 ## Reading the Specifications
 
