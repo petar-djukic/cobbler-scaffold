@@ -23,6 +23,21 @@ const (
 	binSecurity = "security"
 )
 
+// Directory and file path constants.
+const (
+	dirMagefiles = "magefiles"
+	dirBeads     = ".beads"
+	dirCobbler   = ".cobbler"
+)
+
+// orDefault returns val if non-empty, otherwise fallback.
+func orDefault(val, fallback string) string {
+	if val == "" {
+		return fallback
+	}
+	return val
+}
+
 // defaultClaudeArgs are the CLI arguments for automated Claude execution.
 // Used by Config.applyDefaults when ClaudeArgs is empty.
 var defaultClaudeArgs = []string{
@@ -75,7 +90,7 @@ func gitBranchExists(name string) bool {
 }
 
 func gitListBranches(pattern string) []string {
-	out, _ := exec.Command(binGit, "branch", "--list", pattern).Output()
+	out, _ := exec.Command(binGit, "branch", "--list", pattern).Output() // empty output on error is acceptable
 	return parseBranchList(string(out))
 }
 
@@ -102,7 +117,7 @@ func gitRenameTag(oldName, newName string) error {
 }
 
 func gitListTags(pattern string) []string {
-	out, _ := exec.Command(binGit, "tag", "--list", pattern).Output()
+	out, _ := exec.Command(binGit, "tag", "--list", pattern).Output() // empty output on error is acceptable
 	return parseBranchList(string(out))
 }
 
@@ -187,7 +202,7 @@ func gitCountCommits(fromRef, toRef string) (int, error) {
 // the main worktree). Uses git worktree list --porcelain and counts
 // "worktree " lines beyond the first (main).
 func gitWorktreeCount() int {
-	out, _ := exec.Command(binGit, "worktree", "list", "--porcelain").Output()
+	out, _ := exec.Command(binGit, "worktree", "list", "--porcelain").Output() // zero count on error is acceptable
 	count := 0
 	for line := range strings.SplitSeq(string(out), "\n") {
 		if strings.HasPrefix(line, "worktree ") {
@@ -226,7 +241,7 @@ func (o *Orchestrator) bdAdminReset() error {
 	}
 	// Stop the daemon before destroying the database; otherwise the
 	// stale daemon blocks subsequent bd commands.
-	_ = exec.Command(binBd, "daemon", "stop", ".").Run()
+	_ = exec.Command(binBd, "daemon", "stop", ".").Run() // best-effort; daemon may not be running
 	if err := exec.Command(binBd, "admin", "reset", "--force").Run(); err != nil {
 		// Fallback: remove the directory directly. This handles legacy
 		// databases or bd version mismatches where the CLI command fails.

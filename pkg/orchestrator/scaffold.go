@@ -30,7 +30,7 @@ const orchestratorModule = "github.com/mesh-intelligence/cobbler-scaffold"
 func (o *Orchestrator) Scaffold(targetDir, orchestratorRoot string) error {
 	logf("scaffold: targetDir=%s orchestratorRoot=%s", targetDir, orchestratorRoot)
 
-	mageDir := filepath.Join(targetDir, "magefiles")
+	mageDir := filepath.Join(targetDir, dirMagefiles)
 
 	// 1. Remove existing .go files in magefiles/ (the orchestrator
 	//    template replaces the target's build system) and copy ours.
@@ -160,7 +160,7 @@ func (o *Orchestrator) Uninstall(targetDir string) error {
 	logf("uninstall: removing orchestrator files from %s", targetDir)
 
 	// Remove magefiles/orchestrator.go.
-	orchGo := filepath.Join(targetDir, "magefiles", "orchestrator.go")
+	orchGo := filepath.Join(targetDir, dirMagefiles, "orchestrator.go")
 	if err := removeIfExists(orchGo); err != nil {
 		return fmt.Errorf("removing orchestrator.go: %w", err)
 	}
@@ -185,7 +185,7 @@ func (o *Orchestrator) Uninstall(targetDir string) error {
 	}
 
 	// Remove the orchestrator replace directive from magefiles/go.mod.
-	mageDir := filepath.Join(targetDir, "magefiles")
+	mageDir := filepath.Join(targetDir, dirMagefiles)
 	goMod := filepath.Join(mageDir, "go.mod")
 	if _, err := os.Stat(goMod); err == nil {
 		dropCmd := exec.Command(binGo, "mod", "edit",
@@ -334,7 +334,7 @@ func scaffoldSeedTemplate(targetDir, modulePath, mainPkg, mageDir string) (destP
 	}
 
 	destPath = filepath.Join(relDir, "version.go")
-	tmplPath = filepath.Join("magefiles", "version.go.tmpl")
+	tmplPath = filepath.Join(dirMagefiles, "version.go.tmpl")
 
 	tmplContent := `package main
 
@@ -591,7 +591,7 @@ func (o *Orchestrator) PrepareTestRepo(module, version, orchestratorRoot string)
 	// Remove development artifacts from the copied source. Module
 	// sources may include .beads/, .cobbler/, or other local state
 	// directories that interfere with a clean test environment.
-	for _, artifact := range []string{".beads", ".cobbler"} {
+	for _, artifact := range []string{dirBeads, dirCobbler} {
 		p := filepath.Join(repoDir, artifact)
 		if _, err := os.Stat(p); err == nil {
 			logf("prepareTestRepo: removing artifact %s", artifact)
@@ -631,7 +631,7 @@ func (o *Orchestrator) PrepareTestRepo(module, version, orchestratorRoot string)
 
 	// Override with a local replace so the test repo compiles against
 	// the current orchestrator source, not a published release.
-	mageDir := filepath.Join(repoDir, "magefiles")
+	mageDir := filepath.Join(repoDir, dirMagefiles)
 	logf("prepareTestRepo: overriding with local replace -> %s", orchestratorRoot)
 	replaceCmd := exec.Command(binGo, "mod", "edit",
 		"-replace", orchestratorModule+"="+orchestratorRoot)

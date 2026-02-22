@@ -435,23 +435,13 @@ func createWorktree(task stitchTask) error {
 }
 
 func (o *Orchestrator) buildStitchPrompt(task stitchTask) string {
-	promptYAML := o.cfg.Cobbler.StitchPrompt
-	if promptYAML == "" {
-		promptYAML = defaultStitchPrompt
-	}
-	def, err := parsePromptDef(promptYAML)
+	def, err := parsePromptDef(orDefault(o.cfg.Cobbler.StitchPrompt, defaultStitchPrompt))
 	if err != nil {
 		panic(fmt.Sprintf("stitch prompt YAML: %v", err))
 	}
 
-	executionConst := o.cfg.Cobbler.ExecutionConstitution
-	if executionConst == "" {
-		executionConst = executionConstitution
-	}
-	goStyleConst := o.cfg.Cobbler.GoStyleConstitution
-	if goStyleConst == "" {
-		goStyleConst = goStyleConstitution
-	}
+	executionConst := orDefault(o.cfg.Cobbler.ExecutionConstitution, executionConstitution)
+	goStyleConst := orDefault(o.cfg.Cobbler.GoStyleConstitution, goStyleConstitution)
 
 	// Build project context from the worktree directory so source code
 	// reflects the latest state after prior stitches have been merged.

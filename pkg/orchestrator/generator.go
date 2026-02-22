@@ -62,7 +62,7 @@ func (o *Orchestrator) GeneratorResume() error {
 	wtBase := worktreeBasePath()
 
 	logf("resume: pruning worktrees")
-	_ = gitWorktreePrune()
+	_ = gitWorktreePrune() // best-effort cleanup of stale worktree metadata
 
 	if _, err := os.Stat(wtBase); err == nil {
 		logf("resume: removing worktree directory %s", wtBase)
@@ -194,7 +194,7 @@ func (o *Orchestrator) GeneratorStart() error {
 	if err := gitResetSoft(branchSHA); err != nil {
 		return fmt.Errorf("squashing start commits: %w", err)
 	}
-	_ = gitStageAll()
+	_ = gitStageAll() // best-effort; commit below will catch nothing-to-commit
 	msg := fmt.Sprintf("Start generation: %s\n\nDelete Go files, reinitialize module, initialize beads.\nTagged previous state as %s.", genName, genName)
 	if err := gitCommit(msg); err != nil {
 		return fmt.Errorf("committing clean state: %w", err)
@@ -269,9 +269,9 @@ func (o *Orchestrator) GeneratorStop() error {
 // merges the generation branch, tags the result, and deletes the branch.
 func (o *Orchestrator) mergeGenerationIntoMain(branch string) error {
 	logf("generator:stop: resetting Go sources on main")
-	_ = o.resetGoSources(branch)
+	_ = o.resetGoSources(branch) // best-effort; merge will overwrite these files
 
-	_ = gitStageAll()
+	_ = gitStageAll() // best-effort; commit below handles empty index
 	prepareMsg := fmt.Sprintf("Prepare main for generation merge: delete Go code\n\nDocumentation preserved for merge. Code will be replaced by %s.", branch)
 	if err := gitCommitAllowEmpty(prepareMsg); err != nil {
 		return fmt.Errorf("committing prepare step: %w", err)
@@ -308,8 +308,8 @@ func (o *Orchestrator) mergeGenerationIntoMain(branch string) error {
 			if err := writeVersionConst(o.cfg.Project.VersionFile, codeTag); err != nil {
 				logf("generator:stop: version file warning: %v", err)
 			} else {
-				_ = gitStageAll()
-				_ = gitCommit(fmt.Sprintf("Set version to %s", codeTag))
+				_ = gitStageAll()                                        // best-effort; commit below handles empty index
+				_ = gitCommit(fmt.Sprintf("Set version to %s", codeTag)) // best-effort; version update is non-critical
 			}
 		}
 
@@ -321,7 +321,7 @@ func (o *Orchestrator) mergeGenerationIntoMain(branch string) error {
 	}
 
 	logf("generator:stop: deleting branch")
-	_ = gitDeleteBranch(branch)
+	_ = gitDeleteBranch(branch) // best-effort; branch may already be deleted
 	return nil
 }
 
@@ -424,11 +424,11 @@ func (o *Orchestrator) cleanupUnmergedTags() {
 			abTag := name + "-abandoned"
 			if t != abTag {
 				logf("generator:reset: marking abandoned: %s -> %s", t, abTag)
-				_ = gitRenameTag(t, abTag)
+				_ = gitRenameTag(t, abTag) // best-effort; tag may not exist
 			}
 		} else {
 			logf("generator:reset: removing tag %s", t)
-			_ = gitDeleteTag(t)
+			_ = gitDeleteTag(t) // best-effort cleanup
 		}
 	}
 }
@@ -475,10 +475,10 @@ func saveAndSwitchBranch(target string) error {
 	if err := gitCommit(msg); err != nil {
 		// Commit failed (e.g. nothing to commit). Unstage and fall
 		// back to stash if the tree is still dirty.
-		_ = gitUnstageAll()
+		_ = gitUnstageAll() // best-effort; unstage before stash fallback
 		if gitHasChanges() {
 			logf("saveAndSwitchBranch: commit failed, stashing dirty tree")
-			_ = gitStash(msg)
+			_ = gitStash(msg) // best-effort; switching branch is the priority
 		}
 	}
 
@@ -610,18 +610,18 @@ func (o *Orchestrator) GeneratorReset() error {
 		}
 	}
 
-	_ = gitWorktreePrune()
+	_ = gitWorktreePrune() // best-effort cleanup of stale worktree metadata
 
 	if _, err := os.Stat(wtBase); err == nil {
 		logf("generator:reset: removing worktree directory %s", wtBase)
-		os.RemoveAll(wtBase)
+		os.RemoveAll(wtBase) // nolint: best-effort directory cleanup
 	}
 
 	if len(genBranches) > 0 {
 		logf("generator:reset: removing %d generation branch(es)", len(genBranches))
 		for _, gb := range genBranches {
 			logf("generator:reset: deleting branch %s", gb)
-			_ = gitForceDeleteBranch(gb)
+			_ = gitForceDeleteBranch(gb) // best-effort; branch may be already removed
 		}
 	}
 
@@ -630,9 +630,9 @@ func (o *Orchestrator) GeneratorReset() error {
 	logf("generator:reset: removing Go source directories")
 	for _, dir := range o.cfg.Project.GoSourceDirs {
 		logf("generator:reset: removing %s", dir)
-		os.RemoveAll(dir)
+		os.RemoveAll(dir) // nolint: best-effort directory cleanup
 	}
-	os.RemoveAll(o.cfg.Project.BinaryDir + "/")
+	os.RemoveAll(o.cfg.Project.BinaryDir + "/") // nolint: best-effort directory cleanup
 	o.cleanupDirs()
 
 	logf("generator:reset: seeding Go sources and reinitializing go.mod")
@@ -644,8 +644,8 @@ func (o *Orchestrator) GeneratorReset() error {
 	}
 
 	logf("generator:reset: committing clean state")
-	_ = gitStageAll()
-	_ = gitCommitAllowEmpty("Generator reset: return to clean state")
+	_ = gitStageAll()                                                  // best-effort; commit below handles empty index
+	_ = gitCommitAllowEmpty("Generator reset: return to clean state") // best-effort; reset is complete regardless
 
 	logf("generator:reset: done, only main branch remains")
 	return nil

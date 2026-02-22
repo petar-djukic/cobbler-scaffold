@@ -76,21 +76,21 @@ func (o *Orchestrator) RunMeasure() error {
 		return fmt.Errorf("switching to branch: %w", err)
 	}
 
-	_ = os.MkdirAll(o.cfg.Cobbler.Dir, 0o755)
+	_ = os.MkdirAll(o.cfg.Cobbler.Dir, 0o755) // best-effort; dir may already exist
 
 	// Clean up old measure temp files.
-	matches, _ := filepath.Glob(o.cfg.Cobbler.Dir + "measure-*.yaml")
+	matches, _ := filepath.Glob(o.cfg.Cobbler.Dir + "measure-*.yaml") // empty list on error is acceptable
 	if len(matches) > 0 {
 		logf("cleaning %d old measure temp file(s)", len(matches))
 	}
 	for _, f := range matches {
-		os.Remove(f)
+		os.Remove(f) // nolint: best-effort temp file cleanup
 	}
 
 	// Get initial state.
 	existingIssues := getExistingIssues()
 	issueCount := countJSONArray(existingIssues)
-	commitSHA, _ := gitRevParseHEAD()
+	commitSHA, _ := gitRevParseHEAD() // empty string on error is acceptable for logging
 
 	logf("found %d existing issue(s), maxMeasureIssues=%d, commit=%s",
 		issueCount, o.cfg.Cobbler.MaxMeasureIssues, commitSHA)
@@ -192,7 +192,7 @@ func (o *Orchestrator) RunMeasure() error {
 		if len(createdIDs) == 0 {
 			logf("iteration %d created no issues, keeping %s for inspection", i+1, outputFile)
 		} else {
-			os.Remove(outputFile)
+			os.Remove(outputFile) // nolint: best-effort temp file cleanup
 		}
 	}
 
@@ -264,7 +264,7 @@ func (o *Orchestrator) closeMeasureTrackingIssue(trackingID string, claudeStart,
 		status = fmt.Sprintf("failed: %v", claudeErr)
 	}
 	summary := fmt.Sprintf("issues_created: %d, status: %s", issuesCreated, status)
-	_ = bdCommentAdd(trackingID, summary)
+	_ = bdCommentAdd(trackingID, summary) // best-effort; issue is about to be closed
 
 	if err := bdClose(trackingID); err != nil {
 		logf("closeMeasureTrackingIssue: bd close warning: %v", err)
@@ -340,20 +340,12 @@ func countJSONArray(jsonStr string) int {
 }
 
 func (o *Orchestrator) buildMeasurePrompt(userInput, existingIssues string, limit int, outputPath string) string {
-	promptYAML := o.cfg.Cobbler.MeasurePrompt
-	if promptYAML == "" {
-		promptYAML = defaultMeasurePrompt
-	}
-
-	def, err := parsePromptDef(promptYAML)
+	def, err := parsePromptDef(orDefault(o.cfg.Cobbler.MeasurePrompt, defaultMeasurePrompt))
 	if err != nil {
 		panic(fmt.Sprintf("measure prompt YAML: %v", err))
 	}
 
-	planningConst := o.cfg.Cobbler.PlanningConstitution
-	if planningConst == "" {
-		planningConst = planningConstitution
-	}
+	planningConst := orDefault(o.cfg.Cobbler.PlanningConstitution, planningConstitution)
 
 	projectCtx, ctxErr := buildProjectContext(existingIssues, o.cfg.Project.GoSourceDirs)
 	if ctxErr != nil {

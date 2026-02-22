@@ -52,7 +52,7 @@ func (o *Orchestrator) Tag() error {
 		if err := writeVersionConst(o.cfg.Project.VersionFile, tag); err != nil {
 			logf("tag: version file warning: %v", err)
 		} else {
-			_ = gitStageAll()
+			_ = gitStageAll() // best-effort; commit below handles empty index
 			if err := gitCommit(fmt.Sprintf("Set version to %s", tag)); err != nil {
 				logf("tag: version commit warning: %v", err)
 			}

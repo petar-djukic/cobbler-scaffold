@@ -250,13 +250,13 @@ func (c *Config) applyDefaults() {
 		c.Generation.Prefix = "generation-"
 	}
 	if c.Cobbler.BeadsDir == "" {
-		c.Cobbler.BeadsDir = ".beads/"
+		c.Cobbler.BeadsDir = dirBeads + "/"
 	}
 	if c.Cobbler.Dir == "" {
-		c.Cobbler.Dir = ".cobbler/"
+		c.Cobbler.Dir = dirCobbler + "/"
 	}
 	if c.Project.MagefilesDir == "" {
-		c.Project.MagefilesDir = "magefiles"
+		c.Project.MagefilesDir = dirMagefiles
 	}
 	if c.Claude.SecretsDir == "" {
 		c.Claude.SecretsDir = ".secrets"

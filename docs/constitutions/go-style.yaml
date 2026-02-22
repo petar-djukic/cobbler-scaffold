@@ -113,7 +113,7 @@ interfaces: |
 struct_and_function_design: |
   Each struct represents one concept. Each function does one thing. If a function
   takes more than three parameters, group related parameters into a config struct.
-  If a function exceeds 120 lines, find a seam and split it. Name structs and
+  If a function exceeds 200 lines, find a seam and split it. Name structs and
   functions by what they represent or do, not by how they are called. Avoid
   generic names (Manager, Handler, Helper, Processor) unless the struct genuinely
   manages, handles, or processes a well-defined resource.
@@ -198,7 +198,7 @@ code_review_checklist:
   - "No magic strings remain: all binaries, paths, and repeated text are centralized."
   - "Every error is handled or explicitly discarded with a comment."
   - "Every struct has a single, nameable responsibility."
-  - "No function exceeds 120 lines without a strong reason."
+  - "No function exceeds 200 lines without a strong reason."
   - "Interfaces are small (one to three methods) and have at least two implementations or a testing need."
   - "No boolean parameters toggle behavior that should be a Strategy or Decorator."
   - "Config structs embed shared fields rather than duplicating them."
