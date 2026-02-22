@@ -24,6 +24,9 @@ type Generator mg.Namespace
 // Beads groups issue-tracker lifecycle targets.
 type Beads mg.Namespace
 
+// Podman groups container image and container lifecycle targets.
+type Podman mg.Namespace
+
 // Test groups the testing targets.
 type Test mg.Namespace
 
@@ -140,3 +143,11 @@ func (Beads) Init() error { return newOrch().BeadsInit() }
 
 // Reset clears beads issue history.
 func (Beads) Reset() error { return newOrch().BeadsReset() }
+
+// --- Podman targets ---
+
+// Build builds the container image from the embedded Dockerfile with versioned and latest tags.
+func (Podman) Build() error { return newOrch().BuildImage() }
+
+// Clean removes all podman containers created from the configured image.
+func (Podman) Clean() error { return newOrch().PodmanClean() }

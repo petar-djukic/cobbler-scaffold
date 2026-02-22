@@ -49,6 +49,65 @@ func (o *Orchestrator) BuildImage() error {
 	return nil
 }
 
+// PodmanClean removes all podman containers (running or stopped) that
+// were created from the configured PodmanImage. It resolves the
+// configured image name to its image ID so that containers created
+// from any alias of the same image are caught (e.g. claude-cli,
+// cobbler-scaffold, and mage-claude-orchestrator may all share the
+// same image ID).
+//
+// Exposed as a mage target (e.g., mage podman:clean).
+func (o *Orchestrator) PodmanClean() error {
+	image := o.cfg.Podman.Image
+	if image == "" {
+		return fmt.Errorf("podman.image not set in configuration")
+	}
+
+	// Resolve to image ID so we catch containers from any name alias.
+	imageID, err := podmanImageID(image)
+	if err != nil {
+		return fmt.Errorf("resolving image ID for %s: %w", image, err)
+	}
+	if imageID == "" {
+		logf("podmanClean: image %s not found locally, nothing to clean", image)
+		return nil
+	}
+
+	// List all containers (running + stopped) created from this image ID.
+	out, err := exec.Command(binPodman, "ps", "-a",
+		"--filter", "ancestor="+imageID,
+		"--format", "{{.ID}} {{.Status}}",
+	).Output()
+	if err != nil {
+		return fmt.Errorf("listing containers for %s (%s): %w", image, imageID, err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	if len(lines) == 0 || lines[0] == "" {
+		logf("podmanClean: no containers found for image %s (%s)", image, imageID[:12])
+		return nil
+	}
+
+	var ids []string
+	for _, line := range lines {
+		if fields := strings.Fields(line); len(fields) > 0 && fields[0] != "" {
+			ids = append(ids, fields[0])
+		}
+	}
+
+	logf("podmanClean: removing %d container(s) for image %s (%s)", len(ids), image, imageID[:12])
+	args := append([]string{"rm", "-f"}, ids...)
+	cmd := exec.Command(binPodman, args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("removing containers: %w", err)
+	}
+
+	logf("podmanClean: done")
+	return nil
+}
+
 // ensureImage checks whether the configured PodmanImage exists locally.
 // If missing, it builds it from the embedded Dockerfile.
 func (o *Orchestrator) ensureImage() error {
@@ -86,6 +145,22 @@ func buildFromEmbeddedDockerfile(tags ...string) error {
 // in the local podman image store.
 func podmanImageExists(image string) bool {
 	return exec.Command(binPodman, "image", "exists", image).Run() == nil
+}
+
+// podmanImageID resolves an image name/tag to its full image ID.
+// Returns "" if the image does not exist locally.
+func podmanImageID(image string) (string, error) {
+	out, err := exec.Command(binPodman, "image", "inspect", image,
+		"--format", "{{.Id}}",
+	).Output()
+	if err != nil {
+		// image not found is not an error for our purposes
+		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 125 {
+			return "", nil
+		}
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
 }
 
 // imageBaseName extracts the image name without a tag from a full image
