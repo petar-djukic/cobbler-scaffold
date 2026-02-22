@@ -72,6 +72,36 @@ generator:start  →  cobbler:measure  →  cobbler:stitch  →  (repeat)  →  
 
 **Constitutions** are YAML documents that govern Claude's behavior per phase. The design constitution (`docs/constitutions/design.yaml`) rules specification authoring. The planning constitution controls task sizing, issue structure, and dependency ordering during measure. The execution constitution enforces traceability, Go coding standards, and session-completion discipline during stitch. All three are scaffolded into consuming projects and referenced from `configuration.yaml`.
 
+## Scaffolding a Target Repository
+
+This repository provides the orchestration tooling. To set up orchestration in another Go project, use the scaffold targets from this repo's magefiles.
+
+**Install** the orchestrator into a target repository:
+
+```bash
+mage scaffold:push /path/to/target-repo
+```
+
+Push copies `orchestrator.go` into the target's `magefiles/orchestrator.go`, writes constitutions to `docs/constitutions/`, prompts to `docs/prompts/`, generates `configuration.yaml` with auto-detected project settings, and wires `magefiles/go.mod` to depend on the published cobbler-scaffold module. The target repository gains all mage targets (build, test, cobbler, generator, scaffold:pop) without any manual setup.
+
+Push also accepts a Go module reference in `module@version` format. The orchestrator downloads the module, copies it to a temp directory, scaffolds it, and prints the path:
+
+```bash
+mage scaffold:push github.com/org/repo@v0.20260222.1
+```
+
+**Remove** the orchestrator from a target repository:
+
+```bash
+mage scaffold:pop /path/to/target-repo
+```
+
+Pop removes `magefiles/orchestrator.go`, `docs/constitutions/`, `docs/prompts/`, and `configuration.yaml`. It also drops the orchestrator replace directive from `magefiles/go.mod`. The target's own code and `magefiles/go.mod` are preserved.
+
+Both targets accept `.` for the current directory.
+
+**Self-scaffolding warning**: running `mage scaffold:push .` from this repository replaces `magefiles/magefile.go` (the development build file with Push and Podman targets) with the template `magefiles/orchestrator.go`. This breaks the ability to scaffold other repos. Use a separate target repository for scaffolding; if you do scaffold into self for testing, restore `magefiles/magefile.go` from git afterward.
+
 ## Reading the Specifications
 
 The specification tree is the source of truth for requirements and design decisions. Code comments and commit messages reference these documents by ID (e.g., `prd001-orchestrator-core R6`).
@@ -96,11 +126,14 @@ Use cases are stable by numeric ID. The release they belong to is recorded in [d
 
 ```text
 pkg/orchestrator/      — library implementation; exported types are Orchestrator, Config, New, LoadConfig
-orchestrator.go        — Mage target bindings; copied verbatim into consuming projects as magefiles/orchestrator.go
+orchestrator.go        — Mage target template; scaffold:push copies this to target repos as magefiles/orchestrator.go
+magefiles/magefile.go  — build targets for this repository (includes scaffold:push, podman targets)
+magefiles/testing.go   — integration test targets (cobbler, generator, resume suites)
 docs/                  — VISION, ARCHITECTURE, PRDs, use cases, test suites, constitutions
-docs/constitutions/    — design/planning/execution constitutions (scaffolded into consuming projects)
-tests/e2e/             — end-to-end tests against a real target repository (github.com/petar-djukic/mcp-calc)
-magefiles/             — build tooling for this repository; separate Go module
+docs/constitutions/    — design/planning/execution/go-style constitutions (scaffolded into consuming projects)
+docs/prompts/          — measure and stitch prompt templates (scaffolded into consuming projects)
+tests/e2e/             — end-to-end tests against a scaffolded target repository
+configuration.yaml     — orchestrator config (auto-created with defaults if missing)
 .claude/               — Claude Code skills and project rules
 ```
 
@@ -117,15 +150,18 @@ magefiles/             — build tooling for this repository; separate Go module
 ## Build and Test
 
 ```bash
-# Build the library and run unit tests
+# Unit tests (pkg/orchestrator)
 mage test:unit
 
-# Scaffold a target repository and run non-Claude E2E tests
+# E2E tests — scaffolds a target repo and runs non-Claude tests
 mage test:integration
 
 # Full E2E suite including Claude-gated tests (requires podman image and credentials)
-mage credentials   # extract Claude credentials from macOS Keychain
-mage test:generatorE2E # sets E2E_CLAUDE=1 automatically
+mage credentials        # extract Claude credentials from macOS Keychain
+mage test:generatorE2E  # sets E2E_CLAUDE=1 automatically
+
+# Scaffold a target repo for manual testing
+mage scaffold:push /path/to/target
 
 # Build, lint, install
 mage build
@@ -133,7 +169,7 @@ mage lint
 mage install
 ```
 
-E2E tests run against `github.com/petar-djukic/mcp-calc`. The `TestMain` function downloads and scaffolds the repository once; individual tests copy the snapshot. Claude-gated tests skip unless `E2E_CLAUDE=1` is set.
+E2E tests download `github.com/petar-djukic/go-unix-utils`, scaffold it once in `TestMain`, and copy the snapshot per test. The scaffold round-trip test (`TestScaffold_PushPopRoundTrip`) creates an empty repository, scaffolds it, verifies all files, pops the scaffold, and verifies removal. Claude-gated tests skip unless `E2E_CLAUDE=1` is set.
 
 ## License
 

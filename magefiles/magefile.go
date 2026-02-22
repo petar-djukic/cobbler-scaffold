@@ -1,12 +1,16 @@
 // Copyright (c) 2026 Petar Djukic. All rights reserved.
 // SPDX-License-Identifier: MIT
 
+// Package main provides the mage build targets for the orchestrator repository.
+// This file mirrors orchestrator.go (the template copied to consuming repos)
+// but is specific to building and testing the orchestrator library itself.
 package main
 
 import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/magefile/mage/mg"
@@ -24,6 +28,9 @@ type Scaffold mg.Namespace
 
 // Beads groups issue-tracker lifecycle targets.
 type Beads mg.Namespace
+
+// Podman groups container image and container lifecycle targets.
+type Podman mg.Namespace
 
 // Test groups the testing targets.
 type Test mg.Namespace
@@ -93,12 +100,38 @@ func Tag() error { return newOrch().Tag() }
 
 // --- Scaffold targets ---
 
+// Push scaffolds the orchestrator into a target Go repository. The argument
+// is either a local directory path or a Go module reference in module@version
+// format (e.g., github.com/org/repo@v0.20260214.1). When a module@version is
+// given, the source is fetched via go mod download, copied to a temp directory,
+// git-initialized, and scaffolded. The temp directory path is printed to stdout.
+func (Scaffold) Push(target string) error {
+	orchRoot, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("getting orchestrator root: %w", err)
+	}
+
+	// If target contains @, treat as module@version.
+	if parts := strings.SplitN(target, "@", 2); len(parts) == 2 && parts[1] != "" {
+		module, version := parts[0], parts[1]
+		logf("scaffold:push: using go mod download for %s@%s", module, version)
+		repoDir, err := newOrch().PrepareTestRepo(module, version, orchRoot)
+		if err != nil {
+			return err
+		}
+		fmt.Println(repoDir)
+		return nil
+	}
+
+	return newOrch().Scaffold(target, orchRoot)
+}
+
 // Pop removes orchestrator-managed files from the target repository:
 // magefiles/orchestrator.go, docs/constitutions/, docs/prompts/, and
 // configuration.yaml. Pass "." for the current directory.
 func (Scaffold) Pop(target string) error { return newOrch().Uninstall(target) }
 
-// --- Test targets ---
+// --- Test targets (standard) ---
 
 // Unit runs go test on all packages.
 func (Test) Unit() error { return newOrch().TestUnit() }
@@ -150,3 +183,11 @@ func (Beads) Init() error { return newOrch().BeadsInit() }
 
 // Reset clears beads issue history.
 func (Beads) Reset() error { return newOrch().BeadsReset() }
+
+// --- Podman targets ---
+
+// Build builds the container image from the embedded Dockerfile with versioned and latest tags.
+func (Podman) Build() error { return newOrch().BuildImage() }
+
+// Clean removes all podman containers created from the configured image.
+func (Podman) Clean() error { return newOrch().PodmanClean() }

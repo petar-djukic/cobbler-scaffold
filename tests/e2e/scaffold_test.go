@@ -5,9 +5,12 @@ package e2e_test
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator"
 )
 
 // TestScaffold_ConstitutionFiles verifies that all four constitution files
@@ -95,6 +98,98 @@ func TestStats(t *testing.T) {
 	}
 	if !strings.Contains(out, "go_loc") {
 		t.Errorf("expected 'go_loc' in mage stats output, got:\n%s", out)
+	}
+}
+
+// TestScaffold_PushPopRoundTrip creates an empty Go repository, scaffolds the
+// orchestrator into it, verifies all expected files exist and mage targets are
+// available, then removes the scaffold with Uninstall and verifies all
+// orchestrator files are gone. This exercises the full push/pop lifecycle
+// without depending on an external module download.
+func TestScaffold_PushPopRoundTrip(t *testing.T) {
+	// Load config from the orchestrator repo root.
+	cfg, err := orchestrator.LoadConfig(filepath.Join(orchRoot, "configuration.yaml"))
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	orch := orchestrator.New(cfg)
+
+	// Create an empty Go repository in a temp directory.
+	dir := t.TempDir()
+	for _, args := range [][]string{
+		{"go", "mod", "init", "example.com/roundtrip-test"},
+		{"git", "init"},
+		{"git", "config", "user.email", "test@test.local"},
+		{"git", "config", "user.name", "Test"},
+		{"git", "config", "commit.gpgsign", "false"},
+	} {
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("setup %v: %v\n%s", args, err, out)
+		}
+	}
+
+	// Create a minimal magefiles directory so Scaffold has somewhere to write.
+	if err := os.MkdirAll(filepath.Join(dir, "magefiles"), 0o755); err != nil {
+		t.Fatalf("mkdir magefiles: %v", err)
+	}
+
+	// --- Push: scaffold the orchestrator into the empty repo ---
+	if err := orch.Scaffold(dir, orchRoot); err != nil {
+		t.Fatalf("Scaffold: %v", err)
+	}
+
+	// Verify all expected files exist after push.
+	pushExpected := []string{
+		filepath.Join("magefiles", "orchestrator.go"),
+		"configuration.yaml",
+		filepath.Join("docs", "constitutions", "design.yaml"),
+		filepath.Join("docs", "constitutions", "planning.yaml"),
+		filepath.Join("docs", "constitutions", "execution.yaml"),
+		filepath.Join("docs", "constitutions", "go-style.yaml"),
+		filepath.Join("docs", "prompts", "measure.yaml"),
+		filepath.Join("docs", "prompts", "stitch.yaml"),
+		filepath.Join("magefiles", "go.mod"),
+	}
+	for _, rel := range pushExpected {
+		if !fileExists(dir, rel) {
+			t.Errorf("after push: expected %s to exist", rel)
+		}
+	}
+
+	// Verify mage -l works in the scaffolded repo.
+	mageCmd := exec.Command("mage", "-d", ".", "-l")
+	mageCmd.Dir = dir
+	mageOut, err := mageCmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("mage -l after push: %v\n%s", err, mageOut)
+	}
+	if !strings.Contains(string(mageOut), "scaffold:pop") {
+		t.Errorf("expected scaffold:pop in mage -l output, got:\n%s", mageOut)
+	}
+
+	// --- Pop: remove the scaffold ---
+	if err := orch.Uninstall(dir); err != nil {
+		t.Fatalf("Uninstall: %v", err)
+	}
+
+	// Verify scaffolded files are removed after pop.
+	popRemoved := []string{
+		filepath.Join("magefiles", "orchestrator.go"),
+		"configuration.yaml",
+		filepath.Join("docs", "constitutions"),
+		filepath.Join("docs", "prompts"),
+	}
+	for _, rel := range popRemoved {
+		if fileExists(dir, rel) {
+			t.Errorf("after pop: expected %s to be removed", rel)
+		}
+	}
+
+	// Verify magefiles/go.mod is preserved (pop does not delete it).
+	if !fileExists(dir, filepath.Join("magefiles", "go.mod")) {
+		t.Error("after pop: expected magefiles/go.mod to be preserved")
 	}
 }
 

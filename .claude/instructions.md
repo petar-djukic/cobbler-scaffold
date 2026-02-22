@@ -25,6 +25,16 @@ When implementing code, follow [rules/code-prd-architecture-linking.md](rules/co
 - Include PRD references in commit messages
 - Add package-level comments listing implemented PRDs
 
+## Scaffolding
+
+This repository scaffolds orchestration into target Go repositories.
+
+- `mage scaffold:push <target>` installs the orchestrator (template, constitutions, prompts, config, go.mod wiring)
+- `mage scaffold:pop <target>` removes all scaffolded files from the target
+- Both accept `.` for the current directory
+- `configuration.yaml` is auto-created with defaults if missing when any mage target runs
+- Do not run `scaffold:push .` against this repository in production — it replaces the development magefile
+
 ## Documentation
 
 When writing documentation, follow [rules/documentation-standards.md](rules/documentation-standards.md) for style, formatting, and content quality.
