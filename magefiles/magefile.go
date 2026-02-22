@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -123,13 +124,40 @@ func (Scaffold) Push(target string) error {
 		return nil
 	}
 
+	if err := rejectSelfTarget(target, orchRoot); err != nil {
+		return err
+	}
 	return newOrch().Scaffold(target, orchRoot)
 }
 
 // Pop removes orchestrator-managed files from the target repository:
 // magefiles/orchestrator.go, docs/constitutions/, docs/prompts/, and
 // configuration.yaml. Pass "." for the current directory.
-func (Scaffold) Pop(target string) error { return newOrch().Uninstall(target) }
+func (Scaffold) Pop(target string) error {
+	orchRoot, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("getting orchestrator root: %w", err)
+	}
+	if err := rejectSelfTarget(target, orchRoot); err != nil {
+		return err
+	}
+	return newOrch().Uninstall(target)
+}
+
+// rejectSelfTarget returns an error if target resolves to orchRoot.
+// Running push or pop against the orchestrator repo itself is destructive:
+// push replaces the dev magefile with the template, pop deletes source
+// constitutions, prompts, and configuration.
+func rejectSelfTarget(target, orchRoot string) error {
+	abs, err := filepath.Abs(target)
+	if err != nil {
+		return fmt.Errorf("resolving target path: %w", err)
+	}
+	if abs == orchRoot {
+		return fmt.Errorf("refusing to scaffold the orchestrator repo itself (%s); use a separate target repository", orchRoot)
+	}
+	return nil
+}
 
 // --- Test targets (standard) ---
 
