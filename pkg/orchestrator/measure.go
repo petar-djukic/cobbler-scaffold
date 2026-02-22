@@ -67,6 +67,10 @@ func (o *Orchestrator) RunMeasure() error {
 		return err
 	}
 	logf("resolved branch=%s", branch)
+	if currentGeneration == "" {
+		setGeneration(branch)
+		defer clearGeneration()
+	}
 
 	if err := ensureOnBranch(branch); err != nil {
 		logf("ensureOnBranch failed: %v", err)

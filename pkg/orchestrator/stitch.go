@@ -60,6 +60,10 @@ func (o *Orchestrator) RunStitchN(limit int) (int, error) {
 		return 0, err
 	}
 	logf("resolved branch=%s", branch)
+	if currentGeneration == "" {
+		setGeneration(branch)
+		defer clearGeneration()
+	}
 
 	if err := ensureOnBranch(branch); err != nil {
 		logf("ensureOnBranch failed: %v", err)
