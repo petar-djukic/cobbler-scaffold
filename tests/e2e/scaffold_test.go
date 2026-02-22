@@ -10,12 +10,24 @@ import (
 	"testing"
 )
 
-// TestScaffold_ConstitutionFiles verifies that all three constitution files
+// TestScaffold_ConstitutionFiles verifies that all four constitution files
 // are written to docs/constitutions/ by PrepareTestRepo/Scaffold.
 func TestScaffold_ConstitutionFiles(t *testing.T) {
 	dir := setupRepo(t)
-	for _, name := range []string{"planning.yaml", "execution.yaml", "design.yaml"} {
+	for _, name := range []string{"planning.yaml", "execution.yaml", "design.yaml", "go-style.yaml"} {
 		rel := filepath.Join("docs", "constitutions", name)
+		if !fileExists(dir, rel) {
+			t.Errorf("expected %s to exist after scaffold", rel)
+		}
+	}
+}
+
+// TestScaffold_PromptFiles verifies that prompt YAML files
+// are written to docs/prompts/ by PrepareTestRepo/Scaffold.
+func TestScaffold_PromptFiles(t *testing.T) {
+	dir := setupRepo(t)
+	for _, name := range []string{"measure.yaml", "stitch.yaml"} {
+		rel := filepath.Join("docs", "prompts", name)
 		if !fileExists(dir, rel) {
 			t.Errorf("expected %s to exist after scaffold", rel)
 		}

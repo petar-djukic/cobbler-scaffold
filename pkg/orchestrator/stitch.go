@@ -4,7 +4,6 @@
 package orchestrator
 
 import (
-	"bytes"
 	_ "embed"
 	"encoding/json"
 	"fmt"
@@ -12,15 +11,17 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"text/template"
 	"time"
 )
 
-//go:embed prompts/stitch.tmpl
-var defaultStitchPromptTmpl string
+//go:embed prompts/stitch.yaml
+var defaultStitchPrompt string
 
 //go:embed constitutions/execution.yaml
 var executionConstitution string
+
+//go:embed constitutions/go-style.yaml
+var goStyleConstitution string
 
 // Stitch picks ready tasks from beads and invokes Claude to execute them.
 // Reads all options from Config.
@@ -433,25 +434,23 @@ func createWorktree(task stitchTask) error {
 	return nil
 }
 
-// StitchPromptData is the template data for the stitch prompt.
-type StitchPromptData struct {
-	Title                 string
-	ID                    string
-	IssueType             string
-	Description           string
-	ExecutionConstitution string
-	ProjectContext        string
-}
-
 func (o *Orchestrator) buildStitchPrompt(task stitchTask) string {
-	tmplStr := o.cfg.Cobbler.StitchPrompt
-	if tmplStr == "" {
-		tmplStr = defaultStitchPromptTmpl
+	promptYAML := o.cfg.Cobbler.StitchPrompt
+	if promptYAML == "" {
+		promptYAML = defaultStitchPrompt
 	}
-	tmpl := template.Must(template.New("stitch").Parse(tmplStr))
+	def, err := parsePromptDef(promptYAML)
+	if err != nil {
+		panic(fmt.Sprintf("stitch prompt YAML: %v", err))
+	}
+
 	executionConst := o.cfg.Cobbler.ExecutionConstitution
 	if executionConst == "" {
 		executionConst = executionConstitution
+	}
+	goStyleConst := o.cfg.Cobbler.GoStyleConstitution
+	if goStyleConst == "" {
+		goStyleConst = goStyleConstitution
 	}
 
 	// Build project context from the worktree directory so source code
@@ -477,19 +476,16 @@ func (o *Orchestrator) buildStitchPrompt(task stitchTask) string {
 	}
 	logf("buildStitchPrompt: projectCtx=%d bytes", len(projectCtx))
 
-	data := StitchPromptData{
-		Title:                 task.title,
-		ID:                    task.id,
-		IssueType:             task.issueType,
-		Description:           task.description,
-		ExecutionConstitution: executionConst,
-		ProjectContext:        projectCtx,
+	data := map[string]string{
+		"id":                     task.id,
+		"issue_type":             task.issueType,
+		"title":                  task.title,
+		"description":            task.description,
+		"project_context":        projectCtx,
+		"execution_constitution": executionConst,
+		"go_style_constitution":  goStyleConst,
 	}
-	var buf bytes.Buffer
-	if err := tmpl.Execute(&buf, data); err != nil {
-		panic(fmt.Sprintf("stitch prompt template: %v", err))
-	}
-	return buf.String()
+	return renderPrompt(def, data)
 }
 
 func mergeBranch(branchName, baseBranch, repoRoot string) error {

@@ -209,6 +209,9 @@ func TestWriteScaffoldConfig_WritesValidYAML(t *testing.T) {
 			PlanningConstitution:  "docs/constitutions/planning.yaml",
 			ExecutionConstitution: "docs/constitutions/execution.yaml",
 			DesignConstitution:    "docs/constitutions/design.yaml",
+			GoStyleConstitution:   "docs/constitutions/go-style.yaml",
+			MeasurePrompt:         "docs/prompts/measure.yaml",
+			StitchPrompt:          "docs/prompts/stitch.yaml",
 		},
 	}
 	if err := writeScaffoldConfig(path, cfg); err != nil {
@@ -236,5 +239,14 @@ func TestWriteScaffoldConfig_WritesValidYAML(t *testing.T) {
 	}
 	if parsed.Cobbler.DesignConstitution != "docs/constitutions/design.yaml" {
 		t.Errorf("DesignConstitution round-trip: got %q", parsed.Cobbler.DesignConstitution)
+	}
+	if parsed.Cobbler.GoStyleConstitution != "docs/constitutions/go-style.yaml" {
+		t.Errorf("GoStyleConstitution round-trip: got %q", parsed.Cobbler.GoStyleConstitution)
+	}
+	if parsed.Cobbler.MeasurePrompt != "docs/prompts/measure.yaml" {
+		t.Errorf("MeasurePrompt round-trip: got %q", parsed.Cobbler.MeasurePrompt)
+	}
+	if parsed.Cobbler.StitchPrompt != "docs/prompts/stitch.yaml" {
+		t.Errorf("StitchPrompt round-trip: got %q", parsed.Cobbler.StitchPrompt)
 	}
 }

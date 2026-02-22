@@ -18,6 +18,9 @@ type Cobbler mg.Namespace
 // Generator groups the code-generation trail lifecycle targets.
 type Generator mg.Namespace
 
+// Scaffold groups the scaffold install/uninstall targets.
+type Scaffold mg.Namespace
+
 // Beads groups issue-tracker lifecycle targets.
 type Beads mg.Namespace
 
@@ -81,9 +84,12 @@ func Analyze() error { return newOrch().Analyze() }
 // Tag creates a documentation release tag (v0.YYYYMMDD.N) and builds the container image.
 func Tag() error { return newOrch().Tag() }
 
-// Uninstall removes orchestrator-managed files from the repository:
-// magefiles/orchestrator.go, docs/constitutions/, and configuration.yaml.
-func Uninstall() error { return newOrch().Uninstall(".") }
+// --- Scaffold targets ---
+
+// Pop removes orchestrator-managed files from the repository:
+// magefiles/orchestrator.go, docs/constitutions/, docs/prompts/, and
+// configuration.yaml.
+func (Scaffold) Pop() error { return newOrch().Uninstall(".") }
 
 // --- Test targets ---
 

@@ -339,6 +339,35 @@ type ConstitutionsDoc struct {
 	Design    *yaml.Node `yaml:"design,omitempty"`
 	Planning  *yaml.Node `yaml:"planning,omitempty"`
 	Execution *yaml.Node `yaml:"execution,omitempty"`
+	GoStyle   *yaml.Node `yaml:"go_style,omitempty"`
+}
+
+// GoStyleDoc corresponds to docs/constitutions/go-style.yaml.
+// It provides typed schema enforcement for the Go coding standards
+// constitution via validateYAMLStrict.
+type GoStyleDoc struct {
+	CopyrightHeader         string           `yaml:"copyright_header"`
+	Duplication             string           `yaml:"duplication"`
+	DesignPatterns          []GoStylePattern `yaml:"design_patterns"`
+	Interfaces              string           `yaml:"interfaces"`
+	StructAndFunctionDesign string           `yaml:"struct_and_function_design"`
+	ErrorHandling           string           `yaml:"error_handling"`
+	NoMagicStrings          string           `yaml:"no_magic_strings"`
+	ProjectStructure        string           `yaml:"project_structure"`
+	StandardPackages        []string         `yaml:"standard_packages"`
+	StructEmbedding         string           `yaml:"struct_embedding"`
+	NamingConventions       []string         `yaml:"naming_conventions"`
+	Concurrency             string           `yaml:"concurrency"`
+	Testing                 string           `yaml:"testing"`
+	CodeReviewChecklist     []string         `yaml:"code_review_checklist"`
+}
+
+// GoStylePattern represents a single design pattern entry in the Go style
+// constitution. Symptoms is optional (not all patterns list symptoms).
+type GoStylePattern struct {
+	Name        string `yaml:"name"`
+	Description string `yaml:"description"`
+	Symptoms    string `yaml:"symptoms,omitempty"`
 }
 
 // ---------------------------------------------------------------------------
@@ -570,9 +599,10 @@ func buildProjectContext(existingIssuesJSON string, goSourceDirs []string) (stri
 		Design:    loadYAMLNode("docs/constitutions/design.yaml"),
 		Planning:  loadYAMLNode("docs/constitutions/planning.yaml"),
 		Execution: loadYAMLNode("docs/constitutions/execution.yaml"),
+		GoStyle:   loadYAMLNode("docs/constitutions/go-style.yaml"),
 	}
 	if ctx.Constitutions.Design == nil && ctx.Constitutions.Planning == nil &&
-		ctx.Constitutions.Execution == nil {
+		ctx.Constitutions.Execution == nil && ctx.Constitutions.GoStyle == nil {
 		ctx.Constitutions = nil
 	}
 

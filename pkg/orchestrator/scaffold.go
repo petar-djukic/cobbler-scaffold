@@ -44,7 +44,7 @@ func (o *Orchestrator) Scaffold(targetDir, orchestratorRoot string) error {
 		return fmt.Errorf("copying orchestrator.go: %w", err)
 	}
 
-	// 1b. Copy all three constitutions to docs/constitutions/ so users can
+	// 1b. Copy all constitutions to docs/constitutions/ so users can
 	//    read and modify them. Config paths point here by default.
 	docsDir := filepath.Join(targetDir, "docs")
 	constitutionsDir := filepath.Join(docsDir, "constitutions")
@@ -55,10 +55,29 @@ func (o *Orchestrator) Scaffold(targetDir, orchestratorRoot string) error {
 		"design.yaml":    designConstitution,
 		"planning.yaml":  planningConstitution,
 		"execution.yaml": executionConstitution,
+		"go-style.yaml":  goStyleConstitution,
 	}
 	for name, content := range constitutionFiles {
 		p := filepath.Join(constitutionsDir, name)
 		logf("scaffold: writing constitution to %s", p)
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			return fmt.Errorf("writing %s: %w", name, err)
+		}
+	}
+
+	// 1c. Copy prompt templates to docs/prompts/ so users can read and
+	//    modify them. Config paths point here by default.
+	promptsDir := filepath.Join(docsDir, "prompts")
+	if err := os.MkdirAll(promptsDir, 0o755); err != nil {
+		return fmt.Errorf("creating docs/prompts directory: %w", err)
+	}
+	promptFiles := map[string]string{
+		"measure.yaml": defaultMeasurePrompt,
+		"stitch.yaml":  defaultStitchPrompt,
+	}
+	for name, content := range promptFiles {
+		p := filepath.Join(promptsDir, name)
+		logf("scaffold: writing prompt to %s", p)
 		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
 			return fmt.Errorf("writing %s: %w", name, err)
 		}
@@ -89,6 +108,9 @@ func (o *Orchestrator) Scaffold(targetDir, orchestratorRoot string) error {
 	cfg.Cobbler.PlanningConstitution = "docs/constitutions/planning.yaml"
 	cfg.Cobbler.ExecutionConstitution = "docs/constitutions/execution.yaml"
 	cfg.Cobbler.DesignConstitution = "docs/constitutions/design.yaml"
+	cfg.Cobbler.GoStyleConstitution = "docs/constitutions/go-style.yaml"
+	cfg.Cobbler.MeasurePrompt = "docs/prompts/measure.yaml"
+	cfg.Cobbler.StitchPrompt = "docs/prompts/stitch.yaml"
 
 	// When a main package is detected, create a version.go seed template
 	// so that after generator:reset the project has a minimal compilable
@@ -131,9 +153,9 @@ func (o *Orchestrator) Scaffold(targetDir, orchestratorRoot string) error {
 }
 
 // Uninstall removes the files added by Scaffold from targetDir:
-// magefiles/orchestrator.go, docs/constitutions/, and configuration.yaml.
-// It also removes the orchestrator replace directive from magefiles/go.mod
-// and runs go mod tidy to clean up unused dependencies.
+// magefiles/orchestrator.go, docs/constitutions/, docs/prompts/, and
+// configuration.yaml. It also removes the orchestrator replace directive
+// from magefiles/go.mod and runs go mod tidy to clean up unused dependencies.
 func (o *Orchestrator) Uninstall(targetDir string) error {
 	logf("uninstall: removing orchestrator files from %s", targetDir)
 
@@ -143,12 +165,18 @@ func (o *Orchestrator) Uninstall(targetDir string) error {
 		return fmt.Errorf("removing orchestrator.go: %w", err)
 	}
 
-	// Remove docs/constitutions/ directory.
+	// Remove docs/constitutions/ and docs/prompts/ directories.
 	constitutionsDir := filepath.Join(targetDir, "docs", "constitutions")
 	if err := os.RemoveAll(constitutionsDir); err != nil {
 		return fmt.Errorf("removing docs/constitutions: %w", err)
 	}
 	logf("uninstall: removed %s", constitutionsDir)
+
+	promptsDir := filepath.Join(targetDir, "docs", "prompts")
+	if err := os.RemoveAll(promptsDir); err != nil {
+		return fmt.Errorf("removing docs/prompts: %w", err)
+	}
+	logf("uninstall: removed %s", promptsDir)
 
 	// Remove configuration.yaml.
 	cfgPath := filepath.Join(targetDir, DefaultConfigFile)

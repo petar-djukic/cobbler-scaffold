@@ -27,14 +27,14 @@ ORCH_ROOT="$(pwd)"
 If the argument contains `@`, it is a module@version. One command downloads, copies, git-initializes, and scaffolds:
 
 ```bash
-REPO_DIR=$(mage test:scaffold "module@version")
+REPO_DIR=$(mage scaffold:push "module@version")
 ```
 
 If the argument is a local path, scaffold it directly:
 
 ```bash
 REPO_DIR="$1"
-mage test:scaffold "$REPO_DIR"
+mage scaffold:push "$REPO_DIR"
 ```
 
 The scaffold copies `orchestrator.go` into magefiles/, detects project structure, generates `configuration.yaml`, wires `go.mod` with a replace directive, and verifies `mage -l`.

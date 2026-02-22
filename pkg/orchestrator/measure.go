@@ -11,14 +11,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"text/template"
 	"time"
 
 	"gopkg.in/yaml.v3"
 )
 
-//go:embed prompts/measure.tmpl
-var defaultMeasurePromptTmpl string
+//go:embed prompts/measure.yaml
+var defaultMeasurePrompt string
 
 //go:embed constitutions/planning.yaml
 var planningConstitution string
@@ -340,53 +339,41 @@ func countJSONArray(jsonStr string) int {
 	return len(arr)
 }
 
-// MeasurePromptData is the template data for the measure prompt.
-type MeasurePromptData struct {
-	ProjectContext       string
-	Limit                int
-	OutputPath           string
-	UserInput            string
-	LinesMin             int
-	LinesMax             int
-	PlanningConstitution string // kept separate — instructions, not just context
-}
-
 func (o *Orchestrator) buildMeasurePrompt(userInput, existingIssues string, limit int, outputPath string) string {
-	tmplStr := o.cfg.Cobbler.MeasurePrompt
-	if tmplStr == "" {
-		tmplStr = defaultMeasurePromptTmpl
+	promptYAML := o.cfg.Cobbler.MeasurePrompt
+	if promptYAML == "" {
+		promptYAML = defaultMeasurePrompt
 	}
 
-	tmpl := template.Must(template.New("measure").Parse(tmplStr))
+	def, err := parsePromptDef(promptYAML)
+	if err != nil {
+		panic(fmt.Sprintf("measure prompt YAML: %v", err))
+	}
 
 	planningConst := o.cfg.Cobbler.PlanningConstitution
 	if planningConst == "" {
 		planningConst = planningConstitution
 	}
 
-	projectCtx, err := buildProjectContext(existingIssues, o.cfg.Project.GoSourceDirs)
-	if err != nil {
-		logf("buildMeasurePrompt: buildProjectContext error: %v", err)
+	projectCtx, ctxErr := buildProjectContext(existingIssues, o.cfg.Project.GoSourceDirs)
+	if ctxErr != nil {
+		logf("buildMeasurePrompt: buildProjectContext error: %v", ctxErr)
 		projectCtx = "# Error building project context\n"
 	}
 
-	data := MeasurePromptData{
-		ProjectContext:       projectCtx,
-		Limit:                limit,
-		OutputPath:           outputPath,
-		UserInput:            userInput,
-		LinesMin:             o.cfg.Cobbler.EstimatedLinesMin,
-		LinesMax:             o.cfg.Cobbler.EstimatedLinesMax,
-		PlanningConstitution: planningConst,
+	data := map[string]string{
+		"project_context":       projectCtx,
+		"planning_constitution": planningConst,
+		"output_path":           outputPath,
+		"limit":                 fmt.Sprintf("%d", limit),
+		"lines_min":             fmt.Sprintf("%d", o.cfg.Cobbler.EstimatedLinesMin),
+		"lines_max":             fmt.Sprintf("%d", o.cfg.Cobbler.EstimatedLinesMax),
+		"user_input":            userInput,
 	}
 
 	logf("buildMeasurePrompt: projectCtx=%d bytes limit=%d userInput=%v",
 		len(projectCtx), limit, userInput != "")
-	var buf bytes.Buffer
-	if err := tmpl.Execute(&buf, data); err != nil {
-		panic(fmt.Sprintf("measure prompt template: %v", err))
-	}
-	return buf.String()
+	return renderPrompt(def, data)
 }
 
 type proposedIssue struct {

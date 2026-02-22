@@ -34,7 +34,7 @@ sections:
       Run the scaffold command from the orchestrator repository, passing the
       absolute or relative path to the target project:
 
-        mage test:scaffold /path/to/target-project
+        mage scaffold:push /path/to/target-project
 
       The scaffold command:
       1. Detects project structure — module path, main package, source directories.

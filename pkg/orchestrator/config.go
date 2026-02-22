@@ -112,6 +112,11 @@ type CobblerConfig struct {
 	// If empty, the embedded default is used.
 	DesignConstitution string `yaml:"design_constitution"`
 
+	// GoStyleConstitution is a file path to a custom Go style constitution YAML.
+	// During LoadConfig the file is read and its content stored here.
+	// If empty, the embedded default is used.
+	GoStyleConstitution string `yaml:"go_style_constitution"`
+
 	// EstimatedLinesMin is the minimum estimated lines per task (default 250).
 	// Passed to the measure prompt template as LinesMin.
 	EstimatedLinesMin int `yaml:"estimated_lines_min"`
@@ -350,6 +355,13 @@ func LoadConfig(path string) (Config, error) {
 			return Config{}, fmt.Errorf("reading design constitution %s: %w", cfg.Cobbler.DesignConstitution, err)
 		}
 		cfg.Cobbler.DesignConstitution = string(content)
+	}
+	if cfg.Cobbler.GoStyleConstitution != "" {
+		content, err := os.ReadFile(cfg.Cobbler.GoStyleConstitution)
+		if err != nil {
+			return Config{}, fmt.Errorf("reading go style constitution %s: %w", cfg.Cobbler.GoStyleConstitution, err)
+		}
+		cfg.Cobbler.GoStyleConstitution = string(content)
 	}
 
 	cfg.applyDefaults()

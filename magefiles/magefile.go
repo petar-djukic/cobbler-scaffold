@@ -9,6 +9,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/magefile/mage/mg"
@@ -20,6 +21,9 @@ type Cobbler mg.Namespace
 
 // Generator groups the code-generation trail lifecycle targets.
 type Generator mg.Namespace
+
+// Scaffold groups the scaffold install/uninstall targets.
+type Scaffold mg.Namespace
 
 // Beads groups issue-tracker lifecycle targets.
 type Beads mg.Namespace
@@ -87,9 +91,38 @@ func Analyze() error { return newOrch().Analyze() }
 // Tag creates a documentation release tag (v0.YYYYMMDD.N) and builds the container image.
 func Tag() error { return newOrch().Tag() }
 
-// Uninstall removes orchestrator-managed files from the repository:
-// magefiles/orchestrator.go, docs/constitutions/, and configuration.yaml.
-func Uninstall() error { return newOrch().Uninstall(".") }
+// --- Scaffold targets ---
+
+// Push scaffolds the orchestrator into a target Go repository. The argument
+// is either a local directory path or a Go module reference in module@version
+// format (e.g., github.com/org/repo@v0.20260214.1). When a module@version is
+// given, the source is fetched via go mod download, copied to a temp directory,
+// git-initialized, and scaffolded. The temp directory path is printed to stdout.
+func (Scaffold) Push(target string) error {
+	orchRoot, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("getting orchestrator root: %w", err)
+	}
+
+	// If target contains @, treat as module@version.
+	if parts := strings.SplitN(target, "@", 2); len(parts) == 2 && parts[1] != "" {
+		module, version := parts[0], parts[1]
+		logf("scaffold:push: using go mod download for %s@%s", module, version)
+		repoDir, err := newOrch().PrepareTestRepo(module, version, orchRoot)
+		if err != nil {
+			return err
+		}
+		fmt.Println(repoDir)
+		return nil
+	}
+
+	return newOrch().Scaffold(target, orchRoot)
+}
+
+// Pop removes orchestrator-managed files from the repository:
+// magefiles/orchestrator.go, docs/constitutions/, docs/prompts/, and
+// configuration.yaml.
+func (Scaffold) Pop() error { return newOrch().Uninstall(".") }
 
 // --- Test targets (standard) ---
 

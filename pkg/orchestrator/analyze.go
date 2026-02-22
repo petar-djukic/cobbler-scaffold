@@ -355,6 +355,16 @@ func validateDocSchemas() []string {
 		}
 	}
 
+	// Constitutions (go-style has a typed struct for strict validation).
+	errs = append(errs, validateYAMLStrict[GoStyleDoc]("docs/constitutions/go-style.yaml")...)
+	errs = append(errs, validateYAMLStrict[GoStyleDoc]("pkg/orchestrator/constitutions/go-style.yaml")...)
+
+	// Prompts (PromptDef uses custom UnmarshalYAML with semantic keys).
+	errs = append(errs, validatePromptDef("docs/prompts/measure.yaml")...)
+	errs = append(errs, validatePromptDef("docs/prompts/stitch.yaml")...)
+	errs = append(errs, validatePromptDef("pkg/orchestrator/prompts/measure.yaml")...)
+	errs = append(errs, validatePromptDef("pkg/orchestrator/prompts/stitch.yaml")...)
+
 	return errs
 }
 

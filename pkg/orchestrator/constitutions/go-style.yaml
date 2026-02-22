@@ -1,0 +1,198 @@
+# Copyright (c) 2026 Petar Djukic. All rights reserved.
+# SPDX-License-Identifier: MIT
+#
+# Go Style Constitution
+#
+# This constitution defines Go coding standards and design patterns for the
+# project. It is injected into the stitch prompt alongside the execution
+# constitution so Claude knows how to write idiomatic, maintainable Go code.
+
+copyright_header: |
+  Every Go file must start with the SPDX copyright header before the package
+  declaration:
+
+    // Copyright (c) 2026 Petar Djukic. All rights reserved.
+    // SPDX-License-Identifier: MIT
+
+  This applies to hand-written files (magefiles/) and generated files (cmd/,
+  pkg/, internal/, tests/). The header must appear on lines 1-2, followed by a
+  blank line, then the package clause.
+
+  For markdown files in .claude/, use an HTML comment on the first line:
+
+    <!-- Copyright (c) 2026 Petar Djukic. All rights reserved. SPDX-License-Identifier: MIT -->
+
+duplication: |
+  Before writing a function, search for existing code that does the same thing.
+  Before adding a field, check whether a struct already carries it. When two
+  pieces of code share logic, extract the common part. Use struct embedding to
+  share fields. Use helper functions to share behavior. Use interfaces to share
+  contracts. The threshold is two: if you write the same thing twice, extract it.
+
+design_patterns:
+  - name: Strategy
+    description: |
+      Use when multiple implementations of the same operation exist and the
+      caller picks one. Define a small interface. Each implementation is a struct
+      (or a function type) satisfying that interface. The caller selects at
+      configuration time, not with if chains.
+    symptoms: |
+      A switch or if/else ladder choosing between behaviors, a function parameter
+      named mode or kind, boolean flags that toggle logic branches.
+
+  - name: Command
+    description: |
+      Use when an action needs to be stored, queued, undone, or composed. Each
+      command is a struct with an Execute() method. Commands can carry undo logic,
+      be chained into sequences, or be logged for replay.
+    symptoms: |
+      Inline exec.Command calls scattered across a function, repeated sequences of
+      shell operations that differ only in arguments, actions that should be
+      retryable or reversible.
+
+  - name: Facade
+    description: |
+      Use when a caller should not know about the internal steps of a multi-step
+      process. The facade exposes one method; internally it orchestrates several
+      components. Do not add toggle parameters to a facade. If the caller needs to
+      control sub-steps, they should use the components directly.
+    symptoms: |
+      A function that grew boolean parameters to skip internal steps, a caller that
+      must call three functions in a specific order, an Init/Do/Cleanup pattern that
+      keeps getting duplicated.
+
+  - name: Factory
+    description: |
+      Use NewXxx() functions to construct objects. Return concrete types but accept
+      interfaces as dependencies. Factories centralize validation and wiring so
+      callers never construct partially initialized structs.
+
+  - name: Decorator
+    description: |
+      Use to add cross-cutting concerns (logging, timing, retries) without
+      modifying the wrapped object. In Go, the decorator accepts and returns the
+      same interface. HTTP middleware is the canonical example.
+    symptoms: |
+      Logging or timing code copy-pasted around every call to an interface, optional
+      behavior toggled by a boolean that wraps the real logic.
+
+  - name: Builder
+    description: |
+      Use when an object has many optional fields and constructing it in one call is
+      unwieldy. Prefer the Functional Options variant (WithXxx functions) for
+      idiomatic Go over a mutable builder struct.
+
+  - name: Adapter
+    description: |
+      Use when existing code does not satisfy the interface a consumer expects.
+      Write a thin wrapper that translates the foreign API into the local interface.
+      Do not modify the foreign code.
+
+  - name: Observer
+    description: |
+      Use channels for asynchronous event notification between goroutines. One
+      producer writes to a channel; multiple consumers listen. Prefer this over
+      callback registration when the producer should not know about its consumers.
+
+interfaces: |
+  Introduce an interface when you have two concrete implementations or when you
+  need to mock a dependency in tests. Do not create an interface for a single
+  implementation "just in case." Accept interfaces as parameters; return concrete
+  structs. Keep interfaces small: one to three methods. A large interface is a
+  sign that the abstraction is wrong. Split it into focused interfaces and compose
+  them.
+
+struct_and_function_design: |
+  Each struct represents one concept. Each function does one thing. If a function
+  takes more than three parameters, group related parameters into a config struct.
+  If a function exceeds 40 lines, find a seam and split it. Name structs and
+  functions by what they represent or do, not by how they are called. Avoid
+  generic names (Manager, Handler, Helper, Processor) unless the struct genuinely
+  manages, handles, or processes a well-defined resource.
+
+error_handling: |
+  Handle errors at the point they occur. Use guard clauses: check err != nil and
+  return early so the main logic stays at minimal indentation. Wrap errors with
+  context: fmt.Errorf("doing X: %w", err). Each wrap adds the "why" at that
+  layer, producing a readable chain when the error surfaces. Never silently
+  discard an error with _ unless the operation is best-effort cleanup (e.g.,
+  removing a temp file after the real work succeeded). When discarding, leave a
+  comment explaining why.
+
+no_magic_strings: |
+  Centralize all string literals that name external binaries, file paths, URLs,
+  or repeated text. Binary names: const (e.g., binGit, binGo). Paths, prefixes,
+  module names: const. Shared CLI arg slices: var. Large prompts with variable
+  interpolation: embedded .tmpl templates. Short messages with interpolation:
+  fmt.Sprintf at the call site. Static messages or labels: const. When adding a
+  new external command or path, define the constant first, then use it. Never
+  scatter raw string literals across files.
+
+project_structure: |
+  cmd/: Entry points. Minimal: parse flags, wire dependencies, start.
+  internal/: Private implementation. Not importable outside this module. One
+  package per component.
+  pkg/: Shared public types and interfaces. No implementation. The contract layer
+  between libraries.
+  tests/: Integration tests.
+  magefiles/: Build tooling. Flat directory (mage constraint). One file per
+  concern.
+
+  Align package structure to PRD component structure. Each major component maps
+  to one package. Avoid package names like util, common, helpers. Name packages
+  by domain: storage, auth, config.
+
+  Define interfaces between major components. The pkg/ directory holds shared
+  types and interface contracts. The internal/ directory holds implementations
+  that satisfy those contracts.
+
+standard_packages:
+  - "Build automation: magefile/mage"
+  - "CLI framework: spf13/cobra"
+  - "Configuration: spf13/viper"
+  - "Observability: go.opentelemetry.io/otel"
+  - "Testing assertions: stretchr/testify"
+  - "SQL database access: database/sql (stdlib) + mattn/go-sqlite3"
+  - "HTTP routing: net/http (stdlib) or chi"
+  - "YAML parsing: gopkg.in/yaml.v3"
+  - "JSON handling: encoding/json (stdlib)"
+  - "UUID generation: google/uuid"
+
+struct_embedding: |
+  When two or more consumers share configuration fields, extract a common struct
+  and embed it. Provide a registerXxxFlags helper when the shared fields map to
+  CLI flags. Do not duplicate fields across sibling structs.
+
+naming_conventions:
+  - "Exported types and functions: PascalCase (e.g., CupboardConfig)"
+  - "Unexported types and functions: camelCase (e.g., cobblerConfig)"
+  - "CLI flags: kebab-case (e.g., --silence-agent)"
+  - "Constants for binaries: bin prefix + PascalCase (e.g., binGit, binClaude)"
+  - "Factory functions: New prefix (e.g., NewBackend())"
+  - "Interface names: Action or capability (e.g., Table, Reader)"
+
+concurrency: |
+  Pass context.Context as the first parameter to any function that does I/O or
+  may block. Never start a goroutine without a plan for how it exits. Use
+  sync.WaitGroup or a done channel to manage lifetimes.
+
+testing: |
+  Every exported function and every meaningful branch deserves a test. Use
+  table-driven parameterized tests for similar cases. Each row is one scenario
+  with named inputs and expected outputs. Extract shared setup into test helpers.
+  Build reusable test utilities in a testutil package. When writing tests, ask
+  what inputs break assumptions: zero values, nil pointers, empty slices,
+  duplicate keys, boundary lengths, concurrent access. If a bug could hide there,
+  write a case for it.
+
+code_review_checklist:
+  - "No duplicated logic exists that could be extracted into a shared function or struct."
+  - "No magic strings remain: all binaries, paths, and repeated text are centralized."
+  - "Every error is handled or explicitly discarded with a comment."
+  - "Every struct has a single, nameable responsibility."
+  - "No function exceeds 40 lines without a strong reason."
+  - "Interfaces are small (one to three methods) and have at least two implementations or a testing need."
+  - "No boolean parameters toggle behavior that should be a Strategy or Decorator."
+  - "Config structs embed shared fields rather than duplicating them."
+  - "context.Context is threaded through I/O paths."
+  - "Tests cover the contract, not the implementation."
