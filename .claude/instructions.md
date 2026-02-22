@@ -1,4 +1,4 @@
-<\!-- Copyright (c) 2026 Petar Djukic. All rights reserved. SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 Petar Djukic. All rights reserved. SPDX-License-Identifier: MIT -->
 
 # Agent Instructions
 
@@ -19,11 +19,7 @@ After creating or editing any file, commit immediately. Do not accumulate uncomm
 
 ## Code Implementation
 
-When implementing code, follow [rules/code-prd-architecture-linking.md](rules/code-prd-architecture-linking.md):
-
-- Link code to PRDs and architecture documents
-- Include PRD references in commit messages
-- Add package-level comments listing implemented PRDs
+Go style and code standards are defined in `docs/constitutions/go-style.yaml` and `docs/constitutions/execution.yaml`. These are passed to Claude via the cobbler prompts and do not need to be duplicated here.
 
 ## Scaffolding
 
@@ -36,12 +32,18 @@ This repository scaffolds orchestration into target Go repositories.
 
 ## Documentation
 
-When writing documentation, follow [rules/documentation-standards.md](rules/documentation-standards.md) for style, formatting, and content quality.
+Follow [rules/documentation-standards.md](rules/documentation-standards.md) (distilled from `docs/constitutions/design.yaml`):
 
-For specific document types, see:
+- Specification-driven: specs are source of truth, code serves specs
+- YAML-first for structured documents, markdown for prose
+- Active voice, concise, no forbidden terms
+- Traceability chain: Vision -> Architecture -> PRDs -> Use cases -> Test suites -> Code
 
-- [rules/prd-format.md](rules/prd-format.md) - Product Requirements Documents
-- [rules/use-case-format.md](rules/use-case-format.md) - Use cases and tracer bullets
-- [rules/vision-format.md](rules/vision-format.md) - Vision documents
-- [rules/architecture-format.md](rules/architecture-format.md) - Architecture documents
-- [rules/crumb-format.md](rules/crumb-format.md) - How to structure crumbs (docs vs code)
+For README files specifically, see [rules/readme-format.md](rules/readme-format.md).
+
+## Constitutions (Full Reference)
+
+- `docs/constitutions/planning.yaml` — Task sizing, issue structure, dependency ordering (measure phase)
+- `docs/constitutions/execution.yaml` — Code standards, design patterns, traceability (stitch phase)
+- `docs/constitutions/design.yaml` — Document types, format rules, completeness checklists (design phase)
+- `docs/constitutions/go-style.yaml` — Go coding style, patterns, code review checklist
