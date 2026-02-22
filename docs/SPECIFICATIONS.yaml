@@ -205,19 +205,40 @@ traceability_diagram: |
 coverage_gaps: |
   We identify the following gaps in specification coverage:
 
-  - prd005-metrics-collection has no dedicated use case. We exercise it
-    indirectly through uc003 (measure) and uc004 (stitch), which record
-    InvocationRecords. A dedicated use case would provide more thorough
-    validation.
+  PRDs with no dedicated use case:
+  - prd005-metrics-collection is exercised indirectly through uc003 (measure)
+    and uc004 (stitch), which record InvocationRecords. A dedicated use case
+    would provide more thorough validation.
 
-  - prd006-vscode-extension has no use cases or test suites. This PRD belongs
-    to release 02.0, which has not started. Five use cases are planned in
-    road-map.yaml but their YAML files do not exist yet.
+  Implemented features with no PRD:
+  - Scaffold (scaffold.go): Scaffold(), Uninstall(), PrepareTestRepo() — wires
+    the orchestrator into consuming repos. Covered by eng03 but has no PRD.
+  - Context assembly (context.go): ~30 struct types and buildProjectContext() —
+    assembles all docs, specs, source code, and issues into a YAML blob for
+    prompt injection. No PRD.
+  - History saving (cobbler.go, measure.go, stitch.go): HistoryDir config,
+    saveHistory(), saveHistoryStats(), saveHistoryPromptAndLog() — persists
+    prompt, log, and stats per invocation. No PRD.
+  - Tag/versioning (tag.go): Tag() creates v0.YYYYMMDD.N doc-release tags. No PRD.
+  - Docker/image management (docker.go): BuildImage(), ensureImage(), embedded
+    Dockerfile. Design decision 4 describes the rationale but no PRD specifies
+    the build/ensure behavior.
+  - Build utilities (build.go): Build(), Lint(), TestUnit(), TestIntegration(),
+    TestAll(), Install(), Clean(), ExtractCredentials(). No PRD.
+  - Phase-aware logging (orchestrator.go): setPhase/clearPhase, logf with
+    [phase +elapsed]. No PRD.
 
+  Stale specifications:
+  - prd003 R2.7 says "parse the JSON output file" but Claude writes YAML.
+  - prd003 does not mention that the orchestrator commits worktree changes
+    (Claude is forbidden from running git commands in the container).
+  - Planning constitution P2 says 300-700 lines; config defaults are 250-350.
+
+  Numbering and structural gaps:
   - No prd004 exists. The PRD numbering skips from prd003 to prd005.
-
-  - rel02.0 use cases (uc001 through uc005) are listed in road-map.yaml but
-    have no corresponding files in docs/specs/use-cases/.
+  - prd006-vscode-extension has no use cases or test suites (release 02.0 not started).
+  - rel02.0 use cases (uc001 through uc005) are listed in road-map.yaml but only
+    uc001 has a corresponding file in docs/specs/use-cases/.
 
 references:
   - VISION.yaml

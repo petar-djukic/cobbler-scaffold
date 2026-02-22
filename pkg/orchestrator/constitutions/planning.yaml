@@ -16,10 +16,12 @@ articles:
   - id: P2
     title: Task sizing
     rule: |
-      Code tasks should target 300-700 lines of production code, touching no
-      more than 5 files. Split larger features into multiple tasks. Combine
-      trivial changes into one task. This keeps tasks completable in a single
-      session while making meaningful progress.
+      Code tasks should target the line range specified in the CONSTRAINTS
+      section of the prompt (typically 250-350 lines of production code),
+      touching no more than 5-7 files. Split larger features into multiple
+      tasks. Combine trivial changes into one task. Prefer splitting
+      implementation and tests into separate tasks. This keeps tasks
+      completable within the Claude timeout while making meaningful progress.
 
   - id: P3
     title: Task limit per batch

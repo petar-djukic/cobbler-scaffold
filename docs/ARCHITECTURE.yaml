@@ -3,15 +3,15 @@ title: Cobbler Scaffold Architecture
 
 overview:
   summary: |
-    Mage Claude Orchestrator is a Go library that automates AI-driven code generation through
-    a two-phase loop: measure (propose tasks) and stitch (execute tasks in isolated worktrees).
+    Cobbler Scaffold is a Go library that automates AI-driven code generation through a
+    two-phase loop: measure (propose tasks) and stitch (execute tasks in isolated worktrees).
     Consuming projects import the library, configure it with project-specific paths and templates,
     and expose its methods as Mage targets.
 
     The system operates as build tooling, not a standalone application. An Orchestrator struct
     holds a Config and provides methods that Mage calls as targets. These methods coordinate
-    four subsystems: git branch management, Claude invocation (containerized via podman),
-    issue tracking (beads), and metrics collection.
+    five subsystems: git branch management, Claude invocation (containerized via podman),
+    issue tracking (beads), metrics collection, and project scaffolding.
 
   lifecycle: |
     Generations are the primary unit of work. A generation starts from a tagged main state,
@@ -28,12 +28,13 @@ overview:
   coordination_pattern: |
     The cobbler workflow has two phases that run in sequence within each cycle.
 
-    Measure reads the project state (documentation, existing issues) and invokes Claude with
-    a prompt template. Claude proposes tasks as a JSON array. We import these tasks into beads
-    with dependency wiring.
+    Measure reads the project state (documentation, existing issues, source code) and invokes
+    Claude with a prompt template. Claude proposes tasks as a YAML list. We import these tasks
+    into beads with dependency wiring.
 
     Stitch picks ready tasks from beads one at a time. For each task: create a git worktree
-    on a task branch, invoke Claude with the task description, merge the task branch back,
+    on a task branch, invoke Claude with the task description and full project context, commit
+    Claude's changes (the orchestrator manages all git operations), merge the task branch back,
     record metrics, close the task. Task branches use the pattern task/{baseBranch}-{issueID}.
 
     Each stitch task runs in a separate git worktree. This prevents concurrent tasks from
@@ -54,9 +55,11 @@ interfaces:
     data_structures:
       - "Orchestrator: holds Config, provides New() and NewFromFile() constructors"
       - "Config: all orchestrator settings with YAML tags (see prd001-orchestrator-core for full field spec)"
-      - "MeasurePromptData: template data for measure prompt (ExistingIssues, Limit, OutputPath, UserInput, LinesMin, LinesMax, PlanningConstitution, Vision, Architecture)"
-      - "StitchPromptData: template data for stitch prompt (Title, ID, IssueType, Description, ExecutionConstitution)"
+      - "MeasurePromptData: template data for measure prompt (ProjectContext, Limit, OutputPath, UserInput, LinesMin, LinesMax, PlanningConstitution)"
+      - "StitchPromptData: template data for stitch prompt (Title, ID, IssueType, Description, ExecutionConstitution, ProjectContext)"
       - "InvocationRecord: metrics per Claude invocation (Caller, StartedAt, DurationS, Tokens, LOCBefore, LOCAfter, Diff)"
+      - "HistoryStats: YAML-serializable per-invocation stats saved to history directory (Caller, TaskID, TaskTitle, StartedAt, Duration, Tokens, CostUSD, LOCBefore, LOCAfter, Diff)"
+      - "ClaudeResult: token usage from a Claude invocation (InputTokens, OutputTokens, CacheCreationTokens, CacheReadTokens, CostUSD, RawOutput)"
     operations:
       - "New(cfg Config) *Orchestrator: construct with explicit config"
       - "NewFromFile(path string) (*Orchestrator, error): construct from configuration.yaml"
@@ -70,6 +73,12 @@ interfaces:
       - "Measure(): propose tasks via Claude (prd003)"
       - "Stitch(): execute ready tasks in worktrees (prd003)"
       - "Stats(): print LOC and documentation metrics (prd005)"
+      - "Scaffold(): scaffold orchestrator into consuming project"
+      - "Uninstall(): remove scaffold artifacts from target project"
+      - "Tag(): create versioned doc-release tag, update version file"
+      - "BuildImage(): build podman container image from embedded Dockerfile"
+      - "Build(): go build the consuming project binary"
+      - "Analyze(): cross-artifact consistency checking"
       - "Init(): initialize beads (prd001)"
       - "FullReset(): reset cobbler, generator, and beads (prd001)"
       - "CobblerReset(): remove scratch directory (prd003)"
@@ -81,11 +90,11 @@ interfaces:
       Prompts are Go text/template strings embedded from pkg/orchestrator/prompts/measure.tmpl
       and pkg/orchestrator/prompts/stitch.tmpl. Consuming projects can override them via
       Config.MeasurePrompt and Config.StitchPrompt. Prompts are injected with phase-specific
-      constitutions (planning for measure, execution for stitch) and project context (Vision,
-      Architecture).
+      constitutions (planning for measure, execution for stitch) and a ProjectContext YAML blob
+      containing all docs, specs, source code, and existing issues.
     data_structures:
-      - "MeasurePromptData: ExistingIssues (JSON string), Limit (int), OutputPath (string), UserInput (string), LinesMin (int), LinesMax (int), PlanningConstitution (embedded YAML), Vision (YAML), Architecture (YAML)"
-      - "StitchPromptData: Title, ID, IssueType, Description (all strings), ExecutionConstitution (embedded YAML)"
+      - "MeasurePromptData: ProjectContext (string — YAML blob of all docs, specs, source code, and issues), Limit (int), OutputPath (string), UserInput (string), LinesMin (int), LinesMax (int), PlanningConstitution (embedded YAML)"
+      - "StitchPromptData: Title, ID, IssueType, Description (all strings), ExecutionConstitution (embedded YAML), ProjectContext (string — YAML blob built from worktree)"
 
 components:
   - name: Orchestrator
@@ -114,23 +123,29 @@ components:
   - name: Cobbler - Measure
     responsibility: |
       Builds the measure prompt from existing issues and project state, invokes Claude,
-      parses the JSON output, and imports proposed issues into beads with dependency wiring.
-      Records invocation metrics.
+      parses the YAML output, and imports proposed issues into beads with dependency wiring.
+      Records invocation metrics. Saves history artifacts (prompt, log, issues, stats) per
+      iteration to the configured history directory.
     capabilities:
-      - Build measure prompt from MeasurePromptData
-      - Parse Claude JSON output into task list
+      - Build measure prompt from MeasurePromptData with full ProjectContext
+      - Parse Claude YAML output into task list
       - Import tasks into beads with dependency wiring
+      - Save history artifacts per iteration
     references:
       - prd003-cobbler-workflows
 
   - name: Cobbler - Stitch
     responsibility: |
-      Picks ready tasks from beads, creates worktrees, invokes Claude, merges branches,
-      records metrics, and closes tasks. Handles recovery of stale tasks from interrupted runs.
+      Picks ready tasks from beads, creates worktrees, invokes Claude, commits Claude's
+      changes (the orchestrator manages all git operations — Claude is forbidden from running
+      git commands), merges branches, records metrics, and closes tasks. Saves history
+      artifacts (prompt, log, stats) per task. Handles recovery of stale tasks from
+      interrupted runs.
     capabilities:
       - Create git worktree per task on a dedicated branch
-      - Invoke Claude in worktree context
-      - Merge task branch and record metrics
+      - Invoke Claude in worktree context with full ProjectContext
+      - Commit worktree changes and merge task branch
+      - Record metrics and save history artifacts per task
       - Recover stale tasks on resume
     references:
       - prd003-cobbler-workflows
@@ -138,11 +153,15 @@ components:
   - name: Cobbler Common
     responsibility: |
       Claude invocation (runClaude), token parsing, LOC capture, invocation recording,
-      configuration logging, and worktree path management.
+      history artifact saving, progress logging, configuration logging, and worktree path
+      management. The progressWriter logs real-time Claude stream events (tool calls, turns,
+      timing) with claude: prefix for clear log attribution.
     capabilities:
       - Wrap podman run for Claude execution with same-path mounting
-      - Capture and parse token usage from Claude output
+      - Capture and parse token usage from Claude stream-json output
       - Snapshot LOC before and after Claude
+      - Save history artifacts (prompt, log, stats YAML) to configurable directory
+      - Log real-time Claude progress (turns, tool calls, timing)
     references:
       - prd003-cobbler-workflows
       - prd005-metrics-collection
@@ -195,6 +214,63 @@ components:
       - Resolve SeedFiles and prompt paths to content
     references:
       - prd001-orchestrator-core
+
+  - name: Scaffold
+    responsibility: |
+      Scaffolds the orchestrator into consuming projects. Detects project structure (module
+      path, binary name, main package, source directories), generates a configuration.yaml
+      with detected values, writes a magefiles/orchestrator.go template, copies constitution
+      files, and wires go.mod with the correct module dependency. Also provides Uninstall()
+      to remove scaffold artifacts and PrepareTestRepo() for E2E test setup.
+    capabilities:
+      - Detect module path, binary name, main package, and source directories from existing project structure
+      - Generate configuration.yaml with detected values and defaults
+      - Write magefiles/orchestrator.go from embedded template
+      - Copy design constitution to consuming project
+      - Wire go.mod dependency with local replace for development or published version
+      - Remove scaffold artifacts (Uninstall)
+      - Download and scaffold test repos from published modules (PrepareTestRepo)
+    references:
+      - eng03-project-initialization
+
+  - name: Context Assembly
+    responsibility: |
+      Builds a comprehensive YAML blob (ProjectContext) from the consuming project's
+      documentation, specifications, source code, and existing issues. This context is
+      injected into both measure and stitch prompts so Claude sees the full project state.
+      Over 30 struct types model the document schema (VisionDoc, ArchitectureDoc, PRDDoc,
+      UseCaseDoc, TestSuiteDoc, EngineeringDoc, ConstitutionsDoc, SourceFile, etc.).
+    capabilities:
+      - Load and marshal vision, architecture, specifications, roadmap, PRDs, use cases, test suites
+      - Load engineering guidelines and constitutions
+      - Load Go source files from configured directories
+      - Parse existing issues from beads into structured format
+      - Assemble all components into a single YAML string for prompt injection
+    references:
+      - prd003-cobbler-workflows (prompt building)
+
+  - name: Docker
+    responsibility: |
+      Manages the podman container image for Claude execution. Embeds a Dockerfile
+      (Dockerfile.claude) via go:embed. Builds the image with versioned and latest tags.
+      Auto-builds the image if it does not exist locally (ensureImage).
+    capabilities:
+      - Build container image from embedded Dockerfile
+      - Tag images with version and latest
+      - Auto-build missing images before Claude invocation
+    references:
+      - Design decision 4 (container-isolated Claude execution)
+
+  - name: Logging
+    responsibility: |
+      Phase-aware structured logging to stderr. logf() includes timestamp, generation name
+      (when set via setGeneration), and phase name with elapsed time (when set via setPhase).
+      Generation tagging is set by the generator lifecycle and auto-set by measure/stitch
+      when called directly. Phase tagging brackets measure and stitch workflows.
+    capabilities:
+      - Timestamped log lines with optional generation and phase tags
+      - Phase-relative elapsed time tracking
+      - Automatic generation tagging from branch name
 
   - name: Constitutions
     responsibility: |
@@ -363,6 +439,22 @@ project_structure:
     role: Beads initialization and reset
   - path: pkg/orchestrator/stats.go
     role: LOC and documentation metrics
+  - path: pkg/orchestrator/analyze.go
+    role: Cross-artifact consistency checking
+  - path: pkg/orchestrator/scaffold.go
+    role: Scaffold orchestrator into consuming projects
+  - path: pkg/orchestrator/context.go
+    role: ProjectContext assembly from docs, specs, source code
+  - path: pkg/orchestrator/docker.go
+    role: Container image build from embedded Dockerfile
+  - path: pkg/orchestrator/tag.go
+    role: Versioned doc-release tagging
+  - path: pkg/orchestrator/version.go
+    role: Version constant read/write
+  - path: pkg/orchestrator/build.go
+    role: Go build, lint, test, install, credential extraction
+  - path: pkg/orchestrator/Dockerfile.claude
+    role: Embedded Dockerfile for Claude container
   - path: pkg/orchestrator/prompts/
     role: Embedded prompt templates (measure.tmpl, stitch.tmpl)
   - path: pkg/orchestrator/constitutions/
@@ -378,11 +470,18 @@ implementation_status:
   current_focus: Active use — all components implemented and operational
   progress:
     - done: Generation lifecycle (start, run, resume, stop, reset, list, switch)
-    - done: Measure and stitch workflows
+    - done: Measure and stitch workflows with full ProjectContext
     - done: Metrics collection and invocation records
     - done: Recovery from interrupted runs
     - done: Container-isolated Claude execution via podman
     - done: Embedded prompt templates with override
+    - done: Project scaffolding for consuming repos
+    - done: Context assembly from docs, specs, source code, issues
+    - done: History artifact saving (prompt, log, stats per invocation)
+    - done: Phase-aware structured logging
+    - done: Container image build from embedded Dockerfile
+    - done: Cross-artifact consistency analysis
+    - done: Orchestrator-managed git commits in stitch worktrees
 
 related_documents:
   - doc: docs/VISION.yaml
@@ -403,6 +502,10 @@ related_documents:
     purpose: Prompt template conventions and customization
   - doc: docs/engineering/eng03-project-initialization.yaml
     purpose: Prerequisites, scaffold procedure, configuration reference, Mage targets
+  - doc: docs/engineering/eng04-measure-scaling.yaml
+    purpose: Iterative measure strategy and scaling analysis
+  - doc: docs/engineering/eng05-stitch-benchmark-analysis.md
+    purpose: Stitch benchmark results and task scope recommendations
 
 figures:
   - path: docs/ARCHITECTURE-diagrams.md

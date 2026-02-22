@@ -32,7 +32,7 @@ requirements:
       - R2.4: Measure must clean up old proposed-issues files from the cobbler directory
       - R2.5: Measure must build the prompt from the template with existing issues, limit, output path, and user input
       - R2.6: Measure must invoke Claude with the built prompt
-      - R2.7: Measure must parse the JSON output file written by Claude
+      - R2.7: Measure must parse the YAML output file written by Claude
       - R2.8: Measure must import proposed issues into beads with title and description
       - R2.9: Measure must wire dependencies between imported issues based on the dependency index
       - R2.10: Measure must record an InvocationRecord on each created issue
@@ -52,6 +52,7 @@ requirements:
       - R3.9: For each task, stitch must capture LOC before Claude
       - R3.10: For each task, stitch must build the prompt from the template with task data
       - R3.11: For each task, stitch must invoke Claude in the worktree directory
+      - R3.11a: The orchestrator must stage and commit Claude's changes in the worktree (Claude is forbidden from running git commands)
       - R3.12: For each task, stitch must merge the task branch back to the base branch
       - R3.13: For each task, stitch must capture LOC after Claude and git diff stats
       - R3.14: For each task, stitch must clean up the worktree and delete the task branch
@@ -73,9 +74,11 @@ requirements:
       - R5.1: Default measure template must be embedded via go:embed from pkg/orchestrator/prompts/measure.tmpl
       - R5.2: Default stitch template must be embedded via go:embed from pkg/orchestrator/prompts/stitch.tmpl
       - R5.3: Custom templates from Config must override the embedded defaults
-      - R5.4: MeasurePromptData must provide ExistingIssues, Limit, OutputPath, and UserInput
-      - R5.5: StitchPromptData must provide Title, ID, IssueType, and Description
+      - R5.4: MeasurePromptData must provide ProjectContext (YAML blob of all docs, specs, source code, and issues), Limit, OutputPath, and UserInput
+      - R5.5: StitchPromptData must provide Title, ID, IssueType, Description, and ProjectContext (built from worktree)
       - R5.6: MeasurePromptData must provide LinesMin and LinesMax from Config.EstimatedLinesMin and Config.EstimatedLinesMax
+      - R5.7: MeasurePromptData must provide PlanningConstitution (embedded or from Config override)
+      - R5.8: StitchPromptData must provide ExecutionConstitution (embedded or from Config override)
 
   R6:
     title: Claude Invocation
@@ -84,13 +87,15 @@ requirements:
       - R6.2: runClaude must mount the working directory into the container at the same path using -v mountDir:mountDir
       - R6.3: runClaude must set the container working directory using podman -w when a worktree path is provided
       - R6.4: runClaude must capture stdout for token parsing
-      - R6.5: parseClaudeTokens must extract input and output token counts from stream-json output
+      - R6.5: parseClaudeTokens must extract input tokens, output tokens, cache creation tokens, cache read tokens, and cost from stream-json output
       - R6.6: When silence is false, Claude stdout must be tee'd to both buffer and os.Stdout
       - R6.7: runClaude must pass Config.PodmanArgs before the image name and Config.ClaudeArgs after the claude binary
       - R6.8: runClaude must use context.WithTimeout to enforce ClaudeMaxTimeSec; process is killed on expiry
       - R6.9: runClaude must clear Claude history files ($HOME/.claude.json*) before each invocation
       - R6.10: On Claude failure or timeout in stitch, the task must be reset to ready and the worktree cleaned up
       - R6.11: On merge failure in stitch, the task must be reset to ready and the worktree cleaned up
+      - R6.12: runClaude must refresh credentials from macOS Keychain before each invocation
+      - R6.13: runClaude must capture RawOutput (full stream-json bytes) for history saving
 
   R7:
     title: Issue Import
