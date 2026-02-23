@@ -1,0 +1,64 @@
+# Copyright (c) 2026 Petar Djukic. All rights reserved.
+# SPDX-License-Identifier: MIT
+
+id: rel02.0-uc004-issue-tracker-view
+title: Issue Tracker View
+
+summary: |
+  A developer opens the Issue Tracker panel in VS Code and sees all beads
+  issues grouped by status (open, in_progress, closed). Expanding an issue
+  reveals its description, dependencies, and comments. InvocationRecord
+  metrics (tokens, LOC delta, duration, diff stats) from issue comments
+  appear as formatted child nodes. The view auto-refreshes when
+  .beads/issues.jsonl changes on disk.
+
+actor: Developer using VS Code with the orchestrator extension installed
+
+trigger: Developer opens the Issue Tracker panel in the VS Code sidebar
+
+flow:
+  - F1: "Open Issue Tracker: developer clicks the mageOrchestrator.issues view in the VS Code sidebar"
+  - F2: "Parse issues: extension reads .beads/issues.jsonl and builds a tree of all issues"
+  - F3: "Group by status: tree displays three collapsible parent nodes (Open, In Progress, Closed) with issues sorted under the matching group"
+  - F4: "Browse issue list: each issue node displays its title, type (task or epic), and ID"
+  - F5: "Expand issue: developer expands an issue node to see child nodes for description, dependencies, and comments"
+  - F6: "View InvocationRecord metrics: comments containing InvocationRecord JSON render as formatted child nodes showing tokens (input and output), LOC delta (production and test before/after), duration, and diff stats (files changed, insertions, deletions)"
+  - F7: "Open issue detail: developer right-clicks an issue and selects the context menu action to open a read-only editor panel with the full issue content"
+  - F8: "Auto-refresh: a FileSystemWatcher on .beads/issues.jsonl triggers a tree rebuild when the file changes"
+
+touchpoints:
+  - T1: "Issue tree view provider: prd006-vscode-extension R4.1"
+  - T2: "JSONL parsing: prd006-vscode-extension R4.2"
+  - T3: "Status grouping: prd006-vscode-extension R4.3"
+  - T4: "Issue node display (title, type, ID): prd006-vscode-extension R4.4"
+  - T5: "Expandable details (description, dependencies, comments): prd006-vscode-extension R4.5"
+  - T6: "InvocationRecord formatting: prd006-vscode-extension R4.6"
+  - T7: "FileSystemWatcher auto-refresh: prd006-vscode-extension R4.7"
+  - T8: "Context menu open in editor: prd006-vscode-extension R4.8"
+  - T9: "InvocationRecord data shape: prd005-metrics-collection R1.1, R1.2, R1.3, R1.4, R1.5, R1.6, R1.7"
+
+success_criteria:
+  - S1: Issue Tracker tree displays Open, In Progress, and Closed as collapsible parent nodes
+  - S2: Each issue node shows its title, type, and ID
+  - S3: Expanding an issue reveals description, dependencies, and comments as child nodes
+  - S4: InvocationRecord comments display tokens, LOC delta, duration, and diff stats as formatted child nodes
+  - S5: Tree refreshes automatically when .beads/issues.jsonl is modified on disk
+  - S6: Context menu action opens a read-only editor panel with the full issue details
+  - S7: Tree handles an empty or missing .beads/issues.jsonl without errors
+
+out_of_scope:
+  - Creating, editing, or closing issues from the tree view (read-only display)
+  - Filtering or searching issues within the tree
+  - Aggregated metrics dashboard (see rel02.0-uc005-metrics-dashboard)
+  - Real-time streaming of issue updates from concurrent processes
+
+dependencies:
+  - D1: prd006-vscode-extension R4 (Issue Tracker Tree View requirements)
+  - D2: prd005-metrics-collection R1 (InvocationRecord format for parsing comments)
+  - D3: Extension infrastructure (prd006 R7) must be in place for tree views and watchers to register
+  - D4: Beads CLI must maintain .beads/issues.jsonl in the expected JSONL format
+
+risks:
+  - K1: "Large issue files may slow tree rendering | Parse incrementally and cache the tree model between refreshes"
+  - K2: "InvocationRecord JSON in comments may vary across versions | Parse known fields only and ignore unrecognized fields"
+  - K3: "Concurrent writes to issues.jsonl during generation runs | Use debounced FileSystemWatcher to avoid partial reads"
