@@ -132,6 +132,37 @@ func (o *Orchestrator) Clean() error {
 	return nil
 }
 
+// DumpMeasurePrompt assembles and prints the measure prompt to stdout.
+func (o *Orchestrator) DumpMeasurePrompt() error {
+	prompt, err := o.buildMeasurePrompt("", "[]", 1, "/dev/null")
+	if err != nil {
+		return fmt.Errorf("building measure prompt: %w", err)
+	}
+	fmt.Print(prompt)
+	return nil
+}
+
+// DumpStitchPrompt assembles and prints the stitch prompt to stdout.
+// Uses a placeholder task so the template structure is visible.
+func (o *Orchestrator) DumpStitchPrompt() error {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("getting working directory: %w", err)
+	}
+	prompt, err := o.buildStitchPrompt(stitchTask{
+		worktreeDir: cwd,
+		id:          "EXAMPLE-001",
+		title:       "Example task",
+		description: "Placeholder task description for prompt preview.",
+		issueType:   "task",
+	})
+	if err != nil {
+		return fmt.Errorf("building stitch prompt: %w", err)
+	}
+	fmt.Print(prompt)
+	return nil
+}
+
 // ExtractCredentials reads Claude credentials from the macOS Keychain
 // and writes them to SecretsDir/TokenFile.
 func (o *Orchestrator) ExtractCredentials() error {

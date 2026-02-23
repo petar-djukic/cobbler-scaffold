@@ -33,6 +33,9 @@ type Beads mg.Namespace
 // Podman groups container image and container lifecycle targets.
 type Podman mg.Namespace
 
+// Prompt groups prompt preview targets.
+type Prompt mg.Namespace
+
 // Stats groups the stats targets (LOC, tokens).
 type Stats mg.Namespace
 
@@ -234,6 +237,14 @@ func (Stats) Loc() error { return newOrch().Stats() }
 
 // Tokens enumerates prompt-attached files and counts tokens via the Anthropic API.
 func (Stats) Tokens() error { return newOrch().TokenStats() }
+
+// --- Prompt targets ---
+
+// Measure prints the assembled measure prompt to stdout.
+func (Prompt) Measure() error { return newOrch().DumpMeasurePrompt() }
+
+// Stitch prints the assembled stitch prompt to stdout.
+func (Prompt) Stitch() error { return newOrch().DumpStitchPrompt() }
 
 // --- Podman targets ---
 
