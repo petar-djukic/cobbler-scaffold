@@ -39,7 +39,7 @@ func (o *Orchestrator) Scaffold(targetDir, orchestratorRoot string) error {
 	if err := clearMageGoFiles(mageDir); err != nil {
 		return fmt.Errorf("clearing magefiles: %w", err)
 	}
-	src := filepath.Join(orchestratorRoot, "orchestrator.go")
+	src := filepath.Join(orchestratorRoot, "orchestrator.go.tmpl")
 	dst := filepath.Join(mageDir, "orchestrator.go")
 	logf("scaffold: copying %s -> %s", src, dst)
 	if err := copyFile(src, dst); err != nil {

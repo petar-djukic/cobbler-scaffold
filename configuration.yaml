@@ -16,6 +16,19 @@ project:
         prd: "docs/specs/product-requirements/*.yaml"
         use_case: "docs/specs/use-cases/*.yaml"
         test_suite: "docs/specs/test-suites/*.yaml"
+    context_sources: |
+        docs/VISION.yaml
+        docs/ARCHITECTURE.yaml
+        docs/SPECIFICATIONS.yaml
+        docs/road-map.yaml
+        docs/specs/product-requirements/prd*.yaml
+        docs/specs/use-cases/rel*.yaml
+        docs/specs/test-suites/test-rel*.yaml
+        docs/specs/dependency-map.yaml
+        docs/specs/sources.yaml
+        docs/engineering/eng*.yaml
+        docs/constitutions/*.yaml
+        docs/*.yaml
     seed_files: {}
 generation:
     prefix: generation-

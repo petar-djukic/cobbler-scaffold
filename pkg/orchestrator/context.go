@@ -303,6 +303,8 @@ type TestSuiteDoc struct {
 type TestCase struct {
 	UseCase       string    `yaml:"use_case,omitempty"`
 	Name          string    `yaml:"name"`
+	GoTest        string    `yaml:"go_test,omitempty"`
+	CoveredBy     string    `yaml:"covered_by,omitempty"`
 	Description   string    `yaml:"description,omitempty"`
 	Inputs        yaml.Node `yaml:"inputs"`
 	Normalization string    `yaml:"normalization,omitempty"`
@@ -428,24 +430,6 @@ func loadYAML[T any](path string) *T {
 	return &v
 }
 
-// loadYAMLDir globs for YAML files matching a pattern, loads each into T,
-// and returns them sorted by filename.
-func loadYAMLDir[T any](glob string) []*T {
-	matches, err := filepath.Glob(glob)
-	if err != nil {
-		return nil
-	}
-	sort.Strings(matches)
-	var result []*T
-	for _, path := range matches {
-		v := loadYAML[T](path)
-		if v != nil {
-			result = append(result, v)
-		}
-	}
-	return result
-}
-
 // loadYAMLNode reads a YAML file into a yaml.Node, preserving the
 // original structure without requiring a typed struct.
 func loadYAMLNode(path string) *yaml.Node {
@@ -483,37 +467,6 @@ func loadNamedDoc(path string) *NamedDoc {
 		node = content.Content[0]
 	}
 	return &NamedDoc{Name: name, Content: *node}
-}
-
-// knownDocFiles lists the docs/ files loaded into typed structs.
-// loadExtraDocs skips these to avoid duplication.
-var knownDocFiles = map[string]bool{
-	"VISION.yaml":         true,
-	"ARCHITECTURE.yaml":   true,
-	"SPECIFICATIONS.yaml": true,
-	"road-map.yaml":       true,
-}
-
-// loadExtraDocs loads any YAML files in dir that are not already
-// handled by typed struct loading (not in knownDocFiles).
-func loadExtraDocs(dir string) []*NamedDoc {
-	matches, err := filepath.Glob(filepath.Join(dir, "*.yaml"))
-	if err != nil {
-		return nil
-	}
-	sort.Strings(matches)
-	var result []*NamedDoc
-	for _, path := range matches {
-		base := filepath.Base(path)
-		if knownDocFiles[base] {
-			continue
-		}
-		doc := loadNamedDoc(path)
-		if doc != nil {
-			result = append(result, doc)
-		}
-	}
-	return result
 }
 
 // parseIssuesJSON converts a JSON array of issue tracker entries into typed
@@ -585,51 +538,176 @@ func loadSourceFiles(dirs []string) []SourceFile {
 }
 
 // ---------------------------------------------------------------------------
+// Context source resolution
+// ---------------------------------------------------------------------------
+
+// parseContextSources splits a newline-delimited text block into
+// individual glob patterns, trimming whitespace and skipping blanks
+// and comment lines (starting with #).
+func parseContextSources(text string) []string {
+	var patterns []string
+	for _, line := range strings.Split(text, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		patterns = append(patterns, line)
+	}
+	return patterns
+}
+
+// resolveContextSources expands glob patterns from ContextSources into
+// a deduplicated, sorted list of real file paths. Duplicate files
+// (matched by multiple patterns) are logged and removed.
+func resolveContextSources(sources string) []string {
+	patterns := parseContextSources(sources)
+	seen := make(map[string]string) // path -> first pattern that matched
+	var files []string
+
+	for _, pattern := range patterns {
+		matches, err := filepath.Glob(pattern)
+		if err != nil {
+			logf("resolveContextSources: bad glob %q: %v", pattern, err)
+			continue
+		}
+		for _, path := range matches {
+			if _, err := os.Stat(path); err != nil {
+				continue
+			}
+			if prev, dup := seen[path]; dup {
+				logf("resolveContextSources: duplicate %s (matched by %q and %q)", path, prev, pattern)
+				continue
+			}
+			seen[path] = pattern
+			files = append(files, path)
+		}
+	}
+
+	sort.Strings(files)
+	logf("resolveContextSources: %d pattern(s) -> %d file(s)", len(patterns), len(files))
+	return files
+}
+
+// classifyContextFile determines how a file should be loaded based on
+// its path. Returns a category string used by buildProjectContext to
+// dispatch to the appropriate typed loader.
+func classifyContextFile(path string) string {
+	dir := filepath.Dir(path)
+	base := filepath.Base(path)
+
+	switch {
+	case dir == "docs" && base == "VISION.yaml":
+		return "vision"
+	case dir == "docs" && base == "ARCHITECTURE.yaml":
+		return "architecture"
+	case dir == "docs" && base == "SPECIFICATIONS.yaml":
+		return "specifications"
+	case dir == "docs" && base == "road-map.yaml":
+		return "roadmap"
+	case dir == filepath.Join("docs", "specs", "product-requirements"):
+		return "prd"
+	case dir == filepath.Join("docs", "specs", "use-cases"):
+		return "use_case"
+	case dir == filepath.Join("docs", "specs", "test-suites"):
+		return "test_suite"
+	case dir == filepath.Join("docs", "specs"):
+		return "spec_aux"
+	case dir == filepath.Join("docs", "engineering"):
+		return "engineering"
+	case dir == filepath.Join("docs", "constitutions"):
+		return "constitution"
+	default:
+		return "extra"
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Assembly
 // ---------------------------------------------------------------------------
 
-// buildProjectContext reads all docs/ files and source code, parses
-// existing issues, and assembles them into a ProjectContext struct.
-func buildProjectContext(existingIssuesJSON string, goSourceDirs []string) (*ProjectContext, error) {
+// buildProjectContext resolves context sources, reads all matching files
+// and source code, parses existing issues, and assembles them into a
+// ProjectContext struct.
+func buildProjectContext(existingIssuesJSON string, goSourceDirs []string, contextSources string) (*ProjectContext, error) {
 	ctx := &ProjectContext{}
+	files := resolveContextSources(contextSources)
 
-	ctx.Vision = loadYAML[VisionDoc]("docs/VISION.yaml")
-	ctx.Architecture = loadYAML[ArchitectureDoc]("docs/ARCHITECTURE.yaml")
-	ctx.Specifications = loadYAML[SpecificationsDoc]("docs/SPECIFICATIONS.yaml")
-	ctx.Roadmap = loadYAML[RoadmapDoc]("docs/road-map.yaml")
+	// Dispatch each resolved file to the appropriate typed loader.
+	ctx.Specs = &SpecsCollection{}
+	ctx.Constitutions = &ConstitutionsDoc{}
 
-	ctx.Specs = &SpecsCollection{
-		ProductRequirements: loadYAMLDir[PRDDoc]("docs/specs/product-requirements/prd*.yaml"),
-		UseCases:            loadYAMLDir[UseCaseDoc]("docs/specs/use-cases/rel*.yaml"),
-		TestSuites:          loadYAMLDir[TestSuiteDoc]("docs/specs/test-suites/test-rel*.yaml"),
-		DependencyMap:       loadNamedDoc("docs/specs/dependency-map.yaml"),
-		Sources:             loadNamedDoc("docs/specs/sources.yaml"),
+	for _, path := range files {
+		switch classifyContextFile(path) {
+		case "vision":
+			ctx.Vision = loadYAML[VisionDoc](path)
+		case "architecture":
+			ctx.Architecture = loadYAML[ArchitectureDoc](path)
+		case "specifications":
+			ctx.Specifications = loadYAML[SpecificationsDoc](path)
+		case "roadmap":
+			ctx.Roadmap = loadYAML[RoadmapDoc](path)
+		case "prd":
+			if v := loadYAML[PRDDoc](path); v != nil {
+				ctx.Specs.ProductRequirements = append(ctx.Specs.ProductRequirements, v)
+			}
+		case "use_case":
+			if v := loadYAML[UseCaseDoc](path); v != nil {
+				ctx.Specs.UseCases = append(ctx.Specs.UseCases, v)
+			}
+		case "test_suite":
+			if v := loadYAML[TestSuiteDoc](path); v != nil {
+				ctx.Specs.TestSuites = append(ctx.Specs.TestSuites, v)
+			}
+		case "spec_aux":
+			if v := loadNamedDoc(path); v != nil {
+				switch filepath.Base(path) {
+				case "dependency-map.yaml":
+					ctx.Specs.DependencyMap = v
+				case "sources.yaml":
+					ctx.Specs.Sources = v
+				default:
+					ctx.Extra = append(ctx.Extra, v)
+				}
+			}
+		case "engineering":
+			if v := loadYAML[EngineeringDoc](path); v != nil {
+				ctx.Engineering = append(ctx.Engineering, v)
+			}
+		case "constitution":
+			base := filepath.Base(path)
+			node := loadYAMLNode(path)
+			switch base {
+			case "design.yaml":
+				ctx.Constitutions.Design = node
+			case "planning.yaml":
+				ctx.Constitutions.Planning = node
+			case "execution.yaml":
+				ctx.Constitutions.Execution = node
+			case "go-style.yaml":
+				ctx.Constitutions.GoStyle = node
+			}
+		default:
+			if v := loadNamedDoc(path); v != nil {
+				ctx.Extra = append(ctx.Extra, v)
+			}
+		}
 	}
-	// Omit empty specs collection.
+
+	// Omit empty collections.
 	if ctx.Specs.ProductRequirements == nil && ctx.Specs.UseCases == nil &&
 		ctx.Specs.TestSuites == nil && ctx.Specs.DependencyMap == nil &&
 		ctx.Specs.Sources == nil {
 		ctx.Specs = nil
-	}
-
-	ctx.Engineering = loadYAMLDir[EngineeringDoc]("docs/engineering/eng*.yaml")
-
-	ctx.Constitutions = &ConstitutionsDoc{
-		Design:    loadYAMLNode("docs/constitutions/design.yaml"),
-		Planning:  loadYAMLNode("docs/constitutions/planning.yaml"),
-		Execution: loadYAMLNode("docs/constitutions/execution.yaml"),
-		GoStyle:   loadYAMLNode("docs/constitutions/go-style.yaml"),
 	}
 	if ctx.Constitutions.Design == nil && ctx.Constitutions.Planning == nil &&
 		ctx.Constitutions.Execution == nil && ctx.Constitutions.GoStyle == nil {
 		ctx.Constitutions = nil
 	}
 
-	ctx.Extra = loadExtraDocs("docs/")
 	ctx.SourceCode = loadSourceFiles(goSourceDirs)
 	ctx.Issues = parseIssuesJSON(existingIssuesJSON)
 
-	logf("buildProjectContext: vision=%v arch=%v roadmap=%v specs=%v eng=%d const=%v issues=%d extra=%d src=%d",
+	logf("buildProjectContext: vision=%v arch=%v roadmap=%v specs=%v eng=%d const=%v issues=%d extra=%d src=%d files=%d",
 		ctx.Vision != nil,
 		ctx.Architecture != nil,
 		ctx.Roadmap != nil,
@@ -639,6 +717,7 @@ func buildProjectContext(existingIssuesJSON string, goSourceDirs []string) (*Pro
 		len(ctx.Issues),
 		len(ctx.Extra),
 		len(ctx.SourceCode),
+		len(files),
 	)
 	return ctx, nil
 }

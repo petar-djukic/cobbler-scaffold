@@ -126,57 +126,24 @@ func (o *Orchestrator) TokenStats() error {
 }
 
 // enumerateContextFiles lists all files that buildProjectContext loads,
-// grouped by category. The returned slice is unsorted; callers should
-// sort as needed.
+// grouped by category. Uses resolveContextSources to expand the configured
+// glob patterns, then classifies each file. Source code and prompt templates
+// are added separately.
 func (o *Orchestrator) enumerateContextFiles() []FileTokenStat {
 	var files []FileTokenStat
 
-	addFile := func(path, category string) {
+	// Context source files from configuration.
+	resolved := resolveContextSources(o.cfg.Project.ContextSources)
+	for _, path := range resolved {
 		info, err := os.Stat(path)
 		if err != nil {
-			return
+			continue
 		}
 		files = append(files, FileTokenStat{
-			Category: category,
+			Category: classifyContextFile(path),
 			Path:     path,
 			Bytes:    int(info.Size()),
 		})
-	}
-
-	addGlob := func(pattern, category string) {
-		matches, _ := filepath.Glob(pattern)
-		for _, m := range matches {
-			addFile(m, category)
-		}
-	}
-
-	// Top-level docs loaded by buildProjectContext.
-	addFile("docs/VISION.yaml", "docs")
-	addFile("docs/ARCHITECTURE.yaml", "docs")
-	addFile("docs/SPECIFICATIONS.yaml", "docs")
-	addFile("docs/road-map.yaml", "docs")
-
-	// Specs collection.
-	addGlob("docs/specs/product-requirements/prd*.yaml", "specs")
-	addGlob("docs/specs/use-cases/rel*.yaml", "specs")
-	addGlob("docs/specs/test-suites/test-rel*.yaml", "specs")
-	addFile("docs/specs/dependency-map.yaml", "specs")
-	addFile("docs/specs/sources.yaml", "specs")
-
-	// Engineering guidelines.
-	addGlob("docs/engineering/eng*.yaml", "engineering")
-
-	// Constitutions loaded into project context.
-	addFile("docs/constitutions/design.yaml", "constitutions")
-	addFile("docs/constitutions/planning.yaml", "constitutions")
-	addFile("docs/constitutions/execution.yaml", "constitutions")
-	addFile("docs/constitutions/go-style.yaml", "constitutions")
-
-	// Extra docs: any YAML in docs/ not covered by knownDocFiles.
-	extras := loadExtraDocs("docs/")
-	for _, doc := range extras {
-		path := filepath.Join("docs", doc.Name+".yaml")
-		addFile(path, "docs")
 	}
 
 	// Source code from configured directories.
@@ -195,8 +162,17 @@ func (o *Orchestrator) enumerateContextFiles() []FileTokenStat {
 	}
 
 	// Prompt templates.
-	addFile("docs/prompts/measure.yaml", "prompts")
-	addFile("docs/prompts/stitch.yaml", "prompts")
+	for _, p := range []string{"docs/prompts/measure.yaml", "docs/prompts/stitch.yaml"} {
+		info, err := os.Stat(p)
+		if err != nil {
+			continue
+		}
+		files = append(files, FileTokenStat{
+			Category: "prompts",
+			Path:     p,
+			Bytes:    int(info.Size()),
+		})
+	}
 
 	return files
 }

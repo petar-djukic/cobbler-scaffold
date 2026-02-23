@@ -13,9 +13,13 @@ See [rules/beads-workflow.md](rules/beads-workflow.md) for the complete workflow
 - Session completion checklist
 - Git commit requirements
 
+## Pre-Commit Quality Gate
+
+Before committing, run `mage analyze` and fix all reported YAML schema errors. The analyze target checks cross-artifact consistency (PRDs, use cases, test suites, roadmap) and validates YAML fields against Go structs. Unrecognized fields cause data loss in the measure prompt. Do not commit with analyze errors.
+
 ## Commit After Every Edit
 
-After creating or editing any file, commit immediately. Do not accumulate uncommitted changes across multiple turns. Each round of edits gets its own commit before responding to the user. This applies to all file types: code, docs, rules, config.
+After creating or editing any file, run `mage analyze`, fix any errors, then commit. Do not accumulate uncommitted changes across multiple turns. Each round of edits gets its own commit before responding to the user. This applies to all file types: code, docs, rules, config.
 
 ## Code Implementation
 

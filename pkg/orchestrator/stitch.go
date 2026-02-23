@@ -450,7 +450,7 @@ func (o *Orchestrator) buildStitchPrompt(task stitchTask) (string, error) {
 			if err := os.Chdir(task.worktreeDir); err != nil {
 				logf("buildStitchPrompt: chdir to worktree error: %v", err)
 			} else {
-				ctx, ctxErr := buildProjectContext("", o.cfg.Project.GoSourceDirs)
+				ctx, ctxErr := buildProjectContext("", o.cfg.Project.GoSourceDirs, o.cfg.Project.ContextSources)
 				if ctxErr != nil {
 					logf("buildStitchPrompt: buildProjectContext error: %v", ctxErr)
 				} else {

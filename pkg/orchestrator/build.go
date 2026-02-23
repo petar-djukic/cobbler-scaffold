@@ -65,8 +65,8 @@ func (o *Orchestrator) TestE2E() error {
 		fmt.Println("No E2E test directory found (tests/rel01.0/)")
 		return nil
 	}
-	logf("test:e2e: running go test -v -count=1 ./tests/rel01.0/...")
-	cmd := exec.Command(binGo, "test", "-v", "-count=1", "-timeout", "1800s", "./tests/rel01.0/...")
+	logf("test:e2e: running go test -v -count=1 -tags=e2e ./tests/rel01.0/...")
+	cmd := exec.Command(binGo, "test", "-v", "-count=1", "-tags=e2e", "-timeout", "1800s", "./tests/rel01.0/...")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
@@ -85,8 +85,8 @@ func (o *Orchestrator) TestE2EByUseCase(uc string) error {
 		return nil
 	}
 	pattern := fmt.Sprintf("Test.*_UC%s", uc)
-	logf("test:e2e: running go test -v -count=1 -run %s ./tests/rel01.0/...", pattern)
-	cmd := exec.Command(binGo, "test", "-v", "-count=1", "-run", pattern, "-timeout", "1800s", "./tests/rel01.0/...")
+	logf("test:e2e: running go test -v -count=1 -tags=e2e -run %s ./tests/rel01.0/...", pattern)
+	cmd := exec.Command(binGo, "test", "-v", "-count=1", "-tags=e2e", "-run", pattern, "-timeout", "1800s", "./tests/rel01.0/...")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {

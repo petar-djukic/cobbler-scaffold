@@ -160,7 +160,7 @@ func (o *Orchestrator) Analyze() error {
 	// Check 6: YAML schema validation — load all docs into typed structs
 	// with strict field checking. Unknown YAML fields indicate a schema
 	// mismatch that will cause data loss during measure prompt assembly.
-	result.SchemaErrors = validateDocSchemas()
+	result.SchemaErrors = o.validateDocSchemas()
 	logf("analyze: schema validation found %d error(s)", len(result.SchemaErrors))
 
 	return result.printReport(len(prdIDs), len(ucIDs), len(testSuiteIDs))
@@ -296,49 +296,42 @@ func extractUseCaseIDsFromTraces(traces []string) []string {
 	return ucs
 }
 
-// validateDocSchemas loads every doc type into its typed struct using
-// strict YAML decoding (KnownFields). Any YAML key that doesn't map to
-// a struct field is reported — these indicate schema drift that causes
-// data loss when assembling the measure prompt.
-func validateDocSchemas() []string {
+// validateDocSchemas resolves configured context sources and validates
+// each file against its typed struct using strict YAML decoding
+// (KnownFields). Any YAML key that doesn't map to a struct field is
+// reported — these indicate schema drift that causes data loss during
+// measure prompt assembly.
+func (o *Orchestrator) validateDocSchemas() []string {
 	var errs []string
 
-	// Top-level docs.
-	errs = append(errs, validateYAMLStrict[VisionDoc]("docs/VISION.yaml")...)
-	errs = append(errs, validateYAMLStrict[ArchitectureDoc]("docs/ARCHITECTURE.yaml")...)
-	errs = append(errs, validateYAMLStrict[SpecificationsDoc]("docs/SPECIFICATIONS.yaml")...)
-	errs = append(errs, validateYAMLStrict[RoadmapDoc]("docs/road-map.yaml")...)
-
-	// PRDs.
-	if matches, _ := filepath.Glob("docs/specs/product-requirements/prd*.yaml"); matches != nil {
-		for _, p := range matches {
-			errs = append(errs, validateYAMLStrict[PRDDoc](p)...)
+	// Validate all files from context_sources.
+	files := resolveContextSources(o.cfg.Project.ContextSources)
+	for _, path := range files {
+		switch classifyContextFile(path) {
+		case "vision":
+			errs = append(errs, validateYAMLStrict[VisionDoc](path)...)
+		case "architecture":
+			errs = append(errs, validateYAMLStrict[ArchitectureDoc](path)...)
+		case "specifications":
+			errs = append(errs, validateYAMLStrict[SpecificationsDoc](path)...)
+		case "roadmap":
+			errs = append(errs, validateYAMLStrict[RoadmapDoc](path)...)
+		case "prd":
+			errs = append(errs, validateYAMLStrict[PRDDoc](path)...)
+		case "use_case":
+			errs = append(errs, validateYAMLStrict[UseCaseDoc](path)...)
+		case "test_suite":
+			errs = append(errs, validateYAMLStrict[TestSuiteDoc](path)...)
+		case "engineering":
+			errs = append(errs, validateYAMLStrict[EngineeringDoc](path)...)
+		case "constitution":
+			if filepath.Base(path) == "go-style.yaml" {
+				errs = append(errs, validateYAMLStrict[GoStyleDoc](path)...)
+			}
 		}
 	}
 
-	// Use cases.
-	if matches, _ := filepath.Glob("docs/specs/use-cases/rel*.yaml"); matches != nil {
-		for _, p := range matches {
-			errs = append(errs, validateYAMLStrict[UseCaseDoc](p)...)
-		}
-	}
-
-	// Test suites.
-	if matches, _ := filepath.Glob("docs/specs/test-suites/test-rel*.yaml"); matches != nil {
-		for _, p := range matches {
-			errs = append(errs, validateYAMLStrict[TestSuiteDoc](p)...)
-		}
-	}
-
-	// Engineering docs.
-	if matches, _ := filepath.Glob("docs/engineering/eng*.yaml"); matches != nil {
-		for _, p := range matches {
-			errs = append(errs, validateYAMLStrict[EngineeringDoc](p)...)
-		}
-	}
-
-	// Constitutions (go-style has a typed struct for strict validation).
-	errs = append(errs, validateYAMLStrict[GoStyleDoc]("docs/constitutions/go-style.yaml")...)
+	// Embedded constitutions (pkg/orchestrator/constitutions/).
 	errs = append(errs, validateYAMLStrict[GoStyleDoc]("pkg/orchestrator/constitutions/go-style.yaml")...)
 
 	// Prompts (simple YAML mapping with text fields).

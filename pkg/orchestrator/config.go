@@ -39,6 +39,13 @@ type ProjectConfig struct {
 	// SpecGlobs maps a label to a glob pattern for word-count stats.
 	SpecGlobs map[string]string `yaml:"spec_globs"`
 
+	// ContextSources is a newline-delimited list of file paths and glob
+	// patterns that feed into the measure prompt's project context. Each
+	// line is a path or glob (e.g., "docs/VISION.yaml", "docs/specs/*.yaml").
+	// Globs are expanded at runtime; duplicates are logged and removed.
+	// Source code is handled separately by GoSourceDirs.
+	ContextSources string `yaml:"context_sources"`
+
 	// SeedFiles maps relative file paths to template source file paths.
 	// During LoadConfig, each source path is read and its content replaces
 	// the map value. During generator:start and generator:reset the content
@@ -251,6 +258,22 @@ func readFileInto(field *string) error {
 	return nil
 }
 
+// defaultContextSources lists the glob patterns that feed into the
+// measure prompt's project context. Each line is a path or glob.
+const defaultContextSources = `docs/VISION.yaml
+docs/ARCHITECTURE.yaml
+docs/SPECIFICATIONS.yaml
+docs/road-map.yaml
+docs/specs/product-requirements/prd*.yaml
+docs/specs/use-cases/rel*.yaml
+docs/specs/test-suites/test-rel*.yaml
+docs/specs/dependency-map.yaml
+docs/specs/sources.yaml
+docs/engineering/eng*.yaml
+docs/constitutions/*.yaml
+docs/*.yaml
+`
+
 func (c *Config) applyDefaults() {
 	if c.Project.BinaryDir == "" {
 		c.Project.BinaryDir = "bin"
@@ -296,6 +319,9 @@ func (c *Config) applyDefaults() {
 	}
 	if c.Podman.Image == "" {
 		c.Podman.Image = "claude-cli"
+	}
+	if c.Project.ContextSources == "" {
+		c.Project.ContextSources = defaultContextSources
 	}
 }
 
