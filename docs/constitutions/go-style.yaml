@@ -18,9 +18,6 @@ copyright_header: |
   pkg/, internal/, tests/). The header must appear on lines 1-2, followed by a
   blank line, then the package clause.
 
-  For markdown files in .claude/, use an HTML comment on the first line:
-
-    <!-- Copyright (c) 2026 Petar Djukic. All rights reserved. SPDX-License-Identifier: MIT -->
 
 duplication: |
   Before writing a function, search for existing code that does the same thing.

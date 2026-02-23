@@ -483,7 +483,7 @@ func (o *Orchestrator) buildPodmanCmd(ctx context.Context, workDir string) *exec
 	if absCredPath, err := filepath.Abs(credPath); err == nil {
 		if _, err := os.Stat(absCredPath); err == nil {
 			args = append(args,
-				"-v", absCredPath+":/home/crumbs/.claude/.credentials.json:ro")
+				"-v", absCredPath+":"+o.cfg.Claude.ContainerCredentialsPath+":ro")
 		}
 	}
 

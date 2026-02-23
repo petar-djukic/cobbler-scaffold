@@ -387,7 +387,7 @@ design_decisions:
       - Clear separation of concerns between documentation, planning, and implementation phases
       - Constitutions are YAML-structured and machine-parseable
     alternatives_rejected:
-      - "Scattered .claude/rules/*.md files: verbose markdown prose, no phase separation, all rules injected into every prompt"
+      - "Scattered markdown rule files: verbose prose, no phase separation, all rules injected into every prompt"
       - "Single monolithic constitution: measure agents see coding standards they don't need, stitch agents see format schemas they don't need"
 
 technology_choices:

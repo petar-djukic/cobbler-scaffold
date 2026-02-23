@@ -167,6 +167,11 @@ type ClaudeConfig struct {
 	// invocation (default 300, i.e. 5 minutes). If the time expires, the
 	// process is killed and the task is returned to beads.
 	MaxTimeSec int `yaml:"max_time_sec"`
+
+	// ContainerCredentialsPath is the absolute path inside the container
+	// where the Claude CLI expects its credentials file.
+	// Default: /home/crumbs/.claude/.credentials.json
+	ContainerCredentialsPath string `yaml:"container_credentials_path"`
 }
 
 // Config holds all orchestrator settings. Consuming repos either
@@ -313,6 +318,9 @@ func (c *Config) applyDefaults() {
 	}
 	if c.Claude.MaxTimeSec == 0 {
 		c.Claude.MaxTimeSec = 300
+	}
+	if c.Claude.ContainerCredentialsPath == "" {
+		c.Claude.ContainerCredentialsPath = "/home/crumbs/.claude/.credentials.json"
 	}
 	if c.Podman.Image == "" {
 		c.Podman.Image = "claude-cli"

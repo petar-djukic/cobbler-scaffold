@@ -15,7 +15,7 @@ import (
 // the image as :latest. The revision number increments for each tag created on
 // the same date. Optionally updates the version file if configured.
 //
-// Tag convention per .claude/rules/tagging.md:
+// Tag convention:
 //   - v0.* = documentation-only releases on main (manual)
 //   - v1.* = Claude-generated code (created by GeneratorStop)
 //
