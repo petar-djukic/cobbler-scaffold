@@ -54,6 +54,9 @@ releases:
       - id: rel02.0-uc005-metrics-dashboard
         summary: Webview panel aggregating token usage, LOC progression, and diff stats
         status: not started
+      - id: rel02.0-uc006-specification-browser
+        summary: Spec tree view and CodeLens for bidirectional spec-to-code navigation
+        status: not started
 
   - version: "99.0"
     name: Unscheduled
