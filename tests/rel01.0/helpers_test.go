@@ -1,3 +1,5 @@
+//go:build e2e
+
 // Copyright (c) 2026 Petar Djukic. All rights reserved.
 // SPDX-License-Identifier: MIT
 
@@ -26,7 +28,7 @@ import (
 )
 
 // scaffoldModule is the Go module used as the E2E test target.
-const scaffoldModule = "github.com/petar-djukic/go-unix-utils"
+const scaffoldModule = "github.com/petar-djukic/sdd-hello-world"
 
 // orchRoot is the absolute path to the orchestrator repository root.
 var orchRoot string
