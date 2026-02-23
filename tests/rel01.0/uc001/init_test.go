@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator"
@@ -238,5 +239,67 @@ func TestRel01_UC001_GeneratorResetWhenClean(t *testing.T) {
 	}
 	if branch := testutil.GitBranch(t, dir); branch != "main" {
 		t.Errorf("expected main branch, got %q", branch)
+	}
+}
+
+func TestRel01_UC001_FullResetFromGenerationBranch(t *testing.T) {
+	t.Parallel()
+	dir := testutil.SetupRepo(t, snapshotDir)
+
+	if err := testutil.RunMage(t, dir, "init"); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	if err := testutil.RunMage(t, dir, "generator:start"); err != nil {
+		t.Fatalf("generator:start: %v", err)
+	}
+
+	genBranch := testutil.GitBranch(t, dir)
+	if !strings.HasPrefix(genBranch, "generation-") {
+		t.Fatalf("expected generation branch after start, got %q", genBranch)
+	}
+
+	// Create a file and commit on the generation branch so it has work.
+	if err := os.WriteFile(filepath.Join(dir, "gen-work.txt"), []byte("generation work"), 0o644); err != nil {
+		t.Fatalf("writing gen-work.txt: %v", err)
+	}
+	for _, args := range [][]string{
+		{"git", "add", "gen-work.txt"},
+		{"git", "commit", "-m", "work on generation branch"},
+	} {
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args[1:], err, out)
+		}
+	}
+
+	// Reset from the generation branch.
+	if err := testutil.RunMage(t, dir, "reset"); err != nil {
+		t.Fatalf("mage reset from generation branch: %v", err)
+	}
+
+	if branch := testutil.GitBranch(t, dir); branch != "main" {
+		t.Errorf("expected main after reset, got %q", branch)
+	}
+	if branches := testutil.GitListBranchesMatching(t, dir, "generation-"); len(branches) > 0 {
+		t.Errorf("expected no generation branches after reset, got %v", branches)
+	}
+}
+
+func TestRel01_UC001_InitAfterReset(t *testing.T) {
+	t.Parallel()
+	dir := testutil.SetupRepo(t, snapshotDir)
+
+	if err := testutil.RunMage(t, dir, "init"); err != nil {
+		t.Fatalf("first init: %v", err)
+	}
+	if err := testutil.RunMage(t, dir, "reset"); err != nil {
+		t.Fatalf("reset: %v", err)
+	}
+	if err := testutil.RunMage(t, dir, "init"); err != nil {
+		t.Fatalf("init after reset: %v", err)
+	}
+	if !testutil.FileExists(dir, ".beads") {
+		t.Error("expected .beads/ to exist after init-reset-init cycle")
 	}
 }

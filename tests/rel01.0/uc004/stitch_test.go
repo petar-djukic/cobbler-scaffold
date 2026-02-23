@@ -8,6 +8,7 @@ package uc004_test
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -65,6 +66,35 @@ func TestRel01_UC004_StitchStopsWhenNoReadyTasks(t *testing.T) {
 	}
 	if !strings.Contains(out, "completed 0 task(s)") {
 		t.Errorf("expected 'completed 0 task(s)' in output, got:\n%s", out)
+	}
+}
+
+func TestRel01_UC004_StitchWithManualIssue(t *testing.T) {
+	t.Parallel()
+	dir := testutil.SetupRepo(t, snapshotDir)
+
+	if err := testutil.RunMage(t, dir, "init"); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	if err := testutil.RunMage(t, dir, "generator:start"); err != nil {
+		t.Fatalf("generator:start: %v", err)
+	}
+
+	// Create a task via bd create so stitch has work to pick up.
+	bdCreate := exec.Command("bd", "create", "--type", "task",
+		"--title", "e2e stitch test task", "--description", "created by e2e test")
+	bdCreate.Dir = dir
+	if out, err := bdCreate.CombinedOutput(); err != nil {
+		t.Fatalf("bd create: %v\n%s", err, out)
+	}
+
+	// Point credentials to an impossible path so checkClaude always fails.
+	testutil.WriteConfigOverride(t, dir, func(cfg *orchestrator.Config) {
+		cfg.Claude.SecretsDir = "/dev/null/impossible"
+	})
+
+	if err := testutil.RunMage(t, dir, "cobbler:stitch"); err == nil {
+		t.Fatal("expected cobbler:stitch to fail without Claude credentials when tasks exist")
 	}
 }
 

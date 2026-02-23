@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator"
 	"github.com/mesh-intelligence/cobbler-scaffold/tests/rel01.0/internal/testutil"
 )
 
@@ -86,4 +87,48 @@ func TestRel01_UC007_Stats(t *testing.T) {
 	if !strings.Contains(out, "go_loc") {
 		t.Errorf("expected 'go_loc' in mage stats output, got:\n%s", out)
 	}
+}
+
+func TestRel01_UC007_BuildSkipsWithoutMainPackage(t *testing.T) {
+	t.Parallel()
+	dir := testutil.SetupRepo(t, snapshotDir)
+
+	testutil.WriteConfigOverride(t, dir, func(cfg *orchestrator.Config) {
+		cfg.Project.MainPackage = ""
+	})
+
+	if err := testutil.RunMage(t, dir, "build"); err != nil {
+		t.Fatalf("mage build with empty MainPackage should skip, got error: %v", err)
+	}
+
+	// bin/ should not be created since build was skipped.
+	if _, err := os.Stat(filepath.Join(dir, "bin")); err == nil {
+		t.Error("expected bin/ to not exist when build is skipped")
+	}
+}
+
+func TestRel01_UC007_CleanWhenNoBinDir(t *testing.T) {
+	t.Parallel()
+	dir := testutil.SetupRepo(t, snapshotDir)
+
+	// Ensure bin/ does not exist before clean.
+	os.RemoveAll(filepath.Join(dir, "bin"))
+
+	if err := testutil.RunMage(t, dir, "clean"); err != nil {
+		t.Fatalf("mage clean without bin/ should succeed, got error: %v", err)
+	}
+}
+
+func TestRel01_UC007_Analyze(t *testing.T) {
+	t.Parallel()
+	dir := testutil.SetupRepo(t, snapshotDir)
+
+	out, err := testutil.RunMageOut(t, dir, "analyze")
+	// Analyze may report consistency issues on the scaffolded test repo
+	// (e.g. YAML schema errors in VISION.yaml). We verify it ran to
+	// completion (output mentions "analyze:") rather than crashing.
+	if !strings.Contains(out, "analyze:") {
+		t.Fatalf("mage analyze produced no output; err=%v\n%s", err, out)
+	}
+	t.Logf("analyze output:\n%s", out)
 }

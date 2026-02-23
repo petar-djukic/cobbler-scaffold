@@ -61,3 +61,39 @@ func TestRel01_UC005_ResumeFailsWithMultipleBranches(t *testing.T) {
 		t.Fatal("expected generator:resume to fail with multiple generation branches")
 	}
 }
+
+func TestRel01_UC005_ResumeFailsWithZeroBranches(t *testing.T) {
+	t.Parallel()
+	dir := testutil.SetupRepo(t, snapshotDir)
+
+	if err := testutil.RunMage(t, dir, "init"); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+
+	// No generation branches exist; resolveBranch returns "main" which
+	// fails the generation-prefix check in GeneratorResume.
+	if err := testutil.RunMage(t, dir, "generator:resume"); err == nil {
+		t.Fatal("expected generator:resume to fail with no generation branches")
+	}
+}
+
+func TestRel01_UC005_ResumeFailsWhenAlreadyOnGenBranch(t *testing.T) {
+	t.Parallel()
+	dir := testutil.SetupRepo(t, snapshotDir)
+
+	if err := testutil.RunMage(t, dir, "init"); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	if err := testutil.RunMage(t, dir, "generator:start"); err != nil {
+		t.Fatalf("generator:start: %v", err)
+	}
+
+	// Point credentials to an impossible path so checkClaude fails in RunCycles.
+	testutil.WriteConfigOverride(t, dir, func(cfg *orchestrator.Config) {
+		cfg.Claude.SecretsDir = "/dev/null/impossible"
+	})
+
+	if err := testutil.RunMage(t, dir, "generator:resume"); err == nil {
+		t.Fatal("expected generator:resume to fail without Claude credentials")
+	}
+}

@@ -47,6 +47,24 @@ func TestRel01_UC003_MeasureFailsWithoutBeads(t *testing.T) {
 	}
 }
 
+func TestRel01_UC003_MeasureFailsWithoutGeneration(t *testing.T) {
+	t.Parallel()
+	dir := testutil.SetupRepo(t, snapshotDir)
+
+	if err := testutil.RunMage(t, dir, "init"); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+
+	// Point credentials to an impossible path so checkClaude always fails.
+	testutil.WriteConfigOverride(t, dir, func(cfg *orchestrator.Config) {
+		cfg.Claude.SecretsDir = "/dev/null/impossible"
+	})
+
+	if err := testutil.RunMage(t, dir, "cobbler:measure"); err == nil {
+		t.Fatal("expected cobbler:measure to fail without Claude credentials on main")
+	}
+}
+
 // MeasureCreatesOneIssue runs a single measure invocation with
 // MaxMeasureIssues=1 and verifies at least one issue is created.
 func TestRel01_UC003_MeasureCreatesOneIssue(t *testing.T) {

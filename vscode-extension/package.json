@@ -11,13 +11,47 @@
   "categories": [
     "Other"
   ],
-  "activationEvents": [],
+  "activationEvents": [
+    "workspaceContains:configuration.yaml"
+  ],
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
       {
         "command": "mageOrchestrator.showDashboard",
         "title": "Mage Orchestrator: Show Dashboard"
+      },
+      {
+        "command": "mageOrchestrator.start",
+        "title": "Mage Orchestrator: Generator Start"
+      },
+      {
+        "command": "mageOrchestrator.run",
+        "title": "Mage Orchestrator: Generator Run"
+      },
+      {
+        "command": "mageOrchestrator.resume",
+        "title": "Mage Orchestrator: Generator Resume"
+      },
+      {
+        "command": "mageOrchestrator.stop",
+        "title": "Mage Orchestrator: Generator Stop"
+      },
+      {
+        "command": "mageOrchestrator.reset",
+        "title": "Mage Orchestrator: Generator Reset"
+      },
+      {
+        "command": "mageOrchestrator.switch",
+        "title": "Mage Orchestrator: Generator Switch"
+      },
+      {
+        "command": "mageOrchestrator.cobblerMeasure",
+        "title": "Mage Orchestrator: Cobbler Measure"
+      },
+      {
+        "command": "mageOrchestrator.cobblerStitch",
+        "title": "Mage Orchestrator: Cobbler Stitch"
       }
     ],
     "viewsContainers": {
