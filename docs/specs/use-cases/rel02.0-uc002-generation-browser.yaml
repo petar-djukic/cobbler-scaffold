@@ -1,0 +1,65 @@
+# Copyright (c) 2026 Petar Djukic. All rights reserved.
+# SPDX-License-Identifier: MIT
+
+id: rel02.0-uc002-generation-browser
+title: Generation Browser Tree View
+
+summary: |
+  A developer opens the Mage Orchestrator sidebar in VS Code and sees a
+  tree of all generations discovered from git tags. Each generation node
+  shows its lifecycle state (started, finished, merged, or abandoned) and
+  version tag when one exists. The current generation is visually
+  highlighted. The developer expands a node to see lifecycle and version
+  tags, and right-clicks to switch to that generation branch. The tree
+  refreshes automatically when git refs change.
+
+actor: Developer using VS Code with the orchestrator extension installed
+
+trigger: Developer opens the Mage Orchestrator sidebar panel containing the generation status view
+
+flow:
+  - F1: "Open sidebar: developer clicks the Mage Orchestrator activity bar icon to reveal the generation status view"
+  - F2: "Discover generations: extension queries git tags matching {GenPrefix}*-start and builds a list of all generation names"
+  - F3: "Display lifecycle state: each generation appears as a top-level tree node with a label showing its lifecycle state derived from tag suffixes (-start, -finished, -merged, -abandoned)"
+  - F4: "Show version tags: generation nodes that have a corresponding version tag (v[REL].[DATE].[REVISION]) display the tag alongside the lifecycle state"
+  - F5: "Highlight current: the generation matching the active git branch receives a distinct icon or label decorator"
+  - F6: "Expand node: developer clicks a generation node to reveal child nodes listing lifecycle tags and version tags associated with that generation"
+  - F7: "Switch generation: developer right-clicks a generation node and selects Switch to Generation from the context menu"
+  - F8: "Execute switch: extension runs the generator switch command targeting the selected branch; the tree refreshes to show the new current generation"
+  - F9: "Auto-refresh: a FileSystemWatcher on .git/refs/ detects tag or branch changes and triggers a tree refresh without user action"
+
+touchpoints:
+  - T1: "TreeDataProvider for status view: prd006-vscode-extension R2.1"
+  - T2: "Git tag discovery via {GenPrefix}*-start pattern: prd006-vscode-extension R2.2, prd002-generation-lifecycle R1.2"
+  - T3: "Lifecycle state from tag suffixes: prd006-vscode-extension R2.3, prd002-generation-lifecycle R1.2"
+  - T4: "Version tag display: prd006-vscode-extension R2.4"
+  - T5: "Current generation indicator: prd006-vscode-extension R2.5"
+  - T6: "Expandable lifecycle and version tag children: prd006-vscode-extension R2.6"
+  - T7: "Switch context menu action: prd006-vscode-extension R2.7, prd002-generation-lifecycle R8"
+  - T8: "Compare context menu action: prd006-vscode-extension R2.8 (delegates to rel02.0-uc003)"
+  - T9: "FileSystemWatcher on .git/refs/: prd006-vscode-extension R2.9, R7.2"
+
+success_criteria:
+  - S1: Tree lists all generations discovered from git tags matching {GenPrefix}*-start
+  - S2: Each generation node displays the correct lifecycle state (started, finished, merged, or abandoned)
+  - S3: Version tags appear on generation nodes when a v[REL].[DATE].[REVISION] tag exists for that generation
+  - S4: The generation matching the active git branch is visually distinct from inactive generations
+  - S5: Expanding a generation node reveals child nodes for lifecycle tags and version tags
+  - S6: The Switch to Generation context menu action changes the active branch to the selected generation
+  - S7: The tree refreshes automatically when git refs change (new tags, branch switches, merges)
+
+out_of_scope:
+  - Lifecycle command execution from Command Palette (see rel02.0-uc001)
+  - Tag-to-tag and generation-to-generation diff views (see rel02.0-uc003)
+  - Issue tracker and metrics views (see rel02.0-uc004, rel02.0-uc005)
+  - Specification browser (see rel02.0-uc006)
+
+dependencies:
+  - D1: prd006-vscode-extension R2 (generation browser tree view requirements)
+  - D2: prd002-generation-lifecycle R1 (generation naming and tag conventions)
+  - D3: Extension infrastructure (prd006 R7) must be in place for the tree view to register
+
+risks:
+  - K1: "Git tag parsing is fragile if external tools create non-standard tags | Filter strictly by {GenPrefix} pattern and ignore unrecognized suffixes"
+  - K2: "FileSystemWatcher may fire multiple events rapidly on branch operations | Debounce refresh to avoid redundant tree rebuilds"
+  - K3: "Large repositories with many generations may slow tree rendering | Paginate or collapse old generations by default"
