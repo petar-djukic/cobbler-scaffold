@@ -13,24 +13,51 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"text/tabwriter"
+
+	"gopkg.in/yaml.v3"
 )
 
 // FileTokenStat holds size information for a single file that
 // contributes to an assembled Claude prompt.
 type FileTokenStat struct {
-	Category string `json:"category"`
-	Path     string `json:"path"`
-	Bytes    int    `json:"bytes"`
+	Category string `yaml:"category"`
+	Path     string `yaml:"path"`
+	Bytes    int    `yaml:"bytes"`
 }
 
 // tokenCountModel is the default model identifier for the Anthropic
 // Token Counting API. All Claude 3.5+ models share the same tokenizer.
 const tokenCountModel = "claude-sonnet-4-20250514"
 
+// tokenStatsReport is the top-level YAML output for stats:tokens.
+type tokenStatsReport struct {
+	Files      []FileTokenStat    `yaml:"files"`
+	Categories []categorySummary  `yaml:"categories"`
+	Total      totalSummary       `yaml:"total"`
+	Prompt     promptTokenSummary `yaml:"prompt"`
+}
+
+type categorySummary struct {
+	Category string `yaml:"category"`
+	Files    int    `yaml:"files"`
+	Bytes    int    `yaml:"bytes"`
+}
+
+type totalSummary struct {
+	Files int `yaml:"files"`
+	Bytes int `yaml:"bytes"`
+}
+
+type promptTokenSummary struct {
+	Bytes           int    `yaml:"bytes"`
+	EstimatedTokens int    `yaml:"estimated_tokens"`
+	ExactTokens     int    `yaml:"exact_tokens,omitempty"`
+	Model           string `yaml:"model,omitempty"`
+}
+
 // TokenStats enumerates all files that buildProjectContext would load,
-// displays their sizes grouped by category, and optionally calls the
-// Anthropic Token Counting API for exact prompt token counts. Set
+// outputs their sizes grouped by category as YAML, and optionally calls
+// the Anthropic Token Counting API for exact prompt token counts. Set
 // ANTHROPIC_API_KEY to enable API counting.
 func (o *Orchestrator) TokenStats() error {
 	files := o.enumerateContextFiles()
@@ -42,50 +69,59 @@ func (o *Orchestrator) TokenStats() error {
 		return files[i].Path < files[j].Path
 	})
 
-	// Print per-file table.
-	w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(w, "CATEGORY\tFILE\tBYTES")
-	fmt.Fprintln(w, "--------\t----\t-----")
-
 	totalBytes := 0
 	catBytes := map[string]int{}
 	catCount := map[string]int{}
 	for _, f := range files {
-		fmt.Fprintf(w, "%s\t%s\t%d\n", f.Category, f.Path, f.Bytes)
 		totalBytes += f.Bytes
 		catBytes[f.Category] += f.Bytes
 		catCount[f.Category]++
 	}
-	fmt.Fprintln(w, "\t\t")
 
 	cats := sortedKeys(catBytes)
+	var categories []categorySummary
 	for _, c := range cats {
-		fmt.Fprintf(w, "%s\t%d files\t%d\n", c, catCount[c], catBytes[c])
+		categories = append(categories, categorySummary{
+			Category: c, Files: catCount[c], Bytes: catBytes[c],
+		})
 	}
-	fmt.Fprintln(w, "\t\t")
-	fmt.Fprintf(w, "TOTAL\t%d files\t%d\n", len(files), totalBytes)
-	w.Flush()
 
 	// Build measure prompt for token counting.
 	prompt, err := o.buildMeasurePrompt("", "[]", 1, "/dev/null")
 	if err != nil {
 		return fmt.Errorf("building measure prompt: %w", err)
 	}
-	fmt.Printf("\nAssembled measure prompt: %d bytes\n", len(prompt))
+
+	ps := promptTokenSummary{
+		Bytes:           len(prompt),
+		EstimatedTokens: len(prompt) / 4,
+	}
 
 	apiKey := os.Getenv("ANTHROPIC_API_KEY")
-	if apiKey == "" {
-		fmt.Printf("Estimated tokens (bytes/4): ~%d\n", len(prompt)/4)
-		fmt.Fprintf(os.Stderr, "\nSet ANTHROPIC_API_KEY for exact token counts via the Anthropic Token Counting API.\n")
-		return nil
+	if apiKey != "" {
+		logf("token_stats: counting tokens via API (model=%s)", tokenCountModel)
+		tokens, apiErr := countTokensViaAPI(apiKey, tokenCountModel, prompt)
+		if apiErr != nil {
+			return fmt.Errorf("token counting API: %w", apiErr)
+		}
+		ps.ExactTokens = tokens
+		ps.Model = tokenCountModel
+	} else {
+		fmt.Fprintf(os.Stderr, "Set ANTHROPIC_API_KEY for exact token counts via the Anthropic Token Counting API.\n")
 	}
 
-	logf("token_stats: counting tokens via API (model=%s)", tokenCountModel)
-	tokens, err := countTokensViaAPI(apiKey, tokenCountModel, prompt)
-	if err != nil {
-		return fmt.Errorf("token counting API: %w", err)
+	report := tokenStatsReport{
+		Files:      files,
+		Categories: categories,
+		Total:      totalSummary{Files: len(files), Bytes: totalBytes},
+		Prompt:     ps,
 	}
-	fmt.Printf("Measure prompt tokens: %d (model: %s)\n", tokens, tokenCountModel)
+
+	out, err := yaml.Marshal(report)
+	if err != nil {
+		return fmt.Errorf("marshalling report: %w", err)
+	}
+	fmt.Print(string(out))
 	return nil
 }
 

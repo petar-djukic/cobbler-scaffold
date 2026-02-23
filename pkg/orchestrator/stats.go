@@ -5,20 +5,21 @@ package orchestrator
 
 import (
 	"bufio"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"unicode"
+
+	"gopkg.in/yaml.v3"
 )
 
 // StatsRecord holds collected LOC and documentation word counts.
 type StatsRecord struct {
-	GoProdLOC int            `json:"go_loc_prod"`
-	GoTestLOC int            `json:"go_loc_test"`
-	GoLOC     int            `json:"go_loc"`
-	SpecWords map[string]int `json:"spec_words"`
+	GoProdLOC int            `yaml:"go_loc_prod"`
+	GoTestLOC int            `yaml:"go_loc_test"`
+	GoLOC     int            `yaml:"go_loc"`
+	SpecWords map[string]int `yaml:"spec_words"`
 }
 
 // CollectStats gathers Go LOC and documentation word counts.
@@ -74,17 +75,17 @@ func (o *Orchestrator) CollectStats() (StatsRecord, error) {
 	}, nil
 }
 
-// Stats prints Go lines of code and documentation word counts.
+// Stats prints Go lines of code and documentation word counts as YAML.
 func (o *Orchestrator) Stats() error {
 	rec, err := o.CollectStats()
 	if err != nil {
 		return err
 	}
-	line, err := json.Marshal(rec)
+	out, err := yaml.Marshal(rec)
 	if err != nil {
 		return err
 	}
-	fmt.Println(string(line))
+	fmt.Print(string(out))
 	return nil
 }
 
