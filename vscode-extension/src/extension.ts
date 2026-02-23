@@ -6,6 +6,7 @@
 
 import * as vscode from "vscode";
 import * as commands from "./commands";
+import { SpecBrowserProvider } from "./specBrowser";
 
 /** Output channel for error and diagnostic logging. */
 let outputChannel: vscode.OutputChannel;
@@ -82,6 +83,23 @@ export function activate(context: vscode.ExtensionContext): void {
     configWatcher.onDidChange(() =>
       outputChannel.appendLine("configuration.yaml changed")
     );
+
+    // Specification Browser tree view (prd006 R8).
+    const specBrowser = new SpecBrowserProvider(root);
+    context.subscriptions.push(
+      vscode.window.registerTreeDataProvider(
+        "mageOrchestrator.specs",
+        specBrowser
+      )
+    );
+
+    const specsWatcher = vscode.workspace.createFileSystemWatcher(
+      new vscode.RelativePattern(root, "docs/specs/**")
+    );
+    context.subscriptions.push(specsWatcher);
+    specsWatcher.onDidChange(() => specBrowser.refresh());
+    specsWatcher.onDidCreate(() => specBrowser.refresh());
+    specsWatcher.onDidDelete(() => specBrowser.refresh());
   }
 
   outputChannel.appendLine("Mage Orchestrator extension activated");

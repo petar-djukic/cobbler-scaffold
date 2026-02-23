@@ -72,6 +72,10 @@
         {
           "id": "mageOrchestrator.issues",
           "name": "Issues"
+        },
+        {
+          "id": "mageOrchestrator.specs",
+          "name": "Specifications"
         }
       ]
     }
