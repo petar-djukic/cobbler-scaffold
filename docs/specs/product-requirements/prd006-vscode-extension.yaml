@@ -14,6 +14,8 @@ goals:
   - G2: Enable comparison between version tags and between generation branches
   - G3: Surface beads issue status, dependencies, and invocation metrics inside the editor
   - G4: Allow lifecycle management (start, run, resume, stop, reset, switch) without leaving VS Code
+  - G5: Navigate specification artifacts (use cases, PRDs, test suites) and their relationships from a tree view
+  - G6: Trace from source code annotations back to the specification YAML they reference
 
 requirements:
   R1:
@@ -91,6 +93,26 @@ requirements:
       - R7.6: The extension must register all commands, tree data providers, and webview panels in the activate function
       - R7.7: The extension must declare all new commands and views in package.json contributes
 
+  R8:
+    title: Specification Browser
+    items:
+      - R8.1: The extension must provide a TreeDataProvider for the mageOrchestrator.specs view
+      - R8.2: The tree must list all use cases discovered from docs/specs/use-cases/*.yaml, grouped under a Use Cases parent node
+      - R8.3: Each use case node must expand to show its PRD touchpoints as child nodes, derived from the touchpoints field in the use case YAML
+      - R8.4: Each PRD requirement node must expand to show source files that reference the PRD ID, discovered by searching for the pattern prd[NNN] in files under pkg/
+      - R8.5: Clicking any node must open the corresponding YAML file (for use cases and PRDs) or Go source file (for implementation references) in the editor
+      - R8.6: The tree must include top-level parent nodes for PRDs (listing docs/specs/product-requirements/*.yaml) and Test Suites (listing docs/specs/test-suites/*.yaml)
+      - R8.7: The tree must refresh when files under docs/specs/ change, monitored via a FileSystemWatcher
+
+  R9:
+    title: Code-to-Spec Traceability
+    items:
+      - R9.1: The extension must register a CodeLensProvider for Go source files (language selector go)
+      - R9.2: "The provider must detect single-line comments matching the pattern // prd: <prd-id> <req-id> (e.g., // prd: prd006-vscode-extension R8.1)"
+      - R9.3: "The provider must detect single-line comments matching the pattern // uc: <uc-id> (e.g., // uc: rel02.0-uc006-specification-browser)"
+      - R9.4: Each detected tag must render a View Requirement CodeLens above the comment line
+      - R9.5: Activating the CodeLens must open the referenced specification YAML file in the editor, resolved from docs/specs/ using the prd-id or uc-id
+
 non_goals:
   - This PRD does not define a general-purpose extension reusable by consuming projects
   - This PRD does not replace the mage CLI as the primary interface
@@ -110,6 +132,9 @@ acceptance_criteria:
   - All views refresh automatically when underlying data changes
   - Extension activates only when configuration.yaml is present in the workspace
   - Extension handles missing data files without errors
+  - Specification browser lists use cases, PRDs, and test suites from docs/specs/ with expandable nodes showing touchpoints and implementing source files
+  - Clicking a spec node opens the YAML file; clicking a source node opens the Go file
+  - "CodeLens appears above // prd: and // uc: comments in Go files, linking to the referenced specification YAML"
 
 references:
   - prd001-orchestrator-core
