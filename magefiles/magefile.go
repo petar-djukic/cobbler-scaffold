@@ -161,9 +161,6 @@ func rejectSelfTarget(target, orchRoot string) error {
 // Unit runs go test on all packages.
 func (Test) Unit() error { return newOrch().TestUnit() }
 
-// E2e runs all E2E tests in tests/rel01.0/.
-func (Test) E2e() error { return newOrch().TestE2E() }
-
 // All runs unit and E2E tests.
 func (Test) All() error { return newOrch().TestAll() }
 
