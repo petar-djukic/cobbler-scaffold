@@ -25,6 +25,9 @@ type Scaffold mg.Namespace
 // Beads groups issue-tracker lifecycle targets.
 type Beads mg.Namespace
 
+// Stats groups the stats targets (LOC, tokens).
+type Stats mg.Namespace
+
 // Test groups the testing targets.
 type Test mg.Namespace
 
@@ -56,9 +59,6 @@ func logf(format string, args ...any) {
 	fmt.Fprintf(os.Stderr, "[%s] %s\n", time.Now().Format(time.RFC3339), msg)
 }
 
-// boolPtr returns a pointer to a bool value.
-func boolPtr(v bool) *bool { return &v }
-
 // --- Top-level targets ---
 
 // Init initializes the project (beads).
@@ -66,9 +66,6 @@ func Init() error { return newOrch().Init() }
 
 // Reset performs a full reset: cobbler, generator, beads.
 func Reset() error { return newOrch().FullReset() }
-
-// Stats prints Go lines of code and documentation word counts.
-func Stats() error { return newOrch().Stats() }
 
 // Build compiles the project binary.
 func Build() error { return newOrch().Build() }
@@ -163,6 +160,14 @@ func (Generator) Switch() error { return newOrch().GeneratorSwitch() }
 
 // Reset destroys generation branches, worktrees, and Go source directories.
 func (Generator) Reset() error { return newOrch().GeneratorReset() }
+
+// --- Stats targets ---
+
+// Loc prints Go lines of code and documentation word counts.
+func (Stats) Loc() error { return newOrch().Stats() }
+
+// Tokens enumerates prompt-attached files and counts tokens via the Anthropic API.
+func (Stats) Tokens() error { return newOrch().TokenStats() }
 
 // --- Beads targets ---
 

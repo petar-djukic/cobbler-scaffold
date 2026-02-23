@@ -33,6 +33,9 @@ type Beads mg.Namespace
 // Podman groups container image and container lifecycle targets.
 type Podman mg.Namespace
 
+// Stats groups the stats targets (LOC, tokens).
+type Stats mg.Namespace
+
 // Test groups the testing targets.
 type Test mg.Namespace
 
@@ -71,9 +74,6 @@ func Init() error { return newOrch().Init() }
 
 // Reset performs a full reset: cobbler, generator, beads.
 func Reset() error { return newOrch().FullReset() }
-
-// Stats prints Go lines of code and documentation word counts.
-func Stats() error { return newOrch().Stats() }
 
 // Build compiles the project binary.
 func Build() error { return newOrch().Build() }
@@ -229,6 +229,14 @@ func (Beads) Init() error { return newOrch().BeadsInit() }
 
 // Reset clears beads issue history.
 func (Beads) Reset() error { return newOrch().BeadsReset() }
+
+// --- Stats targets ---
+
+// Loc prints Go lines of code and documentation word counts.
+func (Stats) Loc() error { return newOrch().Stats() }
+
+// Tokens enumerates prompt-attached files and counts tokens via the Anthropic API.
+func (Stats) Tokens() error { return newOrch().TokenStats() }
 
 // --- Podman targets ---
 
