@@ -73,8 +73,9 @@ issue_structure:
     design_decisions:
       required: false
       description: |
-        Architecture, patterns, or constraints to follow. Optional but
-        recommended for code tasks.
+        Architecture, patterns, or constraints to follow. Each item is a
+        mapping with `id` (D1, D2, ...) and `text` fields, not a bare
+        string. Optional but recommended for code tasks.
 
     acceptance_criteria:
       required: true
@@ -127,6 +128,11 @@ issue_structure:
         location: docs/SPECIFICATIONS.md
         format_rule: specification-format
         when: Summary of PRDs, use cases, test suites, roadmap
+
+  yaml_quality:
+    - Quote all requirement strings that contain colons or special YAML characters.
+    - Use ASCII dashes (--), not Unicode em dashes or en dashes.
+    - Design decisions are mappings with id (D1, D2, ...) and text fields, not bare strings.
 
   code_issues:
     rules:
@@ -183,8 +189,10 @@ example_code_issue: |
     - Property operations (Set/Get/Clear)
 
   design_decisions:
-    - Use table accessor pattern from prd001-cupboard-core
-    - Filter as map[string]any per PRD
+    - id: D1
+      text: Use table accessor pattern from prd001-cupboard-core
+    - id: D2
+      text: Filter as map[string]any per PRD
 
   acceptance_criteria:
     - All CrumbTable operations implemented

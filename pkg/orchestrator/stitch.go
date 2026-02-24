@@ -281,6 +281,20 @@ func pickTask(baseBranch, worktreeBase string) (stitchTask, error) {
 	}
 
 	issue := issues[0]
+
+	// Retrieve full issue via bd show --json for a reliable description.
+	if showOut, showErr := bdShowJSON(issue.ID); showErr == nil {
+		var full struct {
+			Description string `json:"description"`
+		}
+		if json.Unmarshal(showOut, &full) == nil && full.Description != "" {
+			issue.Description = full.Description
+			logf("pickTask: refreshed description from bd show --json (%d bytes)", len(full.Description))
+		}
+	} else {
+		logf("pickTask: bd show --json fallback: %v", showErr)
+	}
+
 	task := stitchTask{
 		id:          issue.ID,
 		title:       issue.Title,
@@ -294,10 +308,42 @@ func pickTask(baseBranch, worktreeBase string) (stitchTask, error) {
 		task.issueType = "task"
 	}
 
+	// Validate the issue description as YAML with required fields.
+	if err := validateIssueDescription(task.description); err != nil {
+		logf("pickTask: description validation warning: %v", err)
+	}
+
 	logf("pickTask: picked id=%s type=%s branch=%s worktree=%s", task.id, task.issueType, task.branchName, task.worktreeDir)
 	logf("pickTask: title=%q", task.title)
 	logf("pickTask: descriptionLen=%d", len(task.description))
 	return task, nil
+}
+
+// validateIssueDescription checks that a description parses as valid YAML
+// and contains the required top-level keys defined by the issue-format
+// constitution. Returns an error describing what is missing; callers
+// should log a warning but not block on validation failures.
+func validateIssueDescription(desc string) error {
+	if desc == "" {
+		return fmt.Errorf("empty description")
+	}
+
+	var parsed map[string]any
+	if err := yaml.Unmarshal([]byte(desc), &parsed); err != nil {
+		return fmt.Errorf("not valid YAML: %w", err)
+	}
+
+	required := []string{"deliverable_type", "required_reading", "files", "requirements", "acceptance_criteria"}
+	var missing []string
+	for _, key := range required {
+		if _, ok := parsed[key]; !ok {
+			missing = append(missing, key)
+		}
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("missing required fields: %s", strings.Join(missing, ", "))
+	}
+	return nil
 }
 
 func (o *Orchestrator) doOneTask(task stitchTask, baseBranch, repoRoot string) error {

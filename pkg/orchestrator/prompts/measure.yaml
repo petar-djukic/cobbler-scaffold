@@ -37,7 +37,7 @@ constraints: |
 output_format: |
   Write a YAML list of crumb objects to `{output_path}`. Each crumb has a sequential `index` (starting at 0) and a `dependency` field. Set `dependency` to the index of the crumb that must be completed first, or `-1` if there are no dependencies.
 
-  The `description` field must follow the crumb-format YAML schema from the planning_constitution. Write it as a YAML literal block scalar.
+  The `description` field must be a valid YAML document conforming to the issue_format_constitution injected above. Write it as a YAML literal block scalar. Quote all requirement strings. Use ASCII dashes, not Unicode em dashes. Each design_decision is a mapping with `id:` (D1, D2, ...) and `text:` fields, not a bare string.
 
   Example:
     - index: 0
@@ -63,8 +63,10 @@ output_format: |
           - "R2: Add Get and Set operations"
 
         design_decisions:
-          - Use table accessor pattern from prd001-cupboard-core
-          - "Keep implementation in internal/, not pkg/"
+          - id: D1
+            text: Use table accessor pattern from prd001-cupboard-core
+          - id: D2
+            text: "Keep implementation in internal/, not pkg/"
 
         acceptance_criteria:
           - All operations implemented and tested
@@ -90,6 +92,6 @@ output_format: |
         acceptance_criteria:
           - All tests pass
 
-  The description must be self-contained. All five fields (deliverable_type, required_reading, files, requirements, acceptance_criteria) are required. Add design_decisions when the stitch agent must follow specific patterns or architecture constraints.
+  The description must be self-contained. All five fields (deliverable_type, required_reading, files, requirements, acceptance_criteria) are required. Add design_decisions (each with `id` and `text` fields) when the stitch agent must follow specific patterns or architecture constraints.
 
   The tasks will be automatically imported into the issue tracker.

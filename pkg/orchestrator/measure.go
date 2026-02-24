@@ -21,6 +21,9 @@ var defaultMeasurePrompt string
 //go:embed constitutions/planning.yaml
 var planningConstitution string
 
+//go:embed constitutions/issue-format.yaml
+var issueFormatConstitution string
+
 // Measure assesses project state and proposes new tasks via Claude.
 // Reads all options from Config.
 func (o *Orchestrator) Measure() error {
@@ -332,13 +335,14 @@ func (o *Orchestrator) buildMeasurePrompt(userInput, existingIssues string, limi
 	}
 
 	doc := MeasurePromptDoc{
-		Role:                 tmpl.Role,
-		ProjectContext:       projectCtx,
-		PlanningConstitution: parseYAMLNode(planningConst),
-		Task:                 substitutePlaceholders(tmpl.Task, placeholders),
-		Constraints:          substitutePlaceholders(tmpl.Constraints, placeholders),
-		OutputFormat:         substitutePlaceholders(tmpl.OutputFormat, placeholders),
-		AdditionalContext:    userInput,
+		Role:                    tmpl.Role,
+		ProjectContext:          projectCtx,
+		PlanningConstitution:    parseYAMLNode(planningConst),
+		IssueFormatConstitution: parseYAMLNode(issueFormatConstitution),
+		Task:                    substitutePlaceholders(tmpl.Task, placeholders),
+		Constraints:             substitutePlaceholders(tmpl.Constraints, placeholders),
+		OutputFormat:            substitutePlaceholders(tmpl.OutputFormat, placeholders),
+		AdditionalContext:       userInput,
 	}
 
 	out, err := yaml.Marshal(&doc)

@@ -127,6 +127,21 @@ func TestMeasurePromptIncludesPlanningConstitution(t *testing.T) {
 	}
 }
 
+func TestMeasurePromptIncludesIssueFormatConstitution(t *testing.T) {
+	o := New(Config{})
+	prompt, err := o.buildMeasurePrompt("", "[]", 5, "/tmp/out.yaml")
+	if err != nil {
+		t.Fatalf("buildMeasurePrompt: %v", err)
+	}
+
+	if !strings.Contains(prompt, "issue_format_constitution:") {
+		t.Error("measure prompt missing issue_format_constitution YAML key")
+	}
+	if !strings.Contains(prompt, "deliverable_type") {
+		t.Error("measure prompt missing issue format constitution content")
+	}
+}
+
 func TestMeasurePromptIncludesProjectContext(t *testing.T) {
 	o := New(Config{})
 	prompt, err := o.buildMeasurePrompt("", "[]", 5, "/tmp/out.yaml")

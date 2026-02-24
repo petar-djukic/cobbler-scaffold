@@ -15,13 +15,14 @@ import (
 // Each field maps directly to a top-level YAML key. When marshaled,
 // it produces a single syntactically correct YAML document.
 type MeasurePromptDoc struct {
-	Role                 string          `yaml:"role"`
-	ProjectContext       *ProjectContext `yaml:"project_context,omitempty"`
-	PlanningConstitution *yaml.Node     `yaml:"planning_constitution,omitempty"`
-	Task                 string          `yaml:"task"`
-	Constraints          string          `yaml:"constraints"`
-	OutputFormat         string          `yaml:"output_format"`
-	AdditionalContext    string          `yaml:"additional_context,omitempty"`
+	Role                    string          `yaml:"role"`
+	ProjectContext          *ProjectContext `yaml:"project_context,omitempty"`
+	PlanningConstitution    *yaml.Node     `yaml:"planning_constitution,omitempty"`
+	IssueFormatConstitution *yaml.Node     `yaml:"issue_format_constitution,omitempty"`
+	Task                    string          `yaml:"task"`
+	Constraints             string          `yaml:"constraints"`
+	OutputFormat            string          `yaml:"output_format"`
+	AdditionalContext       string          `yaml:"additional_context,omitempty"`
 }
 
 // StitchPromptDoc is the complete stitch prompt as a YAML document.

@@ -45,6 +45,7 @@ type SourceFile struct {
 
 // VisionDoc corresponds to docs/VISION.yaml.
 type VisionDoc struct {
+	File                 string            `yaml:"file,omitempty"`
 	ID                   string            `yaml:"id"`
 	Title                string            `yaml:"title"`
 	ExecutiveSummary     string            `yaml:"executive_summary"`
@@ -70,6 +71,7 @@ type RelatedProject struct {
 
 // ArchitectureDoc corresponds to docs/ARCHITECTURE.yaml.
 type ArchitectureDoc struct {
+	File                 string          `yaml:"file,omitempty"`
 	ID                   string          `yaml:"id"`
 	Title                string          `yaml:"title"`
 	Overview             ArchOverview    `yaml:"overview"`
@@ -147,6 +149,7 @@ type ArchFigure struct {
 
 // SpecificationsDoc corresponds to docs/SPECIFICATIONS.yaml.
 type SpecificationsDoc struct {
+	File                 string          `yaml:"file,omitempty"`
 	ID                   string          `yaml:"id"`
 	Title                string          `yaml:"title"`
 	Overview             string          `yaml:"overview"`
@@ -200,6 +203,7 @@ type PRDUseCaseMap struct {
 
 // RoadmapDoc corresponds to docs/road-map.yaml.
 type RoadmapDoc struct {
+	File           string           `yaml:"file,omitempty"`
 	ID             string           `yaml:"id"`
 	Title          string           `yaml:"title"`
 	Releases       []RoadmapRelease `yaml:"releases"`
@@ -243,6 +247,7 @@ type SpecsCollection struct {
 // Requirements use a map keyed by group ID (R1, R2, ...).
 // AcceptanceCriteria are plain strings.
 type PRDDoc struct {
+	File               string                        `yaml:"file,omitempty"`
 	ID                 string                        `yaml:"id"`
 	Title              string                        `yaml:"title"`
 	Problem            string                        `yaml:"problem"`
@@ -267,6 +272,7 @@ type PRDRequirementGroup struct {
 // UseCaseDoc corresponds to docs/specs/use-cases/rel*.yaml.
 // Flow, touchpoints, and success_criteria use "- KEY: text" format.
 type UseCaseDoc struct {
+	File            string              `yaml:"file,omitempty"`
 	ID              string              `yaml:"id"`
 	Title           string              `yaml:"title"`
 	Summary         string              `yaml:"summary"`
@@ -287,6 +293,7 @@ type UseCaseDoc struct {
 
 // TestSuiteDoc corresponds to docs/specs/test-suites/test-rel*.yaml.
 type TestSuiteDoc struct {
+	File          string     `yaml:"file,omitempty"`
 	ID            string     `yaml:"id"`
 	Title         string     `yaml:"title"`
 	Release       string     `yaml:"release"`
@@ -318,6 +325,7 @@ type TestCase struct {
 // EngineeringDoc corresponds to docs/engineering/eng*.yaml.
 // References are plain strings (file paths or document IDs).
 type EngineeringDoc struct {
+	File         string       `yaml:"file,omitempty"`
 	ID           string       `yaml:"id"`
 	Title        string       `yaml:"title"`
 	Introduction string       `yaml:"introduction"`
@@ -367,7 +375,7 @@ type GoStylePattern struct {
 // ---------------------------------------------------------------------------
 
 // Phase represents an implementation phase in the vision document.
-// Phase ID is a string (e.g. "01.0") and Deliverables is a scalar string.
+// Phase ID is a string (e.g. "1") and Deliverables is a scalar string.
 type Phase struct {
 	Phase        string `yaml:"phase"`
 	Focus        string `yaml:"focus"`
@@ -375,6 +383,7 @@ type Phase struct {
 }
 
 type Risk struct {
+	ID         string `yaml:"id,omitempty"`
 	Risk       string `yaml:"risk"`
 	Impact     string `yaml:"impact"`
 	Likelihood string `yaml:"likelihood"`
@@ -395,6 +404,7 @@ type ContextIssue struct {
 // schema (e.g., utilities.yaml, sources.yaml). Content is stored as a
 // yaml.Node to preserve the original structure.
 type NamedDoc struct {
+	File    string    `yaml:"file,omitempty"`
 	Name    string    `yaml:"name"`
 	Content yaml.Node `yaml:"content"`
 }
@@ -697,18 +707,31 @@ func prdIDsFromUseCases(useCases []*UseCaseDoc) map[string]bool {
 func loadContextFileInto(ctx *ProjectContext, path, release string) {
 	switch classifyContextFile(path) {
 	case "vision":
-		ctx.Vision = loadYAML[VisionDoc](path)
+		if v := loadYAML[VisionDoc](path); v != nil {
+			v.File = path
+			ctx.Vision = v
+		}
 	case "architecture":
-		ctx.Architecture = loadYAML[ArchitectureDoc](path)
+		if v := loadYAML[ArchitectureDoc](path); v != nil {
+			v.File = path
+			ctx.Architecture = v
+		}
 	case "specifications":
-		ctx.Specifications = loadYAML[SpecificationsDoc](path)
+		if v := loadYAML[SpecificationsDoc](path); v != nil {
+			v.File = path
+			ctx.Specifications = v
+		}
 	case "roadmap":
-		ctx.Roadmap = loadYAML[RoadmapDoc](path)
+		if v := loadYAML[RoadmapDoc](path); v != nil {
+			v.File = path
+			ctx.Roadmap = v
+		}
 	case "use_case":
 		if !fileMatchesRelease(path, release) {
 			return
 		}
 		if v := loadYAML[UseCaseDoc](path); v != nil {
+			v.File = path
 			ctx.Specs.UseCases = append(ctx.Specs.UseCases, v)
 		}
 	case "test_suite":
@@ -716,10 +739,12 @@ func loadContextFileInto(ctx *ProjectContext, path, release string) {
 			return
 		}
 		if v := loadYAML[TestSuiteDoc](path); v != nil {
+			v.File = path
 			ctx.Specs.TestSuites = append(ctx.Specs.TestSuites, v)
 		}
 	case "spec_aux":
 		if v := loadNamedDoc(path); v != nil {
+			v.File = path
 			switch filepath.Base(path) {
 			case "dependency-map.yaml":
 				ctx.Specs.DependencyMap = v
@@ -731,6 +756,7 @@ func loadContextFileInto(ctx *ProjectContext, path, release string) {
 		}
 	case "engineering":
 		if v := loadYAML[EngineeringDoc](path); v != nil {
+			v.File = path
 			ctx.Engineering = append(ctx.Engineering, v)
 		}
 	}
@@ -767,6 +793,7 @@ func buildProjectContext(existingIssuesJSON string, goSourceDirs []string, conte
 	if release == "" {
 		for _, path := range prdPaths {
 			if v := loadYAML[PRDDoc](path); v != nil {
+				v.File = path
 				ctx.Specs.ProductRequirements = append(ctx.Specs.ProductRequirements, v)
 			}
 		}
@@ -776,6 +803,7 @@ func buildProjectContext(existingIssuesJSON string, goSourceDirs []string, conte
 			stem := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
 			if referencedPRDs[stem] {
 				if v := loadYAML[PRDDoc](path); v != nil {
+					v.File = path
 					ctx.Specs.ProductRequirements = append(ctx.Specs.ProductRequirements, v)
 				}
 			}
@@ -791,6 +819,7 @@ func buildProjectContext(existingIssuesJSON string, goSourceDirs []string, conte
 				continue
 			}
 			if v := loadNamedDoc(path); v != nil {
+				v.File = path
 				ctx.Extra = append(ctx.Extra, v)
 			}
 		}
