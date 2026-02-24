@@ -1,0 +1,97 @@
+# Copyright (c) 2026 Petar Djukic. All rights reserved.
+# SPDX-License-Identifier: MIT
+
+id: eng06-golden-example
+title: Golden Example for Measure Output
+
+introduction: |
+  The measure phase proposes tasks by asking Claude to decompose project
+  specifications into actionable issues. Without an anchor, two runs against
+  identical project state produce structurally different output: varying file
+  names, struct shapes, requirement counts, and ordering. A golden example
+  provides a concrete reference that pins style, granularity, and naming
+  conventions, reducing non-determinism across runs.
+
+  The golden example is a single YAML document that shows what an approved
+  measure output looks like for one utility. The measure prompt instructs
+  Claude to match its style, requirement density, and file naming pattern.
+  Operators provide their own golden examples through the `golden_example`
+  field in `configuration.yaml`.
+
+sections:
+  - title: How It Works
+    content: |
+      The orchestrator loads the golden example during `LoadConfig`. When the
+      `golden_example` field in `configuration.yaml` contains a file path, the
+      file is read and its content replaces the path string. The content is then
+      injected into the measure prompt as the `golden_example` field of the
+      `MeasurePromptDoc` struct.
+
+      The measure prompt template (measure.yaml) contains an instruction at line
+      108 that tells Claude to treat the golden example as the authoritative
+      reference for style, granularity, and naming conventions. Claude matches
+      the requirement count range, acceptance criteria density, design decision
+      style, and file naming pattern from the example.
+
+  - title: Configuration
+    content: |
+      Set the `golden_example` field in `configuration.yaml` to a file path
+      relative to the repository root:
+
+      ```yaml
+      cobbler:
+        golden_example: "docs/engineering/golden-example-measure.yaml"
+      ```
+
+      During `LoadConfig`, the orchestrator reads the file and stores its
+      content in `Config.Cobbler.GoldenExample`. The measure prompt builder
+      passes it to `MeasurePromptDoc.GoldenExample`, which renders as a
+      top-level `golden_example` field in the YAML prompt.
+
+      When the field is empty, no golden example is injected and Claude uses
+      only the abstract example in the output_format section.
+
+  - title: Writing a Golden Example
+    content: |
+      A golden example is a YAML list containing one or two crumb objects that
+      represent approved measure output. We recommend using output from a
+      successful measure run that produced well-formed, correctly-sized tasks.
+
+      The example should demonstrate:
+      - Correct requirement count (5-8 for code tasks per P9)
+      - Correct acceptance criteria count (5-8 for code tasks per P9)
+      - Design decisions derived from PRDs, not invented (3-5 per P9)
+      - File names derived from architecture and PRD names (P7)
+      - Required reading that includes the relevant PRD
+      - Canonical ordering (P8): types before implementation, implementation
+        before tests
+
+      Remove project-specific details that would confuse Claude when applied to
+      a different utility. Keep the structure and density as the anchor.
+
+  - title: Reference Golden Example
+    content: |
+      The file `docs/engineering/golden-example-measure.yaml` contains a
+      reference golden example. It shows two tasks for a hypothetical diff-test
+      utility: one implementation task and one test task. This example anchors:
+
+      - 6 requirements (within P9 range of 5-8)
+      - 6 acceptance criteria (within P9 range of 5-8)
+      - 4 design decisions (within P9 range of 3-5)
+      - File names derived from the primary exported type (P7: difftest.go,
+        not testutils.go)
+      - Required reading includes the relevant PRD
+      - Implementation task before test task (P8 ordering)
+
+  - title: Updating the Golden Example
+    content: |
+      Update the golden example when planning constitution rules change (P2,
+      P7, P9) or when the target project's naming conventions evolve. After
+      a successful measure run that produces well-formed output, copy the
+      relevant crumbs into the golden example file and remove project-specific
+      details.
+
+references:
+  - prd003-cobbler-workflows
+  - eng02-prompt-templates
+  - pkg/orchestrator/constitutions/planning.yaml

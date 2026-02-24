@@ -36,6 +36,7 @@ constraints: |
   - Order tasks canonically: documentation before code, types before implementations, libraries before consumers, implementation before tests. Break ties by primary file path alphabetically.
   - Derive file names from PRD/architecture names, not invented names. If the architecture calls a component "crumb", the file is crumb.go.
   - Do NOT invent design decisions not derived from the PRD or architecture. Derive struct shapes, timeout strategies, file names, and naming conventions from the PRD rather than making arbitrary choices. If the PRD does not specify a detail, omit it from design decisions rather than inventing one.
+  - When a PRD specifies a concrete design choice (e.g., "use a FileExpectation struct", "the main file is difftest.go", "timeout is configurable via context"), copy that choice verbatim into the task's design_decisions. Do not rephrase, generalize, or substitute alternatives. The PRD is the single source of truth for implementation details.
   - Do NOT vary requirement count between equivalent runs. Each PRD requirement maps to one task requirement. Given the same input, produce the same requirement set. If two runs of this prompt against the same project state would produce different requirements, the decomposition is under-constrained -- tighten it.
   - The ONLY tool call you should make is the Write tool to save the output YAML file.
 

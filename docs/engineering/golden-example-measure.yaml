@@ -1,0 +1,120 @@
+# Golden Example: Approved measure output for a diff-test utility.
+# This file anchors style, granularity, and naming conventions.
+# Set cobbler.golden_example in configuration.yaml to this file path.
+#
+# Copyright (c) 2026 Petar Djukic. All rights reserved.
+# SPDX-License-Identifier: MIT
+
+- index: 0
+  title: "Implement DiffTest runner (prd004 R1.1-R1.4)"
+  dependency: -1
+  description: |
+    deliverable_type: code
+
+    required_reading:
+      - docs/specs/product-requirements/prd004-diff-test.yaml (R1 requirements)
+      - docs/ARCHITECTURE.yaml (diff-test component)
+      - pkg/types/runner.go (Runner interface)
+
+    files:
+      - path: pkg/difftest/difftest.go
+        action: create
+        note: DiffTest struct, RunCase, RunAll methods
+      - path: pkg/difftest/expectation.go
+        action: create
+        note: FileExpectation struct, comparison logic
+      - path: pkg/difftest/report.go
+        action: create
+        note: TestReport struct, summary formatting
+
+    requirements:
+      - id: R1
+        text: Implement DiffTest struct that holds a test case directory and reference binary path per prd004 R1.1
+      - id: R2
+        text: Implement FileExpectation struct with Path, Expected, and Tolerance fields per prd004 R1.2
+      - id: R3
+        text: Implement RunCase that executes both binaries with identical input and compares stdout byte-for-byte per prd004 R1.3
+      - id: R4
+        text: Implement RunAll that iterates over test case directories and collects results per prd004 R1.4
+      - id: R5
+        text: Implement TestReport that summarizes pass/fail counts and lists failing cases per prd004 R1.5
+      - id: R6
+        text: Return structured errors with case name, expected output, and actual output on mismatch per prd004 R1.6
+
+    design_decisions:
+      - id: D1
+        text: Use FileExpectation struct (not map[string][]byte) for typed comparison with tolerance support
+      - id: D2
+        text: Name the primary source file difftest.go after the exported type DiffTest, not the package name
+      - id: D3
+        text: Separate comparison logic into expectation.go to keep difftest.go under 200 lines
+      - id: D4
+        text: Use os/exec.CommandContext for binary invocation to support timeout cancellation
+
+    acceptance_criteria:
+      - id: AC1
+        text: DiffTest struct compiles with RunCase and RunAll methods
+      - id: AC2
+        text: FileExpectation comparison returns structured error on mismatch
+      - id: AC3
+        text: RunAll collects results from all test case directories
+      - id: AC4
+        text: TestReport.Summary() returns human-readable pass/fail counts
+      - id: AC5
+        text: Timeout cancellation works via context deadline
+      - id: AC6
+        text: No compiler errors; go vet passes
+
+- index: 1
+  title: "Add DiffTest unit tests (prd004 R1.1-R1.4)"
+  dependency: 0
+  description: |
+    deliverable_type: code
+
+    required_reading:
+      - pkg/difftest/difftest.go (DiffTest struct and methods from task 0)
+      - pkg/difftest/expectation.go (FileExpectation comparison)
+      - docs/specs/product-requirements/prd004-diff-test.yaml (R1 requirements)
+
+    files:
+      - path: pkg/difftest/difftest_test.go
+        action: create
+        note: unit tests for RunCase, RunAll, FileExpectation
+      - path: pkg/difftest/testdata/case1/input.txt
+        action: create
+        note: test fixture input
+      - path: pkg/difftest/testdata/case1/expected.txt
+        action: create
+        note: test fixture expected output
+
+    requirements:
+      - id: R1
+        text: Test RunCase with matching stdout returns pass per prd004 R1.3
+      - id: R2
+        text: Test RunCase with mismatched stdout returns structured error per prd004 R1.6
+      - id: R3
+        text: Test FileExpectation comparison with exact match and tolerance per prd004 R1.2
+      - id: R4
+        text: Test RunAll aggregates results from multiple test case directories per prd004 R1.4
+      - id: R5
+        text: Test TestReport.Summary() format per prd004 R1.5
+
+    design_decisions:
+      - id: D1
+        text: Use testdata/ directory for test fixtures following Go convention
+      - id: D2
+        text: Use echo as the reference binary in tests for deterministic output
+      - id: D3
+        text: Test files mirror source naming -- difftest_test.go tests difftest.go
+
+    acceptance_criteria:
+      - id: AC1
+        text: All tests pass with go test ./pkg/difftest/...
+      - id: AC2
+        text: Pass and fail cases both covered
+      - id: AC3
+        text: Tolerance comparison tested with near-match input
+      - id: AC4
+        text: RunAll tested with 2+ test case directories
+      - id: AC5
+        text: No test pollution -- each test uses t.TempDir()
