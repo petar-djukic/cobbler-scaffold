@@ -51,6 +51,18 @@ func (o *Orchestrator) RunStitchN(limit int) (int, error) {
 	setPhase("stitch")
 	defer clearPhase()
 	stitchStart := time.Now()
+
+	// Start orchestrator log capture.
+	if o.cfg.Cobbler.HistoryDir != "" {
+		logPath := filepath.Join(o.cfg.Cobbler.HistoryDir,
+			stitchStart.Format("2006-01-02-15-04-05")+"-stitch-orchestrator.log")
+		if err := openLogSink(logPath); err != nil {
+			logf("warning: could not open orchestrator log: %v", err)
+		} else {
+			defer closeLogSink()
+		}
+	}
+
 	logf("starting (limit=%d)", limit)
 	o.logConfig("stitch")
 
@@ -382,9 +394,26 @@ func (o *Orchestrator) doOneTask(task stitchTask, baseBranch, repoRoot string) e
 
 	logf("doOneTask: invoking Claude for task %s", task.id)
 	claudeStart := time.Now()
-	tokens, err := o.runClaude(prompt, task.worktreeDir, o.cfg.Silence())
-	if err != nil {
-		logf("doOneTask: Claude failed for %s after %s: %v", task.id, time.Since(claudeStart).Round(time.Second), err)
+	tokens, claudeErr := o.runClaude(prompt, task.worktreeDir, o.cfg.Silence())
+
+	// Save Claude log immediately — even on failure, partial output is valuable.
+	o.saveHistoryLog(historyTS, "stitch", tokens.RawOutput)
+
+	if claudeErr != nil {
+		logf("doOneTask: Claude failed for %s after %s: %v", task.id, time.Since(claudeStart).Round(time.Second), claudeErr)
+		o.saveHistoryStats(historyTS, "stitch", HistoryStats{
+			Caller:    "stitch",
+			TaskID:    task.id,
+			TaskTitle: task.title,
+			Status:    "failed",
+			Error:     fmt.Sprintf("claude failure: %v", claudeErr),
+			StartedAt: claudeStart.UTC().Format(time.RFC3339),
+			Duration:  time.Since(taskStart).Round(time.Second).String(),
+			DurationS: int(time.Since(taskStart).Seconds()),
+			Tokens:    historyTokens{Input: tokens.InputTokens, Output: tokens.OutputTokens, CacheCreation: tokens.CacheCreationTokens, CacheRead: tokens.CacheReadTokens},
+			CostUSD:   tokens.CostUSD,
+			LOCBefore: locBefore,
+		})
 		o.resetTask(task, "Claude failure")
 		return errTaskReset
 	}
@@ -394,6 +423,19 @@ func (o *Orchestrator) doOneTask(task stitchTask, baseBranch, repoRoot string) e
 	// the orchestrator manages all git operations externally.
 	if err := commitWorktreeChanges(task); err != nil {
 		logf("doOneTask: worktree commit failed for %s: %v", task.id, err)
+		o.saveHistoryStats(historyTS, "stitch", HistoryStats{
+			Caller:    "stitch",
+			TaskID:    task.id,
+			TaskTitle: task.title,
+			Status:    "failed",
+			Error:     fmt.Sprintf("worktree commit failure: %v", err),
+			StartedAt: claudeStart.UTC().Format(time.RFC3339),
+			Duration:  time.Since(taskStart).Round(time.Second).String(),
+			DurationS: int(time.Since(taskStart).Seconds()),
+			Tokens:    historyTokens{Input: tokens.InputTokens, Output: tokens.OutputTokens, CacheCreation: tokens.CacheCreationTokens, CacheRead: tokens.CacheReadTokens},
+			CostUSD:   tokens.CostUSD,
+			LOCBefore: locBefore,
+		})
 		o.resetTask(task, "worktree commit failure")
 		return errTaskReset
 	}
@@ -406,6 +448,19 @@ func (o *Orchestrator) doOneTask(task stitchTask, baseBranch, repoRoot string) e
 	mergeStart := time.Now()
 	if err := mergeBranch(task.branchName, baseBranch, repoRoot); err != nil {
 		logf("doOneTask: merge failed for %s after %s: %v", task.id, time.Since(mergeStart).Round(time.Second), err)
+		o.saveHistoryStats(historyTS, "stitch", HistoryStats{
+			Caller:    "stitch",
+			TaskID:    task.id,
+			TaskTitle: task.title,
+			Status:    "failed",
+			Error:     fmt.Sprintf("merge failure: %v", err),
+			StartedAt: claudeStart.UTC().Format(time.RFC3339),
+			Duration:  time.Since(taskStart).Round(time.Second).String(),
+			DurationS: int(time.Since(taskStart).Seconds()),
+			Tokens:    historyTokens{Input: tokens.InputTokens, Output: tokens.OutputTokens, CacheCreation: tokens.CacheCreationTokens, CacheRead: tokens.CacheReadTokens},
+			CostUSD:   tokens.CostUSD,
+			LOCBefore: locBefore,
+		})
 		o.resetTask(task, "merge failure")
 		return errTaskReset
 	}
@@ -421,13 +476,13 @@ func (o *Orchestrator) doOneTask(task stitchTask, baseBranch, repoRoot string) e
 	logf("doOneTask: cleaning up worktree for %s", task.id)
 	cleanupWorktree(task)
 
-	// Save remaining stitch history (log, stats).
+	// Save stitch stats (log was saved immediately after runClaude).
 	taskDuration := time.Since(taskStart)
-	o.saveHistoryLog(historyTS, "stitch", tokens.RawOutput)
 	o.saveHistoryStats(historyTS, "stitch", HistoryStats{
 		Caller:    "stitch",
 		TaskID:    task.id,
 		TaskTitle: task.title,
+		Status:    "success",
 		StartedAt: claudeStart.UTC().Format(time.RFC3339),
 		Duration:  taskDuration.Round(time.Second).String(),
 		DurationS: int(taskDuration.Seconds()),

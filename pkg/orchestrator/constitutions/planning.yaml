@@ -44,6 +44,39 @@ articles:
       use cases before test suites, test suites before code, foundational code
       before features, libraries before CLI.
 
+  - id: P6
+    title: Requirement-anchored decomposition
+    rule: |
+      Anchor each task to specific PRD requirements by ID (e.g., prd001 R1.1,
+      prd002 R2.3). Include the requirement ID(s) in the task title. Each PRD
+      requirement maps to exactly one task unless the requirement exceeds the
+      line budget, in which case split into implementation and test tasks that
+      both reference the same requirement. Do not invent task boundaries that
+      cross requirement boundaries. This makes decomposition deterministic:
+      given the same PRD and release, the same set of tasks should be proposed.
+
+  - id: P7
+    title: File naming conventions
+    rule: |
+      Derive file names from the module or feature name established in the
+      PRD or architecture document. Use the existing project naming pattern
+      (snake_case for Go files, kebab-case for YAML documents). When creating
+      a new package, use the name from ARCHITECTURE.yaml. Do not invent novel
+      file names. If the PRD names a component "crumb", the file is crumb.go,
+      not item.go or entity.go.
+
+  - id: P8
+    title: Deterministic ordering
+    rule: |
+      Propose tasks in a fixed canonical order. Within the same release:
+      1. Documentation tasks before code tasks.
+      2. Types and interfaces before implementations.
+      3. Libraries and shared packages before consumers.
+      4. Implementation before tests (when split into separate tasks).
+      When two tasks have equal priority under these rules, order by the
+      primary file path alphabetically. This ensures the same input produces
+      the same task sequence.
+
 issue_structure:
   common_fields:
     deliverable_type:

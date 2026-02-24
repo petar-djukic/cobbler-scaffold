@@ -5,7 +5,10 @@ package orchestrator
 
 import (
 	"fmt"
+	"io"
 	"os"
+	"path/filepath"
+	"sync"
 	"time"
 )
 
@@ -63,6 +66,43 @@ func clearPhase() {
 	phaseStart = time.Time{}
 }
 
+// logSink is an optional secondary destination for logf output.
+// When non-nil, every logf line is written to both stderr and logSink.
+var (
+	logSink   io.WriteCloser
+	logSinkMu sync.Mutex
+)
+
+// openLogSink opens a file at path and sets it as the logf tee destination.
+// Subsequent logf calls write to both stderr and this file until closeLogSink
+// is called.
+func openLogSink(path string) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("openLogSink: mkdir: %w", err)
+	}
+	f, err := os.Create(path)
+	if err != nil {
+		return fmt.Errorf("openLogSink: %w", err)
+	}
+	logSinkMu.Lock()
+	defer logSinkMu.Unlock()
+	if logSink != nil {
+		logSink.Close()
+	}
+	logSink = f
+	return nil
+}
+
+// closeLogSink closes the current log sink and stops tee-ing logf output.
+func closeLogSink() {
+	logSinkMu.Lock()
+	defer logSinkMu.Unlock()
+	if logSink != nil {
+		logSink.Close()
+		logSink = nil
+	}
+}
+
 // logf prints a timestamped log line to stderr. When currentGeneration
 // is set, the generation name appears right after the timestamp. When
 // currentPhase is set, the phase name and elapsed time since phase start
@@ -83,5 +123,11 @@ func logf(format string, args ...any) {
 	} else {
 		prefix = fmt.Sprintf("[%s]", ts)
 	}
-	fmt.Fprintf(os.Stderr, "%s %s\n", prefix, msg)
+	line := fmt.Sprintf("%s %s\n", prefix, msg)
+	fmt.Fprint(os.Stderr, line)
+	logSinkMu.Lock()
+	if logSink != nil {
+		logSink.Write([]byte(line))
+	}
+	logSinkMu.Unlock()
 }

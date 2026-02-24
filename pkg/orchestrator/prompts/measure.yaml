@@ -32,6 +32,9 @@ constraints: |
   - Each task MUST be independently executable by an agent that has no context beyond the task description and the execution constitution.
   - Do NOT assume the stitch agent has access to your analysis, the existing issues list, or any context from this conversation.
   - Do NOT propose tasks that require human judgment or manual testing. Each task must have checkable acceptance criteria.
+  - Anchor every task to specific PRD requirement IDs (e.g., prd001 R1.1). Include the requirement ID in the task title. Given the same PRD and release, the same tasks should be proposed regardless of how many times this prompt is run.
+  - Order tasks canonically: documentation before code, types before implementations, libraries before consumers, implementation before tests. Break ties by primary file path alphabetically.
+  - Derive file names from PRD/architecture names, not invented names. If the architecture calls a component "crumb", the file is crumb.go.
   - The ONLY tool call you should make is the Write tool to save the output YAML file.
 
 output_format: |

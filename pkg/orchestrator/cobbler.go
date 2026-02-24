@@ -80,6 +80,8 @@ type HistoryStats struct {
 	Caller    string       `yaml:"caller"`
 	TaskID    string       `yaml:"task_id,omitempty"`
 	TaskTitle string       `yaml:"task_title,omitempty"`
+	Status    string       `yaml:"status,omitempty"`
+	Error     string       `yaml:"error,omitempty"`
 	StartedAt string       `yaml:"started_at"`
 	Duration  string       `yaml:"duration"`
 	DurationS int          `yaml:"duration_s"`

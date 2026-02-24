@@ -53,6 +53,18 @@ func (o *Orchestrator) RunMeasure() error {
 	setPhase("measure")
 	defer clearPhase()
 	measureStart := time.Now()
+
+	// Start orchestrator log capture.
+	if o.cfg.Cobbler.HistoryDir != "" {
+		logPath := filepath.Join(o.cfg.Cobbler.HistoryDir,
+			measureStart.Format("2006-01-02-15-04-05")+"-measure-orchestrator.log")
+		if err := openLogSink(logPath); err != nil {
+			logf("warning: could not open orchestrator log: %v", err)
+		} else {
+			defer closeLogSink()
+		}
+	}
+
 	logf("starting (iterative, %d issue(s) requested)", o.cfg.Cobbler.MaxMeasureIssues)
 	o.logConfig("measure")
 
@@ -150,6 +162,20 @@ func (o *Orchestrator) RunMeasure() error {
 		if err != nil {
 			logf("Claude failed on iteration %d after %s: %v",
 				i+1, iterDuration.Round(time.Second), err)
+			// Save log and stats even on failure.
+			o.saveHistoryLog(historyTS, "measure", tokens.RawOutput)
+			o.saveHistoryStats(historyTS, "measure", HistoryStats{
+				Caller:    "measure",
+				Status:    "failed",
+				Error:     fmt.Sprintf("claude failure (iteration %d/%d): %v", i+1, totalIssues, err),
+				StartedAt: iterStart.UTC().Format(time.RFC3339),
+				Duration:  iterDuration.Round(time.Second).String(),
+				DurationS: int(iterDuration.Seconds()),
+				Tokens:    historyTokens{Input: tokens.InputTokens, Output: tokens.OutputTokens, CacheCreation: tokens.CacheCreationTokens, CacheRead: tokens.CacheReadTokens},
+				CostUSD:   tokens.CostUSD,
+				LOCBefore: locBefore,
+				LOCAfter:  o.captureLOC(),
+			})
 			o.closeMeasureTrackingIssue(trackingID, claudeStart, measureStart,
 				totalTokens, locBefore, o.captureLOC(), len(allCreatedIDs), err)
 			return fmt.Errorf("running Claude (iteration %d/%d): %w", i+1, totalIssues, err)
@@ -160,6 +186,7 @@ func (o *Orchestrator) RunMeasure() error {
 		o.saveHistory(historyTS, tokens.RawOutput, outputFile)
 		o.saveHistoryStats(historyTS, "measure", HistoryStats{
 			Caller:    "measure",
+			Status:    "success",
 			StartedAt: iterStart.UTC().Format(time.RFC3339),
 			Duration:  iterDuration.Round(time.Second).String(),
 			DurationS: int(iterDuration.Seconds()),

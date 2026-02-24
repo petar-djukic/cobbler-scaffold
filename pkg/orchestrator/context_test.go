@@ -5,6 +5,7 @@ package orchestrator
 
 import (
 	"os"
+	"strings"
 	"testing"
 
 	"gopkg.in/yaml.v3"
@@ -158,6 +159,45 @@ func TestResolveStandardFiles(t *testing.T) {
 	for _, f := range excluded {
 		if resolvedSet[f] {
 			t.Errorf("excluded file %s should not be in resolved set", f)
+		}
+	}
+}
+
+func TestLoadContextFileIntoSetsFilePath(t *testing.T) {
+	tmp := t.TempDir()
+	orig, _ := os.Getwd()
+	os.Chdir(tmp)
+	defer os.Chdir(orig)
+
+	os.MkdirAll("docs", 0o755)
+	os.WriteFile("docs/VISION.yaml", []byte("id: test\ntitle: Test Vision"), 0o644)
+	os.WriteFile("docs/ARCHITECTURE.yaml", []byte("id: test\ntitle: Test Arch"), 0o644)
+	os.WriteFile("docs/road-map.yaml", []byte("id: test\ntitle: Test Roadmap"), 0o644)
+
+	ctx := &ProjectContext{Specs: &SpecsCollection{}}
+	loadContextFileInto(ctx, "docs/VISION.yaml", "")
+	loadContextFileInto(ctx, "docs/ARCHITECTURE.yaml", "")
+	loadContextFileInto(ctx, "docs/road-map.yaml", "")
+
+	if ctx.Vision == nil || ctx.Vision.File != "docs/VISION.yaml" {
+		t.Errorf("Vision.File = %q, want %q", ctx.Vision.File, "docs/VISION.yaml")
+	}
+	if ctx.Architecture == nil || ctx.Architecture.File != "docs/ARCHITECTURE.yaml" {
+		t.Errorf("Architecture.File = %q, want %q", ctx.Architecture.File, "docs/ARCHITECTURE.yaml")
+	}
+	if ctx.Roadmap == nil || ctx.Roadmap.File != "docs/road-map.yaml" {
+		t.Errorf("Roadmap.File = %q, want %q", ctx.Roadmap.File, "docs/road-map.yaml")
+	}
+
+	// Verify file: appears in marshaled YAML.
+	data, err := yaml.Marshal(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := string(data)
+	for _, want := range []string{"file: docs/VISION.yaml", "file: docs/ARCHITECTURE.yaml", "file: docs/road-map.yaml"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("marshaled YAML missing %q", want)
 		}
 	}
 }
