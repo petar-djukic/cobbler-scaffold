@@ -36,12 +36,22 @@ type ProjectConfig struct {
 	// (default "magefiles").
 	MagefilesDir string `yaml:"magefiles_dir"`
 
-	// ContextSources is a newline-delimited list of file paths and glob
-	// patterns that feed into the measure prompt's project context. Each
-	// line is a path or glob (e.g., "docs/VISION.yaml", "docs/specs/*.yaml").
+	// ContextSources is a newline-delimited list of extra file paths and
+	// glob patterns that supplement the standard document structure in the
+	// measure prompt's project context. Standard files (vision, architecture,
+	// specs, roadmap, PRDs, use cases, test suites, dependency-map, sources,
+	// engineering) are loaded automatically by an internal algorithm.
+	// ContextSources adds project-specific extras beyond that standard set.
 	// Globs are expanded at runtime; duplicates are logged and removed.
 	// Source code is handled separately by GoSourceDirs.
 	ContextSources string `yaml:"context_sources"`
+
+	// Release is the target release version (e.g., "01.0"). When set,
+	// use cases and test suites are filtered to only include files whose
+	// release version is <= this value. PRDs are filtered to only those
+	// referenced by the included use cases. An empty value disables
+	// release-based filtering and includes all files.
+	Release string `yaml:"release"`
 
 	// SeedFiles maps relative file paths to template source file paths.
 	// During LoadConfig, each source path is read and its content replaces
@@ -260,21 +270,10 @@ func readFileInto(field *string) error {
 	return nil
 }
 
-// defaultContextSources lists the glob patterns that feed into the
-// measure prompt's project context. Each line is a path or glob.
-const defaultContextSources = `docs/VISION.yaml
-docs/ARCHITECTURE.yaml
-docs/SPECIFICATIONS.yaml
-docs/road-map.yaml
-docs/specs/product-requirements/prd*.yaml
-docs/specs/use-cases/rel*.yaml
-docs/specs/test-suites/test-rel*.yaml
-docs/specs/dependency-map.yaml
-docs/specs/sources.yaml
-docs/engineering/eng*.yaml
-docs/constitutions/*.yaml
-docs/*.yaml
-`
+// defaultContextSources is empty because the standard document structure
+// is now loaded automatically by resolveStandardFiles. This field only
+// holds project-specific extras beyond the standard set.
+const defaultContextSources = ""
 
 func (c *Config) applyDefaults() {
 	if c.Project.BinaryDir == "" {
@@ -324,9 +323,6 @@ func (c *Config) applyDefaults() {
 	}
 	if c.Podman.Image == "" {
 		c.Podman.Image = "claude-cli"
-	}
-	if c.Project.ContextSources == "" {
-		c.Project.ContextSources = defaultContextSources
 	}
 }
 

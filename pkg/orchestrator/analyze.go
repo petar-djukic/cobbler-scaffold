@@ -304,9 +304,8 @@ func extractUseCaseIDsFromTraces(traces []string) []string {
 func (o *Orchestrator) validateDocSchemas() []string {
 	var errs []string
 
-	// Validate all files from context_sources.
-	files := resolveContextSources(o.cfg.Project.ContextSources)
-	for _, path := range files {
+	// Validate standard documentation files.
+	for _, path := range resolveStandardFiles() {
 		switch classifyContextFile(path) {
 		case "vision":
 			errs = append(errs, validateYAMLStrict[VisionDoc](path)...)
@@ -324,12 +323,11 @@ func (o *Orchestrator) validateDocSchemas() []string {
 			errs = append(errs, validateYAMLStrict[TestSuiteDoc](path)...)
 		case "engineering":
 			errs = append(errs, validateYAMLStrict[EngineeringDoc](path)...)
-		case "constitution":
-			if filepath.Base(path) == "go-style.yaml" {
-				errs = append(errs, validateYAMLStrict[GoStyleDoc](path)...)
-			}
 		}
 	}
+
+	// Go style constitution (not in standard set but has typed schema).
+	errs = append(errs, validateYAMLStrict[GoStyleDoc]("docs/constitutions/go-style.yaml")...)
 
 	// Embedded constitutions (pkg/orchestrator/constitutions/).
 	errs = append(errs, validateYAMLStrict[GoStyleDoc]("pkg/orchestrator/constitutions/go-style.yaml")...)

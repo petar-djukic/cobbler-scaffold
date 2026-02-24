@@ -4,7 +4,6 @@
 package orchestrator
 
 import (
-	"bytes"
 	_ "embed"
 	"encoding/json"
 	"fmt"
@@ -299,44 +298,8 @@ func getExistingIssues() string {
 		logf("getExistingIssues: bd list failed: %v", err)
 		return "[]"
 	}
-
-	// Extract IDs from the list and fetch full content for each issue.
-	var issues []struct {
-		ID string `json:"id"`
-	}
-	if err := json.Unmarshal(out, &issues); err != nil || len(issues) == 0 {
-		logf("getExistingIssues: parse or empty: err=%v len=%d", err, len(issues))
-		return string(out)
-	}
-
-	logf("getExistingIssues: fetching full content for %d issue(s)", len(issues))
-	var fullIssues []json.RawMessage
-	for _, issue := range issues {
-		detail, err := bdShowJSON(issue.ID)
-		if err != nil {
-			logf("getExistingIssues: bd show %s failed: %v", issue.ID, err)
-			continue
-		}
-		// bd show --json may return a single-element array [{}] instead of
-		// a plain object {}. Unwrap the array to avoid nested arrays.
-		trimmed := bytes.TrimSpace(detail)
-		if len(trimmed) > 0 && trimmed[0] == '[' {
-			var arr []json.RawMessage
-			if err := json.Unmarshal(trimmed, &arr); err == nil && len(arr) == 1 {
-				fullIssues = append(fullIssues, arr[0])
-				continue
-			}
-		}
-		fullIssues = append(fullIssues, json.RawMessage(detail))
-	}
-
-	result, err := json.Marshal(fullIssues)
-	if err != nil {
-		logf("getExistingIssues: marshal failed: %v", err)
-		return string(out)
-	}
-	logf("getExistingIssues: got %d full issue(s), %d bytes", len(fullIssues), len(result))
-	return string(result)
+	logf("getExistingIssues: %d bytes", len(out))
+	return string(out)
 }
 
 func countJSONArray(jsonStr string) int {
@@ -355,7 +318,7 @@ func (o *Orchestrator) buildMeasurePrompt(userInput, existingIssues string, limi
 
 	planningConst := orDefault(o.cfg.Cobbler.PlanningConstitution, planningConstitution)
 
-	projectCtx, ctxErr := buildProjectContext(existingIssues, o.cfg.Project.GoSourceDirs, o.cfg.Project.ContextSources)
+	projectCtx, ctxErr := buildProjectContext(existingIssues, o.cfg.Project.GoSourceDirs, o.cfg.Project.ContextSources, o.cfg.Project.Release)
 	if ctxErr != nil {
 		logf("buildMeasurePrompt: buildProjectContext error: %v", ctxErr)
 		projectCtx = &ProjectContext{}

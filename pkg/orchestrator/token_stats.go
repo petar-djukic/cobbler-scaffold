@@ -126,15 +126,17 @@ func (o *Orchestrator) TokenStats() error {
 }
 
 // enumerateContextFiles lists all files that buildProjectContext loads,
-// grouped by category. Uses resolveContextSources to expand the configured
-// glob patterns, then classifies each file. Source code and prompt templates
-// are added separately.
+// grouped by category. Uses resolveStandardFiles for the standard
+// document structure and resolveContextSources for extras. Source code
+// and prompt templates are added separately.
 func (o *Orchestrator) enumerateContextFiles() []FileTokenStat {
 	var files []FileTokenStat
 
-	// Context source files from configuration.
-	resolved := resolveContextSources(o.cfg.Project.ContextSources)
-	for _, path := range resolved {
+	// Standard documentation files.
+	standardFiles := resolveStandardFiles()
+	standardSet := make(map[string]bool, len(standardFiles))
+	for _, path := range standardFiles {
+		standardSet[path] = true
 		info, err := os.Stat(path)
 		if err != nil {
 			continue
@@ -144,6 +146,25 @@ func (o *Orchestrator) enumerateContextFiles() []FileTokenStat {
 			Path:     path,
 			Bytes:    int(info.Size()),
 		})
+	}
+
+	// Extra context source files from configuration.
+	if o.cfg.Project.ContextSources != "" {
+		extras := resolveContextSources(o.cfg.Project.ContextSources)
+		for _, path := range extras {
+			if standardSet[path] {
+				continue
+			}
+			info, err := os.Stat(path)
+			if err != nil {
+				continue
+			}
+			files = append(files, FileTokenStat{
+				Category: "extra",
+				Path:     path,
+				Bytes:    int(info.Size()),
+			})
+		}
 	}
 
 	// Source code from configured directories.

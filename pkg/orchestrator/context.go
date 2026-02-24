@@ -27,7 +27,6 @@ type ProjectContext struct {
 	Roadmap        *RoadmapDoc        `yaml:"roadmap,omitempty"`
 	Specs          *SpecsCollection   `yaml:"specs,omitempty"`
 	Engineering    []*EngineeringDoc  `yaml:"engineering,omitempty"`
-	Constitutions  *ConstitutionsDoc  `yaml:"constitutions,omitempty"`
 	SourceCode     []SourceFile       `yaml:"source_code,omitempty"`
 	Issues         []ContextIssue     `yaml:"issues,omitempty"`
 	Extra          []*NamedDoc        `yaml:"extra,omitempty"`
@@ -332,18 +331,8 @@ type DocSection struct {
 }
 
 // ---------------------------------------------------------------------------
-// Constitutions
+// Go style (used by analyze.go validateYAMLStrict)
 // ---------------------------------------------------------------------------
-
-// ConstitutionsDoc holds the project's constitution files. Each
-// constitution is stored as a yaml.Node to preserve its full schema
-// without enumerating every field across different constitution types.
-type ConstitutionsDoc struct {
-	Design    *yaml.Node `yaml:"design,omitempty"`
-	Planning  *yaml.Node `yaml:"planning,omitempty"`
-	Execution *yaml.Node `yaml:"execution,omitempty"`
-	GoStyle   *yaml.Node `yaml:"go_style,omitempty"`
-}
 
 // GoStyleDoc corresponds to docs/constitutions/go-style.yaml.
 // It provides typed schema enforcement for the Go coding standards
@@ -396,11 +385,10 @@ type Risk struct {
 // It captures the fields needed for Claude to avoid creating duplicate
 // issues during measure.
 type ContextIssue struct {
-	ID          string `yaml:"id"          json:"id"`
-	Title       string `yaml:"title"       json:"title"`
-	Status      string `yaml:"status"      json:"status"`
-	Type        string `yaml:"type"        json:"type"`
-	Description string `yaml:"description,omitempty" json:"description,omitempty"`
+	ID     string `yaml:"id"     json:"id"`
+	Title  string `yaml:"title"  json:"title"`
+	Status string `yaml:"status" json:"status"`
+	Type   string `yaml:"type"   json:"type"`
 }
 
 // NamedDoc wraps project-specific YAML files that don't have a fixed
@@ -428,25 +416,6 @@ func loadYAML[T any](path string) *T {
 		return nil
 	}
 	return &v
-}
-
-// loadYAMLNode reads a YAML file into a yaml.Node, preserving the
-// original structure without requiring a typed struct.
-func loadYAMLNode(path string) *yaml.Node {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil
-	}
-	var doc yaml.Node
-	if err := yaml.Unmarshal(data, &doc); err != nil {
-		logf("loadYAMLNode: parse error for %s: %v", path, err)
-		return nil
-	}
-	// yaml.Unmarshal wraps content in a DocumentNode; extract the inner node.
-	if doc.Kind == yaml.DocumentNode && len(doc.Content) > 0 {
-		return doc.Content[0]
-	}
-	return &doc
 }
 
 // loadNamedDoc reads a YAML file into a NamedDoc, using the filename
@@ -622,71 +591,205 @@ func classifyContextFile(path string) string {
 }
 
 // ---------------------------------------------------------------------------
+// Standard document structure
+// ---------------------------------------------------------------------------
+
+// standardContextPatterns lists the glob patterns for the standard
+// documentation structure. These are loaded automatically by
+// resolveStandardFiles. Does NOT include docs/constitutions/*.yaml
+// (constitutions are injected separately as top-level prompt keys)
+// or docs/*.yaml (catchall that pulled in utilities.yaml).
+var standardContextPatterns = []string{
+	"docs/VISION.yaml",
+	"docs/ARCHITECTURE.yaml",
+	"docs/SPECIFICATIONS.yaml",
+	"docs/road-map.yaml",
+	"docs/specs/product-requirements/prd*.yaml",
+	"docs/specs/use-cases/rel*.yaml",
+	"docs/specs/test-suites/test-rel*.yaml",
+	"docs/specs/dependency-map.yaml",
+	"docs/specs/sources.yaml",
+	"docs/engineering/eng*.yaml",
+}
+
+// resolveStandardFiles expands standardContextPatterns into a
+// deduplicated, sorted list of real file paths.
+func resolveStandardFiles() []string {
+	seen := make(map[string]bool)
+	var files []string
+	for _, pattern := range standardContextPatterns {
+		matches, err := filepath.Glob(pattern)
+		if err != nil {
+			logf("resolveStandardFiles: bad glob %q: %v", pattern, err)
+			continue
+		}
+		for _, path := range matches {
+			if _, err := os.Stat(path); err != nil {
+				continue
+			}
+			if seen[path] {
+				continue
+			}
+			seen[path] = true
+			files = append(files, path)
+		}
+	}
+	sort.Strings(files)
+	logf("resolveStandardFiles: %d pattern(s) -> %d file(s)", len(standardContextPatterns), len(files))
+	return files
+}
+
+// fileMatchesRelease extracts the release version from a use-case or
+// test-suite filename and returns true if the file's release <= the
+// given release. String comparison works for the zero-padded "NN.N"
+// format. Returns true if release is empty (no filtering) or if the
+// file's release cannot be determined.
+func fileMatchesRelease(path, release string) bool {
+	if release == "" {
+		return true
+	}
+	base := filepath.Base(path)
+	var fileRelease string
+	switch {
+	case strings.HasPrefix(base, "rel"):
+		// rel01.0-uc001-... → extract "01.0"
+		rest := strings.TrimPrefix(base, "rel")
+		if idx := strings.Index(rest, "-"); idx > 0 {
+			fileRelease = rest[:idx]
+		}
+	case strings.HasPrefix(base, "test-rel"):
+		// test-rel01.0.yaml → extract "01.0"
+		rest := strings.TrimPrefix(base, "test-rel")
+		fileRelease = strings.TrimSuffix(rest, ".yaml")
+	}
+	if fileRelease == "" {
+		return true
+	}
+	return fileRelease <= release
+}
+
+// prdIDsFromUseCases extracts PRD IDs referenced by touchpoints in the
+// given use cases. Returns a set of PRD filename stems (e.g., "prd001-feature").
+func prdIDsFromUseCases(useCases []*UseCaseDoc) map[string]bool {
+	if len(useCases) == 0 {
+		return nil
+	}
+	ids := make(map[string]bool)
+	for _, uc := range useCases {
+		for _, tp := range uc.Touchpoints {
+			for _, text := range tp {
+				for _, word := range strings.Fields(text) {
+					word = strings.TrimSuffix(strings.TrimPrefix(word, "("), ")")
+					if strings.HasPrefix(word, "prd") {
+						ids[word] = true
+					}
+				}
+			}
+		}
+	}
+	return ids
+}
+
+// loadContextFileInto loads a single file into the appropriate field
+// of ctx based on its classified category. Applies release filtering
+// for use_case and test_suite categories. Does not handle constitution
+// or extra categories.
+func loadContextFileInto(ctx *ProjectContext, path, release string) {
+	switch classifyContextFile(path) {
+	case "vision":
+		ctx.Vision = loadYAML[VisionDoc](path)
+	case "architecture":
+		ctx.Architecture = loadYAML[ArchitectureDoc](path)
+	case "specifications":
+		ctx.Specifications = loadYAML[SpecificationsDoc](path)
+	case "roadmap":
+		ctx.Roadmap = loadYAML[RoadmapDoc](path)
+	case "use_case":
+		if !fileMatchesRelease(path, release) {
+			return
+		}
+		if v := loadYAML[UseCaseDoc](path); v != nil {
+			ctx.Specs.UseCases = append(ctx.Specs.UseCases, v)
+		}
+	case "test_suite":
+		if !fileMatchesRelease(path, release) {
+			return
+		}
+		if v := loadYAML[TestSuiteDoc](path); v != nil {
+			ctx.Specs.TestSuites = append(ctx.Specs.TestSuites, v)
+		}
+	case "spec_aux":
+		if v := loadNamedDoc(path); v != nil {
+			switch filepath.Base(path) {
+			case "dependency-map.yaml":
+				ctx.Specs.DependencyMap = v
+			case "sources.yaml":
+				ctx.Specs.Sources = v
+			default:
+				ctx.Extra = append(ctx.Extra, v)
+			}
+		}
+	case "engineering":
+		if v := loadYAML[EngineeringDoc](path); v != nil {
+			ctx.Engineering = append(ctx.Engineering, v)
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Assembly
 // ---------------------------------------------------------------------------
 
-// buildProjectContext resolves context sources, reads all matching files
-// and source code, parses existing issues, and assembles them into a
-// ProjectContext struct.
-func buildProjectContext(existingIssuesJSON string, goSourceDirs []string, contextSources string) (*ProjectContext, error) {
+// buildProjectContext resolves the standard document structure and any
+// extra context sources, reads all matching files and source code, parses
+// existing issues, and assembles them into a ProjectContext struct.
+// The release parameter filters use cases, test suites, and PRDs.
+func buildProjectContext(existingIssuesJSON string, goSourceDirs []string, contextSources string, release string) (*ProjectContext, error) {
 	ctx := &ProjectContext{}
-	files := resolveContextSources(contextSources)
-
-	// Dispatch each resolved file to the appropriate typed loader.
 	ctx.Specs = &SpecsCollection{}
-	ctx.Constitutions = &ConstitutionsDoc{}
 
-	for _, path := range files {
-		switch classifyContextFile(path) {
-		case "vision":
-			ctx.Vision = loadYAML[VisionDoc](path)
-		case "architecture":
-			ctx.Architecture = loadYAML[ArchitectureDoc](path)
-		case "specifications":
-			ctx.Specifications = loadYAML[SpecificationsDoc](path)
-		case "roadmap":
-			ctx.Roadmap = loadYAML[RoadmapDoc](path)
-		case "prd":
+	// Load standard documentation files, deferring PRDs.
+	standardFiles := resolveStandardFiles()
+	standardSet := make(map[string]bool, len(standardFiles))
+	var prdPaths []string
+
+	for _, path := range standardFiles {
+		standardSet[path] = true
+		if classifyContextFile(path) == "prd" {
+			prdPaths = append(prdPaths, path)
+			continue
+		}
+		loadContextFileInto(ctx, path, release)
+	}
+
+	// Load PRDs filtered by release: when a release is set, only
+	// include PRDs referenced by the loaded (release-scoped) use cases.
+	if release == "" {
+		for _, path := range prdPaths {
 			if v := loadYAML[PRDDoc](path); v != nil {
 				ctx.Specs.ProductRequirements = append(ctx.Specs.ProductRequirements, v)
 			}
-		case "use_case":
-			if v := loadYAML[UseCaseDoc](path); v != nil {
-				ctx.Specs.UseCases = append(ctx.Specs.UseCases, v)
-			}
-		case "test_suite":
-			if v := loadYAML[TestSuiteDoc](path); v != nil {
-				ctx.Specs.TestSuites = append(ctx.Specs.TestSuites, v)
-			}
-		case "spec_aux":
-			if v := loadNamedDoc(path); v != nil {
-				switch filepath.Base(path) {
-				case "dependency-map.yaml":
-					ctx.Specs.DependencyMap = v
-				case "sources.yaml":
-					ctx.Specs.Sources = v
-				default:
-					ctx.Extra = append(ctx.Extra, v)
+		}
+	} else {
+		referencedPRDs := prdIDsFromUseCases(ctx.Specs.UseCases)
+		for _, path := range prdPaths {
+			stem := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+			if referencedPRDs[stem] {
+				if v := loadYAML[PRDDoc](path); v != nil {
+					ctx.Specs.ProductRequirements = append(ctx.Specs.ProductRequirements, v)
 				}
 			}
-		case "engineering":
-			if v := loadYAML[EngineeringDoc](path); v != nil {
-				ctx.Engineering = append(ctx.Engineering, v)
+		}
+	}
+
+	// Load extras from contextSources (if non-empty), skipping files
+	// already in the standard set.
+	if contextSources != "" {
+		extras := resolveContextSources(contextSources)
+		for _, path := range extras {
+			if standardSet[path] {
+				continue
 			}
-		case "constitution":
-			base := filepath.Base(path)
-			node := loadYAMLNode(path)
-			switch base {
-			case "design.yaml":
-				ctx.Constitutions.Design = node
-			case "planning.yaml":
-				ctx.Constitutions.Planning = node
-			case "execution.yaml":
-				ctx.Constitutions.Execution = node
-			case "go-style.yaml":
-				ctx.Constitutions.GoStyle = node
-			}
-		default:
 			if v := loadNamedDoc(path); v != nil {
 				ctx.Extra = append(ctx.Extra, v)
 			}
@@ -699,25 +802,20 @@ func buildProjectContext(existingIssuesJSON string, goSourceDirs []string, conte
 		ctx.Specs.Sources == nil {
 		ctx.Specs = nil
 	}
-	if ctx.Constitutions.Design == nil && ctx.Constitutions.Planning == nil &&
-		ctx.Constitutions.Execution == nil && ctx.Constitutions.GoStyle == nil {
-		ctx.Constitutions = nil
-	}
 
 	ctx.SourceCode = loadSourceFiles(goSourceDirs)
 	ctx.Issues = parseIssuesJSON(existingIssuesJSON)
 
-	logf("buildProjectContext: vision=%v arch=%v roadmap=%v specs=%v eng=%d const=%v issues=%d extra=%d src=%d files=%d",
+	logf("buildProjectContext: vision=%v arch=%v roadmap=%v specs=%v eng=%d issues=%d extra=%d src=%d files=%d",
 		ctx.Vision != nil,
 		ctx.Architecture != nil,
 		ctx.Roadmap != nil,
 		ctx.Specs != nil,
 		len(ctx.Engineering),
-		ctx.Constitutions != nil,
 		len(ctx.Issues),
 		len(ctx.Extra),
 		len(ctx.SourceCode),
-		len(files),
+		len(standardFiles),
 	)
 	return ctx, nil
 }

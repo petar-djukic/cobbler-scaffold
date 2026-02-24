@@ -295,10 +295,6 @@ func bdCommentAdd(id, comment string) error {
 	return exec.Command(binBd, "comments", "add", id, comment).Run()
 }
 
-func bdShowJSON(id string) ([]byte, error) {
-	return exec.Command(binBd, "show", id, "--json").Output()
-}
-
 // diffStat holds parsed output from git diff --shortstat.
 type diffStat struct {
 	FilesChanged int

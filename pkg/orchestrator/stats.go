@@ -59,7 +59,7 @@ func (o *Orchestrator) CollectStats() (StatsRecord, error) {
 	}
 
 	specWords := make(map[string]int)
-	for _, path := range resolveContextSources(o.cfg.Project.ContextSources) {
+	for _, path := range resolveStandardFiles() {
 		cat := classifyContextFile(path)
 		if cat == "prd" || cat == "use_case" || cat == "test_suite" {
 			words, wordErr := countWordsInFile(path)
