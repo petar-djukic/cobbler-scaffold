@@ -210,3 +210,60 @@ func TestConfig_ClaudeTimeout(t *testing.T) {
 		t.Errorf("ClaudeTimeout: got %v, want %v", got, want)
 	}
 }
+
+func TestLoadConfig_TemperatureFromYAML(t *testing.T) {
+	yaml := `claude:
+  temperature: 0.7
+`
+	f := writeTemp(t, yaml)
+	cfg, err := LoadConfig(f)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if cfg.Claude.Temperature != 0.7 {
+		t.Errorf("Temperature: got %f, want 0.7", cfg.Claude.Temperature)
+	}
+}
+
+func TestLoadConfig_TemperatureDefaultsToZero(t *testing.T) {
+	f := writeTemp(t, "project:\n  module_path: example.com/x\n")
+	cfg, err := LoadConfig(f)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if cfg.Claude.Temperature != 0 {
+		t.Errorf("Temperature default: got %f, want 0", cfg.Claude.Temperature)
+	}
+}
+
+func TestLoadConfig_EnforceMeasureValidationFromYAML(t *testing.T) {
+	yaml := `cobbler:
+  enforce_measure_validation: true
+  max_measure_retries: 3
+`
+	f := writeTemp(t, yaml)
+	cfg, err := LoadConfig(f)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if !cfg.Cobbler.EnforceMeasureValidation {
+		t.Error("EnforceMeasureValidation: got false, want true")
+	}
+	if cfg.Cobbler.MaxMeasureRetries != 3 {
+		t.Errorf("MaxMeasureRetries: got %d, want 3", cfg.Cobbler.MaxMeasureRetries)
+	}
+}
+
+func TestLoadConfig_EnforceMeasureValidationDefaultsFalse(t *testing.T) {
+	f := writeTemp(t, "project:\n  module_path: example.com/x\n")
+	cfg, err := LoadConfig(f)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if cfg.Cobbler.EnforceMeasureValidation {
+		t.Error("EnforceMeasureValidation default: got true, want false")
+	}
+	if cfg.Cobbler.MaxMeasureRetries != 0 {
+		t.Errorf("MaxMeasureRetries default: got %d, want 0", cfg.Cobbler.MaxMeasureRetries)
+	}
+}

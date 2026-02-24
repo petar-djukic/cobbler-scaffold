@@ -461,6 +461,10 @@ func (o *Orchestrator) checkPodman() error {
 func (o *Orchestrator) runClaude(prompt, dir string, silence bool) (ClaudeResult, error) {
 	logf("runClaude: promptLen=%d dir=%q silence=%v", len(prompt), dir, silence)
 
+	if o.cfg.Claude.Temperature != 0 {
+		logf("runClaude: warning: temperature=%.2f configured but Claude CLI does not support --temperature; parameter ignored", o.cfg.Claude.Temperature)
+	}
+
 	// Refresh credentials from macOS Keychain before each invocation.
 	// OAuth tokens expire periodically; extracting just before launch
 	// ensures the container always gets a valid token.

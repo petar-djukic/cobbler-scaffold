@@ -219,6 +219,16 @@ type ClaudeConfig struct {
 	// where the Claude CLI expects its credentials file.
 	// Default: /home/crumbs/.claude/.credentials.json
 	ContainerCredentialsPath string `yaml:"container_credentials_path"`
+
+	// Temperature controls the randomness of Claude's output. Lower values
+	// produce more deterministic output. When 0 (the default), no temperature
+	// parameter is passed and Claude uses its built-in default.
+	//
+	// NOTE: As of 2026-02, the Claude CLI does not support a --temperature
+	// flag. This field is reserved for future use. When set to a non-zero
+	// value, the orchestrator logs a warning that the parameter cannot be
+	// passed through to the CLI.
+	Temperature float64 `yaml:"temperature"`
 }
 
 // Config holds all orchestrator settings. Consuming repos either
