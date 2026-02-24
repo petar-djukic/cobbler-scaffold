@@ -28,10 +28,32 @@ export interface BeadsDependency {
   metadata: string;
 }
 
-/** Token usage extracted from a comment matching "tokens: <number>". */
+/** Token usage extracted from a comment matching "tokens: <number>" or a full JSON InvocationRecord. */
 export interface InvocationRecord {
   tokens: number;
   comment: BeadsComment;
+  /** "measure" or "stitch" when parsed from full JSON. */
+  caller?: string;
+  /** RFC3339 timestamp when parsed from full JSON. */
+  startedAt?: string;
+  /** Duration in seconds when parsed from full JSON. */
+  durationS?: number;
+  /** Input token count when parsed from full JSON. */
+  inputTokens?: number;
+  /** Output token count when parsed from full JSON. */
+  outputTokens?: number;
+  /** Cache creation tokens when parsed from full JSON. */
+  cacheCreationTokens?: number;
+  /** Cache read tokens when parsed from full JSON. */
+  cacheReadTokens?: number;
+  /** Cost in USD when parsed from full JSON. */
+  costUSD?: number;
+  /** LOC snapshot before invocation when parsed from full JSON. */
+  locBefore?: { production: number; test: number };
+  /** LOC snapshot after invocation when parsed from full JSON. */
+  locAfter?: { production: number; test: number };
+  /** Diff statistics when parsed from full JSON. */
+  diff?: { files: number; insertions: number; deletions: number };
 }
 
 /** Issue status as it appears in the JSONL. */
@@ -166,10 +188,17 @@ export class BeadsStore {
 /** Pattern matching "tokens: <number>" in comment text. */
 export const TOKENS_PATTERN = /^tokens:\s*(\d+)$/;
 
-/** Extracts an InvocationRecord from a comment, or returns undefined. */
+/** Extracts an InvocationRecord from a comment, or returns undefined.
+ *  Tries full JSON format first, then falls back to "tokens: <number>". */
 export function extractInvocationRecord(
   comment: BeadsComment
 ): InvocationRecord | undefined {
+  // Try full JSON InvocationRecord first.
+  const jsonRecord = tryParseJsonRecord(comment);
+  if (jsonRecord) {
+    return jsonRecord;
+  }
+  // Fall back to simple "tokens: <number>" format.
   const match = comment.text.match(TOKENS_PATTERN);
   if (!match) {
     return undefined;
@@ -178,6 +207,78 @@ export function extractInvocationRecord(
     tokens: parseInt(match[1], 10),
     comment,
   };
+}
+
+/** Attempts to parse a full JSON InvocationRecord from comment text. */
+export function tryParseJsonRecord(
+  comment: BeadsComment
+): InvocationRecord | undefined {
+  const text = comment.text.trim();
+  if (!text.startsWith("{")) {
+    return undefined;
+  }
+  try {
+    const raw = JSON.parse(text) as Record<string, unknown>;
+    const tokens = raw.tokens as Record<string, unknown> | undefined;
+    if (!tokens || typeof tokens !== "object") {
+      return undefined;
+    }
+    const input = typeof tokens.input === "number" ? tokens.input : 0;
+    const output = typeof tokens.output === "number" ? tokens.output : 0;
+    const cacheCreation =
+      typeof tokens.cache_creation === "number" ? tokens.cache_creation : 0;
+    const cacheRead =
+      typeof tokens.cache_read === "number" ? tokens.cache_read : 0;
+    const costUSD =
+      typeof tokens.cost_usd === "number" ? tokens.cost_usd : 0;
+
+    const record: InvocationRecord = {
+      tokens: input + output,
+      comment,
+      caller: typeof raw.caller === "string" ? raw.caller : undefined,
+      startedAt:
+        typeof raw.started_at === "string" ? raw.started_at : undefined,
+      durationS:
+        typeof raw.duration_s === "number" ? raw.duration_s : undefined,
+      inputTokens: input,
+      outputTokens: output,
+      cacheCreationTokens: cacheCreation || undefined,
+      cacheReadTokens: cacheRead || undefined,
+      costUSD: costUSD || undefined,
+    };
+
+    const locBefore = raw.loc_before as Record<string, unknown> | undefined;
+    if (locBefore && typeof locBefore === "object") {
+      record.locBefore = {
+        production:
+          typeof locBefore.production === "number" ? locBefore.production : 0,
+        test: typeof locBefore.test === "number" ? locBefore.test : 0,
+      };
+    }
+
+    const locAfter = raw.loc_after as Record<string, unknown> | undefined;
+    if (locAfter && typeof locAfter === "object") {
+      record.locAfter = {
+        production:
+          typeof locAfter.production === "number" ? locAfter.production : 0,
+        test: typeof locAfter.test === "number" ? locAfter.test : 0,
+      };
+    }
+
+    const diff = raw.diff as Record<string, unknown> | undefined;
+    if (diff && typeof diff === "object") {
+      record.diff = {
+        files: typeof diff.files === "number" ? diff.files : 0,
+        insertions:
+          typeof diff.insertions === "number" ? diff.insertions : 0,
+        deletions: typeof diff.deletions === "number" ? diff.deletions : 0,
+      };
+    }
+
+    return record;
+  } catch {
+    return undefined;
+  }
 }
 
 /** Parses a raw JSON object into a BeadsIssue, or returns undefined. */

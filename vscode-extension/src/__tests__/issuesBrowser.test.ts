@@ -70,7 +70,7 @@ describe("IssueBrowserProvider", () => {
       expect(counts).toEqual([
         { status: "in_progress", count: 1 },
         { status: "open", count: 2 },
-        { status: "closed", count: 1 },
+        { status: "closed", count: 2 },
       ]);
     });
   });

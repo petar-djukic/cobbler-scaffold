@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Petar Djukic. All rights reserved.
 // SPDX-License-Identifier: MIT
 
-// prd: prd006-vscode-extension R1, R7
+// prd: prd006-vscode-extension R1, R5, R7
 // uc: rel02.0-uc001-lifecycle-commands
 
 import * as vscode from "vscode";
@@ -12,6 +12,7 @@ import { TraceabilityProvider, viewRequirement } from "./traceability";
 import { GenerationBrowserProvider } from "./generationBrowser";
 import { BeadsStore } from "./beadsModel";
 import { IssueBrowserProvider } from "./issuesBrowser";
+import { MetricsDashboard } from "./dashboard";
 
 /** Output channel for error and diagnostic logging. */
 let outputChannel: vscode.OutputChannel;
@@ -51,15 +52,6 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("mageOrchestrator.cobblerStitch", () =>
       commands.cobblerStitch(outputChannel)
     )
-  );
-
-  // Register placeholder for the dashboard command (existing stub).
-  context.subscriptions.push(
-    vscode.commands.registerCommand("mageOrchestrator.showDashboard", () => {
-      vscode.window.showInformationMessage(
-        "Mage Orchestrator dashboard — not yet implemented."
-      );
-    })
   );
 
   // FileSystemWatchers for reactive view refresh.
@@ -131,6 +123,17 @@ export function activate(context: vscode.ExtensionContext): void {
     beadsWatcher.onDidCreate(() => issueBrowser.refresh());
     beadsWatcher.onDidDelete(() => issueBrowser.refresh());
 
+    // Metrics dashboard webview (prd006 R5).
+    const dashboard = new MetricsDashboard(beadsStore);
+    context.subscriptions.push(
+      vscode.commands.registerCommand("mageOrchestrator.showDashboard", () =>
+        dashboard.show()
+      )
+    );
+    beadsWatcher.onDidChange(() => dashboard.refresh());
+    beadsWatcher.onDidCreate(() => dashboard.refresh());
+    beadsWatcher.onDidDelete(() => dashboard.refresh());
+
     // Code-to-spec traceability CodeLens (prd006 R9).
     const traceGraph = new SpecGraph(root);
     context.subscriptions.push(
@@ -148,6 +151,15 @@ export function activate(context: vscode.ExtensionContext): void {
     specsWatcher.onDidChange(() => traceGraph.invalidate());
     specsWatcher.onDidCreate(() => traceGraph.invalidate());
     specsWatcher.onDidDelete(() => traceGraph.invalidate());
+  } else {
+    // Fallback when no workspace root is available.
+    context.subscriptions.push(
+      vscode.commands.registerCommand("mageOrchestrator.showDashboard", () => {
+        vscode.window.showWarningMessage(
+          "Metrics dashboard requires an open workspace."
+        );
+      })
+    );
   }
 
   outputChannel.appendLine("Mage Orchestrator extension activated");

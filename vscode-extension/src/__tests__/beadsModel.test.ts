@@ -232,7 +232,7 @@ describe("BeadsStore", () => {
   it("ensureBuilt populates issues from fixture JSONL", () => {
     const store = new BeadsStore(FIXTURES);
     store.ensureBuilt();
-    expect(store.listIssues().length).toBe(4);
+    expect(store.listIssues().length).toBe(5);
   });
 
   it("ensureBuilt is idempotent", () => {
@@ -280,8 +280,9 @@ describe("BeadsStore", () => {
     const store = new BeadsStore(FIXTURES);
     store.ensureBuilt();
     const closed = store.listByStatus("closed");
-    expect(closed.length).toBe(1);
-    expect(closed[0].id).toBe("test-003");
+    expect(closed.length).toBe(2);
+    const ids = closed.map((i) => i.id).sort();
+    expect(ids).toEqual(["test-003", "test-005"]);
   });
 
   it("listByStatus returns only in_progress issues", () => {
@@ -296,9 +297,9 @@ describe("BeadsStore", () => {
     const store = new BeadsStore(FIXTURES);
     store.ensureBuilt();
     const records = store.listInvocationRecords();
-    expect(records.length).toBe(2);
+    expect(records.length).toBe(3);
     const tokens = records.map((r) => r.tokens).sort((a, b) => a - b);
-    expect(tokens).toEqual([12000, 35000]);
+    expect(tokens).toEqual([12000, 35000, 50000]);
   });
 
   it("getInvocationRecords returns records for a specific issue", () => {
