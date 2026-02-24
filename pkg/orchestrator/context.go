@@ -6,6 +6,7 @@ package orchestrator
 import (
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -567,6 +568,39 @@ func resolveContextSources(sources string) []string {
 	return files
 }
 
+// resolveFileSet expands newline-delimited glob patterns into a set of
+// file paths. Directory matches are walked recursively so that excluding
+// a directory excludes all files underneath it.
+func resolveFileSet(text string) map[string]bool {
+	patterns := parseContextSources(text)
+	set := make(map[string]bool)
+	for _, pattern := range patterns {
+		matches, err := filepath.Glob(pattern)
+		if err != nil {
+			logf("resolveFileSet: bad glob %q: %v", pattern, err)
+			continue
+		}
+		for _, m := range matches {
+			info, err := os.Stat(m)
+			if err != nil {
+				continue
+			}
+			if info.IsDir() {
+				filepath.WalkDir(m, func(p string, d fs.DirEntry, err error) error {
+					if err == nil && !d.IsDir() {
+						set[p] = true
+					}
+					return nil
+				})
+			} else {
+				set[m] = true
+			}
+		}
+	}
+	logf("resolveFileSet: %d pattern(s) -> %d file(s)", len(patterns), len(set))
+	return set
+}
+
 // classifyContextFile determines how a file should be loaded based on
 // its path. Returns a category string used by buildProjectContext to
 // dispatch to the appropriate typed loader.
@@ -758,6 +792,11 @@ func loadContextFileInto(ctx *ProjectContext, path, release string) {
 			v.File = path
 			ctx.Engineering = append(ctx.Engineering, v)
 		}
+	case "extra":
+		if v := loadNamedDoc(path); v != nil {
+			v.File = path
+			ctx.Extra = append(ctx.Extra, v)
+		}
 	}
 }
 
@@ -768,17 +807,45 @@ func loadContextFileInto(ctx *ProjectContext, path, release string) {
 // buildProjectContext resolves the standard document structure and any
 // extra context sources, reads all matching files and source code, parses
 // existing issues, and assembles them into a ProjectContext struct.
-// The release parameter filters use cases, test suites, and PRDs.
-func buildProjectContext(existingIssuesJSON string, goSourceDirs []string, contextSources string, release string) (*ProjectContext, error) {
+// The project config controls include/exclude filtering and release scoping.
+func buildProjectContext(existingIssuesJSON string, project ProjectConfig) (*ProjectContext, error) {
 	ctx := &ProjectContext{}
 	ctx.Specs = &SpecsCollection{}
 
-	// Load standard documentation files, deferring PRDs.
-	standardFiles := resolveStandardFiles()
-	standardSet := make(map[string]bool, len(standardFiles))
+	release := project.Release
+
+	// Compute exclude set when configured.
+	var excludeSet map[string]bool
+	if strings.TrimSpace(project.ContextExclude) != "" {
+		excludeSet = resolveFileSet(project.ContextExclude)
+		logf("buildProjectContext: exclude set has %d file(s)", len(excludeSet))
+	}
+
+	// Resolve document files: use ContextInclude when set, otherwise
+	// fall back to the standard document discovery.
+	var docFiles []string
+	if strings.TrimSpace(project.ContextInclude) != "" {
+		docFiles = resolveContextSources(project.ContextInclude)
+		logf("buildProjectContext: using context_include (%d file(s))", len(docFiles))
+	} else {
+		docFiles = resolveStandardFiles()
+	}
+
+	// Filter through exclude set.
+	if excludeSet != nil {
+		var filtered []string
+		for _, f := range docFiles {
+			if !excludeSet[f] {
+				filtered = append(filtered, f)
+			}
+		}
+		docFiles = filtered
+	}
+
+	standardSet := make(map[string]bool, len(docFiles))
 	var prdPaths []string
 
-	for _, path := range standardFiles {
+	for _, path := range docFiles {
 		standardSet[path] = true
 		if classifyContextFile(path) == "prd" {
 			prdPaths = append(prdPaths, path)
@@ -810,11 +877,14 @@ func buildProjectContext(existingIssuesJSON string, goSourceDirs []string, conte
 	}
 
 	// Load extras from contextSources (if non-empty), skipping files
-	// already in the standard set.
-	if contextSources != "" {
-		extras := resolveContextSources(contextSources)
+	// already in the standard set and files in the exclude set.
+	if project.ContextSources != "" {
+		extras := resolveContextSources(project.ContextSources)
 		for _, path := range extras {
 			if standardSet[path] {
+				continue
+			}
+			if excludeSet != nil && excludeSet[path] {
 				continue
 			}
 			if v := loadNamedDoc(path); v != nil {
@@ -831,7 +901,18 @@ func buildProjectContext(existingIssuesJSON string, goSourceDirs []string, conte
 		ctx.Specs = nil
 	}
 
-	ctx.SourceCode = loadSourceFiles(goSourceDirs)
+	// Load source code and filter through exclude set.
+	ctx.SourceCode = loadSourceFiles(project.GoSourceDirs)
+	if excludeSet != nil {
+		var filtered []SourceFile
+		for _, sf := range ctx.SourceCode {
+			if !excludeSet[sf.File] {
+				filtered = append(filtered, sf)
+			}
+		}
+		ctx.SourceCode = filtered
+	}
+
 	ctx.Issues = parseIssuesJSON(existingIssuesJSON)
 
 	logf("buildProjectContext: vision=%v arch=%v roadmap=%v specs=%v eng=%d issues=%d extra=%d src=%d files=%d",
@@ -843,7 +924,7 @@ func buildProjectContext(existingIssuesJSON string, goSourceDirs []string, conte
 		len(ctx.Issues),
 		len(ctx.Extra),
 		len(ctx.SourceCode),
-		len(standardFiles),
+		len(docFiles),
 	)
 	return ctx, nil
 }

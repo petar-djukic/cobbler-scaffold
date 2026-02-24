@@ -348,7 +348,7 @@ func (o *Orchestrator) buildMeasurePrompt(userInput, existingIssues string, limi
 
 	planningConst := orDefault(o.cfg.Cobbler.PlanningConstitution, planningConstitution)
 
-	projectCtx, ctxErr := buildProjectContext(existingIssues, o.cfg.Project.GoSourceDirs, o.cfg.Project.ContextSources, o.cfg.Project.Release)
+	projectCtx, ctxErr := buildProjectContext(existingIssues, o.cfg.Project)
 	if ctxErr != nil {
 		logf("buildMeasurePrompt: buildProjectContext error: %v", ctxErr)
 		projectCtx = &ProjectContext{}

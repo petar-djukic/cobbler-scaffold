@@ -5,6 +5,7 @@ package orchestrator
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -253,5 +254,236 @@ func TestPrdIDsFromUseCases(t *testing.T) {
 	// Nil use cases should return nil.
 	if got := prdIDsFromUseCases(nil); got != nil {
 		t.Errorf("expected nil for nil use cases, got %v", got)
+	}
+}
+
+// setupContextTestDir creates a temp directory with standard doc structure
+// and Go source files, chdir into it, and returns a cleanup function.
+func setupContextTestDir(t *testing.T) (string, func()) {
+	t.Helper()
+	tmp := t.TempDir()
+	orig, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create standard doc structure.
+	for _, d := range []string{
+		"docs",
+		"docs/specs/product-requirements",
+		"docs/specs/use-cases",
+		"docs/specs/test-suites",
+		"docs/engineering",
+		"pkg/app",
+	} {
+		os.MkdirAll(d, 0o755)
+	}
+
+	os.WriteFile("docs/VISION.yaml", []byte("id: v1\ntitle: Vision"), 0o644)
+	os.WriteFile("docs/ARCHITECTURE.yaml", []byte("id: a1\ntitle: Arch"), 0o644)
+	os.WriteFile("docs/road-map.yaml", []byte("id: r1\ntitle: Roadmap"), 0o644)
+	os.WriteFile("pkg/app/main.go", []byte("package app\n"), 0o644)
+	os.WriteFile("pkg/app/util.go", []byte("package app\n"), 0o644)
+
+	return tmp, func() { os.Chdir(orig) }
+}
+
+func TestContextExclude(t *testing.T) {
+	_, cleanup := setupContextTestDir(t)
+	defer cleanup()
+
+	// Create an extra file that will be excluded.
+	os.WriteFile("docs/extra.yaml", []byte("id: extra"), 0o644)
+
+	project := ProjectConfig{
+		GoSourceDirs:   []string{"pkg/"},
+		ContextSources: "docs/extra.yaml",
+		ContextExclude: "docs/extra.yaml\npkg/app/util.go",
+	}
+
+	ctx, err := buildProjectContext("", project)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// extra.yaml should be excluded from extras.
+	for _, e := range ctx.Extra {
+		if e.File == "docs/extra.yaml" {
+			t.Error("docs/extra.yaml should be excluded from extras")
+		}
+	}
+
+	// util.go should be excluded from source code.
+	for _, sf := range ctx.SourceCode {
+		if sf.File == "pkg/app/util.go" {
+			t.Error("pkg/app/util.go should be excluded from source code")
+		}
+	}
+
+	// main.go should still be present.
+	found := false
+	for _, sf := range ctx.SourceCode {
+		if sf.File == "pkg/app/main.go" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("pkg/app/main.go should be present in source code")
+	}
+}
+
+func TestContextIncludeReplacesStandard(t *testing.T) {
+	_, cleanup := setupContextTestDir(t)
+	defer cleanup()
+
+	// Create a custom doc that is NOT in the standard set.
+	os.WriteFile("docs/custom.yaml", []byte("id: custom\ntitle: Custom"), 0o644)
+
+	project := ProjectConfig{
+		ContextInclude: "docs/custom.yaml",
+	}
+
+	ctx, err := buildProjectContext("", project)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Standard files should NOT be loaded since context_include replaces them.
+	if ctx.Vision != nil {
+		t.Error("Vision should be nil when context_include replaces standard files")
+	}
+	if ctx.Architecture != nil {
+		t.Error("Architecture should be nil when context_include replaces standard files")
+	}
+
+	// The custom file should be loaded as an extra (classified as "extra").
+	found := false
+	for _, e := range ctx.Extra {
+		if e.File == "docs/custom.yaml" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("docs/custom.yaml should be loaded via context_include")
+	}
+}
+
+func TestContextExcludeDirectory(t *testing.T) {
+	_, cleanup := setupContextTestDir(t)
+	defer cleanup()
+
+	// Create files in a subdirectory.
+	os.MkdirAll("pkg/sub", 0o755)
+	os.WriteFile("pkg/sub/a.go", []byte("package sub\n"), 0o644)
+	os.WriteFile("pkg/sub/b.go", []byte("package sub\n"), 0o644)
+
+	project := ProjectConfig{
+		GoSourceDirs:   []string{"pkg/"},
+		ContextExclude: "pkg/sub",
+	}
+
+	ctx, err := buildProjectContext("", project)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// No files from pkg/sub/ should appear in source code.
+	for _, sf := range ctx.SourceCode {
+		if strings.HasPrefix(sf.File, "pkg/sub/") || strings.HasPrefix(sf.File, filepath.Join("pkg", "sub")+string(filepath.Separator)) {
+			t.Errorf("file %s from excluded directory should not be in source code", sf.File)
+		}
+	}
+
+	// Files from pkg/app/ should still be present.
+	appFound := false
+	for _, sf := range ctx.SourceCode {
+		if strings.HasPrefix(sf.File, "pkg/app/") {
+			appFound = true
+		}
+	}
+	if !appFound {
+		t.Error("pkg/app/ files should still be present")
+	}
+}
+
+func TestContextIncludeWithExclude(t *testing.T) {
+	_, cleanup := setupContextTestDir(t)
+	defer cleanup()
+
+	// Include two files, exclude one of them.
+	os.WriteFile("docs/inc1.yaml", []byte("id: inc1"), 0o644)
+	os.WriteFile("docs/inc2.yaml", []byte("id: inc2"), 0o644)
+
+	project := ProjectConfig{
+		ContextInclude: "docs/inc1.yaml\ndocs/inc2.yaml",
+		ContextExclude: "docs/inc2.yaml",
+	}
+
+	ctx, err := buildProjectContext("", project)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// inc1 should be loaded, inc2 should be excluded.
+	var names []string
+	for _, e := range ctx.Extra {
+		names = append(names, e.File)
+	}
+
+	found1, found2 := false, false
+	for _, n := range names {
+		if n == "docs/inc1.yaml" {
+			found1 = true
+		}
+		if n == "docs/inc2.yaml" {
+			found2 = true
+		}
+	}
+	if !found1 {
+		t.Error("docs/inc1.yaml should be loaded via context_include")
+	}
+	if found2 {
+		t.Error("docs/inc2.yaml should be excluded by context_exclude")
+	}
+
+	// Standard files should NOT be loaded (replaced by include).
+	if ctx.Vision != nil {
+		t.Error("Vision should be nil when context_include is set")
+	}
+}
+
+func TestContextExcludeEverything(t *testing.T) {
+	_, cleanup := setupContextTestDir(t)
+	defer cleanup()
+
+	// Exclude "." — everything in the working directory.
+	project := ProjectConfig{
+		GoSourceDirs:   []string{},
+		ContextExclude: ".",
+	}
+
+	ctx, err := buildProjectContext("", project)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// With "." excluded, no standard docs should be loaded.
+	if ctx.Vision != nil {
+		t.Error("Vision should be nil with context_exclude='.'")
+	}
+	if ctx.Architecture != nil {
+		t.Error("Architecture should be nil with context_exclude='.'")
+	}
+	if ctx.Roadmap != nil {
+		t.Error("Roadmap should be nil with context_exclude='.'")
+	}
+	if len(ctx.SourceCode) > 0 {
+		t.Errorf("SourceCode should be empty with context_exclude='.', got %d", len(ctx.SourceCode))
+	}
+	if len(ctx.Extra) > 0 {
+		t.Errorf("Extra should be empty with context_exclude='.', got %d", len(ctx.Extra))
 	}
 }

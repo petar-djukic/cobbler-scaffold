@@ -46,6 +46,19 @@ type ProjectConfig struct {
 	// Source code is handled separately by GoSourceDirs.
 	ContextSources string `yaml:"context_sources"`
 
+	// ContextInclude is a newline-delimited list of glob patterns. When
+	// set, these patterns replace the standard document discovery
+	// (resolveStandardFiles). Only matching files are loaded into the
+	// project context. ContextSources still adds extras on top.
+	// When empty, the default standard file discovery applies.
+	ContextInclude string `yaml:"context_include"`
+
+	// ContextExclude is a newline-delimited list of glob patterns. Files
+	// matching any pattern (or under a matching directory) are excluded
+	// from the project context. Applied to docs, context sources, and
+	// source code. Use "." to exclude everything.
+	ContextExclude string `yaml:"context_exclude"`
+
 	// Release is the target release version (e.g., "01.0"). When set,
 	// use cases and test suites are filtered to only include files whose
 	// release version is <= this value. PRDs are filtered to only those
