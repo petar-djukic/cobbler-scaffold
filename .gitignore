@@ -37,6 +37,7 @@ go.work.sum
 # VS Code extension build artifacts
 vscode-extension/**/node_modules/
 vscode-extension/out/
+vscode-extension/*.vsix
 .secrets/
 
 # Auto-generated config when mage runs from magefiles/
