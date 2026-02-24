@@ -165,6 +165,17 @@ type CobblerConfig struct {
 	// When 0 (the default), budget enforcement is skipped.
 	MaxContextBytes int `yaml:"max_context_bytes"`
 
+	// EnforceMeasureValidation enables strict validation of measure output.
+	// When true, issues that violate P9 granularity ranges or P7 file naming
+	// are rejected and measure retries. When false (default), violations are
+	// logged as advisory warnings and import proceeds.
+	EnforceMeasureValidation bool `yaml:"enforce_measure_validation"`
+
+	// MaxMeasureRetries is the maximum number of retry attempts per iteration
+	// when EnforceMeasureValidation rejects the output. When 0 (default),
+	// no retries are attempted. A value of 2-3 is recommended.
+	MaxMeasureRetries int `yaml:"max_measure_retries"`
+
 	// HistoryDir is the directory for saving measure artifacts (prompt,
 	// issues YAML, stream-json log) per iteration. Default "history".
 	HistoryDir string `yaml:"history_dir"`

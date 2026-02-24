@@ -128,6 +128,8 @@ func (o *Orchestrator) RunMeasure() error {
 	var totalTokens ClaudeResult
 	claudeStart := time.Now() // overall Claude start for tracking
 
+	maxRetries := o.cfg.Cobbler.MaxMeasureRetries
+
 	for i := 0; i < totalIssues; i++ {
 		logf("--- iteration %d/%d ---", i+1, totalIssues)
 
@@ -137,38 +139,68 @@ func (o *Orchestrator) RunMeasure() error {
 			existingIssues = getExistingIssues()
 		}
 
-		timestamp := time.Now().Format("20060102-150405")
-		outputFile := filepath.Join(o.cfg.Cobbler.Dir, fmt.Sprintf("measure-%s.yaml", timestamp))
+		var createdIDs []string
+		var lastOutputFile string
 
-		prompt, promptErr := o.buildMeasurePrompt(o.cfg.Cobbler.UserPrompt, existingIssues, 1, outputFile)
-		if promptErr != nil {
-			return promptErr
-		}
-		logf("iteration %d prompt built, length=%d bytes", i+1, len(prompt))
+		// Attempt loop: try Claude + import, retrying on validation failure.
+		for attempt := 0; attempt <= maxRetries; attempt++ {
+			if attempt > 0 {
+				logf("iteration %d retry %d/%d (validation rejected previous output)",
+					i+1, attempt, maxRetries)
+			}
 
-		// Save prompt BEFORE calling Claude so it's on disk even if Claude times out.
-		historyTS := time.Now().Format("2006-01-02-15-04-05")
-		o.saveHistoryPrompt(historyTS, "measure", prompt)
+			timestamp := time.Now().Format("20060102-150405")
+			outputFile := filepath.Join(o.cfg.Cobbler.Dir, fmt.Sprintf("measure-%s.yaml", timestamp))
+			lastOutputFile = outputFile
 
-		iterStart := time.Now()
-		tokens, err := o.runClaude(prompt, "", o.cfg.Silence())
-		iterDuration := time.Since(iterStart)
+			prompt, promptErr := o.buildMeasurePrompt(o.cfg.Cobbler.UserPrompt, existingIssues, 1, outputFile)
+			if promptErr != nil {
+				return promptErr
+			}
+			logf("iteration %d prompt built, length=%d bytes", i+1, len(prompt))
 
-		totalTokens.InputTokens += tokens.InputTokens
-		totalTokens.OutputTokens += tokens.OutputTokens
-		totalTokens.CacheCreationTokens += tokens.CacheCreationTokens
-		totalTokens.CacheReadTokens += tokens.CacheReadTokens
-		totalTokens.CostUSD += tokens.CostUSD
+			// Save prompt BEFORE calling Claude so it's on disk even if Claude times out.
+			historyTS := time.Now().Format("2006-01-02-15-04-05")
+			o.saveHistoryPrompt(historyTS, "measure", prompt)
 
-		if err != nil {
-			logf("Claude failed on iteration %d after %s: %v",
-				i+1, iterDuration.Round(time.Second), err)
-			// Save log and stats even on failure.
-			o.saveHistoryLog(historyTS, "measure", tokens.RawOutput)
+			iterStart := time.Now()
+			tokens, err := o.runClaude(prompt, "", o.cfg.Silence())
+			iterDuration := time.Since(iterStart)
+
+			totalTokens.InputTokens += tokens.InputTokens
+			totalTokens.OutputTokens += tokens.OutputTokens
+			totalTokens.CacheCreationTokens += tokens.CacheCreationTokens
+			totalTokens.CacheReadTokens += tokens.CacheReadTokens
+			totalTokens.CostUSD += tokens.CostUSD
+
+			if err != nil {
+				logf("Claude failed on iteration %d after %s: %v",
+					i+1, iterDuration.Round(time.Second), err)
+				// Save log and stats even on failure.
+				o.saveHistoryLog(historyTS, "measure", tokens.RawOutput)
+				o.saveHistoryStats(historyTS, "measure", HistoryStats{
+					Caller:    "measure",
+					Status:    "failed",
+					Error:     fmt.Sprintf("claude failure (iteration %d/%d): %v", i+1, totalIssues, err),
+					StartedAt: iterStart.UTC().Format(time.RFC3339),
+					Duration:  iterDuration.Round(time.Second).String(),
+					DurationS: int(iterDuration.Seconds()),
+					Tokens:    historyTokens{Input: tokens.InputTokens, Output: tokens.OutputTokens, CacheCreation: tokens.CacheCreationTokens, CacheRead: tokens.CacheReadTokens},
+					CostUSD:   tokens.CostUSD,
+					LOCBefore: locBefore,
+					LOCAfter:  o.captureLOC(),
+				})
+				o.closeMeasureTrackingIssue(trackingID, claudeStart, measureStart,
+					totalTokens, locBefore, o.captureLOC(), len(allCreatedIDs), err)
+				return fmt.Errorf("running Claude (iteration %d/%d): %w", i+1, totalIssues, err)
+			}
+			logf("iteration %d Claude completed in %s", i+1, iterDuration.Round(time.Second))
+
+			// Save remaining history artifacts (log, issues, stats) after Claude.
+			o.saveHistory(historyTS, tokens.RawOutput, outputFile)
 			o.saveHistoryStats(historyTS, "measure", HistoryStats{
 				Caller:    "measure",
-				Status:    "failed",
-				Error:     fmt.Sprintf("claude failure (iteration %d/%d): %v", i+1, totalIssues, err),
+				Status:    "success",
 				StartedAt: iterStart.UTC().Format(time.RFC3339),
 				Duration:  iterDuration.Round(time.Second).String(),
 				DurationS: int(iterDuration.Seconds()),
@@ -177,60 +209,52 @@ func (o *Orchestrator) RunMeasure() error {
 				LOCBefore: locBefore,
 				LOCAfter:  o.captureLOC(),
 			})
-			o.closeMeasureTrackingIssue(trackingID, claudeStart, measureStart,
-				totalTokens, locBefore, o.captureLOC(), len(allCreatedIDs), err)
-			return fmt.Errorf("running Claude (iteration %d/%d): %w", i+1, totalIssues, err)
-		}
-		logf("iteration %d Claude completed in %s", i+1, iterDuration.Round(time.Second))
 
-		// Save remaining history artifacts (log, issues, stats) after Claude.
-		o.saveHistory(historyTS, tokens.RawOutput, outputFile)
-		o.saveHistoryStats(historyTS, "measure", HistoryStats{
-			Caller:    "measure",
-			Status:    "success",
-			StartedAt: iterStart.UTC().Format(time.RFC3339),
-			Duration:  iterDuration.Round(time.Second).String(),
-			DurationS: int(iterDuration.Seconds()),
-			Tokens:    historyTokens{Input: tokens.InputTokens, Output: tokens.OutputTokens, CacheCreation: tokens.CacheCreationTokens, CacheRead: tokens.CacheReadTokens},
-			CostUSD:   tokens.CostUSD,
-			LOCBefore: locBefore,
-			LOCAfter:  o.captureLOC(),
-		})
+			// Import the proposed issue.
+			fileInfo, statErr := os.Stat(outputFile)
+			if statErr != nil {
+				logf("iteration %d output file not found (Claude may not have written it)", i+1)
+				break // no output to retry
+			}
+			logf("iteration %d output file size=%d bytes", i+1, fileInfo.Size())
 
-		// Import the proposed issue.
-		fileInfo, statErr := os.Stat(outputFile)
-		if statErr != nil {
-			logf("iteration %d output file not found (Claude may not have written it)", i+1)
-			continue
+			var importErr error
+			createdIDs, importErr = o.importIssues(outputFile)
+			if importErr != nil {
+				logf("iteration %d import failed: %v", i+1, importErr)
+				if attempt < maxRetries {
+					os.Remove(outputFile)
+					continue // retry
+				}
+				// Retries exhausted: accept with warning (R5).
+				logf("iteration %d retries exhausted, accepting last result with warnings", i+1)
+				createdIDs, _ = o.importIssuesForce(outputFile)
+			}
+			break // success or retries exhausted
 		}
-		logf("iteration %d output file size=%d bytes", i+1, fileInfo.Size())
 
-		createdIDs, importErr := o.importIssues(outputFile)
-		if importErr != nil {
-			logf("iteration %d import failed: %v", i+1, importErr)
-			continue
-		}
 		logf("iteration %d imported %d issue(s)", i+1, len(createdIDs))
 
 		// Record invocation metrics on each created issue.
-		rec := InvocationRecord{
-			Caller:    "measure",
-			StartedAt: iterStart.UTC().Format(time.RFC3339),
-			DurationS: int(iterDuration.Seconds()),
-			Tokens:    claudeTokens{Input: tokens.InputTokens, Output: tokens.OutputTokens, CacheCreation: tokens.CacheCreationTokens, CacheRead: tokens.CacheReadTokens, CostUSD: tokens.CostUSD},
-			LOCBefore: locBefore,
-			LOCAfter:  o.captureLOC(),
-		}
-		for _, id := range createdIDs {
-			recordInvocation(id, rec)
+		if len(createdIDs) > 0 {
+			rec := InvocationRecord{
+				Caller:    "measure",
+				StartedAt: time.Now().UTC().Format(time.RFC3339),
+				Tokens:    claudeTokens{Input: totalTokens.InputTokens, Output: totalTokens.OutputTokens, CacheCreation: totalTokens.CacheCreationTokens, CacheRead: totalTokens.CacheReadTokens, CostUSD: totalTokens.CostUSD},
+				LOCBefore: locBefore,
+				LOCAfter:  o.captureLOC(),
+			}
+			for _, id := range createdIDs {
+				recordInvocation(id, rec)
+			}
 		}
 
 		allCreatedIDs = append(allCreatedIDs, createdIDs...)
 
-		if len(createdIDs) == 0 {
-			logf("iteration %d created no issues, keeping %s for inspection", i+1, outputFile)
-		} else {
-			os.Remove(outputFile) // nolint: best-effort temp file cleanup
+		if len(createdIDs) == 0 && lastOutputFile != "" {
+			logf("iteration %d created no issues, keeping %s for inspection", i+1, lastOutputFile)
+		} else if lastOutputFile != "" {
+			os.Remove(lastOutputFile) // nolint: best-effort temp file cleanup
 		}
 	}
 
@@ -392,6 +416,16 @@ type proposedIssue struct {
 }
 
 func (o *Orchestrator) importIssues(yamlFile string) ([]string, error) {
+	return o.importIssuesImpl(yamlFile, false)
+}
+
+// importIssuesForce imports issues bypassing enforcing validation. Used when
+// retries are exhausted to accept the last result with warnings (R5).
+func (o *Orchestrator) importIssuesForce(yamlFile string) ([]string, error) {
+	return o.importIssuesImpl(yamlFile, true)
+}
+
+func (o *Orchestrator) importIssuesImpl(yamlFile string, skipEnforcement bool) ([]string, error) {
 	logf("importIssues: reading %s", yamlFile)
 	data, err := os.ReadFile(yamlFile)
 	if err != nil {
@@ -410,8 +444,15 @@ func (o *Orchestrator) importIssues(yamlFile string) ([]string, error) {
 		logf("importIssues: [%d] title=%q dep=%d", i, issue.Title, issue.Dependency)
 	}
 
-	// Advisory validation: warn about granularity or naming issues.
-	validateMeasureOutput(issues)
+	// Validate proposed issues against P9/P7 rules.
+	vr := validateMeasureOutput(issues)
+	if len(vr.Warnings) > 0 {
+		logf("importIssues: %d warning(s)", len(vr.Warnings))
+	}
+	if vr.HasErrors() && o.cfg.Cobbler.EnforceMeasureValidation && !skipEnforcement {
+		return nil, fmt.Errorf("measure validation failed (%d error(s)): %s",
+			len(vr.Errors), strings.Join(vr.Errors, "; "))
+	}
 
 	// Pass 1: create all issues and collect their beads IDs.
 	indexToID := make(map[int]string)
@@ -488,15 +529,28 @@ type issueDescItem struct {
 	Text string `yaml:"text"`
 }
 
-// validateMeasureOutput performs advisory checks on proposed issues and logs
-// warnings. It does not block import. Checks:
-//   - R/AC/D counts against P9 ranges
-//   - File names that match their parent package name (P7 violation)
-func validateMeasureOutput(issues []proposedIssue) {
+// validationResult holds the outcome of measure output validation.
+type validationResult struct {
+	Warnings []string // advisory issues (logged but do not block import)
+	Errors   []string // blocking issues (cause rejection in enforcing mode)
+}
+
+// HasErrors returns true if the validation found blocking issues.
+func (v validationResult) HasErrors() bool {
+	return len(v.Errors) > 0
+}
+
+// validateMeasureOutput checks proposed issues against P9 granularity ranges
+// and P7 file naming conventions. Returns structured warnings and errors.
+// All issues are logged regardless of enforcing mode.
+func validateMeasureOutput(issues []proposedIssue) validationResult {
+	var result validationResult
 	for _, issue := range issues {
 		var desc issueDescription
 		if err := yaml.Unmarshal([]byte(issue.Description), &desc); err != nil {
-			logf("validateMeasureOutput: [%d] %q: could not parse description: %v", issue.Index, issue.Title, err)
+			msg := fmt.Sprintf("[%d] %q: could not parse description: %v", issue.Index, issue.Title, err)
+			logf("validateMeasureOutput: %s", msg)
+			result.Warnings = append(result.Warnings, msg)
 			continue
 		}
 
@@ -506,20 +560,30 @@ func validateMeasureOutput(issues []proposedIssue) {
 
 		if desc.DeliverableType == "code" {
 			if rCount < 5 || rCount > 8 {
-				logf("validateMeasureOutput: [%d] %q: requirement count %d outside P9 range 5-8", issue.Index, issue.Title, rCount)
+				msg := fmt.Sprintf("[%d] %q: requirement count %d outside P9 range 5-8", issue.Index, issue.Title, rCount)
+				logf("validateMeasureOutput: %s", msg)
+				result.Errors = append(result.Errors, msg)
 			}
 			if acCount < 5 || acCount > 8 {
-				logf("validateMeasureOutput: [%d] %q: acceptance criteria count %d outside P9 range 5-8", issue.Index, issue.Title, acCount)
+				msg := fmt.Sprintf("[%d] %q: acceptance criteria count %d outside P9 range 5-8", issue.Index, issue.Title, acCount)
+				logf("validateMeasureOutput: %s", msg)
+				result.Errors = append(result.Errors, msg)
 			}
 			if dCount < 3 || dCount > 5 {
-				logf("validateMeasureOutput: [%d] %q: design decision count %d outside P9 range 3-5", issue.Index, issue.Title, dCount)
+				msg := fmt.Sprintf("[%d] %q: design decision count %d outside P9 range 3-5", issue.Index, issue.Title, dCount)
+				logf("validateMeasureOutput: %s", msg)
+				result.Errors = append(result.Errors, msg)
 			}
 		} else if desc.DeliverableType == "documentation" {
 			if rCount < 2 || rCount > 4 {
-				logf("validateMeasureOutput: [%d] %q: requirement count %d outside P9 doc range 2-4", issue.Index, issue.Title, rCount)
+				msg := fmt.Sprintf("[%d] %q: requirement count %d outside P9 doc range 2-4", issue.Index, issue.Title, rCount)
+				logf("validateMeasureOutput: %s", msg)
+				result.Errors = append(result.Errors, msg)
 			}
 			if acCount < 3 || acCount > 5 {
-				logf("validateMeasureOutput: [%d] %q: acceptance criteria count %d outside P9 doc range 3-5", issue.Index, issue.Title, acCount)
+				msg := fmt.Sprintf("[%d] %q: acceptance criteria count %d outside P9 doc range 3-5", issue.Index, issue.Title, acCount)
+				logf("validateMeasureOutput: %s", msg)
+				result.Errors = append(result.Errors, msg)
 			}
 		}
 
@@ -530,11 +594,14 @@ func validateMeasureOutput(issues []proposedIssue) {
 				dir := parts[len(parts)-2]
 				file := parts[len(parts)-1]
 				if file == dir+".go" || file == dir+"_test.go" {
-					logf("validateMeasureOutput: [%d] %q: file %s matches package name (P7 violation)", issue.Index, issue.Title, f.Path)
+					msg := fmt.Sprintf("[%d] %q: file %s matches package name (P7 violation)", issue.Index, issue.Title, f.Path)
+					logf("validateMeasureOutput: %s", msg)
+					result.Errors = append(result.Errors, msg)
 				}
 			}
 		}
 	}
+	return result
 }
 
 // saveHistory persists measure artifacts (log, issues YAML) to the configured
