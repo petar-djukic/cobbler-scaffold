@@ -125,7 +125,6 @@ func TestResolveStandardFiles(t *testing.T) {
 		"docs/specs/product-requirements/prd001-core.yaml",
 		"docs/specs/use-cases/rel01.0-uc001-feature.yaml",
 		"docs/specs/test-suites/test-rel01.0.yaml",
-		"docs/engineering/eng01-guide.yaml",
 	}
 	for _, f := range standardFiles {
 		os.WriteFile(f, []byte("id: test"), 0o644)
@@ -136,6 +135,7 @@ func TestResolveStandardFiles(t *testing.T) {
 		"docs/constitutions/planning.yaml",
 		"docs/constitutions/go-style.yaml",
 		"docs/utilities.yaml",
+		"docs/engineering/eng01-guide.yaml",
 	}
 	for _, f := range excluded {
 		os.WriteFile(f, []byte("id: test"), 0o644)

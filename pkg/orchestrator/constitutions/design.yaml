@@ -133,6 +133,7 @@ document_types:
       goals: "G1, G2, G3, ..."
       requirement_groups: "R1, R2, R3, ..."
       requirement_items: "R1.1, R1.2, R2.1, ..."
+      acceptance_criteria: "AC1, AC2, AC3, ..."
     purpose: |
       Defines product requirements with numbered goals and requirements. Each
       requirement starts with "must" or "must not" or a concrete verb. No scope

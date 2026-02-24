@@ -619,7 +619,6 @@ var standardContextPatterns = []string{
 	"docs/specs/test-suites/test-rel*.yaml",
 	"docs/specs/dependency-map.yaml",
 	"docs/specs/sources.yaml",
-	"docs/engineering/eng*.yaml",
 }
 
 // resolveStandardFiles expands standardContextPatterns into a
