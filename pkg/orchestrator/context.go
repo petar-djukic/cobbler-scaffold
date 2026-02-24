@@ -445,6 +445,67 @@ func filterSourceFiles(sources []SourceFile, requiredPaths []string) []SourceFil
 	return filtered
 }
 
+// applyContextBudget measures the YAML-serialized size of ctx and, if it
+// exceeds budget, progressively removes SourceCode entries not in
+// requiredPaths until within budget. Files are removed in reverse order
+// (last loaded first) to preserve files closer to the top of the directory
+// tree. When budget is 0 or negative, this function is a no-op.
+func applyContextBudget(ctx *ProjectContext, budget int, requiredPaths []string) {
+	if budget <= 0 || ctx == nil {
+		return
+	}
+
+	requiredSet := make(map[string]bool, len(requiredPaths))
+	for _, rp := range requiredPaths {
+		requiredSet[rp] = true
+	}
+
+	isRequired := func(sf SourceFile) bool {
+		for req := range requiredSet {
+			if strings.HasSuffix(sf.File, req) {
+				return true
+			}
+		}
+		return false
+	}
+
+	data, err := yaml.Marshal(ctx)
+	if err != nil {
+		logf("applyContextBudget: marshal error: %v", err)
+		return
+	}
+	before := len(data)
+	if before <= budget {
+		logf("applyContextBudget: context size %d <= budget %d, no truncation needed", before, budget)
+		return
+	}
+
+	removed := 0
+	for len(ctx.SourceCode) > 0 && len(data) > budget {
+		// Find the last non-required source file.
+		idx := -1
+		for i := len(ctx.SourceCode) - 1; i >= 0; i-- {
+			if !isRequired(ctx.SourceCode[i]) {
+				idx = i
+				break
+			}
+		}
+		if idx < 0 {
+			break // all remaining files are required
+		}
+		ctx.SourceCode = append(ctx.SourceCode[:idx], ctx.SourceCode[idx+1:]...)
+		removed++
+
+		data, err = yaml.Marshal(ctx)
+		if err != nil {
+			logf("applyContextBudget: re-marshal error: %v", err)
+			return
+		}
+	}
+
+	logf("applyContextBudget: context size %d -> %d, removed %d source file(s)", before, len(data), removed)
+}
+
 // ---------------------------------------------------------------------------
 // Helper functions
 // ---------------------------------------------------------------------------

@@ -623,6 +623,10 @@ func (o *Orchestrator) buildStitchPrompt(task stitchTask) (string, error) {
 			logf("buildStitchPrompt: no source paths in required_reading, keeping all %d source files",
 				len(projectCtx.SourceCode))
 		}
+
+		// Context budget enforcement: truncate non-required source files
+		// when the serialized context exceeds MaxContextBytes.
+		applyContextBudget(projectCtx, o.cfg.Cobbler.MaxContextBytes, sourcePaths)
 	}
 
 	taskContext := fmt.Sprintf("Task ID: %s\nType: %s\nTitle: %s",

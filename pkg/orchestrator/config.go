@@ -158,6 +158,13 @@ type CobblerConfig struct {
 	// example's style, granularity, and naming conventions.
 	GoldenExample string `yaml:"golden_example"`
 
+	// MaxContextBytes is the maximum serialized size (in bytes) of the
+	// ProjectContext injected into the stitch prompt. When the context
+	// exceeds this budget, non-required source files are progressively
+	// removed. Recommended value: 200000 (~50K tokens at 4 bytes/token).
+	// When 0 (the default), budget enforcement is skipped.
+	MaxContextBytes int `yaml:"max_context_bytes"`
+
 	// HistoryDir is the directory for saving measure artifacts (prompt,
 	// issues YAML, stream-json log) per iteration. Default "history".
 	HistoryDir string `yaml:"history_dir"`
