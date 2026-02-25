@@ -99,10 +99,11 @@ When you close the **last issue in an epic** (all child tasks complete):
    - If all criteria are met, update road-map.yaml to mark the use case status as "done"
    - If not complete, note what remains and ensure follow-up tasks exist
 4. **File follow-up issues** for any gaps discovered
-5. **Open PR for GitHub issue** (if applicable):
-   - If the epic title starts with `GH-<number>:`, follow `/git-issue-pop` Phase 5:
-     close the beads epic, push the feature branch, and open a PR against `main`
-     with `Closes #<number>` in the body.
+5. **Complete PR workflow for GitHub issue** (if applicable):
+   - If the epic title starts with `GH-<number>:`, execute `/git-issue-pop` Phase 5 in full:
+     close the beads epic, push the feature branch, open a PR against `main`
+     with `Closes #<number>` in the body, merge the PR, delete the feature branch,
+     return to `main`, and verify the GitHub issue is closed.
 
 6. **Summarize epic completion**: run `mage stats` and report what was built and use case status
 
@@ -192,16 +193,11 @@ When you close the **last issue in an epic** (all child tasks complete), perform
    - Review success criteria in `docs/specs/use-cases/`
    - If all criteria are met, update road-map.yaml to mark the use case status as "done"
    - If not complete, note what remains and ensure follow-up tasks exist
-8. **Close linked GitHub issue** (if applicable):
-   - If the epic title starts with `GH-<number>:`, close the corresponding GitHub issue:
-
-     ```bash
-     bd epic close-eligible
-     gh issue close <number> --repo "$(gh repo view --json nameWithOwner -q .nameWithOwner)" --comment "Completed locally. Epic: <epic-id>"
-     bd sync
-     git add -A
-     git commit -m "Close GH-<number>: <title>"
-     ```
+8. **Complete PR workflow for GitHub issue** (if applicable):
+   - If the epic title starts with `GH-<number>:`, execute `/git-issue-pop` Phase 5 in full:
+     close the beads epic, push the feature branch, open a PR against `main`
+     with `Closes #<number>` in the body, merge the PR, delete the feature branch,
+     return to `main`, and verify the GitHub issue is closed.
 
 9. **Summarize epic completion**: run `mage stats` and report:
    - What was built (components, features)
@@ -237,7 +233,7 @@ When working on an issue that belongs to a `GH-<number>` epic (created by `/git-
    git push
    ```
 
-3. **When you close the last issue in a GH- epic**, execute the PR workflow from `/git-issue-pop` Phase 5:
+3. **When you close the last issue in a GH- epic**, execute `/git-issue-pop` Phase 5 in full:
    - Close the beads epic with `bd epic close-eligible`
-   - Open a PR against `main` with `gh pr create`
-   - The PR body must include `Closes #<number>` to auto-close the GitHub issue on merge
+   - Push the feature branch, open a PR against `main` with `Closes #<number>` in the body
+   - Merge the PR, delete the feature branch, return to `main`, and verify the GitHub issue is closed

@@ -173,10 +173,26 @@ func (Test) Unit() error {
 	return cmd.Run()
 }
 
-// Usecase runs all use-case tests. Packages run in parallel.
+// Usecase runs all use-case tests including Claude-dependent tests.
+// Packages run in parallel. For fast local-only tests, use test:usecase:local.
 func (Test) Usecase() error {
 	for _, pkg := range []string{"./tests/rel01.0/...", "./tests/e2e/..."} {
-		cmd := exec.Command("go", "test", "-tags=usecase", "-v", "-count=1", "-timeout", "1800s", pkg)
+		cmd := exec.Command("go", "test", "-tags=usecase,claude", "-v", "-count=1", "-timeout", "1800s", pkg)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Local runs use-case tests that do not require Claude API access.
+// Completes in under 60 seconds. Claude-dependent tests are in files
+// tagged with //go:build usecase && claude and are excluded here.
+func (Test) Local() error {
+	for _, pkg := range []string{"./tests/rel01.0/...", "./tests/e2e/..."} {
+		cmd := exec.Command("go", "test", "-tags=usecase", "-v", "-count=1", "-timeout", "300s", pkg)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		if err := cmd.Run(); err != nil {
@@ -187,9 +203,10 @@ func (Test) Usecase() error {
 }
 
 // Uc runs a use-case test by number (e.g., mage test:uc 001).
+// Includes Claude-dependent tests.
 func (Test) Uc(uc string) error {
 	pkg := fmt.Sprintf("./tests/rel01.0/uc%s/", uc)
-	cmd := exec.Command("go", "test", "-tags=usecase", "-v", "-count=1", "-timeout", "1800s", pkg)
+	cmd := exec.Command("go", "test", "-tags=usecase,claude", "-v", "-count=1", "-timeout", "1800s", pkg)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
