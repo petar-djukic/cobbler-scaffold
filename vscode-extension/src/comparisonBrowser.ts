@@ -5,7 +5,7 @@
 // uc: rel02.0-uc003-branch-comparison
 
 import * as vscode from "vscode";
-import { execSync } from "child_process";
+import { execSync, execFileSync } from "child_process";
 
 /** Version tag pattern: v[REL].[DATE].[REVISION] (e.g., v0.20260224.1). */
 export const VERSION_TAG_PATTERN = /^v\d+\.\d{8}\.\d+/;
@@ -131,7 +131,7 @@ export class ComparisonBrowserProvider
 
     // If only one directory, flatten to file nodes.
     if (dirNames.length === 1) {
-      const entries = groups.get(dirNames[0])!;
+      const entries = groups.get(dirNames[0]) ?? [];
       return entries.map(
         (e): FileNode => ({
           kind: "file",
@@ -147,7 +147,7 @@ export class ComparisonBrowserProvider
       (d): DirectoryNode => ({
         kind: "directory",
         dirPath: d,
-        entries: groups.get(d)!,
+        entries: groups.get(d) ?? [],
       })
     );
   }
@@ -233,8 +233,8 @@ export function computeDiff(
   refB: string
 ): DiffEntry[] {
   try {
-    const raw = execSync(
-      `git diff --name-status "${refA}" "${refB}"`,
+    const raw = execFileSync(
+      "git", ["diff", "--name-status", refA, refB],
       { cwd: workspaceRoot, encoding: "utf-8" }
     );
     return parseDiffOutput(raw);
@@ -290,10 +290,11 @@ export function parseDiffOutput(raw: string): DiffEntry[] {
     if (parts.length < 2) {
       continue;
     }
-    const statusCode = parts[0].charAt(0) as FileStatus;
-    if (!"AMDRTC".includes(statusCode)) {
+    const statusChar = parts[0].charAt(0);
+    if (!"AMDRTC".includes(statusChar)) {
       continue;
     }
+    const statusCode = statusChar as FileStatus;
     const entry: DiffEntry = { status: statusCode, path: parts[1] };
     if (parts.length >= 3 && (statusCode === "R" || statusCode === "C")) {
       entry.newPath = parts[2];
@@ -355,11 +356,19 @@ export class GitRefContentProvider
   constructor(private workspaceRoot: string) {}
 
   provideTextDocumentContent(uri: vscode.Uri): string {
-    const params = JSON.parse(decodeURIComponent(uri.query));
-    const ref: string = params.ref;
-    const filePath: string = params.path;
+    let params: { ref?: string; path?: string };
     try {
-      return execSync(`git show "${ref}:${filePath}"`, {
+      params = JSON.parse(decodeURIComponent(uri.query));
+    } catch {
+      return "";
+    }
+    const ref = params.ref ?? "";
+    const filePath = params.path ?? "";
+    if (!ref || !filePath) {
+      return "";
+    }
+    try {
+      return execFileSync("git", ["show", `${ref}:${filePath}`], {
         cwd: this.workspaceRoot,
         encoding: "utf-8",
       });
