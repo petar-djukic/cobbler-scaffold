@@ -29,6 +29,9 @@ releases:
       - id: rel01.0-uc008-performance-benchmarks
         summary: Wall-clock benchmarks for measure and stitch workflows
         status: done
+      - id: rel01.0-uc009-phase-context-files
+        summary: Per-phase context specification files for measure and stitch
+        status: not started
 
   - version: "02.0"
     name: VS Code Extension

@@ -1,0 +1,48 @@
+# Copyright (c) 2026 Petar Djukic. All rights reserved.
+# SPDX-License-Identifier: MIT
+
+id: rel01.0-uc009-phase-context-files
+title: Phase-Specific Context File Loading
+
+summary: |
+  The orchestrator loads per-phase context specification files
+  (measure_context.yaml and stitch_context.yaml) from the cobbler scratch
+  directory at invocation time. Each file overrides the global context
+  settings from configuration.yaml for its respective phase. When a file
+  does not exist, the phase falls back to the global settings.
+
+actor: Orchestrator (automated, triggered by developer via Mage)
+
+trigger: Running mage cobbler:measure or mage cobbler:stitch
+
+flow:
+  - F1: "Resolve context file path: join CobblerConfig.Dir with measure_context.yaml or stitch_context.yaml"
+  - F2: "Load context file: call loadPhaseContext with the resolved path"
+  - F3: "Handle missing file: if loadPhaseContext returns nil, proceed with ProjectConfig defaults"
+  - F4: "Handle malformed file: if loadPhaseContext returns an error, abort the invocation and report the error"
+  - F5: "Override context settings: pass the PhaseContext to buildProjectContext, which uses non-empty PhaseContext fields instead of the corresponding ProjectConfig fields"
+  - F6: "Assemble context: buildProjectContext expands globs, applies excludes, loads documents and source code using the effective settings"
+  - F7: "Log context source: log whether a phase context file was used or fallback to Config applied"
+  - F8: "Continue phase: measure or stitch proceeds with the assembled ProjectContext"
+
+touchpoints:
+  - T1: "Config (ProjectConfig context fields): prd001-orchestrator-core R1, prd003-cobbler-workflows R9"
+  - T2: "PhaseContext struct and loading: prd003-cobbler-workflows R9.1-R9.4"
+  - T3: "buildProjectContext integration: prd003-cobbler-workflows R9.5-R9.7"
+  - T4: "Measure integration: prd003-cobbler-workflows R9.8"
+  - T5: "Stitch integration: prd003-cobbler-workflows R9.9"
+  - T6: "Logging: prd003-cobbler-workflows R9.10"
+
+success_criteria:
+  - S1: When measure_context.yaml exists, measure uses its include, exclude, sources, and release fields instead of ProjectConfig equivalents
+  - S2: When stitch_context.yaml exists, stitch uses its include, exclude, sources, and release fields instead of ProjectConfig equivalents
+  - S3: When context files do not exist, both phases use ProjectConfig fields unchanged (backward compatible)
+  - S4: When a context file is malformed, the invocation aborts with a descriptive error
+  - S5: Log output indicates which context source was used for each invocation
+  - S6: Changes to context files between invocations are visible to the next invocation (invocation-time loading)
+
+out_of_scope:
+  - Auto-updating context files after stitch creates new files
+  - Modifying GoSourceDirs via phase context files
+  - Context budget enforcement changes (MaxContextBytes operates independently)
+  - Stitch required_reading filtering (operates independently of phase context)
