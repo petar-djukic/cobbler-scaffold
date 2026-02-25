@@ -16,6 +16,77 @@ import (
 )
 
 // ---------------------------------------------------------------------------
+// PhaseContext: per-phase context overrides (prd003 R9)
+// ---------------------------------------------------------------------------
+
+// PhaseContext holds per-phase context specification that overrides
+// ProjectConfig fields when loaded from measure_context.yaml or
+// stitch_context.yaml. See eng08-phase-context-files for design.
+type PhaseContext struct {
+	Include string `yaml:"include"`
+	Exclude string `yaml:"exclude"`
+	Sources string `yaml:"sources"`
+	Release string `yaml:"release"`
+}
+
+// loadPhaseContext reads a phase context YAML file. Returns (nil, nil)
+// when the file does not exist (caller falls back to Config). Returns
+// an error when the file exists but is malformed.
+func loadPhaseContext(path string) (*PhaseContext, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("reading phase context %s: %w", path, err)
+	}
+	var pc PhaseContext
+	if err := yaml.Unmarshal(data, &pc); err != nil {
+		return nil, fmt.Errorf("parsing phase context %s: %w", path, err)
+	}
+	return &pc, nil
+}
+
+// defaultMeasureContext is the scaffold template for measure_context.yaml.
+const defaultMeasureContext = `# Phase context for the measure workflow.
+# Fields override the corresponding configuration.yaml settings when present.
+# Remove or leave fields empty to use configuration.yaml defaults.
+# See docs/engineering/eng08-phase-context-files.yaml for schema details.
+
+# include: |
+#   docs/VISION.yaml
+#   docs/ARCHITECTURE.yaml
+#   docs/specs/**/*.yaml
+
+# exclude: |
+#   docs/engineering/*
+
+# sources: |
+#   docs/constitutions/*.yaml
+
+# release: "01.0"
+`
+
+// defaultStitchContext is the scaffold template for stitch_context.yaml.
+const defaultStitchContext = `# Phase context for the stitch workflow.
+# Fields override the corresponding configuration.yaml settings when present.
+# Remove or leave fields empty to use configuration.yaml defaults.
+# See docs/engineering/eng08-phase-context-files.yaml for schema details.
+
+# include: |
+#   docs/ARCHITECTURE.yaml
+#   docs/specs/product-requirements/prd*.yaml
+
+# exclude: |
+#   docs/engineering/*
+
+# sources: |
+#   docs/constitutions/*.yaml
+
+# release: "01.0"
+`
+
+// ---------------------------------------------------------------------------
 // ProjectContext: top-level container
 // ---------------------------------------------------------------------------
 
@@ -899,24 +970,44 @@ func loadContextFileInto(ctx *ProjectContext, path, release string) {
 // extra context sources, reads all matching files and source code, parses
 // existing issues, and assembles them into a ProjectContext struct.
 // The project config controls include/exclude filtering and release scoping.
-func buildProjectContext(existingIssuesJSON string, project ProjectConfig) (*ProjectContext, error) {
+// When phaseCtx is non-nil, its non-empty fields override the corresponding
+// ProjectConfig fields (prd003 R9.5-R9.7).
+func buildProjectContext(existingIssuesJSON string, project ProjectConfig, phaseCtx *PhaseContext) (*ProjectContext, error) {
 	ctx := &ProjectContext{}
 	ctx.Specs = &SpecsCollection{}
 
+	// Resolve effective settings: PhaseContext overrides when present.
+	ctxInclude := project.ContextInclude
+	ctxExclude := project.ContextExclude
+	ctxSources := project.ContextSources
 	release := project.Release
+	if phaseCtx != nil {
+		if phaseCtx.Include != "" {
+			ctxInclude = phaseCtx.Include
+		}
+		if phaseCtx.Exclude != "" {
+			ctxExclude = phaseCtx.Exclude
+		}
+		if phaseCtx.Sources != "" {
+			ctxSources = phaseCtx.Sources
+		}
+		if phaseCtx.Release != "" {
+			release = phaseCtx.Release
+		}
+	}
 
 	// Compute exclude set when configured.
 	var excludeSet map[string]bool
-	if strings.TrimSpace(project.ContextExclude) != "" {
-		excludeSet = resolveFileSet(project.ContextExclude)
+	if strings.TrimSpace(ctxExclude) != "" {
+		excludeSet = resolveFileSet(ctxExclude)
 		logf("buildProjectContext: exclude set has %d file(s)", len(excludeSet))
 	}
 
 	// Resolve document files: use ContextInclude when set, otherwise
 	// fall back to the standard document discovery.
 	var docFiles []string
-	if strings.TrimSpace(project.ContextInclude) != "" {
-		docFiles = resolveContextSources(project.ContextInclude)
+	if strings.TrimSpace(ctxInclude) != "" {
+		docFiles = resolveContextSources(ctxInclude)
 		logf("buildProjectContext: using context_include (%d file(s))", len(docFiles))
 	} else {
 		docFiles = resolveStandardFiles()
@@ -969,8 +1060,8 @@ func buildProjectContext(existingIssuesJSON string, project ProjectConfig) (*Pro
 
 	// Load extras from contextSources (if non-empty), skipping files
 	// already in the standard set and files in the exclude set.
-	if project.ContextSources != "" {
-		extras := resolveContextSources(project.ContextSources)
+	if ctxSources != "" {
+		extras := resolveContextSources(ctxSources)
 		for _, path := range extras {
 			if standardSet[path] {
 				continue

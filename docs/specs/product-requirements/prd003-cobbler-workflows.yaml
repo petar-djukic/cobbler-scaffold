@@ -114,6 +114,20 @@ requirements:
       - R8.5: RunMeasure must call checkPodman before any other work
       - R8.6: RunStitch must call checkPodman before any other work
 
+  R9:
+    title: Phase-Specific Context Files
+    items:
+      - R9.1: The orchestrator must define a PhaseContext struct with include, exclude, sources, and release fields
+      - R9.2: loadPhaseContext must read a YAML file at the given path and return a parsed PhaseContext
+      - R9.3: loadPhaseContext must return (nil, nil) when the file does not exist
+      - R9.4: loadPhaseContext must return an error when the file exists but is malformed
+      - R9.5: buildProjectContext must accept an optional *PhaseContext parameter
+      - R9.6: When PhaseContext is non-nil, its non-empty fields must override the corresponding ProjectConfig fields
+      - R9.7: When PhaseContext is nil, buildProjectContext must use ProjectConfig fields unchanged
+      - R9.8: buildMeasurePrompt must load {CobblerConfig.Dir}/measure_context.yaml at invocation time and pass it to buildProjectContext
+      - R9.9: buildStitchPrompt must load {CobblerConfig.Dir}/stitch_context.yaml at invocation time and pass it to buildProjectContext
+      - R9.10: The orchestrator must log which context file was loaded or that fallback to Config was used
+
 non_goals:
   - This PRD does not define the generation lifecycle (see prd002)
   - This PRD does not define the prompt content or Claude behavior expectations
@@ -125,3 +139,5 @@ acceptance_criteria:
   - Recovery resets stale tasks and orphaned issues to ready
   - Invocation records are stored on every task with token and LOC data
   - Custom prompt templates override embedded defaults
+  - Measure and stitch each read their own context file at invocation time when present
+  - Projects without context files use current behavior unchanged

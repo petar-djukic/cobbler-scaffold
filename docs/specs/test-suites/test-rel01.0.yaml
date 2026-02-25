@@ -13,6 +13,7 @@ traces:
   - rel01.0-uc006-scaffold-operations
   - rel01.0-uc007-build-tooling
   - rel01.0-uc008-performance-benchmarks
+  - rel01.0-uc009-phase-context-files
 
 tags:
   - unit
@@ -800,6 +801,127 @@ test_cases:
         cobbler.max_stitch_issues_per_cycle: 10
     expected:
       exit_code: 0
+
+# ---- uc009: Phase-specific context files ----
+
+  - use_case: rel01.0-uc009-phase-context-files
+    name: loadPhaseContext returns nil for missing file
+    go_test: TestRel01_UC009_LoadPhaseContextMissing
+    inputs:
+      command: |
+        loadPhaseContext("/nonexistent/measure_context.yaml")
+    expected:
+      state:
+        result_nil: true
+        error_nil: true
+
+  - use_case: rel01.0-uc009-phase-context-files
+    name: loadPhaseContext parses valid file
+    go_test: TestRel01_UC009_LoadPhaseContextValid
+    inputs:
+      command: |
+        Write measure_context.yaml with:
+          include: "docs/VISION.yaml"
+          exclude: "docs/engineering/*"
+          sources: "docs/constitutions/*.yaml"
+          release: "01.0"
+        loadPhaseContext("measure_context.yaml")
+    expected:
+      state:
+        include: "docs/VISION.yaml"
+        exclude: "docs/engineering/*"
+        sources: "docs/constitutions/*.yaml"
+        release: "01.0"
+
+  - use_case: rel01.0-uc009-phase-context-files
+    name: loadPhaseContext returns error for malformed file
+    go_test: TestRel01_UC009_LoadPhaseContextMalformed
+    inputs:
+      command: |
+        Write measure_context.yaml with invalid YAML: "{{{"
+        loadPhaseContext("measure_context.yaml")
+    expected:
+      state:
+        result_nil: true
+        error_not_nil: true
+
+  - use_case: rel01.0-uc009-phase-context-files
+    name: buildProjectContext uses PhaseContext when provided
+    go_test: TestRel01_UC009_BuildProjectContextWithPhase
+    inputs:
+      command: |
+        projCfg := ProjectConfig{ContextInclude: "docs/*.yaml"}
+        phaseCtx := PhaseContext{Include: "docs/VISION.yaml"}
+        buildProjectContext("[]", projCfg, &phaseCtx)
+    expected:
+      state:
+        context_uses_phase_include: true
+        context_ignores_config_include: true
+
+  - use_case: rel01.0-uc009-phase-context-files
+    name: buildProjectContext falls back to Config when PhaseContext is nil
+    go_test: TestRel01_UC009_BuildProjectContextNilPhase
+    inputs:
+      command: |
+        projCfg := ProjectConfig{ContextInclude: "docs/*.yaml"}
+        buildProjectContext("[]", projCfg, nil)
+    expected:
+      state:
+        context_uses_config_include: true
+
+  - use_case: rel01.0-uc009-phase-context-files
+    name: PhaseContext empty fields defer to Config
+    go_test: TestRel01_UC009_PhaseContextPartialOverride
+    inputs:
+      command: |
+        projCfg := ProjectConfig{
+          ContextInclude: "docs/*.yaml",
+          ContextExclude: "docs/engineering/*",
+        }
+        phaseCtx := PhaseContext{Include: "docs/VISION.yaml"}
+        buildProjectContext("[]", projCfg, &phaseCtx)
+    expected:
+      state:
+        include_from_phase: true
+        exclude_from_config: true
+
+  - use_case: rel01.0-uc009-phase-context-files
+    name: Measure loads measure_context.yaml from cobbler dir
+    go_test: TestRel01_UC009_MeasureLoadsContextFile
+    inputs:
+      command: |
+        Write .cobbler/measure_context.yaml with:
+          exclude: "docs/engineering/*"
+        mage cobbler:measure
+    expected:
+      exit_code: 0
+      state:
+        log_contains: "measure_context.yaml"
+
+  - use_case: rel01.0-uc009-phase-context-files
+    name: Stitch loads stitch_context.yaml from cobbler dir
+    go_test: TestRel01_UC009_StitchLoadsContextFile
+    inputs:
+      command: |
+        Write .cobbler/stitch_context.yaml with:
+          include: "docs/ARCHITECTURE.yaml"
+        mage cobbler:stitch
+    expected:
+      exit_code: 0
+      state:
+        log_contains: "stitch_context.yaml"
+
+  - use_case: rel01.0-uc009-phase-context-files
+    name: Measure without context file uses Config defaults
+    go_test: TestRel01_UC009_MeasureWithoutContextFile
+    inputs:
+      command: |
+        Remove .cobbler/measure_context.yaml if present
+        mage cobbler:measure
+    expected:
+      exit_code: 0
+      state:
+        log_contains: "fallback"
 
 cleanup:
   - Switch to main branch

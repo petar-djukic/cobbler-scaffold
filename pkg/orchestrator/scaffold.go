@@ -85,6 +85,24 @@ func (o *Orchestrator) Scaffold(targetDir, orchestratorRoot string) error {
 		}
 	}
 
+	// 1d. Write default phase context files to the cobbler directory.
+	// These files are optional; when absent, Config defaults apply.
+	cobblerDir := filepath.Join(targetDir, dirCobbler)
+	if err := os.MkdirAll(cobblerDir, 0o755); err != nil {
+		return fmt.Errorf("creating cobbler directory: %w", err)
+	}
+	contextFiles := map[string]string{
+		"measure_context.yaml": defaultMeasureContext,
+		"stitch_context.yaml":  defaultStitchContext,
+	}
+	for _, name := range slices.Sorted(maps.Keys(contextFiles)) {
+		p := filepath.Join(cobblerDir, name)
+		logf("scaffold: writing context file to %s", p)
+		if err := os.WriteFile(p, []byte(contextFiles[name]), 0o644); err != nil {
+			return fmt.Errorf("writing %s: %w", name, err)
+		}
+	}
+
 	// 2. Detect project structure.
 	modulePath, err := detectModulePath(targetDir)
 	if err != nil {

@@ -1,0 +1,313 @@
+# Copyright (c) 2026 Petar Djukic. All rights reserved.
+# SPDX-License-Identifier: MIT
+
+id: eng08-phase-context-files
+title: Phase-Specific Context Files for Measure and Stitch
+
+introduction: |
+  This guideline documents the design for per-phase context specification
+  files that allow measure and stitch to load different project context
+  independently of configuration.yaml. The current context fields
+  (context_include, context_exclude, context_sources) in ProjectConfig
+  apply globally to both phases. This creates two limitations: no per-phase
+  control over what files enter the prompt, and no way to adjust context
+  during a generation without editing the main configuration file.
+
+  We introduce two YAML files, measure_context.yaml and stitch_context.yaml,
+  that live in the cobbler scratch directory. Each file specifies include
+  patterns, exclude patterns, and extra sources independently. The
+  orchestrator reads these files at invocation time, so changes made during
+  one stitch task are visible to the next measure or stitch call.
+
+sections:
+  - title: Design Decisions
+    content: |
+      This section answers the five design questions raised in GH-20.
+
+      ### Override vs. Layer
+
+      Phase context files override the corresponding ProjectConfig fields
+      when present. When measure_context.yaml exists, its include, exclude,
+      and sources fields replace ProjectConfig.ContextInclude,
+      ProjectConfig.ContextExclude, and ProjectConfig.ContextSources for
+      the measure phase. When the file does not exist, ProjectConfig values
+      apply unchanged.
+
+      We chose override rather than layering (merging) because layering
+      creates confusing interaction effects. If a phase file adds an
+      exclude pattern while configuration.yaml adds an include pattern for
+      the same glob, the resulting behavior depends on evaluation order.
+      Override is predictable: when a phase context file exists, it is the
+      sole source of truth for that phase's context rules.
+
+      ### Auto-Update Behavior
+
+      Neither phase auto-updates its context file. The orchestrator reads
+      the files but never writes them. Auto-updates create implicit state
+      changes that are difficult to reason about and debug. Instead, context
+      file modifications happen through two explicit mechanisms:
+
+      1. The measure prompt can instruct Claude to propose context file
+         changes as part of task descriptions (e.g., "add pkg/new/ to
+         stitch_context.yaml sources").
+      2. A stitch task can modify context files directly as part of its
+         work, since the files are regular YAML in the repository.
+
+      Because the orchestrator reads context files at invocation time (not
+      at config load time), any modification made by a stitch task is
+      visible to the next invocation without restart.
+
+      ### Schema Format
+
+      The files use the same newline-delimited glob pattern format as
+      the existing ContextSources, ContextInclude, and ContextExclude
+      fields in configuration.yaml. This maintains consistency with the
+      established convention and avoids introducing a new pattern language.
+      Both glob patterns (e.g., docs/specs/**/*.yaml) and explicit file
+      paths (e.g., docs/VISION.yaml) are valid entries. Lines starting
+      with # are comments. Blank lines are ignored.
+
+      The release field accepts the same zero-padded NN.N format as
+      ProjectConfig.Release and filters use cases and test suites by
+      release version.
+
+      ### Fallback When Files Do Not Exist
+
+      When a phase context file does not exist, the phase falls back to
+      the corresponding ProjectConfig fields. This is the backward
+      compatibility guarantee: existing projects that do not create
+      context files see zero behavioral change. The loadPhaseContext
+      function returns nil for missing files, and buildProjectContext
+      treats a nil PhaseContext as "use Config defaults."
+
+      ### File Location
+
+      The files live in the cobbler scratch directory (CobblerConfig.Dir,
+      default .cobbler/). The paths are:
+
+      - {CobblerConfig.Dir}/measure_context.yaml
+      - {CobblerConfig.Dir}/stitch_context.yaml
+
+      This location keeps them alongside other cobbler state (proposed
+      issues, history artifacts) and separate from project-level
+      configuration. The cobbler directory is typically gitignored for
+      scratch files, but context files are an exception: projects that
+      want reproducible context should commit them.
+
+  - title: Schema
+    content: |
+      Both measure_context.yaml and stitch_context.yaml use the same
+      schema. All fields are optional. When a field is absent or empty,
+      the corresponding ProjectConfig value applies as fallback.
+
+      ```yaml
+      # Phase context specification.
+      # Fields override ProjectConfig equivalents when present.
+
+      # Newline-delimited glob patterns that replace standard document
+      # discovery. When set, only matching files are loaded.
+      # Equivalent to ProjectConfig.ContextInclude.
+      include: |
+        docs/VISION.yaml
+        docs/ARCHITECTURE.yaml
+        docs/specs/product-requirements/prd*.yaml
+        docs/specs/use-cases/rel*.yaml
+
+      # Newline-delimited glob patterns for files to exclude.
+      # Applied to docs, context sources, and source code.
+      # Equivalent to ProjectConfig.ContextExclude.
+      exclude: |
+        docs/specs/test-suites/*
+
+      # Newline-delimited list of extra file paths and glob patterns
+      # that supplement document discovery.
+      # Equivalent to ProjectConfig.ContextSources.
+      sources: |
+        docs/constitutions/*.yaml
+        .claude/rules/*.md
+
+      # Target release version for filtering use cases and test suites.
+      # Equivalent to ProjectConfig.Release.
+      release: "01.0"
+      ```
+
+      ### Field Semantics
+
+      | Field | Type | ProjectConfig Equivalent | Behavior |
+      |-------|------|--------------------------|----------|
+      | include | string (newline-delimited globs) | ContextInclude | Replaces standard document discovery when set |
+      | exclude | string (newline-delimited globs) | ContextExclude | Excludes matching files from docs, sources, and code |
+      | sources | string (newline-delimited globs) | ContextSources | Adds extra files beyond standard or include set |
+      | release | string (NN.N format) | Release | Filters use cases and test suites by version |
+
+      Each field follows the same parsing rules as its ProjectConfig
+      equivalent: newline-delimited, blank lines and # comments skipped,
+      globs expanded at runtime, duplicates logged and removed.
+
+  - title: Loading Semantics
+    content: |
+      ### Invocation-Time Loading
+
+      The orchestrator reads context files at the start of each measure
+      or stitch invocation, not at config load time. This means:
+
+      1. buildMeasurePrompt loads measure_context.yaml before calling
+         buildProjectContext.
+      2. buildStitchPrompt loads stitch_context.yaml before calling
+         buildProjectContext.
+      3. If a stitch task modifies stitch_context.yaml (or
+         measure_context.yaml), the next invocation sees the updated file.
+
+      ### loadPhaseContext Function
+
+      ```
+      func loadPhaseContext(path string) (*PhaseContext, error)
+      ```
+
+      - If the file does not exist: return (nil, nil). No error; the
+        caller falls back to ProjectConfig.
+      - If the file exists but is malformed: return (nil, error). The
+        caller reports the error and aborts the invocation.
+      - If the file exists and is valid: return the parsed PhaseContext.
+
+      ### buildProjectContext Integration
+
+      buildProjectContext currently reads context settings from
+      ProjectConfig. With phase context files, the function accepts an
+      optional *PhaseContext parameter. When non-nil, PhaseContext fields
+      override the corresponding ProjectConfig fields:
+
+      ```
+      func (o *Orchestrator) buildProjectContext(
+          existingIssues string,
+          projCfg ProjectConfig,
+          phaseCtx *PhaseContext,
+      ) (ProjectContext, error)
+      ```
+
+      The override logic for each field:
+      - If phaseCtx is nil: use projCfg (current behavior).
+      - If phaseCtx.Include is non-empty: use it instead of
+        projCfg.ContextInclude.
+      - If phaseCtx.Exclude is non-empty: use it instead of
+        projCfg.ContextExclude.
+      - If phaseCtx.Sources is non-empty: use it instead of
+        projCfg.ContextSources.
+      - If phaseCtx.Release is non-empty: use it instead of
+        projCfg.Release.
+
+      This per-field override means a phase context file can set only
+      the fields it wants to change. An empty field in the phase context
+      file defers to ProjectConfig.
+
+  - title: PhaseContext Struct
+    content: |
+      The Go struct mirrors the YAML schema:
+
+      ```go
+      type PhaseContext struct {
+          Include string `yaml:"include"`
+          Exclude string `yaml:"exclude"`
+          Sources string `yaml:"sources"`
+          Release string `yaml:"release"`
+      }
+      ```
+
+      All fields are strings to match the existing ProjectConfig
+      convention of newline-delimited glob patterns parsed by
+      parseContextSources.
+
+  - title: Path Resolution
+    content: |
+      The orchestrator resolves context file paths as:
+
+      ```
+      filepath.Join(o.cfg.Cobbler.Dir, "measure_context.yaml")
+      filepath.Join(o.cfg.Cobbler.Dir, "stitch_context.yaml")
+      ```
+
+      These are constants within the orchestrator. The file names are
+      not configurable because having a fixed convention simplifies
+      discovery and documentation. Projects that need different behavior
+      override the content of the files, not their location.
+
+  - title: Interaction with Existing Context Mechanisms
+    content: |
+      ### Stitch Required Reading
+
+      The stitch workflow already filters source code based on
+      required_reading parsed from task descriptions (eng05 rec D). Phase
+      context files do not replace this mechanism. The stitch_context.yaml
+      controls which documentation and extra sources enter the prompt.
+      Required_reading continues to control which source code files are
+      included.
+
+      ### Context Budget
+
+      The MaxContextBytes budget enforcement (CobblerConfig.MaxContextBytes)
+      runs after context assembly regardless of whether a phase context
+      file was used. If the assembled context exceeds the budget, non-
+      required source files are progressively removed.
+
+      ### GoSourceDirs
+
+      Phase context files do not override GoSourceDirs. Source code
+      directories remain a project-level setting in ProjectConfig. The
+      exclude field in a phase context file can exclude specific source
+      files or directories, but the base set of directories to scan
+      comes from GoSourceDirs.
+
+  - title: Examples
+    content: |
+      ### Measure With Broad Context
+
+      A project that wants measure to see all documentation and source
+      code (the default behavior) does not need a measure_context.yaml.
+      The absence of the file means ProjectConfig values apply.
+
+      ### Stitch With Narrow Documentation
+
+      A stitch_context.yaml that limits documentation to architecture
+      and the relevant PRD:
+
+      ```yaml
+      include: |
+        docs/ARCHITECTURE.yaml
+        docs/specs/product-requirements/prd003-cobbler-workflows.yaml
+      exclude: |
+        docs/engineering/*
+      ```
+
+      This reduces prompt size for stitch tasks that do not need the full
+      specification set.
+
+      ### Dynamic Context During Generation
+
+      A stitch task that creates a new package can append the package
+      to stitch_context.yaml sources so subsequent tasks see it:
+
+      ```yaml
+      sources: |
+        pkg/newpackage/*.go
+      ```
+
+      Because the orchestrator reads the file at invocation time, the
+      next stitch call includes the new package in its context without
+      restarting the generation.
+
+      ### Release-Scoped Measure
+
+      A measure_context.yaml that restricts context to release 01.0
+      while the project configuration has no release filter:
+
+      ```yaml
+      release: "01.0"
+      ```
+
+      This focuses the measure prompt on a specific release's use cases
+      and test suites without changing the project-level configuration.
+
+references:
+  - prd003-cobbler-workflows
+  - eng04-measure-scaling
+  - eng05-stitch-benchmark-analysis

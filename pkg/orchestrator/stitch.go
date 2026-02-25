@@ -580,6 +580,19 @@ func (o *Orchestrator) buildStitchPrompt(task stitchTask) (string, error) {
 	executionConst := orDefault(o.cfg.Cobbler.ExecutionConstitution, executionConstitution)
 	goStyleConst := orDefault(o.cfg.Cobbler.GoStyleConstitution, goStyleConstitution)
 
+	// Load per-phase context file (prd003 R9.9). Resolved from the
+	// original working directory before chdir to worktree.
+	stitchCtxPath := filepath.Join(o.cfg.Cobbler.Dir, "stitch_context.yaml")
+	phaseCtx, phaseErr := loadPhaseContext(stitchCtxPath)
+	if phaseErr != nil {
+		return "", fmt.Errorf("loading stitch context: %w", phaseErr)
+	}
+	if phaseCtx != nil {
+		logf("buildStitchPrompt: using phase context from %s", stitchCtxPath)
+	} else {
+		logf("buildStitchPrompt: no phase context file, using config defaults")
+	}
+
 	// Build project context from the worktree directory so source code
 	// reflects the latest state after prior stitches have been merged.
 	var projectCtx *ProjectContext
@@ -592,7 +605,7 @@ func (o *Orchestrator) buildStitchPrompt(task stitchTask) (string, error) {
 			logf("buildStitchPrompt: chdir to worktree error: %v", err)
 		} else {
 			defer os.Chdir(orig)
-			ctx, ctxErr := buildProjectContext("", o.cfg.Project)
+			ctx, ctxErr := buildProjectContext("", o.cfg.Project, phaseCtx)
 			if ctxErr != nil {
 				logf("buildStitchPrompt: buildProjectContext error: %v", ctxErr)
 			} else {

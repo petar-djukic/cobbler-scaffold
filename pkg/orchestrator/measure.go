@@ -382,7 +382,19 @@ func (o *Orchestrator) buildMeasurePrompt(userInput, existingIssues string, limi
 
 	planningConst := orDefault(o.cfg.Cobbler.PlanningConstitution, planningConstitution)
 
-	projectCtx, ctxErr := buildProjectContext(existingIssues, o.cfg.Project)
+	// Load per-phase context file (prd003 R9.8).
+	measureCtxPath := filepath.Join(o.cfg.Cobbler.Dir, "measure_context.yaml")
+	phaseCtx, phaseErr := loadPhaseContext(measureCtxPath)
+	if phaseErr != nil {
+		return "", fmt.Errorf("loading measure context: %w", phaseErr)
+	}
+	if phaseCtx != nil {
+		logf("buildMeasurePrompt: using phase context from %s", measureCtxPath)
+	} else {
+		logf("buildMeasurePrompt: no phase context file, using config defaults")
+	}
+
+	projectCtx, ctxErr := buildProjectContext(existingIssues, o.cfg.Project, phaseCtx)
 	if ctxErr != nil {
 		logf("buildMeasurePrompt: buildProjectContext error: %v", ctxErr)
 		projectCtx = &ProjectContext{}
