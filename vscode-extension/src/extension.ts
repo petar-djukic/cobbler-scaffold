@@ -22,6 +22,17 @@ import {
 /** Output channel for error and diagnostic logging. */
 let outputChannel: vscode.OutputChannel;
 
+/** Wraps a callback so exceptions are logged to outputChannel instead of lost. */
+function safeCallback(label: string, fn: () => void): () => void {
+  return () => {
+    try {
+      fn();
+    } catch (err) {
+      outputChannel.appendLine(`${label}: ${err}`);
+    }
+  };
+}
+
 /**
  * Activates the extension. Registers all commands, watchers, and
  * the output channel. Called by VS Code when configuration.yaml
@@ -74,16 +85,17 @@ export function activate(context: vscode.ExtensionContext): void {
 
     context.subscriptions.push(beadsWatcher, gitRefsWatcher, configWatcher);
 
-    // Log watcher events to the output channel. Tree providers will
-    // subscribe to these watchers in their own modules.
-    beadsWatcher.onDidChange(() =>
-      outputChannel.appendLine("beads data changed")
-    );
-    gitRefsWatcher.onDidChange(() =>
-      outputChannel.appendLine("git refs changed")
-    );
-    configWatcher.onDidChange(() =>
-      outputChannel.appendLine("configuration.yaml changed")
+    // Log watcher events to the output channel.
+    context.subscriptions.push(
+      beadsWatcher.onDidChange(() =>
+        outputChannel.appendLine("beads data changed")
+      ),
+      gitRefsWatcher.onDidChange(() =>
+        outputChannel.appendLine("git refs changed")
+      ),
+      configWatcher.onDidChange(() =>
+        outputChannel.appendLine("configuration.yaml changed")
+      )
     );
 
     // Generation Browser tree view (prd006 R2).
@@ -94,9 +106,11 @@ export function activate(context: vscode.ExtensionContext): void {
         genBrowser
       )
     );
-    gitRefsWatcher.onDidChange(() => genBrowser.refresh());
-    gitRefsWatcher.onDidCreate(() => genBrowser.refresh());
-    gitRefsWatcher.onDidDelete(() => genBrowser.refresh());
+    context.subscriptions.push(
+      gitRefsWatcher.onDidChange(safeCallback("genBrowser.refresh", () => genBrowser.refresh())),
+      gitRefsWatcher.onDidCreate(safeCallback("genBrowser.refresh", () => genBrowser.refresh())),
+      gitRefsWatcher.onDidDelete(safeCallback("genBrowser.refresh", () => genBrowser.refresh()))
+    );
 
     // Branch and Tag Comparison view (prd006 R3).
     const comparisonBrowser = new ComparisonBrowserProvider(root);
@@ -170,10 +184,12 @@ export function activate(context: vscode.ExtensionContext): void {
     const specsWatcher = vscode.workspace.createFileSystemWatcher(
       new vscode.RelativePattern(root, "docs/specs/**")
     );
-    context.subscriptions.push(specsWatcher);
-    specsWatcher.onDidChange(() => specBrowser.refresh());
-    specsWatcher.onDidCreate(() => specBrowser.refresh());
-    specsWatcher.onDidDelete(() => specBrowser.refresh());
+    context.subscriptions.push(
+      specsWatcher,
+      specsWatcher.onDidChange(safeCallback("specBrowser.refresh", () => specBrowser.refresh())),
+      specsWatcher.onDidCreate(safeCallback("specBrowser.refresh", () => specBrowser.refresh())),
+      specsWatcher.onDidDelete(safeCallback("specBrowser.refresh", () => specBrowser.refresh()))
+    );
 
     // Issue tracker tree view (prd006 R4).
     const beadsStore = new BeadsStore(root);
@@ -184,9 +200,11 @@ export function activate(context: vscode.ExtensionContext): void {
         issueBrowser
       )
     );
-    beadsWatcher.onDidChange(() => issueBrowser.refresh());
-    beadsWatcher.onDidCreate(() => issueBrowser.refresh());
-    beadsWatcher.onDidDelete(() => issueBrowser.refresh());
+    context.subscriptions.push(
+      beadsWatcher.onDidChange(safeCallback("issueBrowser.refresh", () => issueBrowser.refresh())),
+      beadsWatcher.onDidCreate(safeCallback("issueBrowser.refresh", () => issueBrowser.refresh())),
+      beadsWatcher.onDidDelete(safeCallback("issueBrowser.refresh", () => issueBrowser.refresh()))
+    );
 
     // Metrics dashboard webview (prd006 R5).
     const dashboard = new MetricsDashboard(beadsStore);
@@ -195,9 +213,11 @@ export function activate(context: vscode.ExtensionContext): void {
         dashboard.show()
       )
     );
-    beadsWatcher.onDidChange(() => dashboard.refresh());
-    beadsWatcher.onDidCreate(() => dashboard.refresh());
-    beadsWatcher.onDidDelete(() => dashboard.refresh());
+    context.subscriptions.push(
+      beadsWatcher.onDidChange(safeCallback("dashboard.refresh", () => dashboard.refresh())),
+      beadsWatcher.onDidCreate(safeCallback("dashboard.refresh", () => dashboard.refresh())),
+      beadsWatcher.onDidDelete(safeCallback("dashboard.refresh", () => dashboard.refresh()))
+    );
 
     // Code-to-spec traceability CodeLens (prd006 R9).
     const traceGraph = new SpecGraph(root);
@@ -213,9 +233,11 @@ export function activate(context: vscode.ExtensionContext): void {
         (id: string) => viewRequirement(traceGraph, id)
       )
     );
-    specsWatcher.onDidChange(() => traceGraph.invalidate());
-    specsWatcher.onDidCreate(() => traceGraph.invalidate());
-    specsWatcher.onDidDelete(() => traceGraph.invalidate());
+    context.subscriptions.push(
+      specsWatcher.onDidChange(safeCallback("traceGraph.invalidate", () => traceGraph.invalidate())),
+      specsWatcher.onDidCreate(safeCallback("traceGraph.invalidate", () => traceGraph.invalidate())),
+      specsWatcher.onDidDelete(safeCallback("traceGraph.invalidate", () => traceGraph.invalidate()))
+    );
   } else {
     // Fallback when no workspace root is available.
     context.subscriptions.push(

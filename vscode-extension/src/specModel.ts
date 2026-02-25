@@ -6,7 +6,7 @@
 
 import * as fs from "fs";
 import * as path from "path";
-import { execSync } from "child_process";
+import { execFileSync } from "child_process";
 import * as yaml from "js-yaml";
 
 // ---- Exported types ----
@@ -210,7 +210,8 @@ export class SpecGraph {
 export function listYamlFiles(dir: string): string[] {
   try {
     return fs.readdirSync(dir).filter((f) => f.endsWith(".yaml"));
-  } catch {
+  } catch (err) {
+    console.warn(`listYamlFiles: failed to read ${dir}: ${err}`);
     return [];
   }
 }
@@ -220,7 +221,8 @@ export function loadYaml(filePath: string): unknown {
   try {
     const content = fs.readFileSync(filePath, "utf-8");
     return yaml.load(content);
-  } catch {
+  } catch (err) {
+    console.warn(`loadYaml: failed to parse ${filePath}: ${err}`);
     return undefined;
   }
 }
@@ -345,8 +347,8 @@ export function grepForPrdId(root: string, prdId: string): SourceRef[] {
 
   try {
     // grep -rn returns lines like "file:line:content"
-    const output = execSync(
-      `grep -rn --include='*.go' '${prdId}' ${dirs.join(" ")}`,
+    const output = execFileSync(
+      "grep", ["-rn", "--include=*.go", prdId, ...dirs],
       { encoding: "utf-8", cwd: root }
     );
     for (const line of output.split("\n")) {
