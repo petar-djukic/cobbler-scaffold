@@ -14,15 +14,15 @@ overview: |
 roadmap_summary:
   - version: "01.0"
     name: Core Orchestrator and Workflows
-    use_cases_done: 5
-    use_cases_total: 5
+    use_cases_done: 9
+    use_cases_total: 9
     status: done
 
   - version: "02.0"
     name: VS Code Extension
-    use_cases_done: 0
-    use_cases_total: 5
-    status: not started
+    use_cases_done: 6
+    use_cases_total: 6
+    status: done
 
   - version: "99.0"
     name: Unscheduled
@@ -43,7 +43,7 @@ prd_index:
 
   - id: prd003-cobbler-workflows
     title: Cobbler Measure and Stitch Workflows
-    summary: Defines the measure and stitch phases, prompt templates, Claude invocation, and recovery
+    summary: Defines the measure and stitch phases, prompt templates, Claude invocation, recovery, and phase-specific context files
     path: specs/product-requirements/prd003-cobbler-workflows.yaml
 
   - id: prd005-metrics-collection
@@ -53,7 +53,7 @@ prd_index:
 
   - id: prd006-vscode-extension
     title: VS Code Extension
-    summary: Defines generation browser, issue tracker, and metrics dashboard for VS Code (not started)
+    summary: Defines lifecycle commands, generation browser, branch comparison, issue tracker, metrics dashboard, specification browser, and code-to-spec traceability
     path: specs/product-requirements/prd006-vscode-extension.yaml
 
 use_case_index:
@@ -87,6 +87,66 @@ use_case_index:
     status: done
     path: specs/use-cases/rel01.0-uc005-resume-recovery.yaml
 
+  - id: rel01.0-uc006-scaffold-operations
+    title: Scaffold Operations
+    release: "01.0"
+    status: done
+    path: specs/test-suites/test-rel01.0.yaml
+
+  - id: rel01.0-uc007-build-tooling
+    title: Build Tooling
+    release: "01.0"
+    status: done
+    path: specs/test-suites/test-rel01.0.yaml
+
+  - id: rel01.0-uc008-performance-benchmarks
+    title: Performance Benchmarks
+    release: "01.0"
+    status: done
+    path: specs/use-cases/rel01.0-uc008-performance-benchmarks.yaml
+
+  - id: rel01.0-uc009-phase-context-files
+    title: Phase-Specific Context File Loading
+    release: "01.0"
+    status: done
+    path: specs/use-cases/rel01.0-uc009-phase-context-files.yaml
+
+  - id: rel02.0-uc001-lifecycle-commands
+    title: VS Code Lifecycle Commands
+    release: "02.0"
+    status: done
+    path: specs/use-cases/rel02.0-uc001-lifecycle-commands.yaml
+
+  - id: rel02.0-uc002-generation-browser
+    title: Generation Browser Tree View
+    release: "02.0"
+    status: done
+    path: specs/use-cases/rel02.0-uc002-generation-browser.yaml
+
+  - id: rel02.0-uc003-branch-comparison
+    title: Branch and Tag Comparison
+    release: "02.0"
+    status: done
+    path: specs/use-cases/rel02.0-uc003-branch-comparison.yaml
+
+  - id: rel02.0-uc004-issue-tracker-view
+    title: Issue Tracker View
+    release: "02.0"
+    status: done
+    path: specs/use-cases/rel02.0-uc004-issue-tracker-view.yaml
+
+  - id: rel02.0-uc005-metrics-dashboard
+    title: Metrics Dashboard Webview
+    release: "02.0"
+    status: done
+    path: specs/use-cases/rel02.0-uc005-metrics-dashboard.yaml
+
+  - id: rel02.0-uc006-specification-browser
+    title: Specification Browser and Code-to-Spec Traceability
+    release: "02.0"
+    status: done
+    path: specs/use-cases/rel02.0-uc006-specification-browser.yaml
+
 test_suite_index:
   - id: test-rel01.0
     title: Release 01.0 test suite
@@ -97,7 +157,11 @@ test_suite_index:
       - rel01.0-uc003-measure-workflow
       - rel01.0-uc004-stitch-workflow
       - rel01.0-uc005-resume-recovery
-    test_case_count: 31
+      - rel01.0-uc006-scaffold-operations
+      - rel01.0-uc007-build-tooling
+      - rel01.0-uc008-performance-benchmarks
+      - rel01.0-uc009-phase-context-files
+    test_case_count: 75
     path: specs/test-suites/test-rel01.0.yaml
 
   - id: test-rel02.0
@@ -105,7 +169,12 @@ test_suite_index:
     release: rel02.0
     traces:
       - rel02.0-uc001-lifecycle-commands
-    test_case_count: 9
+      - rel02.0-uc002-generation-browser
+      - rel02.0-uc003-branch-comparison
+      - rel02.0-uc004-issue-tracker-view
+      - rel02.0-uc005-metrics-dashboard
+      - rel02.0-uc006-specification-browser
+    test_case_count: 30
     path: specs/test-suites/test-rel02.0.yaml
 
 prd_to_use_case_mapping:
@@ -159,6 +228,41 @@ prd_to_use_case_mapping:
     why_required: Exercises stale task recovery and orphaned issue reset
     coverage: R4
 
+  - use_case: rel01.0-uc009-phase-context-files
+    prd: prd003-cobbler-workflows
+    why_required: Validates PhaseContext loading, override logic, and fallback behavior
+    coverage: R9
+
+  - use_case: rel02.0-uc001-lifecycle-commands
+    prd: prd006-vscode-extension
+    why_required: Validates lifecycle command registration, terminal execution, and confirmation dialogs
+    coverage: R1
+
+  - use_case: rel02.0-uc002-generation-browser
+    prd: prd006-vscode-extension
+    why_required: Validates generation tree discovery from git tags with lifecycle state
+    coverage: R2
+
+  - use_case: rel02.0-uc003-branch-comparison
+    prd: prd006-vscode-extension
+    why_required: Validates tag-to-tag and generation-to-generation diff views
+    coverage: R3
+
+  - use_case: rel02.0-uc004-issue-tracker-view
+    prd: prd006-vscode-extension
+    why_required: Validates issue tree parsing, status grouping, and InvocationRecord display
+    coverage: R4
+
+  - use_case: rel02.0-uc005-metrics-dashboard
+    prd: prd006-vscode-extension
+    why_required: Validates metrics aggregation, dashboard rendering, and data refresh
+    coverage: R5
+
+  - use_case: rel02.0-uc006-specification-browser
+    prd: prd006-vscode-extension
+    why_required: Validates spec tree navigation, touchpoint expansion, and CodeLens traceability
+    coverage: R8, R9
+
 traceability_diagram: |
   graph LR
       subgraph PRDs
@@ -169,20 +273,28 @@ traceability_diagram: |
           prd6["prd006\nvscode-extension"]
       end
 
-      subgraph UseCases["Use Cases"]
-          uc1["rel01.0-uc001\ninitialization"]
-          uc2["rel01.0-uc002\ngeneration-lifecycle"]
-          uc3["rel01.0-uc003\nmeasure-workflow"]
-          uc4["rel01.0-uc004\nstitch-workflow"]
-          uc5["rel01.0-uc005\nresume-recovery"]
+      subgraph UseCases01["Release 01.0 Use Cases"]
+          uc1["uc001\ninitialization"]
+          uc2["uc002\ngeneration-lifecycle"]
+          uc3["uc003\nmeasure-workflow"]
+          uc4["uc004\nstitch-workflow"]
+          uc5["uc005\nresume-recovery"]
+          uc8["uc008\nbenchmarks"]
+          uc9["uc009\nphase-context"]
+      end
+
+      subgraph UseCases02["Release 02.0 Use Cases"]
+          vuc1["uc001\nlifecycle-commands"]
+          vuc2["uc002\ngeneration-browser"]
+          vuc3["uc003\nbranch-comparison"]
+          vuc4["uc004\nissue-tracker"]
+          vuc5["uc005\nmetrics-dashboard"]
+          vuc6["uc006\nspec-browser"]
       end
 
       subgraph TestSuites["Test Suites"]
-          ts1["test-uc001\ninitialization"]
-          ts2["test-uc002\ngeneration-lifecycle"]
-          ts3["test-uc003\nmeasure-workflow"]
-          ts4["test-uc004\nstitch-workflow"]
-          ts5["test-uc005\nresume-recovery"]
+          ts1["test-rel01.0\n75 cases"]
+          ts2["test-rel02.0\n30 cases"]
       end
 
       uc1 --> prd1
@@ -195,12 +307,29 @@ traceability_diagram: |
       uc4 --> prd5
       uc5 --> prd2
       uc5 --> prd3
+      uc9 --> prd3
+
+      vuc1 --> prd6
+      vuc2 --> prd6
+      vuc3 --> prd6
+      vuc4 --> prd6
+      vuc5 --> prd6
+      vuc6 --> prd6
 
       ts1 --> uc1
-      ts2 --> uc2
-      ts3 --> uc3
-      ts4 --> uc4
-      ts5 --> uc5
+      ts1 --> uc2
+      ts1 --> uc3
+      ts1 --> uc4
+      ts1 --> uc5
+      ts1 --> uc8
+      ts1 --> uc9
+
+      ts2 --> vuc1
+      ts2 --> vuc2
+      ts2 --> vuc3
+      ts2 --> vuc4
+      ts2 --> vuc5
+      ts2 --> vuc6
 
 coverage_gaps: |
   We identify the following gaps in specification coverage:
@@ -228,17 +357,18 @@ coverage_gaps: |
   - Phase-aware logging (orchestrator.go): setPhase/clearPhase, logf with
     [phase +elapsed]. No PRD.
 
+  Use cases without dedicated YAML files (traced in test suites only):
+  - rel01.0-uc006-scaffold-operations: traced in test-rel01.0.yaml but has no
+    standalone use case YAML file. Test cases serve as the specification.
+  - rel01.0-uc007-build-tooling: traced in test-rel01.0.yaml but has no
+    standalone use case YAML file. Test cases serve as the specification.
+
   Stale specifications:
   - prd003 R2.7 says "parse the JSON output file" but Claude writes YAML.
-  - prd003 does not mention that the orchestrator commits worktree changes
-    (Claude is forbidden from running git commands in the container).
   - Planning constitution P2 says 300-700 lines; config defaults are 250-350.
 
-  Numbering and structural gaps:
+  Numbering gaps:
   - No prd004 exists. The PRD numbering skips from prd003 to prd005.
-  - prd006-vscode-extension has no use cases or test suites (release 02.0 not started).
-  - rel02.0 use cases (uc001 through uc005) are listed in road-map.yaml but only
-    uc001 has a corresponding file in docs/specs/use-cases/.
 
 references:
   - VISION.yaml
