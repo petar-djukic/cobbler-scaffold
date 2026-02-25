@@ -20,12 +20,11 @@ task: |
 
   4. **Propose tasks** — For each task, write a description that follows the crumb-format YAML schema (see planning_constitution above and output_format below). Remember: the stitch agent sees ONLY the task description and the execution constitution. It does not see your analysis, the existing issues, or this conversation. The description must be self-contained.
 
-  5. **Write output** — Append the proposed tasks as a YAML list to `{output_path}` using the Write tool.
+  5. **Return output** — Return the proposed tasks as a YAML list in your text output, inside a fenced code block marked ```yaml. Do NOT use any tools. Your entire response is text only.
 
 constraints: |
-  - Do NOT explore the filesystem. Do NOT run ls, find, tree, or similar commands. Do NOT read files. All project information is in the project_context above.
-  - Do NOT interact with the issue tracker directly. Write the tasks to `{output_path}` using the Write tool.
-  - Do NOT read docs/ files with tools. All documentation is provided in the project_context above.
+  - Do NOT use any tools. Do NOT explore the filesystem, read files, or run commands. All project information is in the project_context above. Your response must be text only with zero tool calls.
+  - Do NOT interact with the issue tracker directly.
   - Do NOT duplicate existing issues. Review the issues in the project_context above before proposing.
   - Do NOT exceed {limit} tasks. If more work is needed, create additional tasks in a future session.
   - Do NOT create tasks larger than {lines_max} lines of production code. Target {lines_min}-{lines_max} lines per task, touching 5-7 files. Split aggressively: a task that creates a struct and implements its methods is two tasks.
@@ -38,10 +37,10 @@ constraints: |
   - Do NOT invent design decisions not derived from the PRD or architecture. Derive struct shapes, timeout strategies, file names, and naming conventions from the PRD rather than making arbitrary choices. If the PRD does not specify a detail, omit it from design decisions rather than inventing one.
   - When a PRD specifies a concrete design choice (e.g., "use a FileExpectation struct", "the main file is difftest.go", "timeout is configurable via context"), copy that choice verbatim into the task's design_decisions. Do not rephrase, generalize, or substitute alternatives. The PRD is the single source of truth for implementation details.
   - Do NOT vary requirement count between equivalent runs. Each PRD requirement maps to one task requirement. Given the same input, produce the same requirement set. If two runs of this prompt against the same project state would produce different requirements, the decomposition is under-constrained -- tighten it.
-  - The ONLY tool call you should make is the Write tool to save the output YAML file.
+  - Do NOT make any tool calls. Return the YAML list directly in your text output.
 
 output_format: |
-  Write a YAML list of crumb objects to `{output_path}`. Each crumb has a sequential `index` (starting at 0) and a `dependency` field. Set `dependency` to the index of the crumb that must be completed first, or `-1` if there are no dependencies.
+  Return a YAML list of crumb objects inside a fenced code block (```yaml). Each crumb has a sequential `index` (starting at 0) and a `dependency` field. Set `dependency` to the index of the crumb that must be completed first, or `-1` if there are no dependencies.
 
   The `description` field must be a valid YAML document conforming to the issue_format_constitution injected above. Write it as a YAML literal block scalar. Use ASCII dashes, not Unicode em dashes. Requirements, design decisions, and acceptance criteria are all mappings with `id:` and `text:` fields (R1/R2/..., D1/D2/..., AC1/AC2/...).
 
@@ -108,4 +107,4 @@ output_format: |
 
   When a golden_example field is present in this prompt, it is the authoritative reference for style, granularity, and naming conventions. Match its requirement count range, acceptance criteria density, design decision style, and file naming pattern. Deviate from the golden example only when the PRD explicitly requires a different structure.
 
-  The tasks will be automatically imported into the issue tracker.
+  The orchestrator will parse the YAML from your text output and import the tasks into the issue tracker.

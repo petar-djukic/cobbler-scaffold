@@ -75,7 +75,7 @@ func (o *Orchestrator) Clean() error {
 
 // DumpMeasurePrompt assembles and prints the measure prompt to stdout.
 func (o *Orchestrator) DumpMeasurePrompt() error {
-	prompt, err := o.buildMeasurePrompt("", "[]", 1, "/dev/null")
+	prompt, err := o.buildMeasurePrompt("", "[]", 1)
 	if err != nil {
 		return fmt.Errorf("building measure prompt: %w", err)
 	}

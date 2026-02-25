@@ -87,7 +87,7 @@ func (o *Orchestrator) TokenStats() error {
 	}
 
 	// Build measure prompt for token counting.
-	prompt, err := o.buildMeasurePrompt("", "[]", 1, "/dev/null")
+	prompt, err := o.buildMeasurePrompt("", "[]", 1)
 	if err != nil {
 		return fmt.Errorf("building measure prompt: %w", err)
 	}

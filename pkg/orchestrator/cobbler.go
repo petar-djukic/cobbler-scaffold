@@ -467,9 +467,71 @@ func (o *Orchestrator) checkPodman() error {
 	return o.ensureImage()
 }
 
+// extractTextFromStreamJSON concatenates all text blocks from assistant
+// messages in Claude's stream-json output.
+func extractTextFromStreamJSON(rawOutput []byte) string {
+	var sb strings.Builder
+	for _, line := range bytes.Split(rawOutput, []byte("\n")) {
+		if len(line) == 0 {
+			continue
+		}
+		var msg struct {
+			Type    string `json:"type"`
+			Message struct {
+				Content []struct {
+					Type string `json:"type"`
+					Text string `json:"text"`
+				} `json:"content"`
+			} `json:"message"`
+		}
+		if json.Unmarshal(line, &msg) != nil || msg.Type != "assistant" {
+			continue
+		}
+		for _, block := range msg.Message.Content {
+			if block.Type == "text" {
+				sb.WriteString(block.Text)
+			}
+		}
+	}
+	return sb.String()
+}
+
+// extractYAMLBlock finds the first ```yaml fenced code block in text
+// and returns its content. Returns an error if no YAML block is found.
+func extractYAMLBlock(text string) ([]byte, error) {
+	// Look for ```yaml or ```yml opening fence.
+	markers := []string{"```yaml\n", "```yml\n", "```yaml\r\n", "```yml\r\n"}
+	start := -1
+	markerLen := 0
+	for _, m := range markers {
+		idx := strings.Index(text, m)
+		if idx >= 0 && (start < 0 || idx < start) {
+			start = idx
+			markerLen = len(m)
+		}
+	}
+	if start < 0 {
+		return nil, fmt.Errorf("no ```yaml fenced code block found in Claude output")
+	}
+
+	content := text[start+markerLen:]
+	end := strings.Index(content, "\n```")
+	if end < 0 {
+		// Try without newline prefix (block ends at EOF or with just ```)
+		end = strings.Index(content, "```")
+	}
+	if end < 0 {
+		return nil, fmt.Errorf("unclosed ```yaml fenced code block")
+	}
+
+	return []byte(strings.TrimSpace(content[:end])), nil
+}
+
 // runClaude executes Claude inside a podman container and returns token
 // usage. The process is killed if ClaudeMaxTimeSec is exceeded.
-func (o *Orchestrator) runClaude(prompt, dir string, silence bool) (ClaudeResult, error) {
+// Extra Claude CLI arguments (e.g., "--max-turns", "1") are appended
+// after the default args.
+func (o *Orchestrator) runClaude(prompt, dir string, silence bool, extraClaudeArgs ...string) (ClaudeResult, error) {
 	logf("runClaude: promptLen=%d dir=%q silence=%v", len(prompt), dir, silence)
 
 	if o.cfg.Claude.Temperature != 0 {
@@ -496,7 +558,7 @@ func (o *Orchestrator) runClaude(prompt, dir string, silence bool) (ClaudeResult
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	cmd := o.buildPodmanCmd(ctx, workDir)
+	cmd := o.buildPodmanCmd(ctx, workDir, extraClaudeArgs...)
 
 	cmd.Stdin = strings.NewReader(prompt)
 
@@ -530,7 +592,7 @@ func (o *Orchestrator) runClaude(prompt, dir string, silence bool) (ClaudeResult
 // buildPodmanCmd constructs the exec.Cmd for running Claude inside a
 // podman container. It mounts the working directory and the credential
 // file so Claude Code can authenticate.
-func (o *Orchestrator) buildPodmanCmd(ctx context.Context, workDir string) *exec.Cmd {
+func (o *Orchestrator) buildPodmanCmd(ctx context.Context, workDir string, extraClaudeArgs ...string) *exec.Cmd {
 	args := []string{"run", "--rm", "-i",
 		"-v", workDir + ":" + workDir,
 		"-w", workDir,
@@ -549,6 +611,7 @@ func (o *Orchestrator) buildPodmanCmd(ctx context.Context, workDir string) *exec
 	args = append(args, o.cfg.Podman.Image)
 	args = append(args, binClaude)
 	args = append(args, o.cfg.Claude.Args...)
+	args = append(args, extraClaudeArgs...)
 
 	logf("runClaude: exec %s %v (timeout=%s)", binPodman, args, o.cfg.ClaudeTimeout())
 	return exec.CommandContext(ctx, binPodman, args...)

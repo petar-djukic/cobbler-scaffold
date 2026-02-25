@@ -101,7 +101,7 @@ func TestParseYAMLNode_Invalid(t *testing.T) {
 
 func TestMeasurePromptIsValidYAML(t *testing.T) {
 	o := New(Config{})
-	prompt, err := o.buildMeasurePrompt("", "[]", 5, "/tmp/out.yaml")
+	prompt, err := o.buildMeasurePrompt("", "[]", 5)
 	if err != nil {
 		t.Fatalf("buildMeasurePrompt: %v", err)
 	}
@@ -114,7 +114,7 @@ func TestMeasurePromptIsValidYAML(t *testing.T) {
 
 func TestMeasurePromptIncludesPlanningConstitution(t *testing.T) {
 	o := New(Config{})
-	prompt, err := o.buildMeasurePrompt("", "[]", 5, "/tmp/out.yaml")
+	prompt, err := o.buildMeasurePrompt("", "[]", 5)
 	if err != nil {
 		t.Fatalf("buildMeasurePrompt: %v", err)
 	}
@@ -129,7 +129,7 @@ func TestMeasurePromptIncludesPlanningConstitution(t *testing.T) {
 
 func TestMeasurePromptIncludesIssueFormatConstitution(t *testing.T) {
 	o := New(Config{})
-	prompt, err := o.buildMeasurePrompt("", "[]", 5, "/tmp/out.yaml")
+	prompt, err := o.buildMeasurePrompt("", "[]", 5)
 	if err != nil {
 		t.Fatalf("buildMeasurePrompt: %v", err)
 	}
@@ -144,7 +144,7 @@ func TestMeasurePromptIncludesIssueFormatConstitution(t *testing.T) {
 
 func TestMeasurePromptIncludesProjectContext(t *testing.T) {
 	o := New(Config{})
-	prompt, err := o.buildMeasurePrompt("", "[]", 5, "/tmp/out.yaml")
+	prompt, err := o.buildMeasurePrompt("", "[]", 5)
 	if err != nil {
 		t.Fatalf("buildMeasurePrompt: %v", err)
 	}
@@ -159,16 +159,37 @@ func TestMeasurePromptIncludesProjectContext(t *testing.T) {
 
 func TestMeasurePromptSubstitutesPlaceholders(t *testing.T) {
 	o := New(Config{})
-	prompt, err := o.buildMeasurePrompt("", "[]", 3, "/tmp/out.yaml")
+	prompt, err := o.buildMeasurePrompt("", "[]", 3)
 	if err != nil {
 		t.Fatalf("buildMeasurePrompt: %v", err)
 	}
 
-	if !strings.Contains(prompt, "/tmp/out.yaml") {
-		t.Error("measure prompt missing substituted output_path")
+	if strings.Contains(prompt, "{limit}") {
+		t.Error("measure prompt has unsubstituted {limit} placeholder")
 	}
-	if !strings.Contains(prompt, "3 tasks") {
-		t.Error("measure prompt missing substituted limit")
+	if strings.Contains(prompt, "{lines_min}") {
+		t.Error("measure prompt has unsubstituted {lines_min} placeholder")
+	}
+	if strings.Contains(prompt, "{output_path}") {
+		t.Error("measure prompt still references removed {output_path} placeholder")
+	}
+}
+
+func TestMeasurePromptNoWriteToolReferences(t *testing.T) {
+	o := New(Config{})
+	prompt, err := o.buildMeasurePrompt("", "[]", 1)
+	if err != nil {
+		t.Fatalf("buildMeasurePrompt: %v", err)
+	}
+
+	if strings.Contains(prompt, "Write tool") {
+		t.Error("measure prompt still references 'Write tool'")
+	}
+	if strings.Contains(prompt, "output_path") {
+		t.Error("measure prompt still references 'output_path'")
+	}
+	if !strings.Contains(prompt, "Do NOT use any tools") {
+		t.Error("measure prompt missing single-turn constraint (no tool calls)")
 	}
 }
 

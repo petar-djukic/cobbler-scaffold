@@ -36,7 +36,7 @@ func (o *Orchestrator) Measure() error {
 // Shows the prompt for a single iteration (limit=1), which is what each
 // iterative call uses.
 func (o *Orchestrator) MeasurePrompt() error {
-	prompt, err := o.buildMeasurePrompt("", "", 1, "measure-out.yaml")
+	prompt, err := o.buildMeasurePrompt("", "", 1)
 	if err != nil {
 		return err
 	}
@@ -153,7 +153,7 @@ func (o *Orchestrator) RunMeasure() error {
 			outputFile := filepath.Join(o.cfg.Cobbler.Dir, fmt.Sprintf("measure-%s.yaml", timestamp))
 			lastOutputFile = outputFile
 
-			prompt, promptErr := o.buildMeasurePrompt(o.cfg.Cobbler.UserPrompt, existingIssues, 1, outputFile)
+			prompt, promptErr := o.buildMeasurePrompt(o.cfg.Cobbler.UserPrompt, existingIssues, 1)
 			if promptErr != nil {
 				return promptErr
 			}
@@ -164,7 +164,7 @@ func (o *Orchestrator) RunMeasure() error {
 			o.saveHistoryPrompt(historyTS, "measure", prompt)
 
 			iterStart := time.Now()
-			tokens, err := o.runClaude(prompt, "", o.cfg.Silence())
+			tokens, err := o.runClaude(prompt, "", o.cfg.Silence(), "--max-turns", "1")
 			iterDuration := time.Since(iterStart)
 
 			totalTokens.InputTokens += tokens.InputTokens
@@ -210,13 +210,22 @@ func (o *Orchestrator) RunMeasure() error {
 				LOCAfter:  o.captureLOC(),
 			})
 
-			// Import the proposed issue.
-			fileInfo, statErr := os.Stat(outputFile)
-			if statErr != nil {
-				logf("iteration %d output file not found (Claude may not have written it)", i+1)
-				break // no output to retry
+			// Extract YAML from Claude's text output and write to file.
+			textOutput := extractTextFromStreamJSON(tokens.RawOutput)
+			yamlContent, extractErr := extractYAMLBlock(textOutput)
+			if extractErr != nil {
+				logf("iteration %d YAML extraction failed: %v", i+1, extractErr)
+				if attempt < maxRetries {
+					continue // retry
+				}
+				logf("iteration %d retries exhausted, no YAML extracted", i+1)
+				break
 			}
-			logf("iteration %d output file size=%d bytes", i+1, fileInfo.Size())
+			if err := os.WriteFile(outputFile, yamlContent, 0o644); err != nil {
+				logf("iteration %d failed to write output file: %v", i+1, err)
+				break
+			}
+			logf("iteration %d extracted YAML, size=%d bytes", i+1, len(yamlContent))
 
 			var importErr error
 			createdIDs, importErr = o.importIssues(outputFile)
@@ -365,7 +374,7 @@ func countJSONArray(jsonStr string) int {
 	return len(arr)
 }
 
-func (o *Orchestrator) buildMeasurePrompt(userInput, existingIssues string, limit int, outputPath string) (string, error) {
+func (o *Orchestrator) buildMeasurePrompt(userInput, existingIssues string, limit int) (string, error) {
 	tmpl, err := parsePromptTemplate(orDefault(o.cfg.Cobbler.MeasurePrompt, defaultMeasurePrompt))
 	if err != nil {
 		return "", fmt.Errorf("measure prompt YAML: %w", err)
@@ -380,10 +389,9 @@ func (o *Orchestrator) buildMeasurePrompt(userInput, existingIssues string, limi
 	}
 
 	placeholders := map[string]string{
-		"output_path": outputPath,
-		"limit":       fmt.Sprintf("%d", limit),
-		"lines_min":   fmt.Sprintf("%d", o.cfg.Cobbler.EstimatedLinesMin),
-		"lines_max":   fmt.Sprintf("%d", o.cfg.Cobbler.EstimatedLinesMax),
+		"limit":     fmt.Sprintf("%d", limit),
+		"lines_min": fmt.Sprintf("%d", o.cfg.Cobbler.EstimatedLinesMin),
+		"lines_max": fmt.Sprintf("%d", o.cfg.Cobbler.EstimatedLinesMax),
 	}
 
 	doc := MeasurePromptDoc{

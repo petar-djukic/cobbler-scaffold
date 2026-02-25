@@ -205,6 +205,89 @@ func TestSaveHistoryReport_WritesFile(t *testing.T) {
 	}
 }
 
+// --- extractTextFromStreamJSON ---
+
+func TestExtractTextFromStreamJSON_SingleAssistantMessage(t *testing.T) {
+	t.Parallel()
+	raw := []byte(`{"type":"system","message":"ready"}
+{"type":"assistant","message":{"content":[{"type":"text","text":"Here is the output:\n\n` + "```yaml\\n- index: 0\\n  title: Task one\\n```" + `"}]}}
+{"type":"result","usage":{"input_tokens":100,"output_tokens":50}}
+`)
+	text := extractTextFromStreamJSON(raw)
+	if text == "" {
+		t.Fatal("expected non-empty text")
+	}
+	if !contains(text, "Task one") {
+		t.Errorf("text missing expected content, got: %s", text)
+	}
+}
+
+func TestExtractTextFromStreamJSON_NoAssistantMessages(t *testing.T) {
+	t.Parallel()
+	raw := []byte(`{"type":"system","message":"ready"}
+{"type":"result","usage":{"input_tokens":100,"output_tokens":0}}
+`)
+	text := extractTextFromStreamJSON(raw)
+	if text != "" {
+		t.Errorf("expected empty text, got: %s", text)
+	}
+}
+
+func TestExtractTextFromStreamJSON_MultipleTextBlocks(t *testing.T) {
+	t.Parallel()
+	raw := []byte(`{"type":"assistant","message":{"content":[{"type":"text","text":"first "},{"type":"text","text":"second"}]}}
+`)
+	text := extractTextFromStreamJSON(raw)
+	if text != "first second" {
+		t.Errorf("expected 'first second', got: %q", text)
+	}
+}
+
+// --- extractYAMLBlock ---
+
+func TestExtractYAMLBlock_ValidFencedBlock(t *testing.T) {
+	t.Parallel()
+	text := "Here is the YAML:\n\n```yaml\n- index: 0\n  title: Task one\n  dependency: -1\n```\n\nDone."
+	yaml, err := extractYAMLBlock(text)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	expected := "- index: 0\n  title: Task one\n  dependency: -1"
+	if string(yaml) != expected {
+		t.Errorf("got:\n%s\nwant:\n%s", string(yaml), expected)
+	}
+}
+
+func TestExtractYAMLBlock_YmlFence(t *testing.T) {
+	t.Parallel()
+	text := "```yml\n- index: 0\n```\n"
+	yaml, err := extractYAMLBlock(text)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if string(yaml) != "- index: 0" {
+		t.Errorf("got: %q", string(yaml))
+	}
+}
+
+func TestExtractYAMLBlock_NoFencedBlock(t *testing.T) {
+	t.Parallel()
+	text := "Here is some text with no YAML block."
+	_, err := extractYAMLBlock(text)
+	if err == nil {
+		t.Error("expected error for missing YAML block")
+	}
+}
+
+func TestExtractYAMLBlock_UnclosedBlock(t *testing.T) {
+	t.Parallel()
+	text := "```yaml\n- index: 0\n  title: Task one"
+	_, err := extractYAMLBlock(text)
+	if err == nil {
+		t.Error("expected error for unclosed YAML block")
+	}
+}
+
 func TestSaveHistoryReport_NoOpWhenHistoryDirEmpty(t *testing.T) {
 	o := &Orchestrator{
 		cfg: Config{
