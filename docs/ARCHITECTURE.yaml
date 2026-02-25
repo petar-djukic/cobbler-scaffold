@@ -240,14 +240,22 @@ components:
       injected into both measure and stitch prompts so Claude sees the full project state.
       Over 30 struct types model the document schema (VisionDoc, ArchitectureDoc, PRDDoc,
       UseCaseDoc, TestSuiteDoc, EngineeringDoc, ConstitutionsDoc, SourceFile, etc.).
+
+      Phase-specific context files (measure_context.yaml and stitch_context.yaml) in the
+      cobbler scratch directory override global context settings at invocation time. The
+      PhaseContext struct holds include, exclude, sources, and release fields. When a phase
+      context file exists, its non-empty fields replace the corresponding ProjectConfig
+      values before context assembly. When absent, Config defaults apply unchanged.
     capabilities:
       - Load and marshal vision, architecture, specifications, roadmap, PRDs, use cases, test suites
       - Load engineering guidelines and constitutions
       - Load Go source files from configured directories
       - Parse existing issues from beads into structured format
       - Assemble all components into a single YAML string for prompt injection
+      - Load per-phase context override files (PhaseContext) at invocation time
     references:
-      - prd003-cobbler-workflows (prompt building)
+      - prd003-cobbler-workflows (prompt building, R9 phase context)
+      - eng08-phase-context-files
 
   - name: Docker
     responsibility: |
@@ -283,6 +291,25 @@ components:
       - Execution constitution (execution.yaml) defines coding standards, design patterns, and session completion
     references:
       - Design decision 8 (three-phase constitution architecture)
+
+  - name: VS Code Extension
+    responsibility: |
+      A TypeScript extension providing editor-integrated visibility into orchestrator state.
+      Ten source modules implement six use cases: lifecycle commands, generation browser,
+      branch comparison, issue tracker, metrics dashboard, and specification browser. The
+      extension activates when configuration.yaml exists in the workspace and monitors
+      .beads/, .git/refs/, and docs/specs/ for changes. Build and install are managed by
+      mage vscode:push; uninstall by mage vscode:pop.
+    capabilities:
+      - Execute lifecycle commands (start, run, resume, stop, reset, switch) via integrated terminal (commands.ts)
+      - Display generation tree with lifecycle state from git tags (generationBrowser.ts)
+      - Compare version tags and generation branches with file-level diff view (comparisonBrowser.ts)
+      - Parse .beads/issues.jsonl and display issues grouped by status (issuesBrowser.ts, beadsModel.ts)
+      - Aggregate and display metrics dashboard as webview panel (dashboard.ts)
+      - Browse specifications with touchpoint expansion and CodeLens traceability (specBrowser.ts, specModel.ts, traceability.ts)
+      - Register extension entry point and wire all providers (extension.ts)
+    references:
+      - prd006-vscode-extension
 
 design_decisions:
   - id: 1
@@ -453,6 +480,8 @@ project_structure:
     role: Version constant read/write
   - path: pkg/orchestrator/build.go
     role: Go build, lint, test, install, credential extraction
+  - path: pkg/orchestrator/vscode.go
+    role: VS Code extension build, package, install, uninstall
   - path: pkg/orchestrator/Dockerfile.claude
     role: Embedded Dockerfile for Claude container
   - path: pkg/orchestrator/prompts/
@@ -482,6 +511,8 @@ implementation_status:
     - done: Container image build from embedded Dockerfile
     - done: Cross-artifact consistency analysis
     - done: Orchestrator-managed git commits in stitch worktrees
+    - done: Phase-specific context file loading (PhaseContext override mechanism)
+    - done: VS Code extension — lifecycle commands, generation browser, branch comparison, issue tracker, metrics dashboard, specification browser
 
 related_documents:
   - doc: docs/VISION.yaml
@@ -506,6 +537,10 @@ related_documents:
     purpose: Iterative measure strategy and scaling analysis
   - doc: docs/engineering/eng05-stitch-benchmark-analysis.md
     purpose: Stitch benchmark results and task scope recommendations
+  - doc: docs/engineering/eng08-phase-context-files.yaml
+    purpose: Design decisions and loading semantics for per-phase context override files
+  - doc: docs/specs/product-requirements/prd006-vscode-extension.yaml
+    purpose: VS Code extension requirements for lifecycle, browsing, comparison, metrics, and traceability
 
 figures:
   - path: docs/ARCHITECTURE-diagrams.md
