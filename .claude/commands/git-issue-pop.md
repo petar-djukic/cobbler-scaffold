@@ -1,6 +1,6 @@
 <!-- Copyright (c) 2026 Petar Djukic. All rights reserved. SPDX-License-Identifier: MIT -->
 
-Pop a GitHub issue from `petar-djukic/cobbler-scaffold`, decompose it into a local beads epic with sub-issues, and close the GitHub issue when the epic is complete.
+Pop a GitHub issue from `petar-djukic/cobbler-scaffold`, decompose it into a local beads epic with sub-issues on a feature branch, and open a PR when the epic is complete.
 
 ## Input
 
@@ -43,11 +43,23 @@ Using the GitHub issue as the work item, propose:
 
 3. Present the proposed breakdown to the user for approval. Do not create anything until the user agrees.
 
-## Phase 4 -- Create Local Work Items
+## Phase 4 -- Create Branch and Work Items
 
 After user approval:
 
-1. Create the epic:
+1. Ensure `main` is clean and up to date:
+   ```
+   git checkout main
+   git stash --include-untracked  # if needed
+   ```
+
+2. Create a feature branch from main:
+   ```
+   git checkout -b gh-<number>-<slug>
+   ```
+   Where `<slug>` is a short kebab-case summary of the issue title (e.g. `gh-42-add-scaffold-validation`).
+
+3. Create the epic:
    ```
    bd create "GH-<number>: <title>" --type epic --description "<GitHub issue body + link>"
    ```
@@ -55,19 +67,29 @@ After user approval:
    - The full GitHub issue body
    - A reference line: `GitHub: petar-djukic/cobbler-scaffold#<number>`
 
-2. Create sub-issues under the epic:
+4. Create sub-issues under the epic:
    ```
    bd create "<sub-issue title>" --parent <epic-id> --type <documentation|code> --description "<structured description>"
    ```
 
-3. Sync and commit:
+5. Sync and commit on the feature branch:
    ```
    bd sync
    git add -A
    git commit -m "Pop GH-<number>: <title> into local epic"
    ```
 
-## Phase 5 -- Close the Loop
+6. Push the branch:
+   ```
+   git push -u origin gh-<number>-<slug>
+   ```
+
+All subsequent `/do-work` happens on this branch. Before starting work, verify you are on the correct branch:
+```
+git branch --show-current  # should show gh-<number>-<slug>
+```
+
+## Phase 5 -- Open a Pull Request
 
 When ALL sub-issues in the epic are closed (check with `bd epic close-eligible`):
 
@@ -76,16 +98,46 @@ When ALL sub-issues in the epic are closed (check with `bd epic close-eligible`)
    bd epic close-eligible
    ```
 
-2. Close the GitHub issue:
-   ```
-   gh issue close <number> --repo petar-djukic/cobbler-scaffold --comment "Completed locally. Epic: <epic-id>"
-   ```
-
-3. Sync and commit:
+2. Final commit on the feature branch:
    ```
    bd sync
    git add -A
-   git commit -m "Close GH-<number>: <title>"
+   git commit -m "Complete GH-<number>: <title>"
+   git push
    ```
+
+3. Open a pull request against `main`:
+   ```bash
+   gh pr create --repo petar-djukic/cobbler-scaffold \
+     --base main \
+     --head gh-<number>-<slug> \
+     --title "GH-<number>: <title>" \
+     --body "$(cat <<'EOF'
+   ## Summary
+
+   <2-3 sentence summary of what this epic delivered>
+
+   ## Changes
+
+   <bulleted list of sub-issues completed and what each produced>
+
+   ## Stats
+
+   <output of mage stats with deltas from start of epic>
+
+   ## Test plan
+
+   - [ ] `mage analyze` passes
+   - [ ] All tests pass
+   - [ ] Documentation reviewed for consistency
+
+   Closes #<number>
+   EOF
+   )"
+   ```
+
+   The `Closes #<number>` line auto-closes the GitHub issue when the PR merges.
+
+4. Report the PR URL to the user.
 
 **Note:** Phase 5 may happen in a later session. When running `/do-work` and completing the last issue in an epic that has a `GH-` prefix in its title, check if the epic is close-eligible and execute Phase 5 automatically.

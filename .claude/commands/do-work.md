@@ -99,16 +99,10 @@ When you close the **last issue in an epic** (all child tasks complete):
    - If all criteria are met, update road-map.yaml to mark the use case status as "done"
    - If not complete, note what remains and ensure follow-up tasks exist
 4. **File follow-up issues** for any gaps discovered
-5. **Close linked GitHub issue** (if applicable):
-   - If the epic title starts with `GH-<number>:`, close the corresponding GitHub issue:
-
-     ```bash
-     bd epic close-eligible
-     gh issue close <number> --repo petar-djukic/cobbler-scaffold --comment "Completed locally. Epic: <epic-id>"
-     bd sync
-     git add -A
-     git commit -m "Close GH-<number>: <title>"
-     ```
+5. **Open PR for GitHub issue** (if applicable):
+   - If the epic title starts with `GH-<number>:`, follow `/git-issue-pop` Phase 5:
+     close the beads epic, push the feature branch, and open a PR against `main`
+     with `Closes #<number>` in the body.
 
 6. **Summarize epic completion**: run `mage stats` and report what was built and use case status
 
@@ -227,3 +221,23 @@ When you close the **last issue in an epic** (all child tasks complete), perform
 - **Documentation workflow**: follow format rules from design.yaml → verify completeness → commit with deliverable path
 - **Update road-map.yaml** when use cases are completed
 - Always run `mage stats` and include full Stats block in commit messages (not condensed format)
+
+## Branch Discipline for GH- Epics
+
+When working on an issue that belongs to a `GH-<number>` epic (created by `/git-issue-pop`):
+
+1. **Verify you are on the correct feature branch** before starting work:
+   ```bash
+   git branch --show-current  # should show gh-<number>-<slug>
+   ```
+   If you are on `main`, switch to the feature branch first.
+
+2. **All commits go to the feature branch**, not `main`. Push regularly:
+   ```bash
+   git push
+   ```
+
+3. **When you close the last issue in a GH- epic**, execute the PR workflow from `/git-issue-pop` Phase 5:
+   - Close the beads epic with `bd epic close-eligible`
+   - Open a PR against `main` with `gh pr create`
+   - The PR body must include `Closes #<number>` to auto-close the GitHub issue on merge
