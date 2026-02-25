@@ -105,7 +105,7 @@ results:
         started: "2026-02-14T18:32:57-05:00"
         duration_sec: 1
 
-      - name: "test:e2e skips when tests/rel01.0/ directory is missing"
+      - name: "test:usecase skips when tests/rel01.0/ directory is missing"
         section: 4
         result: PASS
         started: "2026-02-14T18:33:03-05:00"
@@ -259,7 +259,7 @@ results:
         started: "2026-02-15T20:42:33-05:00"
         duration_sec: 0
 
-      - name: "test:e2e skips when tests/rel01.0/ directory is missing"
+      - name: "test:usecase skips when tests/rel01.0/ directory is missing"
         section: 4
         result: PASS
         started: "2026-02-15T20:42:33-05:00"

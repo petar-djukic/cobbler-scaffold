@@ -162,6 +162,31 @@ test_cases:
       state:
         current_branch: "main"
 
+  - use_case: rel01.0-uc001-orchestrator-initialization
+    name: FullReset succeeds from generation branch
+    go_test: TestRel01_UC001_FullResetFromGenerationBranch
+    inputs:
+      command: |
+        mage generator:start
+        mage reset
+    expected:
+      exit_code: 0
+      state:
+        current_branch: "main"
+        generation_branches: 0
+
+  - use_case: rel01.0-uc001-orchestrator-initialization
+    name: Init succeeds after reset
+    go_test: TestRel01_UC001_InitAfterReset
+    inputs:
+      command: |
+        mage reset
+        mage init
+    expected:
+      exit_code: 0
+      state:
+        beads_dir_exists: true
+
 # ---- uc002: Generation lifecycle from start to stop ----
 
   - use_case: rel01.0-uc002-generation-lifecycle
@@ -259,6 +284,50 @@ test_cases:
     expected:
       exit_code: 0
 
+  - use_case: rel01.0-uc002-generation-lifecycle
+    name: GeneratorStop fails when on main with no generation branches
+    go_test: TestRel01_UC002_StopFailsWhenOnMain
+    inputs:
+      command: mage generator:stop
+    expected:
+      exit_code: 1
+
+  - use_case: rel01.0-uc002-generation-lifecycle
+    name: GeneratorList shows empty message when no generations exist
+    go_test: TestRel01_UC002_ListWhenEmpty
+    inputs:
+      command: mage generator:list
+    expected:
+      exit_code: 0
+      stdout_contains: "No generations found"
+
+  - use_case: rel01.0-uc002-generation-lifecycle
+    name: Start-stop-start creates distinct generation branches
+    go_test: TestRel01_UC002_StartStopStartAgain
+    inputs:
+      command: |
+        mage generator:start
+        mage generator:stop
+        mage generator:start
+    expected:
+      exit_code: 0
+      state:
+        second_branch_differs: true
+
+  - use_case: rel01.0-uc002-generation-lifecycle
+    name: GeneratorReset works from diverged generation branch
+    go_test: TestRel01_UC002_ResetFromGenBranch
+    inputs:
+      command: |
+        mage generator:start
+        git add gen-file.txt && git commit -m "generation work"
+        mage generator:reset
+    expected:
+      exit_code: 0
+      state:
+        current_branch: "main"
+        generation_branches: 0
+
 # ---- uc003: Measure workflow task proposal ----
 
   - use_case: rel01.0-uc003-measure-workflow
@@ -338,6 +407,16 @@ test_cases:
       exit_code: 0
       state:
         ready_issues: 0
+
+  - use_case: rel01.0-uc003-measure-workflow
+    name: Measure fails without Claude credentials on main
+    go_test: TestRel01_UC003_MeasureFailsWithoutGeneration
+    inputs:
+      command: mage cobbler:measure
+      config_overrides:
+        claude.secrets_dir: "/dev/null/impossible"
+    expected:
+      exit_code: 1
 
 # ---- uc004: Stitch workflow task execution ----
 
@@ -427,6 +506,18 @@ test_cases:
       state:
         invocation_record_has_diff: true
         invocation_record_has_loc: true
+
+  - use_case: rel01.0-uc004-stitch-workflow
+    name: Stitch fails without Claude credentials when tasks exist
+    go_test: TestRel01_UC004_StitchWithManualIssue
+    inputs:
+      command: |
+        bd create --type task --title "e2e stitch test task"
+        mage cobbler:stitch
+      config_overrides:
+        claude.secrets_dir: "/dev/null/impossible"
+    expected:
+      exit_code: 1
 
 # ---- uc005: Generation resume and task recovery ----
 
@@ -524,6 +615,26 @@ test_cases:
     expected:
       exit_code: 0
 
+  - use_case: rel01.0-uc005-resume-recovery
+    name: Resume fails with zero generation branches
+    go_test: TestRel01_UC005_ResumeFailsWithZeroBranches
+    inputs:
+      command: mage generator:resume
+    expected:
+      exit_code: 1
+
+  - use_case: rel01.0-uc005-resume-recovery
+    name: Resume fails when already on generation branch without credentials
+    go_test: TestRel01_UC005_ResumeFailsWhenAlreadyOnGenBranch
+    inputs:
+      command: |
+        mage generator:start
+        mage generator:resume
+      config_overrides:
+        claude.secrets_dir: "/dev/null/impossible"
+    expected:
+      exit_code: 1
+
 # ---- uc006: Scaffold operations ----
 
   - use_case: rel01.0-uc006-scaffold-operations
@@ -565,6 +676,24 @@ test_cases:
     expected:
       exit_code: 1
       stderr_contains: "refusing to scaffold"
+
+  - use_case: rel01.0-uc006-scaffold-operations
+    name: Scaffold push is idempotent
+    go_test: TestRel01_UC006_PushIdempotent
+    inputs:
+      command: |
+        mage scaffold:push /tmp/target
+        mage scaffold:push /tmp/target
+    expected:
+      exit_code: 0
+
+  - use_case: rel01.0-uc006-scaffold-operations
+    name: Scaffold pop fails on non-scaffolded directory
+    go_test: TestRel01_UC006_PopOnNonScaffolded
+    inputs:
+      command: mage scaffold:pop /tmp/non-scaffolded
+    expected:
+      exit_code: 1
 
   - use_case: rel01.0-uc006-scaffold-operations
     name: Scaffold push/pop round-trip
@@ -619,6 +748,32 @@ test_cases:
     expected:
       exit_code: 0
       stdout_contains: "go_loc"
+
+  - use_case: rel01.0-uc007-build-tooling
+    name: Build skips when no main package present
+    go_test: TestRel01_UC007_BuildSkipsWithoutMainPackage
+    inputs:
+      command: mage build
+    expected:
+      exit_code: 0
+      state:
+        binary_exists: false
+
+  - use_case: rel01.0-uc007-build-tooling
+    name: Clean succeeds when bin directory does not exist
+    go_test: TestRel01_UC007_CleanWhenNoBinDir
+    inputs:
+      command: mage clean
+    expected:
+      exit_code: 0
+
+  - use_case: rel01.0-uc007-build-tooling
+    name: Analyze runs static analysis
+    go_test: TestRel01_UC007_Analyze
+    inputs:
+      command: mage analyze
+    expected:
+      exit_code: 0
 
 # ---- uc008: Performance benchmarks ----
 

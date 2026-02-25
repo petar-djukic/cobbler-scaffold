@@ -222,19 +222,23 @@ func CountReadyIssues(t testing.TB, dir string) int {
 // CreateIssue creates a beads issue via the bd CLI and returns the issue ID.
 func CreateIssue(t testing.TB, dir, title string) string {
 	t.Helper()
-	cmd := exec.Command("bd", "create", "--type", "task",
+	cmd := exec.Command("bd", "create", "--json", "--type", "task",
 		"--title", title, "--description", "created by e2e test")
 	cmd.Dir = dir
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("bd create: %v\n%s", err, out)
 	}
-	output := strings.TrimSpace(string(out))
-	parts := strings.Fields(output)
-	if len(parts) == 0 {
-		t.Fatalf("bd create returned empty output")
+	var issue struct {
+		ID string `json:"id"`
 	}
-	return parts[0]
+	if err := json.Unmarshal(out, &issue); err != nil {
+		t.Fatalf("bd create: JSON parse failed: %v\noutput: %s", err, out)
+	}
+	if issue.ID == "" {
+		t.Fatalf("bd create returned empty ID\noutput: %s", out)
+	}
+	return issue.ID
 }
 
 // IssueHasField checks whether any issue listed by "bd list --json" contains
@@ -288,6 +292,55 @@ func WriteConfigOverride(t testing.TB, dir string, modify func(*orchestrator.Con
 	if err := os.WriteFile(cfgPath, newData, 0o644); err != nil {
 		t.Fatalf("WriteConfigOverride: write: %v", err)
 	}
+}
+
+// HistoryStatsFiles returns all *-{phase}-stats.yaml files under .cobbler/history/ in dir.
+func HistoryStatsFiles(t testing.TB, dir, phase string) []string {
+	t.Helper()
+	pattern := filepath.Join(dir, ".cobbler", "history", "*-"+phase+"-stats.yaml")
+	matches, err := filepath.Glob(pattern)
+	if err != nil {
+		t.Fatalf("HistoryStatsFiles: glob: %v", err)
+	}
+	return matches
+}
+
+// HistoryReportFiles returns all *-{phase}-report.yaml files under .cobbler/history/ in dir.
+func HistoryReportFiles(t testing.TB, dir, phase string) []string {
+	t.Helper()
+	pattern := filepath.Join(dir, ".cobbler", "history", "*-"+phase+"-report.yaml")
+	matches, err := filepath.Glob(pattern)
+	if err != nil {
+		t.Fatalf("HistoryReportFiles: glob: %v", err)
+	}
+	return matches
+}
+
+// ReadFileContains returns true if the file at path contains substr.
+func ReadFileContains(path, substr string) bool {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(data), substr)
+}
+
+// CountIssuesByStatus calls bd list with the given status and returns the count.
+func CountIssuesByStatus(t testing.TB, dir, status string) int {
+	t.Helper()
+	cmd := exec.Command("bd", "list", "--json", "--status", status, "--type", "task")
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if err != nil {
+		t.Logf("CountIssuesByStatus: bd list --status %s: %v (stdout=%d bytes)", status, err, len(out))
+		return 0
+	}
+	var tasks []json.RawMessage
+	if err := json.Unmarshal(out, &tasks); err != nil {
+		t.Logf("CountIssuesByStatus: JSON unmarshal: %v (output=%q)", err, string(out))
+		return 0
+	}
+	return len(tasks)
 }
 
 // CopyDir copies src to dst recursively.

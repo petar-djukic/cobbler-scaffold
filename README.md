@@ -159,7 +159,7 @@ Mage targets handle build tags and flags automatically.
 
 ```bash
 mage test:unit            # unit tests (pkg/orchestrator)
-mage test:e2e             # all E2E use cases — packages run in parallel
+mage test:usecase         # all use-case tests — packages run in parallel
 mage test:uc 001          # single use case by number
 ```
 

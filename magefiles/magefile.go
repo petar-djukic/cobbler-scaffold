@@ -165,7 +165,7 @@ func rejectSelfTarget(target, orchRoot string) error {
 
 // --- Test targets ---
 
-// Unit runs go test on all packages (excluding E2E).
+// Unit runs go test on all packages (excluding use-case tests).
 func (Test) Unit() error {
 	cmd := exec.Command("go", "test", "./...")
 	cmd.Stdout = os.Stdout
@@ -173,8 +173,8 @@ func (Test) Unit() error {
 	return cmd.Run()
 }
 
-// E2e runs all E2E use-case tests. Packages run in parallel.
-func (Test) E2e() error {
+// Usecase runs all use-case tests. Packages run in parallel.
+func (Test) Usecase() error {
 	for _, pkg := range []string{"./tests/rel01.0/...", "./tests/e2e/..."} {
 		cmd := exec.Command("go", "test", "-tags=usecase", "-v", "-count=1", "-timeout", "1800s", pkg)
 		cmd.Stdout = os.Stdout
@@ -186,7 +186,7 @@ func (Test) E2e() error {
 	return nil
 }
 
-// Uc runs E2E tests for a single use case by number (e.g., mage test:uc 001).
+// Uc runs a use-case test by number (e.g., mage test:uc 001).
 func (Test) Uc(uc string) error {
 	pkg := fmt.Sprintf("./tests/rel01.0/uc%s/", uc)
 	cmd := exec.Command("go", "test", "-tags=usecase", "-v", "-count=1", "-timeout", "1800s", pkg)

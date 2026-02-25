@@ -63,9 +63,9 @@ articles:
       CamelCase form of the use case slug from the spec (e.g.,
       OrchestratorInitialization, MeasureWorkflow, BuildTooling).
 
-      Additionally provide test:e2e (all E2E tests), test:unit (package
+      Additionally provide test:usecase (all use-case tests), test:unit (package
       tests), and test:all (both). Examples:
 
         mage test:uc001OrchestratorInitialization
         mage test:uc003MeasureWorkflow
-        mage test:e2e
+        mage test:usecase

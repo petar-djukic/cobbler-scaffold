@@ -187,14 +187,14 @@ test_cases:
       exit_code: 0
       stdout_contains: "no test files"
 
-  - name: test:e2e skips when tests/rel01.0/ directory is missing
+  - name: test:usecase skips when tests/rel01.0/ directory is missing
     inputs:
       setup:
         - rm -rf tests/rel01.0/
-      command: mage test:e2e
+      command: mage test:usecase
     expected:
       exit_code: 0
-      stdout_contains: "No E2E test directory found"
+      stdout_contains: "No use-case test directory found"
 
   - name: test:all succeeds with no test files
     inputs:
