@@ -12,6 +12,153 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// ---------------------------------------------------------------------------
+// PhaseContext tests (prd003 R9)
+// ---------------------------------------------------------------------------
+
+func TestLoadPhaseContext_MissingFile(t *testing.T) {
+	pc, err := loadPhaseContext("/nonexistent/measure_context.yaml")
+	if err != nil {
+		t.Fatalf("expected nil error for missing file, got: %v", err)
+	}
+	if pc != nil {
+		t.Fatalf("expected nil PhaseContext for missing file, got: %+v", pc)
+	}
+}
+
+func TestLoadPhaseContext_ValidFile(t *testing.T) {
+	tmp := t.TempDir()
+	path := filepath.Join(tmp, "measure_context.yaml")
+	content := `include: "docs/VISION.yaml"
+exclude: "docs/engineering/*"
+sources: "docs/constitutions/*.yaml"
+release: "01.0"
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	pc, err := loadPhaseContext(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if pc == nil {
+		t.Fatal("expected non-nil PhaseContext")
+	}
+	if pc.Include != "docs/VISION.yaml" {
+		t.Errorf("Include: got %q, want %q", pc.Include, "docs/VISION.yaml")
+	}
+	if pc.Exclude != "docs/engineering/*" {
+		t.Errorf("Exclude: got %q, want %q", pc.Exclude, "docs/engineering/*")
+	}
+	if pc.Sources != "docs/constitutions/*.yaml" {
+		t.Errorf("Sources: got %q, want %q", pc.Sources, "docs/constitutions/*.yaml")
+	}
+	if pc.Release != "01.0" {
+		t.Errorf("Release: got %q, want %q", pc.Release, "01.0")
+	}
+}
+
+func TestLoadPhaseContext_MalformedFile(t *testing.T) {
+	tmp := t.TempDir()
+	path := filepath.Join(tmp, "bad.yaml")
+	if err := os.WriteFile(path, []byte("{{{"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	pc, err := loadPhaseContext(path)
+	if err == nil {
+		t.Fatal("expected error for malformed YAML")
+	}
+	if pc != nil {
+		t.Errorf("expected nil PhaseContext for malformed file, got: %+v", pc)
+	}
+}
+
+func TestBuildProjectContext_PhaseContextOverride(t *testing.T) {
+	_, cleanup := setupContextTestDir(t)
+	defer cleanup()
+
+	// Create a custom doc.
+	os.WriteFile("docs/custom.yaml", []byte("id: custom\ntitle: Custom"), 0o644)
+
+	project := ProjectConfig{
+		ContextInclude: "docs/VISION.yaml\ndocs/ARCHITECTURE.yaml",
+	}
+
+	// PhaseContext overrides include to only load custom.yaml.
+	phaseCtx := &PhaseContext{
+		Include: "docs/custom.yaml",
+	}
+
+	ctx, err := buildProjectContext("", project, phaseCtx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Vision should NOT be loaded because phase include replaced it.
+	if ctx.Vision != nil {
+		t.Error("Vision should be nil when PhaseContext.Include overrides")
+	}
+}
+
+func TestBuildProjectContext_NilPhaseContextUsesConfig(t *testing.T) {
+	_, cleanup := setupContextTestDir(t)
+	defer cleanup()
+
+	project := ProjectConfig{
+		GoSourceDirs: []string{"pkg/"},
+	}
+
+	ctx, err := buildProjectContext("", project, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Standard files should be loaded.
+	if ctx.Vision == nil {
+		t.Error("Vision should be loaded with nil PhaseContext")
+	}
+}
+
+func TestBuildProjectContext_PhaseContextPartialOverride(t *testing.T) {
+	_, cleanup := setupContextTestDir(t)
+	defer cleanup()
+
+	project := ProjectConfig{
+		GoSourceDirs:   []string{"pkg/"},
+		ContextExclude: "pkg/app/util.go",
+	}
+
+	// PhaseContext sets only include (empty exclude defers to Config).
+	phaseCtx := &PhaseContext{
+		Include: "docs/VISION.yaml",
+	}
+
+	ctx, err := buildProjectContext("", project, phaseCtx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Vision should be loaded (from phase include).
+	if ctx.Vision == nil {
+		t.Error("Vision should be loaded from PhaseContext.Include")
+	}
+
+	// Architecture should NOT be loaded (phase include has only VISION).
+	if ctx.Architecture != nil {
+		t.Error("Architecture should be nil when PhaseContext.Include specifies only VISION")
+	}
+
+	// util.go should still be excluded (from Config.ContextExclude,
+	// because PhaseContext.Exclude is empty and defers to Config).
+	for _, sf := range ctx.SourceCode {
+		if sf.File == "pkg/app/util.go" {
+			t.Error("pkg/app/util.go should be excluded (Config.ContextExclude still active)")
+		}
+	}
+}
+
 func TestNumberLines_Normal(t *testing.T) {
 	input := "package main\n\nimport \"fmt\"\n\nfunc main() {\n\tfmt.Println(\"hello\")\n}\n"
 	got := numberLines(input)

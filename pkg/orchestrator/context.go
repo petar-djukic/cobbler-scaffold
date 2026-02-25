@@ -47,6 +47,45 @@ func loadPhaseContext(path string) (*PhaseContext, error) {
 	return &pc, nil
 }
 
+// defaultMeasureContext is the scaffold template for measure_context.yaml.
+const defaultMeasureContext = `# Phase context for the measure workflow.
+# Fields override the corresponding configuration.yaml settings when present.
+# Remove or leave fields empty to use configuration.yaml defaults.
+# See docs/engineering/eng08-phase-context-files.yaml for schema details.
+
+# include: |
+#   docs/VISION.yaml
+#   docs/ARCHITECTURE.yaml
+#   docs/specs/**/*.yaml
+
+# exclude: |
+#   docs/engineering/*
+
+# sources: |
+#   docs/constitutions/*.yaml
+
+# release: "01.0"
+`
+
+// defaultStitchContext is the scaffold template for stitch_context.yaml.
+const defaultStitchContext = `# Phase context for the stitch workflow.
+# Fields override the corresponding configuration.yaml settings when present.
+# Remove or leave fields empty to use configuration.yaml defaults.
+# See docs/engineering/eng08-phase-context-files.yaml for schema details.
+
+# include: |
+#   docs/ARCHITECTURE.yaml
+#   docs/specs/product-requirements/prd*.yaml
+
+# exclude: |
+#   docs/engineering/*
+
+# sources: |
+#   docs/constitutions/*.yaml
+
+# release: "01.0"
+`
+
 // ---------------------------------------------------------------------------
 // ProjectContext: top-level container
 // ---------------------------------------------------------------------------
