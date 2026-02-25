@@ -1,0 +1,65 @@
+# Copyright (c) 2026 Petar Djukic. All rights reserved.
+# SPDX-License-Identifier: MIT
+
+id: rel02.0-uc005-metrics-dashboard
+title: Metrics Dashboard Webview
+
+summary: |
+  A developer opens a metrics dashboard inside VS Code to review aggregated
+  token usage, LOC progression, diff statistics, and per-invocation details
+  across all generation tasks. The dashboard parses InvocationRecord data from
+  .beads/issues.jsonl and renders an HTML summary in a webview panel that
+  refreshes when the underlying data changes.
+
+actor: Developer using VS Code with the orchestrator extension installed
+
+trigger: Developer invokes the Cobbler Measure or Cobbler Stitch command, or opens the dashboard manually via Command Palette
+
+flow:
+  - F1: "Open Command Palette: developer presses Cmd+Shift+P and selects 'Mage Orchestrator: Cobbler Measure' or accesses the dashboard directly"
+  - F2: "Show dashboard: extension creates a webview panel titled 'Metrics Dashboard' in the active editor column"
+  - F3: "Parse invocation records: BeadsStore reads .beads/issues.jsonl and extracts InvocationRecord data from issue comments"
+  - F4: "Aggregate metrics: aggregateMetrics computes totals for tokens (input, output, cache creation, cache read), cost, duration, and diff stats across all records"
+  - F5: "Render HTML: renderDashboardHtml produces an HTML document with a summary table and a per-invocation details table styled with VS Code theme variables"
+  - F6: "Display summary: the summary section shows invocation count, token breakdown, estimated cost, total duration, and diff statistics (files changed, insertions, deletions)"
+  - F7: "Display per-invocation details: a table lists each invocation with caller, date, duration, input/output/total tokens, LOC progression (production and test), diff stats, and issue ID"
+  - F8: "Handle empty state: when no invocation records exist, the dashboard shows an informational message instead of empty tables"
+  - F9: "Refresh on data change: when .beads/issues.jsonl changes, the dashboard re-reads the store and re-renders the HTML content"
+  - F10: "Singleton panel: if the dashboard is already visible, subsequent show() calls reveal the existing panel and refresh its content rather than creating a new one"
+
+touchpoints:
+  - T1: "Webview panel API: prd006-vscode-extension R5.1"
+  - T2: "InvocationRecord aggregation: prd006-vscode-extension R5.2"
+  - T3: "Token usage display: prd006-vscode-extension R5.3"
+  - T4: "LOC progression display: prd006-vscode-extension R5.4"
+  - T5: "Diff statistics display: prd006-vscode-extension R5.5"
+  - T6: "Duration display: prd006-vscode-extension R5.6"
+  - T7: "HTML table rendering: prd006-vscode-extension R5.7"
+  - T8: "Data refresh: prd006-vscode-extension R5.8"
+  - T9: "InvocationRecord data model: prd005-metrics-collection R1"
+
+success_criteria:
+  - S1: Dashboard command opens a webview panel with aggregated metrics from .beads/issues.jsonl
+  - S2: Summary section shows total invocation count, token breakdown (input, output, cache creation, cache read), estimated cost, and total duration
+  - S3: Summary section shows diff statistics (files changed, insertions, deletions) when records contain diff data
+  - S4: Per-invocation table shows caller, date, duration, input/output/total tokens, LOC progression, diff stats, and issue ID for each record
+  - S5: Dashboard renders with VS Code theme colors (foreground, background, borders)
+  - S6: When no invocation records exist, an informational empty-state message appears
+  - S7: Re-invoking the dashboard command when the panel is visible refreshes content rather than creating a new panel
+  - S8: Dashboard refreshes automatically when .beads/issues.jsonl changes
+
+out_of_scope:
+  - Real-time streaming of Claude output during invocations
+  - Chart or graph visualizations (HTML tables only, per prd006 R5.7)
+  - Export of metrics data to external formats
+  - Historical trending across multiple generations
+
+dependencies:
+  - D1: prd006-vscode-extension R5 (metrics dashboard requirements)
+  - D2: prd005-metrics-collection R1 (InvocationRecord data model)
+  - D3: Extension infrastructure (prd006 R7) for webview panel management and FileSystemWatcher
+  - D4: BeadsStore (beadsModel.ts) for parsing .beads/issues.jsonl and extracting invocation records
+
+risks:
+  - K1: "Large .beads/issues.jsonl files slow dashboard rendering | Aggregate lazily and cache results until invalidated"
+  - K2: "InvocationRecord format varies between simple and rich records | aggregateMetrics handles both formats with optional field guards"
