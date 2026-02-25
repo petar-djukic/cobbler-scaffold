@@ -5,12 +5,15 @@ summary: |
   Benchmarks measure wall-clock time and resource usage for the
   measure and stitch workflows under varying configuration limits.
   They share test infrastructure with the functional E2E tests but
-  assert timing characteristics rather than correctness. Results
-  feed into capacity planning and regression detection.
+  assert timing characteristics rather than correctness. Benchmarks
+  are gated behind the "benchmark" build tag and run via mage
+  test:benchmark. This includes endurance tests (Stitch100: 100
+  stitch tasks across multiple cycles) and timing-by-limit tests.
+  Results feed into capacity planning and regression detection.
 
-actor: Developer (via mage benchmark:*)
+actor: Developer (via mage test:benchmark)
 
-trigger: Running mage benchmark:uc008PerformanceBenchmarks
+trigger: Running mage test:benchmark
 
 flow:
   - F1: "Scaffold and initialize a test repository from the shared snapshot"

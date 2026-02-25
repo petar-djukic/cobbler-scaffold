@@ -273,18 +273,6 @@ test_cases:
         current_branch: "main"
 
   - use_case: rel01.0-uc002-generation-lifecycle
-    name: GeneratorRun completes 100 stitch iterations
-    go_test: TestRel01_UC002_Stitch100
-    inputs:
-      command: mage generator:run
-      config_overrides:
-        cobbler.max_measure_issues: 5
-        cobbler.max_stitch_issues: 100
-        cobbler.max_stitch_issues_per_cycle: 10
-    expected:
-      exit_code: 0
-
-  - use_case: rel01.0-uc002-generation-lifecycle
     name: GeneratorStop fails when on main with no generation branches
     go_test: TestRel01_UC002_StopFailsWhenOnMain
     inputs:
@@ -794,6 +782,22 @@ test_cases:
       command: go test -bench BenchmarkRel01_UC008_StitchTimingByCycle -benchtime 1x
       config_overrides:
         cobbler.max_stitch_issues_per_cycle: 1
+    expected:
+      exit_code: 0
+
+  - use_case: rel01.0-uc008-performance-benchmarks
+    name: Stitch100 endurance benchmark
+    go_test: TestRel01_UC002_Stitch100
+    description: |
+      Runs generator:run with 100 stitch tasks at 10 per cycle. This is
+      an endurance benchmark that makes hundreds of Claude API calls and
+      can take over an hour. Gated behind the benchmark build tag.
+    inputs:
+      command: mage test:benchmark
+      config_overrides:
+        cobbler.max_measure_issues: 5
+        cobbler.max_stitch_issues: 100
+        cobbler.max_stitch_issues_per_cycle: 10
     expected:
       exit_code: 0
 
