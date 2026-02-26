@@ -195,7 +195,7 @@ func (o *Orchestrator) recoverStaleTasks(baseBranch, worktreeBase string) error 
 }
 
 // recoverStaleBranches removes leftover task branches and worktrees,
-// resetting their issues to ready. Returns true if any were recovered.
+// resetting their issues to open. Returns true if any were recovered.
 func recoverStaleBranches(baseBranch, worktreeBase string) bool {
 	branches := gitListBranches(taskBranchPattern(baseBranch))
 	if len(branches) == 0 {
@@ -225,7 +225,7 @@ func recoverStaleBranches(baseBranch, worktreeBase string) bool {
 		}
 
 		if issueID != "" {
-			logf("recoverStaleBranches: resetting issue %s to ready", issueID)
+			logf("recoverStaleBranches: resetting issue %s to open", issueID)
 			if err := bdUpdateStatus(issueID, statusOpen); err != nil {
 				logf("recoverStaleBranches: status update warning: %v", err)
 			}
@@ -235,7 +235,7 @@ func recoverStaleBranches(baseBranch, worktreeBase string) bool {
 }
 
 // resetOrphanedIssues finds in_progress issues with no corresponding task
-// branch and resets them to ready. Returns true if any were reset.
+// branch and resets them to open. Returns true if any were reset.
 func resetOrphanedIssues(baseBranch string) bool {
 	out, err := bdListInProgressTasks()
 	if err != nil {
@@ -261,7 +261,7 @@ func resetOrphanedIssues(baseBranch string) bool {
 		taskBranch := taskBranchName(baseBranch, issue.ID)
 		if !gitBranchExists(taskBranch) {
 			recovered = true
-			logf("resetOrphanedIssues: orphaned issue %s (no branch %s), resetting to ready", issue.ID, taskBranch)
+			logf("resetOrphanedIssues: orphaned issue %s (no branch %s), resetting to open", issue.ID, taskBranch)
 			if err := bdUpdateStatus(issue.ID, statusOpen); err != nil {
 				logf("resetOrphanedIssues: status update warning for %s: %v", issue.ID, err)
 			}
@@ -725,7 +725,7 @@ func commitWorktreeChanges(task stitchTask) error {
 	return nil
 }
 
-// resetTask resets a failed task to ready status, cleans up its worktree
+// resetTask resets a failed task to open status, cleans up its worktree
 // and branch, and commits the beads state change. The reason string is
 // included in the commit message for traceability.
 func (o *Orchestrator) resetTask(task stitchTask, reason string) {
