@@ -175,4 +175,27 @@ When ALL sub-issues in the epic are closed (check with `bd epic close-eligible`)
 
 8. Report the PR URL and confirm the issue is closed.
 
+9. If the issue is recurring (see Phase 6), execute Phase 6 now.
+
 **Note:** Phase 5 may happen in a later session. When running `/do-work` and completing the last issue in an epic that has a `GH-` prefix in its title, check if the epic is close-eligible and execute Phase 5 automatically.
+
+## Phase 6 -- Re-create Recurring Issues
+
+A GitHub issue is recurring if its title starts with "Recurring:" or its body contains a "## Recurrence" section. After Phase 5 closes a recurring issue, re-create it so the next run can pick it up.
+
+1. Detect recurrence: check whether the original issue title starts with `Recurring:` or the body contains `## Recurrence`.
+
+2. If recurring, create a new issue with the same title, labels, and body as the original, except update the "Previous Runs" or "Previous Audits" section to append a line referencing the just-closed issue:
+   ```
+   - #<number> (<date>): <one-line summary of what this run produced>. PR #<pr-number>.
+   ```
+
+3. Create the new issue:
+   ```bash
+   gh issue create --repo <owner>/<repo> \
+     --title "<same title>" \
+     --label "<same labels, comma-separated>" \
+     --body "<updated body>"
+   ```
+
+4. Report the new issue URL so the user knows the recurring issue is ready for the next run.
