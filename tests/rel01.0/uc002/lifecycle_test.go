@@ -258,6 +258,90 @@ func TestRel01_UC002_StartStopStartAgain(t *testing.T) {
 	}
 }
 
+func TestRel01_UC002_StopPreservesEarlierGenerationCode(t *testing.T) {
+	t.Parallel()
+	dir := testutil.SetupRepo(t, snapshotDir)
+
+	if err := testutil.RunMage(t, dir, "init"); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+
+	// --- Generation A ---
+	if err := testutil.RunMage(t, dir, "generator:start"); err != nil {
+		t.Fatalf("gen A start: %v", err)
+	}
+
+	// Create a Go file on gen A's branch.
+	genADir := filepath.Join(dir, "pkg", "genA")
+	if err := os.MkdirAll(genADir, 0o755); err != nil {
+		t.Fatalf("creating pkg/genA: %v", err)
+	}
+	genAFile := filepath.Join(genADir, "genA.go")
+	if err := os.WriteFile(genAFile, []byte("package genA\n\nfunc Hello() string { return \"A\" }\n"), 0o644); err != nil {
+		t.Fatalf("writing genA.go: %v", err)
+	}
+	for _, args := range [][]string{
+		{"git", "add", "pkg/genA/genA.go"},
+		{"git", "commit", "--no-verify", "-m", "gen A code"},
+	} {
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args[1:], err, out)
+		}
+	}
+
+	if err := testutil.RunMage(t, dir, "generator:stop"); err != nil {
+		t.Fatalf("gen A stop: %v", err)
+	}
+
+	// Verify gen A's code is on main.
+	if !testutil.FileExists(dir, "pkg/genA/genA.go") {
+		t.Fatal("gen A code should be on main after gen A stop")
+	}
+
+	// --- Generation B ---
+	// Sleep to ensure different timestamp in branch name.
+	cmd := exec.Command("sleep", "1")
+	cmd.Run()
+
+	if err := testutil.RunMage(t, dir, "generator:start"); err != nil {
+		t.Fatalf("gen B start: %v", err)
+	}
+
+	// Create a Go file on gen B's branch.
+	genBDir := filepath.Join(dir, "pkg", "genB")
+	if err := os.MkdirAll(genBDir, 0o755); err != nil {
+		t.Fatalf("creating pkg/genB: %v", err)
+	}
+	genBFile := filepath.Join(genBDir, "genB.go")
+	if err := os.WriteFile(genBFile, []byte("package genB\n\nfunc Hello() string { return \"B\" }\n"), 0o644); err != nil {
+		t.Fatalf("writing genB.go: %v", err)
+	}
+	for _, args := range [][]string{
+		{"git", "add", "pkg/genB/genB.go"},
+		{"git", "commit", "--no-verify", "-m", "gen B code"},
+	} {
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args[1:], err, out)
+		}
+	}
+
+	if err := testutil.RunMage(t, dir, "generator:stop"); err != nil {
+		t.Fatalf("gen B stop: %v", err)
+	}
+
+	// Verify BOTH gen A and gen B code exist on main.
+	if !testutil.FileExists(dir, "pkg/genA/genA.go") {
+		t.Error("gen A code should be preserved on main after gen B stop")
+	}
+	if !testutil.FileExists(dir, "pkg/genB/genB.go") {
+		t.Error("gen B code should be on main after gen B stop")
+	}
+}
+
 func TestRel01_UC002_ResetFromGenBranch(t *testing.T) {
 	t.Parallel()
 	dir := testutil.SetupRepo(t, snapshotDir)

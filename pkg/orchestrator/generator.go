@@ -323,8 +323,73 @@ func (o *Orchestrator) mergeGenerationIntoMain(branch string) error {
 		}
 	}
 
+	// Restore Go files from earlier generations that were lost during the
+	// reset+merge cycle (prd002 R5.8).
+	startTag := branch + "-start"
+	if err := o.restoreFromStartTag(startTag); err != nil {
+		logf("generator:stop: restore warning: %v", err)
+	}
+
 	logf("generator:stop: deleting branch")
 	_ = gitDeleteBranch(branch) // best-effort; branch may already be deleted
+	return nil
+}
+
+// restoreFromStartTag restores Go source files that existed on main at the
+// given start tag but are missing after the merge. This preserves code from
+// earlier generations that would otherwise be lost during the reset+merge
+// cycle. See prd002-generation-lifecycle R5.8.
+func (o *Orchestrator) restoreFromStartTag(startTag string) error {
+	startFiles, err := gitLsTreeFiles(startTag)
+	if err != nil {
+		return fmt.Errorf("listing files at %s: %w", startTag, err)
+	}
+
+	var restored []string
+	for _, path := range startFiles {
+		// Only restore Go source files outside magefiles/.
+		if !strings.HasSuffix(path, ".go") {
+			continue
+		}
+		if strings.HasPrefix(path, o.cfg.Project.MagefilesDir+"/") {
+			continue
+		}
+
+		// Skip files that already exist on disk.
+		if _, err := os.Stat(path); err == nil {
+			continue
+		}
+
+		content, err := gitShowFileContent(startTag, path)
+		if err != nil {
+			logf("generator:stop: could not read %s from %s: %v", path, startTag, err)
+			continue
+		}
+
+		dir := filepath.Dir(path)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			logf("generator:stop: could not create directory %s: %v", dir, err)
+			continue
+		}
+
+		if err := os.WriteFile(path, content, 0o644); err != nil {
+			logf("generator:stop: could not write %s: %v", path, err)
+			continue
+		}
+		restored = append(restored, path)
+	}
+
+	if len(restored) == 0 {
+		return nil
+	}
+
+	logf("generator:stop: restored %d file(s) from earlier generations", len(restored))
+	_ = gitStageAll()
+	msg := fmt.Sprintf("Restore %d file(s) from earlier generations\n\nFiles restored from %s:\n%s",
+		len(restored), startTag, strings.Join(restored, "\n"))
+	if err := gitCommit(msg); err != nil {
+		return fmt.Errorf("committing restored files: %w", err)
+	}
 	return nil
 }
 

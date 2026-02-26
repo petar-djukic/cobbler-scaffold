@@ -229,6 +229,26 @@ func parseBranchList(output string) []string {
 	return branches
 }
 
+// gitLsTreeFiles returns the list of file paths tracked at the given ref.
+func gitLsTreeFiles(ref string) ([]string, error) {
+	out, err := exec.Command(binGit, "ls-tree", "-r", "--name-only", ref).Output()
+	if err != nil {
+		return nil, err
+	}
+	var files []string
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if line != "" {
+			files = append(files, line)
+		}
+	}
+	return files, nil
+}
+
+// gitShowFileContent returns the raw content of a file at the given ref.
+func gitShowFileContent(ref, path string) ([]byte, error) {
+	return exec.Command(binGit, "show", ref+":"+path).Output()
+}
+
 // Beads helpers.
 
 func bdSync() error {

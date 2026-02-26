@@ -15,7 +15,7 @@ flow:
   - F1: "Start generation: call GeneratorStart() which tags main, creates a generation branch, resets Go sources, and commits clean state"
   - F2: "Run cycles: call GeneratorRun() to execute Config.Cycles measure+stitch cycles on the generation branch"
   - F3: "Monitor progress: call GeneratorList() to see active generations and their lifecycle tags"
-  - F4: "Stop generation: call GeneratorStop() which tags the generation, switches to main, merges, tags the result, and deletes the branch"
+  - F4: "Stop generation: call GeneratorStop() which tags the generation, switches to main, merges, restores code from earlier generations, tags the result, and deletes the branch"
   - F5: "Verify: confirm main has the generated code and the generation branch is deleted"
 
 touchpoints:
@@ -30,7 +30,7 @@ success_criteria:
   - S2: GeneratorRun executes the specified number of cycles
   - S3: GeneratorStop merges to main with finished and merged tags
   - S4: The generation branch is deleted after successful stop
-  - S5: Main contains the generated code
+  - S5: Main contains the generated code and code from earlier generations
 
 out_of_scope:
   - Content of measure and stitch workflows (see rel01.0-uc003, rel01.0-uc004)
