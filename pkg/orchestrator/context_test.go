@@ -96,9 +96,10 @@ func TestBuildProjectContext_PhaseContextOverride(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Vision should NOT be loaded because phase include replaced it.
-	if ctx.Vision != nil {
-		t.Error("Vision should be nil when PhaseContext.Include overrides")
+	// Vision should still be loaded: ensureTypedDocs adds it even when
+	// phase include doesn't cover it.
+	if ctx.Vision == nil {
+		t.Error("Vision should be loaded (ensureTypedDocs adds missing typed docs)")
 	}
 }
 
@@ -145,9 +146,10 @@ func TestBuildProjectContext_PhaseContextPartialOverride(t *testing.T) {
 		t.Error("Vision should be loaded from PhaseContext.Include")
 	}
 
-	// Architecture should NOT be loaded (phase include has only VISION).
-	if ctx.Architecture != nil {
-		t.Error("Architecture should be nil when PhaseContext.Include specifies only VISION")
+	// Architecture should still be loaded: ensureTypedDocs adds it even
+	// when phase include only specifies VISION.
+	if ctx.Architecture == nil {
+		t.Error("Architecture should be loaded (ensureTypedDocs adds missing typed docs)")
 	}
 
 	// util.go should still be excluded (from Config.ContextExclude,
@@ -498,12 +500,13 @@ func TestContextIncludeReplacesStandard(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Standard files should NOT be loaded since context_include replaces them.
-	if ctx.Vision != nil {
-		t.Error("Vision should be nil when context_include replaces standard files")
+	// Typed docs should still be loaded: ensureTypedDocs adds them even
+	// when context_include doesn't cover their paths.
+	if ctx.Vision == nil {
+		t.Error("Vision should be loaded (ensureTypedDocs adds missing typed docs)")
 	}
-	if ctx.Architecture != nil {
-		t.Error("Architecture should be nil when context_include replaces standard files")
+	if ctx.Architecture == nil {
+		t.Error("Architecture should be loaded (ensureTypedDocs adds missing typed docs)")
 	}
 
 	// The custom file should be loaded as an extra (classified as "extra").
@@ -596,9 +599,9 @@ func TestContextIncludeWithExclude(t *testing.T) {
 		t.Error("docs/inc2.yaml should be excluded by context_exclude")
 	}
 
-	// Standard files should NOT be loaded (replaced by include).
-	if ctx.Vision != nil {
-		t.Error("Vision should be nil when context_include is set")
+	// Typed docs should still be loaded via ensureTypedDocs.
+	if ctx.Vision == nil {
+		t.Error("Vision should be loaded (ensureTypedDocs adds missing typed docs)")
 	}
 }
 

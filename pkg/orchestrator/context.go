@@ -810,12 +810,26 @@ func loadNamedDoc(path string) *NamedDoc {
 	if err != nil {
 		return nil
 	}
+	name := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+
 	var content yaml.Node
 	if err := yaml.Unmarshal(data, &content); err != nil {
+		// Non-YAML files (markdown, text) are loaded as a scalar node
+		// containing the raw file content, instead of being silently dropped.
+		ext := filepath.Ext(path)
+		if ext == ".md" || ext == ".txt" || ext == ".json" {
+			return &NamedDoc{
+				Name: name,
+				Content: yaml.Node{
+					Kind:  yaml.ScalarNode,
+					Tag:   "!!str",
+					Value: string(data),
+				},
+			}
+		}
 		logf("loadNamedDoc: parse error for %s: %v", path, err)
 		return nil
 	}
-	name := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
 	node := &content
 	if content.Kind == yaml.DocumentNode && len(content.Content) > 0 {
 		node = content.Content[0]
@@ -1029,6 +1043,37 @@ var standardContextPatterns = []string{
 	"docs/specs/sources.yaml",
 }
 
+// typedDocPaths lists documents that must always be loaded through their
+// dedicated typed parsers (VisionDoc, ArchitectureDoc, etc.), even when
+// context_include replaces the standard discovery. If context_include
+// patterns don't cover these paths but the files exist on disk, they are
+// added to the resolved set so classifyContextFile routes them correctly.
+var typedDocPaths = []string{
+	"docs/VISION.yaml",
+	"docs/ARCHITECTURE.yaml",
+	"docs/SPECIFICATIONS.yaml",
+	"docs/road-map.yaml",
+}
+
+// ensureTypedDocs merges the always-load typed document paths into the
+// file list if they exist on disk but are not already present.
+func ensureTypedDocs(files []string) []string {
+	present := make(map[string]bool, len(files))
+	for _, f := range files {
+		present[f] = true
+	}
+	for _, path := range typedDocPaths {
+		if present[path] {
+			continue
+		}
+		if _, err := os.Stat(path); err == nil {
+			files = append(files, path)
+			logf("ensureTypedDocs: added missing typed doc %s", path)
+		}
+	}
+	return files
+}
+
 // resolveStandardFiles expands standardContextPatterns into a
 // deduplicated, sorted list of real file paths.
 func resolveStandardFiles() []string {
@@ -1220,6 +1265,10 @@ func buildProjectContext(existingIssuesJSON string, project ProjectConfig, phase
 	var docFiles []string
 	if strings.TrimSpace(ctxInclude) != "" {
 		docFiles = resolveContextSources(ctxInclude)
+		// Ensure core typed documents (Vision, Architecture, Roadmap) are
+		// always present so they go through dedicated parsers rather than
+		// falling into the generic loadNamedDoc path.
+		docFiles = ensureTypedDocs(docFiles)
 		logf("buildProjectContext: using context_include (%d file(s))", len(docFiles))
 	} else {
 		docFiles = resolveStandardFiles()
