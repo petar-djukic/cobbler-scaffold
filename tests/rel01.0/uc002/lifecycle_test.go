@@ -325,7 +325,9 @@ func TestRel01_UC002_StopResetsMainToSpecsOnly(t *testing.T) {
 	}
 
 	// V1 tag should exist and contain the generated code.
-	out, err := exec.Command("git", "tag", "--list", "v1.*").Output()
+	tagCmd := exec.Command("git", "tag", "--list", "v1.*")
+	tagCmd.Dir = dir
+	out, err := tagCmd.Output()
 	if err != nil {
 		t.Fatalf("listing v1 tags: %v", err)
 	}

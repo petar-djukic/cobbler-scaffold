@@ -379,8 +379,9 @@ func (o *Orchestrator) mergeGeneration(branch, baseBranch string) error {
 	}
 
 	// Reset base branch to specs-only after v1 tag preserves the code (prd002 R5.10, R5.11).
+	// Use cleanGoSources (not resetGoSources) to avoid re-seeding files like version.go.
 	logf("generator:stop: resetting %s to specs-only", baseBranch)
-	_ = o.resetGoSources(branch)
+	o.cleanGoSources()
 	if hdir := o.historyDir(); hdir != "" {
 		if err := os.RemoveAll(hdir); err != nil {
 			logf("generator:stop: warning removing history dir: %v", err)
@@ -791,6 +792,17 @@ func (o *Orchestrator) resetGoSources(version string) error {
 		return fmt.Errorf("seeding files: %w", err)
 	}
 	return o.reinitGoModule()
+}
+
+// cleanGoSources removes all Go files, empty source directories, and the
+// binary directory without re-seeding files or reinitializing the module.
+// Used for the specs-only reset after v1 tags are created.
+func (o *Orchestrator) cleanGoSources() {
+	o.deleteGoFiles(".")
+	for _, dir := range o.cfg.Project.GoSourceDirs {
+		removeEmptyDirs(dir)
+	}
+	os.RemoveAll(o.cfg.Project.BinaryDir + "/")
 }
 
 // seedFiles creates the configured seed files using Go templates.
