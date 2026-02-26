@@ -145,11 +145,18 @@ func (o *Orchestrator) RunCycles(label string) error {
 }
 
 // GeneratorStart begins a new generation trail.
-// Tags current main state, creates a generation branch, deletes Go files,
-// reinitializes the Go module, and commits the clean state.
+// Records the current branch as the base branch, tags it, creates a generation
+// branch, deletes Go files, reinitializes the Go module, and commits the clean
+// state. Any clean branch is a valid starting point (prd002 R2.1).
 func (o *Orchestrator) GeneratorStart() error {
-	if err := ensureOnBranch("main"); err != nil {
-		return fmt.Errorf("switching to main: %w", err)
+	baseBranch, err := gitCurrentBranch()
+	if err != nil {
+		return fmt.Errorf("getting current branch: %w", err)
+	}
+
+	// Reject dirty worktrees — a generation must start from a clean state.
+	if gitHasChanges() {
+		return fmt.Errorf("worktree has uncommitted changes on %s; commit or stash before starting a generation", baseBranch)
 	}
 
 	genName := o.cfg.Generation.Prefix + time.Now().Format("2006-01-02-15-04-05")
@@ -158,12 +165,12 @@ func (o *Orchestrator) GeneratorStart() error {
 	setGeneration(genName)
 	defer clearGeneration()
 
-	logf("generator:start: beginning")
+	logf("generator:start: beginning (base branch: %s)", baseBranch)
 
-	// Tag current main state before the generation begins.
+	// Tag the current base branch state before the generation begins.
 	logf("generator:start: tagging current state as %s", startTag)
 	if err := gitTag(startTag); err != nil {
-		return fmt.Errorf("tagging main: %w", err)
+		return fmt.Errorf("tagging base branch: %w", err)
 	}
 
 	// Create and switch to generation branch.
@@ -176,6 +183,12 @@ func (o *Orchestrator) GeneratorStart() error {
 	branchSHA, err := gitRevParseHEAD()
 	if err != nil {
 		return fmt.Errorf("getting branch HEAD: %w", err)
+	}
+
+	// Record the base branch so GeneratorStop knows where to merge back
+	// (prd002 R2.8).
+	if err := o.writeBaseBranch(baseBranch); err != nil {
+		return fmt.Errorf("recording base branch: %w", err)
 	}
 
 	// Reset beads database and reinitialize with generation prefix.
@@ -198,7 +211,7 @@ func (o *Orchestrator) GeneratorStart() error {
 		return fmt.Errorf("squashing start commits: %w", err)
 	}
 	_ = gitStageAll() // best-effort; commit below will catch nothing-to-commit
-	msg := fmt.Sprintf("Start generation: %s\n\nDelete Go files, reinitialize module, initialize beads.\nTagged previous state as %s.", genName, genName)
+	msg := fmt.Sprintf("Start generation: %s\n\nBase branch: %s. Delete Go files, reinitialize module, initialize beads.\nTagged previous state as %s.", genName, baseBranch, genName)
 	if err := gitCommit(msg); err != nil {
 		return fmt.Errorf("committing clean state: %w", err)
 	}
@@ -207,7 +220,36 @@ func (o *Orchestrator) GeneratorStart() error {
 	return nil
 }
 
-// GeneratorStop completes a generation trail and merges it into main.
+// baseBranchFile is the name of the file that records which branch a
+// generation was started from, stored inside the cobbler directory.
+const baseBranchFile = "base-branch"
+
+// writeBaseBranch writes the base branch name to .cobbler/base-branch.
+func (o *Orchestrator) writeBaseBranch(branch string) error {
+	dir := o.cfg.Cobbler.Dir
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("creating %s: %w", dir, err)
+	}
+	return os.WriteFile(filepath.Join(dir, baseBranchFile), []byte(branch+"\n"), 0o644)
+}
+
+// readBaseBranch reads the base branch from .cobbler/base-branch on the
+// current branch. Returns "main" if the file does not exist (backward
+// compatibility with older generations, prd002 R5.3).
+func (o *Orchestrator) readBaseBranch() string {
+	data, err := os.ReadFile(filepath.Join(o.cfg.Cobbler.Dir, baseBranchFile))
+	if err != nil {
+		return "main"
+	}
+	branch := strings.TrimSpace(string(data))
+	if branch == "" {
+		return "main"
+	}
+	return branch
+}
+
+// GeneratorStop completes a generation trail and merges it into the base branch.
+// Reads the base branch from .cobbler/base-branch (falls back to "main").
 // Uses Config.GenerationBranch, current branch, or auto-detects.
 func (o *Orchestrator) GeneratorStop() error {
 	branch := o.cfg.Generation.Branch
@@ -247,41 +289,45 @@ func (o *Orchestrator) GeneratorStop() error {
 	if err := ensureOnBranch(branch); err != nil {
 		return fmt.Errorf("switching to generation branch: %w", err)
 	}
+
+	// Read the base branch before leaving the generation branch (prd002 R5.3).
+	baseBranch := o.readBaseBranch()
+
 	logf("generator:stop: tagging as %s", finishedTag)
 	if err := gitTag(finishedTag); err != nil {
 		return fmt.Errorf("tagging generation: %w", err)
 	}
 
-	// Switch to main.
-	logf("generator:stop: switching to main")
-	if err := gitCheckout("main"); err != nil {
-		return fmt.Errorf("checking out main: %w", err)
+	// Switch to the base branch.
+	logf("generator:stop: switching to %s", baseBranch)
+	if err := gitCheckout(baseBranch); err != nil {
+		return fmt.Errorf("checking out %s: %w", baseBranch, err)
 	}
 
-	if err := o.mergeGenerationIntoMain(branch); err != nil {
+	if err := o.mergeGeneration(branch, baseBranch); err != nil {
 		return err
 	}
 
 	o.cleanupDirs()
 
-	logf("generator:stop: done, work is on main")
+	logf("generator:stop: done, work is on %s", baseBranch)
 	return nil
 }
 
-// mergeGenerationIntoMain resets Go sources, commits the clean state,
-// merges the generation branch, tags the result, resets main to specs-only,
-// and deletes the branch.
-func (o *Orchestrator) mergeGenerationIntoMain(branch string) error {
-	logf("generator:stop: resetting Go sources on main")
+// mergeGeneration resets Go sources, commits the clean state, merges the
+// generation branch into the base branch, tags the result, resets the base
+// branch to specs-only, and deletes the generation branch.
+func (o *Orchestrator) mergeGeneration(branch, baseBranch string) error {
+	logf("generator:stop: resetting Go sources on %s", baseBranch)
 	_ = o.resetGoSources(branch) // best-effort; merge will overwrite these files
 
 	_ = gitStageAll() // best-effort; commit below handles empty index
-	prepareMsg := fmt.Sprintf("Prepare main for generation merge: delete Go code\n\nDocumentation preserved for merge. Code will be replaced by %s.", branch)
+	prepareMsg := fmt.Sprintf("Prepare %s for generation merge: delete Go code\n\nDocumentation preserved for merge. Code will be replaced by %s.", baseBranch, branch)
 	if err := gitCommitAllowEmpty(prepareMsg); err != nil {
 		return fmt.Errorf("committing prepare step: %w", err)
 	}
 
-	logf("generator:stop: merging into main")
+	logf("generator:stop: merging into %s", baseBranch)
 	cmd := gitMergeCmd(branch)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -290,15 +336,15 @@ func (o *Orchestrator) mergeGenerationIntoMain(branch string) error {
 	}
 
 	// Restore Go files from earlier generations so the v1 tag captures a
-	// complete snapshot (prd002 R5.8). Runs before tagging.
+	// complete snapshot (prd002 R5.9). Runs before tagging.
 	startTag := branch + "-start"
 	if err := o.restoreFromStartTag(startTag); err != nil {
 		logf("generator:stop: restore warning: %v", err)
 	}
 
-	mainTag := branch + "-merged"
-	logf("generator:stop: tagging main as %s", mainTag)
-	if err := gitTag(mainTag); err != nil {
+	mergedTag := branch + "-merged"
+	logf("generator:stop: tagging %s as %s", baseBranch, mergedTag)
+	if err := gitTag(mergedTag); err != nil {
 		return fmt.Errorf("tagging merge: %w", err)
 	}
 
@@ -330,14 +376,14 @@ func (o *Orchestrator) mergeGenerationIntoMain(branch string) error {
 		}
 	}
 
-	// Reset main to specs-only after v1 tag preserves the code (prd002 R5.9, R5.10).
-	logf("generator:stop: resetting main to specs-only")
+	// Reset base branch to specs-only after v1 tag preserves the code (prd002 R5.10, R5.11).
+	logf("generator:stop: resetting %s to specs-only", baseBranch)
 	_ = o.resetGoSources(branch)
 	if hdir := o.historyDir(); hdir != "" {
 		os.RemoveAll(hdir)
 	}
 	_ = gitStageAll()
-	cleanupMsg := "Reset main to specs-only after v1 tag\n\nGenerated code preserved at version tags. Main restored to documentation-only state."
+	cleanupMsg := fmt.Sprintf("Reset %s to specs-only after v1 tag\n\nGenerated code preserved at version tags. Branch restored to documentation-only state.", baseBranch)
 	_ = gitCommit(cleanupMsg) // best-effort; may be empty if nothing changed
 
 	logf("generator:stop: deleting branch")

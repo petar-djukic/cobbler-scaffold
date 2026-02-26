@@ -172,7 +172,7 @@ func TestRel01_UC002_StartFailsWhenNotOnMain(t *testing.T) {
 		t.Fatalf("first generator:start: %v", err)
 	}
 
-	// Dirty a tracked file so ensureOnBranch("main") cannot checkout main.
+	// Dirty a tracked file so the clean-worktree check rejects the second start.
 	gomod := filepath.Join(dir, "go.mod")
 	data, err := os.ReadFile(gomod)
 	if err != nil {
@@ -379,6 +379,152 @@ func TestRel01_UC002_ResetFromGenBranch(t *testing.T) {
 	}
 	if branches := testutil.GitListBranchesMatching(t, dir, "generation-"); len(branches) > 0 {
 		t.Errorf("expected no generation branches after reset, got %v", branches)
+	}
+}
+
+func TestRel01_UC002_StartRecordsBaseBranch(t *testing.T) {
+	t.Parallel()
+	dir := testutil.SetupRepo(t, snapshotDir)
+
+	if err := testutil.RunMage(t, dir, "init"); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	if err := testutil.RunMage(t, dir, "generator:start"); err != nil {
+		t.Fatalf("generator:start: %v", err)
+	}
+	t.Cleanup(func() { testutil.RunMage(t, dir, "reset") }) //nolint:errcheck
+
+	// Verify .cobbler/base-branch exists and contains "main".
+	bbFile := filepath.Join(dir, ".cobbler", "base-branch")
+	data, err := os.ReadFile(bbFile)
+	if err != nil {
+		t.Fatalf("reading .cobbler/base-branch: %v", err)
+	}
+	content := strings.TrimSpace(string(data))
+	if content != "main" {
+		t.Errorf("expected base-branch to be 'main', got %q", content)
+	}
+}
+
+func TestRel01_UC002_StartFromFeatureBranch(t *testing.T) {
+	t.Parallel()
+	dir := testutil.SetupRepo(t, snapshotDir)
+
+	if err := testutil.RunMage(t, dir, "init"); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+
+	// Create and switch to a feature branch.
+	cmd := exec.Command("git", "checkout", "-b", "feature-test")
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("creating feature branch: %v\n%s", err, out)
+	}
+
+	if err := testutil.RunMage(t, dir, "generator:start"); err != nil {
+		t.Fatalf("generator:start from feature branch: %v", err)
+	}
+	t.Cleanup(func() { testutil.RunMage(t, dir, "reset") }) //nolint:errcheck
+
+	// Should be on a generation branch now.
+	branch := testutil.GitBranch(t, dir)
+	if !strings.HasPrefix(branch, "generation-") {
+		t.Errorf("expected generation branch after start, got %q", branch)
+	}
+
+	// Base branch should record "feature-test".
+	bbFile := filepath.Join(dir, ".cobbler", "base-branch")
+	data, err := os.ReadFile(bbFile)
+	if err != nil {
+		t.Fatalf("reading .cobbler/base-branch: %v", err)
+	}
+	content := strings.TrimSpace(string(data))
+	if content != "feature-test" {
+		t.Errorf("expected base-branch to be 'feature-test', got %q", content)
+	}
+}
+
+func TestRel01_UC002_StopReturnsToFeatureBranch(t *testing.T) {
+	t.Parallel()
+	dir := testutil.SetupRepo(t, snapshotDir)
+
+	if err := testutil.RunMage(t, dir, "init"); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+
+	// Create and switch to a feature branch.
+	cmd := exec.Command("git", "checkout", "-b", "feature-test")
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("creating feature branch: %v\n%s", err, out)
+	}
+
+	if err := testutil.RunMage(t, dir, "generator:start"); err != nil {
+		t.Fatalf("generator:start from feature branch: %v", err)
+	}
+
+	genBranch := testutil.GitBranch(t, dir)
+	if !strings.HasPrefix(genBranch, "generation-") {
+		t.Fatalf("expected generation branch after start, got %q", genBranch)
+	}
+
+	if err := testutil.RunMage(t, dir, "generator:stop"); err != nil {
+		t.Fatalf("generator:stop: %v", err)
+	}
+
+	// Should return to feature-test, not main.
+	if branch := testutil.GitBranch(t, dir); branch != "feature-test" {
+		t.Errorf("expected feature-test after stop, got %q", branch)
+	}
+
+	// Generation branch should be deleted.
+	if branches := testutil.GitListBranchesMatching(t, dir, genBranch); len(branches) > 0 {
+		t.Errorf("generation branch %q should be deleted after stop, got %v", genBranch, branches)
+	}
+
+	// Lifecycle tags should exist.
+	for _, suffix := range []string{"-start", "-finished", "-merged"} {
+		tag := genBranch + suffix
+		if !testutil.GitTagExists(t, dir, tag) {
+			t.Errorf("expected tag %q to exist after stop", tag)
+		}
+	}
+}
+
+func TestRel01_UC002_StopFallsBackToMain(t *testing.T) {
+	t.Parallel()
+	dir := testutil.SetupRepo(t, snapshotDir)
+
+	if err := testutil.RunMage(t, dir, "init"); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	if err := testutil.RunMage(t, dir, "generator:start"); err != nil {
+		t.Fatalf("generator:start: %v", err)
+	}
+
+	// Remove the base-branch file to simulate an older generation.
+	bbFile := filepath.Join(dir, ".cobbler", "base-branch")
+	if err := os.Remove(bbFile); err != nil {
+		t.Fatalf("removing base-branch file: %v", err)
+	}
+	for _, args := range [][]string{
+		{"git", "add", "-A"},
+		{"git", "commit", "--no-verify", "-m", "remove base-branch file"},
+	} {
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args[1:], err, out)
+		}
+	}
+
+	if err := testutil.RunMage(t, dir, "generator:stop"); err != nil {
+		t.Fatalf("generator:stop: %v", err)
+	}
+
+	// Should fall back to main when .cobbler/base-branch is absent.
+	if branch := testutil.GitBranch(t, dir); branch != "main" {
+		t.Errorf("expected main after stop (fallback), got %q", branch)
 	}
 }
 
