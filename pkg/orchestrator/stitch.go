@@ -17,10 +17,14 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// statusOpen is the beads status for tasks available for execution. The
+// bd ready command returns issues with status "open", not "ready".
+const statusOpen = "open"
+
 // errTaskReset is returned by doOneTask when a task fails but the stitch
 // loop should continue to the next task (e.g., Claude failure, worktree
-// commit failure, merge failure). The task has been reset to "ready".
-var errTaskReset = errors.New("task reset to ready")
+// commit failure, merge failure). The task has been reset to open.
+var errTaskReset = errors.New("task reset to open")
 
 //go:embed prompts/stitch.yaml
 var defaultStitchPrompt string
@@ -191,7 +195,7 @@ func (o *Orchestrator) recoverStaleTasks(baseBranch, worktreeBase string) error 
 }
 
 // recoverStaleBranches removes leftover task branches and worktrees,
-// resetting their issues to ready. Returns true if any were recovered.
+// resetting their issues to open. Returns true if any were recovered.
 func recoverStaleBranches(baseBranch, worktreeBase string) bool {
 	branches := gitListBranches(taskBranchPattern(baseBranch))
 	if len(branches) == 0 {
@@ -221,8 +225,8 @@ func recoverStaleBranches(baseBranch, worktreeBase string) bool {
 		}
 
 		if issueID != "" {
-			logf("recoverStaleBranches: resetting issue %s to ready", issueID)
-			if err := bdUpdateStatus(issueID, "ready"); err != nil {
+			logf("recoverStaleBranches: resetting issue %s to open", issueID)
+			if err := bdUpdateStatus(issueID, statusOpen); err != nil {
 				logf("recoverStaleBranches: status update warning: %v", err)
 			}
 		}
@@ -231,7 +235,7 @@ func recoverStaleBranches(baseBranch, worktreeBase string) bool {
 }
 
 // resetOrphanedIssues finds in_progress issues with no corresponding task
-// branch and resets them to ready. Returns true if any were reset.
+// branch and resets them to open. Returns true if any were reset.
 func resetOrphanedIssues(baseBranch string) bool {
 	out, err := bdListInProgressTasks()
 	if err != nil {
@@ -257,8 +261,8 @@ func resetOrphanedIssues(baseBranch string) bool {
 		taskBranch := taskBranchName(baseBranch, issue.ID)
 		if !gitBranchExists(taskBranch) {
 			recovered = true
-			logf("resetOrphanedIssues: orphaned issue %s (no branch %s), resetting to ready", issue.ID, taskBranch)
-			if err := bdUpdateStatus(issue.ID, "ready"); err != nil {
+			logf("resetOrphanedIssues: orphaned issue %s (no branch %s), resetting to open", issue.ID, taskBranch)
+			if err := bdUpdateStatus(issue.ID, statusOpen); err != nil {
 				logf("resetOrphanedIssues: status update warning for %s: %v", issue.ID, err)
 			}
 		} else {
@@ -721,12 +725,14 @@ func commitWorktreeChanges(task stitchTask) error {
 	return nil
 }
 
-// resetTask resets a failed task to ready status, cleans up its worktree
+// resetTask resets a failed task to open status, cleans up its worktree
 // and branch, and commits the beads state change. The reason string is
 // included in the commit message for traceability.
 func (o *Orchestrator) resetTask(task stitchTask, reason string) {
-	logf("resetTask: resetting %s to ready (%s)", task.id, reason)
-	bdUpdateStatus(task.id, "ready")
+	logf("resetTask: resetting %s to open (%s)", task.id, reason)
+	if err := bdUpdateStatus(task.id, statusOpen); err != nil {
+		logf("resetTask: WARNING bdUpdateStatus failed for %s: %v", task.id, err)
+	}
 	cleanupWorktree(task)
 	gitForceDeleteBranch(task.branchName)
 	o.beadsCommit(fmt.Sprintf("Reset %s after %s", task.id, reason))
