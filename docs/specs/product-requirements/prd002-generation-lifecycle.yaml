@@ -60,7 +60,9 @@ requirements:
       - R5.5: GeneratorStop must tag the result as {generationName}-merged
       - R5.6: GeneratorStop must create versioned tags (v{date}-code, v{date}-requirements) on main
       - R5.7: GeneratorStop must delete the generation branch after successful merge
-      - R5.8: After merge, GeneratorStop must restore Go files that existed on main at the start tag but are missing after merge, preserving code from earlier generations
+      - R5.8: Before tagging, GeneratorStop must restore Go files that existed on main at the start tag but are missing after merge, so the v1 tag captures a complete snapshot
+      - R5.9: After v1 tagging, GeneratorStop must reset Go sources and remove build artifacts on main, restoring it to a specs-only state
+      - R5.10: After v1 tagging, GeneratorStop must delete the history directory from main
 
   R6:
     title: GeneratorReset

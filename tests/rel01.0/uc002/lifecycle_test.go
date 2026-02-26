@@ -258,7 +258,7 @@ func TestRel01_UC002_StartStopStartAgain(t *testing.T) {
 	}
 }
 
-func TestRel01_UC002_StopPreservesEarlierGenerationCode(t *testing.T) {
+func TestRel01_UC002_StopResetsMainToSpecsOnly(t *testing.T) {
 	t.Parallel()
 	dir := testutil.SetupRepo(t, snapshotDir)
 
@@ -266,23 +266,28 @@ func TestRel01_UC002_StopPreservesEarlierGenerationCode(t *testing.T) {
 		t.Fatalf("init: %v", err)
 	}
 
-	// --- Generation A ---
 	if err := testutil.RunMage(t, dir, "generator:start"); err != nil {
-		t.Fatalf("gen A start: %v", err)
+		t.Fatalf("generator:start: %v", err)
 	}
 
-	// Create a Go file on gen A's branch.
-	genADir := filepath.Join(dir, "pkg", "genA")
-	if err := os.MkdirAll(genADir, 0o755); err != nil {
-		t.Fatalf("creating pkg/genA: %v", err)
+	// Create a Go file and a history artifact on the generation branch.
+	genDir := filepath.Join(dir, "pkg", "gencode")
+	if err := os.MkdirAll(genDir, 0o755); err != nil {
+		t.Fatalf("creating pkg/gencode: %v", err)
 	}
-	genAFile := filepath.Join(genADir, "genA.go")
-	if err := os.WriteFile(genAFile, []byte("package genA\n\nfunc Hello() string { return \"A\" }\n"), 0o644); err != nil {
-		t.Fatalf("writing genA.go: %v", err)
+	if err := os.WriteFile(filepath.Join(genDir, "gen.go"), []byte("package gencode\n"), 0o644); err != nil {
+		t.Fatalf("writing gen.go: %v", err)
+	}
+	histDir := filepath.Join(dir, ".cobbler", "history")
+	if err := os.MkdirAll(histDir, 0o755); err != nil {
+		t.Fatalf("creating .cobbler/history: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(histDir, "run.yaml"), []byte("run: 1\n"), 0o644); err != nil {
+		t.Fatalf("writing history file: %v", err)
 	}
 	for _, args := range [][]string{
-		{"git", "add", "pkg/genA/genA.go"},
-		{"git", "commit", "--no-verify", "-m", "gen A code"},
+		{"git", "add", "-A"},
+		{"git", "commit", "--no-verify", "-m", "generation work"},
 	} {
 		cmd := exec.Command(args[0], args[1:]...)
 		cmd.Dir = dir
@@ -292,53 +297,50 @@ func TestRel01_UC002_StopPreservesEarlierGenerationCode(t *testing.T) {
 	}
 
 	if err := testutil.RunMage(t, dir, "generator:stop"); err != nil {
-		t.Fatalf("gen A stop: %v", err)
+		t.Fatalf("generator:stop: %v", err)
 	}
 
-	// Verify gen A's code is on main.
-	if !testutil.FileExists(dir, "pkg/genA/genA.go") {
-		t.Fatal("gen A code should be on main after gen A stop")
-	}
-
-	// --- Generation B ---
-	// Sleep to ensure different timestamp in branch name.
-	cmd := exec.Command("sleep", "1")
-	cmd.Run()
-
-	if err := testutil.RunMage(t, dir, "generator:start"); err != nil {
-		t.Fatalf("gen B start: %v", err)
-	}
-
-	// Create a Go file on gen B's branch.
-	genBDir := filepath.Join(dir, "pkg", "genB")
-	if err := os.MkdirAll(genBDir, 0o755); err != nil {
-		t.Fatalf("creating pkg/genB: %v", err)
-	}
-	genBFile := filepath.Join(genBDir, "genB.go")
-	if err := os.WriteFile(genBFile, []byte("package genB\n\nfunc Hello() string { return \"B\" }\n"), 0o644); err != nil {
-		t.Fatalf("writing genB.go: %v", err)
-	}
-	for _, args := range [][]string{
-		{"git", "add", "pkg/genB/genB.go"},
-		{"git", "commit", "--no-verify", "-m", "gen B code"},
-	} {
-		cmd := exec.Command(args[0], args[1:]...)
-		cmd.Dir = dir
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v\n%s", args[1:], err, out)
+	// Main should be specs-only: no Go files outside magefiles/.
+	var goFiles []string
+	_ = filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return nil
 		}
+		rel, _ := filepath.Rel(dir, path)
+		if d.IsDir() && (rel == ".git" || rel == "magefiles") {
+			return filepath.SkipDir
+		}
+		if !d.IsDir() && strings.HasSuffix(rel, ".go") {
+			goFiles = append(goFiles, rel)
+		}
+		return nil
+	})
+	if len(goFiles) > 0 {
+		t.Errorf("main should have no Go files after stop, found: %v", goFiles)
 	}
 
-	if err := testutil.RunMage(t, dir, "generator:stop"); err != nil {
-		t.Fatalf("gen B stop: %v", err)
+	// No history directory.
+	if _, err := os.Stat(histDir); err == nil {
+		t.Error("history directory should be deleted after stop")
 	}
 
-	// Verify BOTH gen A and gen B code exist on main.
-	if !testutil.FileExists(dir, "pkg/genA/genA.go") {
-		t.Error("gen A code should be preserved on main after gen B stop")
+	// V1 tag should exist and contain the generated code.
+	out, err := exec.Command("git", "tag", "--list", "v1.*").Output()
+	if err != nil {
+		t.Fatalf("listing v1 tags: %v", err)
 	}
-	if !testutil.FileExists(dir, "pkg/genB/genB.go") {
-		t.Error("gen B code should be on main after gen B stop")
+	v1Tags := strings.TrimSpace(string(out))
+	if v1Tags == "" {
+		t.Fatal("expected at least one v1 tag after stop")
+	}
+	// Pick the first v1 tag and verify the generated file exists at it.
+	v1Tag := strings.Split(v1Tags, "\n")[0]
+	showCmd := exec.Command("git", "show", v1Tag+":pkg/gencode/gen.go")
+	showCmd.Dir = dir
+	if showOut, err := showCmd.Output(); err != nil {
+		t.Errorf("generated file should exist at %s tag: %v", v1Tag, err)
+	} else if !strings.Contains(string(showOut), "package gencode") {
+		t.Errorf("generated file at %s tag has unexpected content: %s", v1Tag, showOut)
 	}
 }
 

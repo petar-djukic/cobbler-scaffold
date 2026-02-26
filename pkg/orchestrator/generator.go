@@ -269,7 +269,8 @@ func (o *Orchestrator) GeneratorStop() error {
 }
 
 // mergeGenerationIntoMain resets Go sources, commits the clean state,
-// merges the generation branch, tags the result, and deletes the branch.
+// merges the generation branch, tags the result, resets main to specs-only,
+// and deletes the branch.
 func (o *Orchestrator) mergeGenerationIntoMain(branch string) error {
 	logf("generator:stop: resetting Go sources on main")
 	_ = o.resetGoSources(branch) // best-effort; merge will overwrite these files
@@ -286,6 +287,13 @@ func (o *Orchestrator) mergeGenerationIntoMain(branch string) error {
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("merging %s: %w", branch, err)
+	}
+
+	// Restore Go files from earlier generations so the v1 tag captures a
+	// complete snapshot (prd002 R5.8). Runs before tagging.
+	startTag := branch + "-start"
+	if err := o.restoreFromStartTag(startTag); err != nil {
+		logf("generator:stop: restore warning: %v", err)
 	}
 
 	mainTag := branch + "-merged"
@@ -316,19 +324,21 @@ func (o *Orchestrator) mergeGenerationIntoMain(branch string) error {
 			}
 		}
 
-		startTag := branch + "-start"
 		logf("generator:stop: tagging requirements as %s (at %s)", reqTag, startTag)
 		if err := gitTagAt(reqTag, startTag); err != nil {
 			logf("generator:stop: requirements tag warning: %v", err)
 		}
 	}
 
-	// Restore Go files from earlier generations that were lost during the
-	// reset+merge cycle (prd002 R5.8).
-	startTag := branch + "-start"
-	if err := o.restoreFromStartTag(startTag); err != nil {
-		logf("generator:stop: restore warning: %v", err)
+	// Reset main to specs-only after v1 tag preserves the code (prd002 R5.9, R5.10).
+	logf("generator:stop: resetting main to specs-only")
+	_ = o.resetGoSources(branch)
+	if hdir := o.historyDir(); hdir != "" {
+		os.RemoveAll(hdir)
 	}
+	_ = gitStageAll()
+	cleanupMsg := "Reset main to specs-only after v1 tag\n\nGenerated code preserved at version tags. Main restored to documentation-only state."
+	_ = gitCommit(cleanupMsg) // best-effort; may be empty if nothing changed
 
 	logf("generator:stop: deleting branch")
 	_ = gitDeleteBranch(branch) // best-effort; branch may already be deleted
