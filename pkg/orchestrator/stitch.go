@@ -17,10 +17,14 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// statusOpen is the beads status for tasks available for execution. The
+// bd ready command returns issues with status "open", not "ready".
+const statusOpen = "open"
+
 // errTaskReset is returned by doOneTask when a task fails but the stitch
 // loop should continue to the next task (e.g., Claude failure, worktree
-// commit failure, merge failure). The task has been reset to "ready".
-var errTaskReset = errors.New("task reset to ready")
+// commit failure, merge failure). The task has been reset to open.
+var errTaskReset = errors.New("task reset to open")
 
 //go:embed prompts/stitch.yaml
 var defaultStitchPrompt string
@@ -222,7 +226,7 @@ func recoverStaleBranches(baseBranch, worktreeBase string) bool {
 
 		if issueID != "" {
 			logf("recoverStaleBranches: resetting issue %s to ready", issueID)
-			if err := bdUpdateStatus(issueID, "ready"); err != nil {
+			if err := bdUpdateStatus(issueID, statusOpen); err != nil {
 				logf("recoverStaleBranches: status update warning: %v", err)
 			}
 		}
@@ -258,7 +262,7 @@ func resetOrphanedIssues(baseBranch string) bool {
 		if !gitBranchExists(taskBranch) {
 			recovered = true
 			logf("resetOrphanedIssues: orphaned issue %s (no branch %s), resetting to ready", issue.ID, taskBranch)
-			if err := bdUpdateStatus(issue.ID, "ready"); err != nil {
+			if err := bdUpdateStatus(issue.ID, statusOpen); err != nil {
 				logf("resetOrphanedIssues: status update warning for %s: %v", issue.ID, err)
 			}
 		} else {
@@ -725,8 +729,10 @@ func commitWorktreeChanges(task stitchTask) error {
 // and branch, and commits the beads state change. The reason string is
 // included in the commit message for traceability.
 func (o *Orchestrator) resetTask(task stitchTask, reason string) {
-	logf("resetTask: resetting %s to ready (%s)", task.id, reason)
-	bdUpdateStatus(task.id, "ready")
+	logf("resetTask: resetting %s to open (%s)", task.id, reason)
+	if err := bdUpdateStatus(task.id, statusOpen); err != nil {
+		logf("resetTask: WARNING bdUpdateStatus failed for %s: %v", task.id, err)
+	}
 	cleanupWorktree(task)
 	gitForceDeleteBranch(task.branchName)
 	o.beadsCommit(fmt.Sprintf("Reset %s after %s", task.id, reason))
