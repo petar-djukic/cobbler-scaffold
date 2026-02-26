@@ -6,6 +6,7 @@ package orchestrator
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -354,5 +355,154 @@ func TestValidateYAMLStrict_MissingFile(t *testing.T) {
 	errs := validateYAMLStrict[TestingDoc]("/nonexistent/file.yaml")
 	if len(errs) != 0 {
 		t.Errorf("expected nil for missing file, got %v", errs)
+	}
+}
+
+// --- InvalidReleases validation ---
+
+func TestCollectAnalyzeResult_InvalidReleases(t *testing.T) {
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(orig)
+
+	// Create minimal doc structure so analysis doesn't fail.
+	os.MkdirAll("docs/specs/product-requirements", 0o755)
+	os.MkdirAll("docs/specs/use-cases", 0o755)
+	os.MkdirAll("docs/specs/test-suites", 0o755)
+	os.MkdirAll("docs/constitutions", 0o755)
+	os.MkdirAll("pkg/orchestrator/constitutions", 0o755)
+
+	// Road-map with only release 01.0.
+	roadmap := `id: test-roadmap
+title: Test Roadmap
+releases:
+  - version: "01.0"
+    name: Core
+    status: done
+    use_cases:
+      - id: rel01.0-uc001-init
+        summary: Init
+        status: done
+`
+	os.WriteFile("docs/road-map.yaml", []byte(roadmap), 0o644)
+
+	// Use case file and PRD so no orphan errors.
+	os.WriteFile("docs/specs/use-cases/rel01.0-uc001-init.yaml",
+		[]byte("id: rel01.0-uc001-init\ntitle: Init\ntouchpoints:\n  - T1: prd001-core R1\n"), 0o644)
+	os.WriteFile("docs/specs/product-requirements/prd001-core.yaml",
+		[]byte("id: prd001-core\ntitle: Core\nrequirements:\n  - id: R1\n    title: Req 1\n"), 0o644)
+	os.WriteFile("docs/specs/test-suites/test-rel01.0.yaml",
+		[]byte("id: test-rel01.0\ntitle: Tests\nrelease: rel01.0\ntraces:\n  - rel01.0-uc001-init\n"), 0o644)
+
+	// Configure releases with one that doesn't exist.
+	o := &Orchestrator{cfg: Config{
+		Project: ProjectConfig{
+			Releases: []string{"01.0", "99.0"},
+		},
+	}}
+
+	result, _, err := o.collectAnalyzeResult()
+	if err != nil {
+		t.Fatalf("collectAnalyzeResult: %v", err)
+	}
+
+	if len(result.InvalidReleases) != 1 {
+		t.Fatalf("expected 1 invalid release, got %d: %v", len(result.InvalidReleases), result.InvalidReleases)
+	}
+	if !strings.Contains(result.InvalidReleases[0], "99.0") {
+		t.Errorf("expected invalid release to mention 99.0, got %q", result.InvalidReleases[0])
+	}
+}
+
+func TestCollectAnalyzeResult_ValidReleases(t *testing.T) {
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(orig)
+
+	os.MkdirAll("docs/specs/product-requirements", 0o755)
+	os.MkdirAll("docs/specs/use-cases", 0o755)
+	os.MkdirAll("docs/specs/test-suites", 0o755)
+	os.MkdirAll("docs/constitutions", 0o755)
+	os.MkdirAll("pkg/orchestrator/constitutions", 0o755)
+
+	roadmap := `id: test-roadmap
+title: Test Roadmap
+releases:
+  - version: "01.0"
+    name: Core
+    status: done
+    use_cases:
+      - id: rel01.0-uc001-init
+        summary: Init
+        status: done
+`
+	os.WriteFile("docs/road-map.yaml", []byte(roadmap), 0o644)
+	os.WriteFile("docs/specs/use-cases/rel01.0-uc001-init.yaml",
+		[]byte("id: rel01.0-uc001-init\ntitle: Init\ntouchpoints:\n  - T1: prd001-core R1\n"), 0o644)
+	os.WriteFile("docs/specs/product-requirements/prd001-core.yaml",
+		[]byte("id: prd001-core\ntitle: Core\nrequirements:\n  - id: R1\n    title: Req 1\n"), 0o644)
+	os.WriteFile("docs/specs/test-suites/test-rel01.0.yaml",
+		[]byte("id: test-rel01.0\ntitle: Tests\nrelease: rel01.0\ntraces:\n  - rel01.0-uc001-init\n"), 0o644)
+
+	// All configured releases exist in roadmap.
+	o := &Orchestrator{cfg: Config{
+		Project: ProjectConfig{
+			Releases: []string{"01.0"},
+		},
+	}}
+
+	result, _, err := o.collectAnalyzeResult()
+	if err != nil {
+		t.Fatalf("collectAnalyzeResult: %v", err)
+	}
+
+	if len(result.InvalidReleases) != 0 {
+		t.Errorf("expected 0 invalid releases, got %d: %v", len(result.InvalidReleases), result.InvalidReleases)
+	}
+}
+
+func TestCollectAnalyzeResult_EmptyReleasesNoValidation(t *testing.T) {
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(orig)
+
+	os.MkdirAll("docs/specs/product-requirements", 0o755)
+	os.MkdirAll("docs/specs/use-cases", 0o755)
+	os.MkdirAll("docs/specs/test-suites", 0o755)
+	os.MkdirAll("docs/constitutions", 0o755)
+	os.MkdirAll("pkg/orchestrator/constitutions", 0o755)
+
+	roadmap := `id: test-roadmap
+title: Test Roadmap
+releases:
+  - version: "01.0"
+    name: Core
+    status: done
+    use_cases:
+      - id: rel01.0-uc001-init
+        summary: Init
+        status: done
+`
+	os.WriteFile("docs/road-map.yaml", []byte(roadmap), 0o644)
+	os.WriteFile("docs/specs/use-cases/rel01.0-uc001-init.yaml",
+		[]byte("id: rel01.0-uc001-init\ntitle: Init\ntouchpoints:\n  - T1: prd001-core R1\n"), 0o644)
+	os.WriteFile("docs/specs/product-requirements/prd001-core.yaml",
+		[]byte("id: prd001-core\ntitle: Core\nrequirements:\n  - id: R1\n    title: Req 1\n"), 0o644)
+	os.WriteFile("docs/specs/test-suites/test-rel01.0.yaml",
+		[]byte("id: test-rel01.0\ntitle: Tests\nrelease: rel01.0\ntraces:\n  - rel01.0-uc001-init\n"), 0o644)
+
+	// No releases configured → no validation.
+	o := &Orchestrator{cfg: Config{}}
+
+	result, _, err := o.collectAnalyzeResult()
+	if err != nil {
+		t.Fatalf("collectAnalyzeResult: %v", err)
+	}
+
+	if len(result.InvalidReleases) != 0 {
+		t.Errorf("expected 0 invalid releases for empty config, got %d", len(result.InvalidReleases))
 	}
 }

@@ -64,7 +64,16 @@ type ProjectConfig struct {
 	// release version is <= this value. PRDs are filtered to only those
 	// referenced by the included use cases. An empty value disables
 	// release-based filtering and includes all files.
+	// Deprecated: use Releases instead for explicit release set filtering.
 	Release string `yaml:"release"`
+
+	// Releases lists the release versions in scope for code generation
+	// (e.g., ["01.0", "02.0"]). When set, use cases and test suites are
+	// filtered to only include files whose release version is in this set.
+	// PRDs are filtered to only those referenced by the included use cases.
+	// Takes precedence over Release when both are set.
+	// An empty list disables release-based filtering and includes all files.
+	Releases []string `yaml:"releases"`
 
 	// SeedFiles maps relative file paths to template source file paths.
 	// During LoadConfig, each source path is read and its content replaces

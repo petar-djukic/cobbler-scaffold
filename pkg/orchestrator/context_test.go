@@ -237,10 +237,91 @@ func TestFileMatchesRelease(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		got := fileMatchesRelease(tt.path, tt.release)
+		rf := releaseFilter{MaxRelease: tt.release}
+		got := fileMatchesRelease(tt.path, rf)
 		if got != tt.want {
-			t.Errorf("fileMatchesRelease(%q, %q) = %v, want %v",
+			t.Errorf("fileMatchesRelease(%q, maxRelease=%q) = %v, want %v",
 				tt.path, tt.release, got, tt.want)
+		}
+	}
+}
+
+func TestFileMatchesRelease_ReleaseSet(t *testing.T) {
+	set := releaseFilter{ReleaseSet: map[string]bool{"01.0": true, "03.0": true}}
+
+	tests := []struct {
+		path string
+		want bool
+	}{
+		// In-set releases pass.
+		{"rel01.0-uc001-feature.yaml", true},
+		{"rel03.0-uc005-extra.yaml", true},
+		{"test-rel01.0.yaml", true},
+		{"test-rel03.0.yaml", true},
+
+		// Out-of-set releases are excluded.
+		{"rel02.0-uc003-skipped.yaml", false},
+		{"test-rel02.0.yaml", false},
+
+		// Unknown format passes through.
+		{"something-else.yaml", true},
+	}
+
+	for _, tt := range tests {
+		got := fileMatchesRelease(tt.path, set)
+		if got != tt.want {
+			t.Errorf("fileMatchesRelease(%q, set{01.0,03.0}) = %v, want %v",
+				tt.path, got, tt.want)
+		}
+	}
+}
+
+func TestNewReleaseFilter(t *testing.T) {
+	// Releases list takes precedence over Release string.
+	rf := newReleaseFilter([]string{"01.0", "02.0"}, "03.0")
+	if rf.ReleaseSet == nil {
+		t.Fatal("expected ReleaseSet to be set when Releases is non-empty")
+	}
+	if rf.MaxRelease != "" {
+		t.Error("MaxRelease should be empty when ReleaseSet is used")
+	}
+	if !rf.ReleaseSet["01.0"] || !rf.ReleaseSet["02.0"] {
+		t.Errorf("ReleaseSet = %v, want {01.0, 02.0}", rf.ReleaseSet)
+	}
+
+	// Empty Releases falls back to Release string.
+	rf2 := newReleaseFilter(nil, "02.0")
+	if rf2.ReleaseSet != nil {
+		t.Error("expected nil ReleaseSet when Releases is empty")
+	}
+	if rf2.MaxRelease != "02.0" {
+		t.Errorf("MaxRelease = %q, want %q", rf2.MaxRelease, "02.0")
+	}
+
+	// Both empty → no filtering.
+	rf3 := newReleaseFilter(nil, "")
+	if rf3.active() {
+		t.Error("expected inactive filter when both are empty")
+	}
+}
+
+func TestExtractFileRelease(t *testing.T) {
+	tests := []struct {
+		path string
+		want string
+	}{
+		{"rel01.0-uc001-feature.yaml", "01.0"},
+		{"rel02.0-uc003-future.yaml", "02.0"},
+		{"test-rel01.0.yaml", "01.0"},
+		{"test-rel03.0.yaml", "03.0"},
+		{"docs/specs/use-cases/rel01.0-uc001-feature.yaml", "01.0"},
+		{"something-else.yaml", ""},
+		{"prd001-core.yaml", ""},
+	}
+	for _, tt := range tests {
+		got := extractFileRelease(tt.path)
+		if got != tt.want {
+			t.Errorf("extractFileRelease(%q) = %q, want %q", tt.path, got, tt.want)
 		}
 	}
 }
@@ -325,9 +406,10 @@ func TestLoadContextFileIntoSetsFilePath(t *testing.T) {
 	os.WriteFile("docs/road-map.yaml", []byte("id: test\ntitle: Test Roadmap"), 0o644)
 
 	ctx := &ProjectContext{Specs: &SpecsCollection{}}
-	loadContextFileInto(ctx, "docs/VISION.yaml", "")
-	loadContextFileInto(ctx, "docs/ARCHITECTURE.yaml", "")
-	loadContextFileInto(ctx, "docs/road-map.yaml", "")
+	noFilter := releaseFilter{}
+	loadContextFileInto(ctx, "docs/VISION.yaml", noFilter)
+	loadContextFileInto(ctx, "docs/ARCHITECTURE.yaml", noFilter)
+	loadContextFileInto(ctx, "docs/road-map.yaml", noFilter)
 
 	if ctx.Vision == nil || ctx.Vision.File != "docs/VISION.yaml" {
 		t.Errorf("Vision.File = %q, want %q", ctx.Vision.File, "docs/VISION.yaml")
@@ -602,6 +684,165 @@ func TestContextIncludeWithExclude(t *testing.T) {
 	// Typed docs should still be loaded via ensureTypedDocs.
 	if ctx.Vision == nil {
 		t.Error("Vision should be loaded (ensureTypedDocs adds missing typed docs)")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Releases filtering integration tests
+// ---------------------------------------------------------------------------
+
+func TestBuildProjectContext_ReleasesFilter(t *testing.T) {
+	_, cleanup := setupContextTestDir(t)
+	defer cleanup()
+
+	// Create use cases in two releases.
+	os.WriteFile("docs/specs/use-cases/rel01.0-uc001-init.yaml",
+		[]byte("id: rel01.0-uc001-init\ntitle: Init"), 0o644)
+	os.WriteFile("docs/specs/use-cases/rel02.0-uc002-extra.yaml",
+		[]byte("id: rel02.0-uc002-extra\ntitle: Extra"), 0o644)
+	os.WriteFile("docs/specs/use-cases/rel03.0-uc003-future.yaml",
+		[]byte("id: rel03.0-uc003-future\ntitle: Future"), 0o644)
+
+	project := ProjectConfig{
+		Releases: []string{"01.0", "03.0"},
+	}
+
+	ctx, err := buildProjectContext("", project, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Should include rel01.0 and rel03.0 use cases, but NOT rel02.0.
+	ucIDs := make(map[string]bool)
+	for _, uc := range ctx.Specs.UseCases {
+		ucIDs[uc.ID] = true
+	}
+	if !ucIDs["rel01.0-uc001-init"] {
+		t.Error("expected rel01.0-uc001-init to be included")
+	}
+	if ucIDs["rel02.0-uc002-extra"] {
+		t.Error("expected rel02.0-uc002-extra to be excluded (not in Releases)")
+	}
+	if !ucIDs["rel03.0-uc003-future"] {
+		t.Error("expected rel03.0-uc003-future to be included")
+	}
+}
+
+func TestBuildProjectContext_ReleaseLegacyBackwardCompat(t *testing.T) {
+	_, cleanup := setupContextTestDir(t)
+	defer cleanup()
+
+	// Create use cases in two releases.
+	os.WriteFile("docs/specs/use-cases/rel01.0-uc001-init.yaml",
+		[]byte("id: rel01.0-uc001-init\ntitle: Init"), 0o644)
+	os.WriteFile("docs/specs/use-cases/rel02.0-uc002-extra.yaml",
+		[]byte("id: rel02.0-uc002-extra\ntitle: Extra"), 0o644)
+
+	// Legacy single Release field: includes <= "01.0".
+	project := ProjectConfig{
+		Release: "01.0",
+	}
+
+	ctx, err := buildProjectContext("", project, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ucIDs := make(map[string]bool)
+	for _, uc := range ctx.Specs.UseCases {
+		ucIDs[uc.ID] = true
+	}
+	if !ucIDs["rel01.0-uc001-init"] {
+		t.Error("expected rel01.0-uc001-init to be included (legacy Release)")
+	}
+	if ucIDs["rel02.0-uc002-extra"] {
+		t.Error("expected rel02.0-uc002-extra to be excluded (> Release 01.0)")
+	}
+}
+
+func TestBuildProjectContext_ReleasesOverridesRelease(t *testing.T) {
+	_, cleanup := setupContextTestDir(t)
+	defer cleanup()
+
+	os.WriteFile("docs/specs/use-cases/rel01.0-uc001-init.yaml",
+		[]byte("id: rel01.0-uc001-init\ntitle: Init"), 0o644)
+	os.WriteFile("docs/specs/use-cases/rel02.0-uc002-extra.yaml",
+		[]byte("id: rel02.0-uc002-extra\ntitle: Extra"), 0o644)
+
+	// When both set, Releases takes precedence.
+	project := ProjectConfig{
+		Release:  "02.0",
+		Releases: []string{"01.0"},
+	}
+
+	ctx, err := buildProjectContext("", project, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ucIDs := make(map[string]bool)
+	for _, uc := range ctx.Specs.UseCases {
+		ucIDs[uc.ID] = true
+	}
+	if !ucIDs["rel01.0-uc001-init"] {
+		t.Error("expected rel01.0-uc001-init included (in Releases)")
+	}
+	if ucIDs["rel02.0-uc002-extra"] {
+		t.Error("expected rel02.0-uc002-extra excluded (Releases takes precedence over Release)")
+	}
+}
+
+func TestBuildProjectContext_EmptyReleasesIncludesAll(t *testing.T) {
+	_, cleanup := setupContextTestDir(t)
+	defer cleanup()
+
+	os.WriteFile("docs/specs/use-cases/rel01.0-uc001-init.yaml",
+		[]byte("id: rel01.0-uc001-init\ntitle: Init"), 0o644)
+	os.WriteFile("docs/specs/use-cases/rel02.0-uc002-extra.yaml",
+		[]byte("id: rel02.0-uc002-extra\ntitle: Extra"), 0o644)
+
+	// No release filtering: both should be included.
+	project := ProjectConfig{}
+
+	ctx, err := buildProjectContext("", project, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(ctx.Specs.UseCases) != 2 {
+		t.Errorf("expected 2 use cases (no filtering), got %d", len(ctx.Specs.UseCases))
+	}
+}
+
+func TestBuildProjectContext_PhaseContextOverridesReleases(t *testing.T) {
+	_, cleanup := setupContextTestDir(t)
+	defer cleanup()
+
+	os.WriteFile("docs/specs/use-cases/rel01.0-uc001-init.yaml",
+		[]byte("id: rel01.0-uc001-init\ntitle: Init"), 0o644)
+	os.WriteFile("docs/specs/use-cases/rel02.0-uc002-extra.yaml",
+		[]byte("id: rel02.0-uc002-extra\ntitle: Extra"), 0o644)
+
+	// Releases allows both, but PhaseContext narrows to 01.0.
+	project := ProjectConfig{
+		Releases: []string{"01.0", "02.0"},
+	}
+	phase := &PhaseContext{Release: "01.0"}
+
+	ctx, err := buildProjectContext("", project, phase)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ucIDs := make(map[string]bool)
+	for _, uc := range ctx.Specs.UseCases {
+		ucIDs[uc.ID] = true
+	}
+	if !ucIDs["rel01.0-uc001-init"] {
+		t.Error("expected rel01.0-uc001-init included (PhaseContext release 01.0)")
+	}
+	if ucIDs["rel02.0-uc002-extra"] {
+		t.Error("expected rel02.0-uc002-extra excluded (PhaseContext overrides to 01.0 max)")
 	}
 }
 

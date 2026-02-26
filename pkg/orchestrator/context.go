@@ -1101,33 +1101,68 @@ func resolveStandardFiles() []string {
 	return files
 }
 
-// fileMatchesRelease extracts the release version from a use-case or
-// test-suite filename and returns true if the file's release <= the
-// given release. String comparison works for the zero-padded "NN.N"
-// format. Returns true if release is empty (no filtering) or if the
-// file's release cannot be determined.
-func fileMatchesRelease(path, release string) bool {
-	if release == "" {
-		return true
+// releaseFilter controls which use-case and test-suite files are included
+// based on their release version. When ReleaseSet is non-nil, only files
+// whose extracted release is in the set pass. When ReleaseSet is nil but
+// MaxRelease is non-empty, the legacy <= comparison is used. When both are
+// empty/nil, all files pass (no filtering).
+type releaseFilter struct {
+	ReleaseSet map[string]bool // explicit set of in-scope releases
+	MaxRelease string          // legacy: include files with release <= this value
+}
+
+// newReleaseFilter builds a releaseFilter from the effective config fields.
+// Releases (list) takes precedence over Release (single string).
+func newReleaseFilter(releases []string, release string) releaseFilter {
+	if len(releases) > 0 {
+		set := make(map[string]bool, len(releases))
+		for _, r := range releases {
+			set[r] = true
+		}
+		return releaseFilter{ReleaseSet: set}
 	}
+	return releaseFilter{MaxRelease: release}
+}
+
+// active reports whether any release filtering is in effect.
+func (rf releaseFilter) active() bool {
+	return len(rf.ReleaseSet) > 0 || rf.MaxRelease != ""
+}
+
+// extractFileRelease extracts the release version from a use-case or
+// test-suite filename. Returns "" if the release cannot be determined.
+func extractFileRelease(path string) string {
 	base := filepath.Base(path)
-	var fileRelease string
 	switch {
 	case strings.HasPrefix(base, "rel"):
 		// rel01.0-uc001-... → extract "01.0"
 		rest := strings.TrimPrefix(base, "rel")
 		if idx := strings.Index(rest, "-"); idx > 0 {
-			fileRelease = rest[:idx]
+			return rest[:idx]
 		}
 	case strings.HasPrefix(base, "test-rel"):
 		// test-rel01.0.yaml → extract "01.0"
 		rest := strings.TrimPrefix(base, "test-rel")
-		fileRelease = strings.TrimSuffix(rest, ".yaml")
+		return strings.TrimSuffix(rest, ".yaml")
 	}
+	return ""
+}
+
+// fileMatchesRelease returns true if the file's release passes the filter.
+// Returns true if no filter is active or if the file's release cannot be
+// determined. String comparison works for the zero-padded "NN.N" format.
+func fileMatchesRelease(path string, rf releaseFilter) bool {
+	if !rf.active() {
+		return true
+	}
+	fileRelease := extractFileRelease(path)
 	if fileRelease == "" {
 		return true
 	}
-	return fileRelease <= release
+	if rf.ReleaseSet != nil {
+		return rf.ReleaseSet[fileRelease]
+	}
+	return fileRelease <= rf.MaxRelease
 }
 
 // prdIDsFromUseCases extracts PRD IDs referenced by touchpoints in the
@@ -1156,7 +1191,7 @@ func prdIDsFromUseCases(useCases []*UseCaseDoc) map[string]bool {
 // of ctx based on its classified category. Applies release filtering
 // for use_case and test_suite categories. Does not handle constitution
 // or extra categories.
-func loadContextFileInto(ctx *ProjectContext, path, release string) {
+func loadContextFileInto(ctx *ProjectContext, path string, rf releaseFilter) {
 	switch classifyContextFile(path) {
 	case "vision":
 		if v := loadYAML[VisionDoc](path); v != nil {
@@ -1179,7 +1214,7 @@ func loadContextFileInto(ctx *ProjectContext, path, release string) {
 			ctx.Roadmap = v
 		}
 	case "use_case":
-		if !fileMatchesRelease(path, release) {
+		if !fileMatchesRelease(path, rf) {
 			return
 		}
 		if v := loadYAML[UseCaseDoc](path); v != nil {
@@ -1187,7 +1222,7 @@ func loadContextFileInto(ctx *ProjectContext, path, release string) {
 			ctx.Specs.UseCases = append(ctx.Specs.UseCases, v)
 		}
 	case "test_suite":
-		if !fileMatchesRelease(path, release) {
+		if !fileMatchesRelease(path, rf) {
 			return
 		}
 		if v := loadYAML[TestSuiteDoc](path); v != nil {
@@ -1237,6 +1272,7 @@ func buildProjectContext(existingIssuesJSON string, project ProjectConfig, phase
 	ctxInclude := project.ContextInclude
 	ctxExclude := project.ContextExclude
 	ctxSources := project.ContextSources
+	releases := project.Releases
 	release := project.Release
 	if phaseCtx != nil {
 		if phaseCtx.Include != "" {
@@ -1249,9 +1285,12 @@ func buildProjectContext(existingIssuesJSON string, project ProjectConfig, phase
 			ctxSources = phaseCtx.Sources
 		}
 		if phaseCtx.Release != "" {
+			// PhaseContext single release overrides both Releases and Release.
+			releases = nil
 			release = phaseCtx.Release
 		}
 	}
+	rf := newReleaseFilter(releases, release)
 
 	// Compute exclude set when configured.
 	var excludeSet map[string]bool
@@ -1294,12 +1333,12 @@ func buildProjectContext(existingIssuesJSON string, project ProjectConfig, phase
 			prdPaths = append(prdPaths, path)
 			continue
 		}
-		loadContextFileInto(ctx, path, release)
+		loadContextFileInto(ctx, path, rf)
 	}
 
-	// Load PRDs filtered by release: when a release is set, only
+	// Load PRDs filtered by release: when a release filter is active, only
 	// include PRDs referenced by the loaded (release-scoped) use cases.
-	if release == "" {
+	if !rf.active() {
 		for _, path := range prdPaths {
 			if v := loadYAML[PRDDoc](path); v != nil {
 				v.File = path

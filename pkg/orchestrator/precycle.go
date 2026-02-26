@@ -66,6 +66,9 @@ func collectConsistencyDetails(r *AnalyzeResult) []string {
 	for _, v := range r.BrokenCitations {
 		details = append(details, "broken citation: "+v)
 	}
+	for _, v := range r.InvalidReleases {
+		details = append(details, "invalid release: "+v)
+	}
 	return details
 }
 

@@ -24,6 +24,7 @@ type AnalyzeResult struct {
 	SchemaErrors              []string // YAML files with fields not matching typed structs
 	ConstitutionDrift         []string // Files in docs/constitutions/ that differ from embedded copies
 	BrokenCitations           []string // Touchpoints citing non-existent requirement groups in PRDs
+	InvalidReleases           []string // Configured releases not found in road-map.yaml
 }
 
 // analyzeCounts holds the artifact counts discovered during analysis.
@@ -125,6 +126,14 @@ func (o *Orchestrator) collectAnalyzeResult() (AnalyzeResult, analyzeCounts, err
 				}
 			}
 			logf("analyze: found %d releases, %d use cases in roadmap", len(roadmapReleaseIDs), len(roadmapUCs))
+		}
+	}
+
+	// Check 0: Configured releases exist in road-map.yaml
+	for _, r := range o.cfg.Project.Releases {
+		if !roadmapReleaseIDs[r] {
+			result.InvalidReleases = append(result.InvalidReleases,
+				fmt.Sprintf("configured release %q not found in road-map.yaml", r))
 		}
 	}
 
@@ -248,6 +257,7 @@ func (r AnalyzeResult) printReport(prdCount, ucCount, tsCount int) error {
 	hasIssues = printSection("YAML schema errors (fields not matching typed structs — data will be lost in measure prompt)", r.SchemaErrors) || hasIssues
 	hasIssues = printSection("Constitution drift (docs/constitutions/ differs from embedded pkg/orchestrator/constitutions/)", r.ConstitutionDrift) || hasIssues
 	hasIssues = printSection("Broken citations (touchpoint cites non-existent requirement group)", r.BrokenCitations) || hasIssues
+	hasIssues = printSection("Invalid configured releases (not found in road-map.yaml)", r.InvalidReleases) || hasIssues
 
 	if !hasIssues {
 		fmt.Printf("\n✅ All consistency checks passed\n")
