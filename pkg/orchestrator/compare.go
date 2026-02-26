@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -234,3 +235,117 @@ func ResolverFromArg(arg string) BinaryResolver {
 
 // noop is a no-op cleanup function.
 func noop() {}
+
+// defaultSpecsDir is the conventional location of test suite YAML files.
+const defaultSpecsDir = "docs/specs/test-suites"
+
+// Compare runs differential comparison between two binary sources.
+// argA and argB are passed to ResolverFromArg (git tag, "gnu", or directory).
+// When utility is non-empty, only that utility is compared; otherwise all
+// common utilities between the two sources are compared.
+func (o *Orchestrator) Compare(argA, argB, utility string) error {
+	resolverA := ResolverFromArg(argA)
+	resolverB := ResolverFromArg(argB)
+
+	specsDir := defaultSpecsDir
+	cases, err := LoadCompareTestCases(specsDir)
+	if err != nil {
+		return fmt.Errorf("loading test cases: %w", err)
+	}
+
+	utilities, err := commonUtilities(resolverA, resolverB, utility)
+	if err != nil {
+		return err
+	}
+	if len(utilities) == 0 {
+		return fmt.Errorf("no common utilities found between %s and %s", argA, argB)
+	}
+
+	logf("compare: %d utilities to compare between %s and %s", len(utilities), argA, argB)
+
+	var allResults []TestResult
+	var cleanups []func()
+	defer func() {
+		for _, fn := range cleanups {
+			fn()
+		}
+	}()
+
+	for _, util := range utilities {
+		utilCases := FilterByUtility(cases, util)
+		if len(utilCases) == 0 {
+			logf("compare: skipping %s (no test cases)", util)
+			continue
+		}
+
+		pathA, cleanupA, err := resolverA.Resolve(util)
+		if err != nil {
+			logf("compare: skipping %s: resolver A: %v", util, err)
+			continue
+		}
+		cleanups = append(cleanups, cleanupA)
+
+		pathB, cleanupB, err := resolverB.Resolve(util)
+		if err != nil {
+			logf("compare: skipping %s: resolver B: %v", util, err)
+			continue
+		}
+		cleanups = append(cleanups, cleanupB)
+
+		logf("compare: running %d test cases for %s", len(utilCases), util)
+		results := CompareUtility(pathA, pathB, utilCases)
+		allResults = append(allResults, results...)
+	}
+
+	fmt.Print(FormatResults(allResults))
+
+	for _, r := range allResults {
+		if !r.Passed {
+			return fmt.Errorf("comparison failed: %d tests did not match", countFailed(allResults))
+		}
+	}
+	return nil
+}
+
+// commonUtilities returns the sorted intersection of utilities available
+// in both resolvers. When utility is non-empty, returns only that utility
+// (validating it exists in both).
+func commonUtilities(a, b BinaryResolver, utility string) ([]string, error) {
+	if utility != "" {
+		return []string{utility}, nil
+	}
+
+	utilsA, err := a.ListUtilities()
+	if err != nil {
+		return nil, fmt.Errorf("listing utilities from A: %w", err)
+	}
+	utilsB, err := b.ListUtilities()
+	if err != nil {
+		return nil, fmt.Errorf("listing utilities from B: %w", err)
+	}
+
+	setB := make(map[string]bool, len(utilsB))
+	for _, u := range utilsB {
+		setB[u] = true
+	}
+
+	var common []string
+	for _, u := range utilsA {
+		if setB[u] {
+			common = append(common, u)
+		}
+	}
+	sort.Strings(common)
+	return common, nil
+}
+
+// countFailed returns the number of failed results.
+func countFailed(results []TestResult) int {
+	n := 0
+	for _, r := range results {
+		if !r.Passed {
+			n++
+		}
+	}
+	return n
+}

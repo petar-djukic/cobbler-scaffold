@@ -43,6 +43,9 @@ type Stats mg.Namespace
 // Test groups the testing targets.
 type Test mg.Namespace
 
+// Compare groups the cross-generation differential comparison targets.
+type Compare mg.Namespace
+
 // Vscode groups the VS Code extension build and install targets.
 type Vscode mg.Namespace
 
@@ -285,6 +288,16 @@ func (Podman) Build() error { return newOrch().BuildImage() }
 
 // Clean removes all podman containers created from the configured image.
 func (Podman) Clean() error { return newOrch().PodmanClean() }
+
+// --- Compare targets ---
+
+// Run builds binaries from two sources and runs differential comparison.
+// Each argument is a git tag, "gnu", or a directory path. Set the UTILITY
+// environment variable to compare a single utility (e.g., UTILITY=cat).
+func (Compare) Run(argA, argB string) error {
+	utility := os.Getenv("UTILITY")
+	return newOrch().Compare(argA, argB, utility)
+}
 
 // --- Vscode targets ---
 
