@@ -196,7 +196,7 @@ issue_structure:
   code_issues:
     rules:
       - No PRD-style Problem/Goals/Non-Goals sections in code issues
-      - Requirements focus on implementation: interfaces, operations, tests
+      - "Requirements focus on implementation: interfaces, operations, tests"
       - Design decisions reference PRDs and architecture patterns
       - Acceptance criteria include tests passing and behavior verified
 

@@ -133,7 +133,6 @@ document_types:
       goals: "G1, G2, G3, ..."
       requirement_groups: "R1, R2, R3, ..."
       requirement_items: "R1.1, R1.2, R2.1, ..."
-      acceptance_criteria: "AC1, AC2, AC3, ..."
     purpose: |
       Defines product requirements with numbered goals and requirements. Each
       requirement starts with "must" or "must not" or a concrete verb. No scope
@@ -199,11 +198,11 @@ document_types:
       - id
       - title
       - overview (multi-line text)
-      - roadmap_summary (list: version, name, use_cases_done, use_cases_total, status)
-      - prd_index (list: id, title, summary, path)
-      - use_case_index (list: id, title, release, status, test_suite, path)
-      - test_suite_index (list: id, title, traces, test_case_count, path)
-      - prd_to_use_case_mapping (list: use_case, prd, why_required, coverage)
+      - "roadmap_summary (list: version, name, use_cases_done, use_cases_total, status)"
+      - "prd_index (list: id, title, summary, path)"
+      - "use_case_index (list: id, title, release, status, test_suite, path)"
+      - "test_suite_index (list: id, title, traces, test_case_count, path)"
+      - "prd_to_use_case_mapping (list: use_case, prd, why_required, coverage)"
       - coverage_gaps (list or multi-line text)
     optional_fields:
       - traceability_diagram (Mermaid as multi-line string)
