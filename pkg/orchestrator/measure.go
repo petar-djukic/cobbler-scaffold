@@ -509,7 +509,7 @@ func (o *Orchestrator) importIssuesImpl(yamlFile string, skipEnforcement bool) (
 	}
 
 	// Validate proposed issues against P9/P7 rules.
-	vr := validateMeasureOutput(issues)
+	vr := validateMeasureOutput(issues, o.cfg.Cobbler.MaxRequirementsPerTask)
 	if len(vr.Warnings) > 0 {
 		logf("importIssues: %d warning(s)", len(vr.Warnings))
 	}
@@ -606,8 +606,9 @@ func (v validationResult) HasErrors() bool {
 
 // validateMeasureOutput checks proposed issues against P9 granularity ranges
 // and P7 file naming conventions. Returns structured warnings and errors.
-// All issues are logged regardless of enforcing mode.
-func validateMeasureOutput(issues []proposedIssue) validationResult {
+// All issues are logged regardless of enforcing mode. maxReqs is the
+// operator-configured requirement cap (0 = unlimited).
+func validateMeasureOutput(issues []proposedIssue, maxReqs int) validationResult {
 	var result validationResult
 	for _, issue := range issues {
 		var desc issueDescription
@@ -621,6 +622,12 @@ func validateMeasureOutput(issues []proposedIssue) validationResult {
 		rCount := len(desc.Requirements)
 		acCount := len(desc.AcceptanceCriteria)
 		dCount := len(desc.DesignDecisions)
+
+		if maxReqs > 0 && rCount > maxReqs {
+			msg := fmt.Sprintf("[%d] %q: has %d requirements, max is %d", issue.Index, issue.Title, rCount, maxReqs)
+			logf("validateMeasureOutput: %s", msg)
+			result.Errors = append(result.Errors, msg)
+		}
 
 		if desc.DeliverableType == "code" {
 			if rCount < 5 || rCount > 8 {

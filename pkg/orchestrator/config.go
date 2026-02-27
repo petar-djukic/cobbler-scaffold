@@ -185,6 +185,12 @@ type CobblerConfig struct {
 	// no retries are attempted. A value of 2-3 is recommended.
 	MaxMeasureRetries int `yaml:"max_measure_retries"`
 
+	// MaxRequirementsPerTask is the maximum number of requirements a single
+	// proposed task may contain. When exceeded the task is rejected and the
+	// measure agent is re-prompted to split it. When 0 (default), the limit
+	// is disabled and requirement count is governed only by P9 range rules.
+	MaxRequirementsPerTask int `yaml:"max_requirements_per_task"`
+
 	// HistoryDir is the directory for saving measure artifacts (prompt,
 	// issues YAML, stream-json log) per iteration. Default "history".
 	HistoryDir string `yaml:"history_dir"`

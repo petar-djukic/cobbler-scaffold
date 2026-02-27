@@ -4,6 +4,7 @@
 package orchestrator
 
 import (
+	"fmt"
 	"testing"
 )
 
@@ -45,7 +46,7 @@ design_decisions:
 `,
 	}}
 
-	vr := validateMeasureOutput(issues)
+	vr := validateMeasureOutput(issues, 0)
 	if vr.HasErrors() {
 		t.Errorf("expected no errors for valid code task, got: %v", vr.Errors)
 	}
@@ -83,7 +84,7 @@ design_decisions:
 `,
 	}}
 
-	vr := validateMeasureOutput(issues)
+	vr := validateMeasureOutput(issues, 0)
 	if !vr.HasErrors() {
 		t.Error("expected errors for code task with 2 requirements (P9 range 5-8)")
 	}
@@ -138,7 +139,7 @@ design_decisions:
 `,
 	}}
 
-	vr := validateMeasureOutput(issues)
+	vr := validateMeasureOutput(issues, 0)
 	if !vr.HasErrors() {
 		t.Error("expected errors for code task with 9 requirements (P9 range 5-8)")
 	}
@@ -167,7 +168,7 @@ acceptance_criteria:
 `,
 	}}
 
-	vr := validateMeasureOutput(issues)
+	vr := validateMeasureOutput(issues, 0)
 	if vr.HasErrors() {
 		t.Errorf("expected no errors for valid doc task, got: %v", vr.Errors)
 	}
@@ -200,7 +201,7 @@ acceptance_criteria:
 `,
 	}}
 
-	vr := validateMeasureOutput(issues)
+	vr := validateMeasureOutput(issues, 0)
 	if !vr.HasErrors() {
 		t.Error("expected errors for doc task with 5 requirements (P9 range 2-4)")
 	}
@@ -246,7 +247,7 @@ design_decisions:
 `,
 	}}
 
-	vr := validateMeasureOutput(issues)
+	vr := validateMeasureOutput(issues, 0)
 	if !vr.HasErrors() {
 		t.Error("expected errors for file named after package (P7 violation)")
 	}
@@ -304,7 +305,7 @@ design_decisions:
 
 	// runner.go in pkg/difftest/ is NOT a P7 violation because
 	// the file name does not match the parent directory name.
-	vr := validateMeasureOutput(issues)
+	vr := validateMeasureOutput(issues, 0)
 	p7Errors := 0
 	for _, e := range vr.Errors {
 		if contains(e, "P7 violation") {
@@ -324,7 +325,7 @@ func TestValidateMeasureOutput_UnparseableDescription(t *testing.T) {
 		Description: `{{{not valid yaml`,
 	}}
 
-	vr := validateMeasureOutput(issues)
+	vr := validateMeasureOutput(issues, 0)
 	if len(vr.Warnings) == 0 {
 		t.Error("expected warning for unparseable description")
 	}
@@ -382,7 +383,7 @@ acceptance_criteria:
 		},
 	}
 
-	vr := validateMeasureOutput(issues)
+	vr := validateMeasureOutput(issues, 0)
 	if !vr.HasErrors() {
 		t.Error("expected errors from invalid second issue")
 	}
@@ -440,6 +441,130 @@ func TestParseCompletedWork_InvalidJSON(t *testing.T) {
 	got := parseCompletedWork([]byte("{not json"))
 	if got != nil {
 		t.Errorf("got %v, want nil for invalid JSON", got)
+	}
+}
+
+// --- MaxRequirementsPerTask limit ---
+
+func TestValidateMeasureOutput_MaxReqs_ZeroIsUnlimited(t *testing.T) {
+	t.Parallel()
+	// maxReqs=0 must never trigger an error, even with 10 requirements.
+	var reqs string
+	for i := 1; i <= 10; i++ {
+		reqs += "  - id: R" + fmt.Sprintf("%d", i) + "\n    text: req\n"
+	}
+	issues := []proposedIssue{{
+		Index:       0,
+		Title:       "Huge task",
+		Description: "deliverable_type: code\nrequirements:\n" + reqs,
+	}}
+	vr := validateMeasureOutput(issues, 0)
+	for _, e := range vr.Errors {
+		if contains(e, "max is") {
+			t.Errorf("maxReqs=0 should not produce max-requirements error, got: %s", e)
+		}
+	}
+}
+
+func TestValidateMeasureOutput_MaxReqs_ExactlyAtLimit_NoError(t *testing.T) {
+	t.Parallel()
+	// 5 requirements with maxReqs=5 must not trigger the limit error.
+	issues := []proposedIssue{{
+		Index: 0,
+		Title: "At-limit task",
+		Description: `deliverable_type: code
+requirements:
+  - id: R1
+    text: req
+  - id: R2
+    text: req
+  - id: R3
+    text: req
+  - id: R4
+    text: req
+  - id: R5
+    text: req
+`,
+	}}
+	vr := validateMeasureOutput(issues, 5)
+	for _, e := range vr.Errors {
+		if contains(e, "max is") {
+			t.Errorf("5 requirements at maxReqs=5 should not error, got: %s", e)
+		}
+	}
+}
+
+func TestValidateMeasureOutput_MaxReqs_ExceedsLimit_Error(t *testing.T) {
+	t.Parallel()
+	// 6 requirements with maxReqs=5 must produce a max-requirements error.
+	issues := []proposedIssue{{
+		Index: 0,
+		Title: "Oversized task",
+		Description: `deliverable_type: code
+requirements:
+  - id: R1
+    text: req
+  - id: R2
+    text: req
+  - id: R3
+    text: req
+  - id: R4
+    text: req
+  - id: R5
+    text: req
+  - id: R6
+    text: req
+`,
+	}}
+	vr := validateMeasureOutput(issues, 5)
+	found := false
+	for _, e := range vr.Errors {
+		if contains(e, "max is") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected max-requirements error for 6 reqs with limit 5, got errors: %v", vr.Errors)
+	}
+}
+
+func TestValidateMeasureOutput_MaxReqs_ErrorMentionsCountAndLimit(t *testing.T) {
+	t.Parallel()
+	// Error message must include both the actual count and the configured limit.
+	issues := []proposedIssue{{
+		Index: 1,
+		Title: "Task Title",
+		Description: `deliverable_type: code
+requirements:
+  - id: R1
+    text: req
+  - id: R2
+    text: req
+  - id: R3
+    text: req
+  - id: R4
+    text: req
+  - id: R5
+    text: req
+  - id: R6
+    text: req
+  - id: R7
+    text: req
+  - id: R8
+    text: req
+`,
+	}}
+	vr := validateMeasureOutput(issues, 5)
+	found := false
+	for _, e := range vr.Errors {
+		if contains(e, "8") && contains(e, "5") && contains(e, "Task Title") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("error should mention count (8), limit (5), and title; got: %v", vr.Errors)
 	}
 }
 
