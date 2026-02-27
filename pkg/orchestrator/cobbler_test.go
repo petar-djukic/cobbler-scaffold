@@ -600,3 +600,53 @@ func TestBuildPodmanCmd_ExtraArgsAppended(t *testing.T) {
 		t.Errorf("buildPodmanCmd missing extra arg --no-color; args=%v", cmd.Args)
 	}
 }
+
+// --- saveHistory* best-effort behavior ---
+
+func TestSaveHistoryReport_EmptyHistoryDir_NoOp(t *testing.T) {
+	// When HistoryDir is empty saveHistoryReport must return without
+	// panicking. No files should be created.
+	o := New(Config{})
+	o.cfg.Cobbler.HistoryDir = "" // override default
+	o.saveHistoryReport("20260101T120000", StitchReport{TaskID: "t1", Status: "success"})
+	// success: did not panic
+}
+
+func TestSaveHistoryReport_WritesToDisk(t *testing.T) {
+	tmp := t.TempDir()
+	o := New(Config{})
+	o.cfg.Cobbler.HistoryDir = tmp
+	o.saveHistoryReport("20260101T120000", StitchReport{TaskID: "t1", Status: "success"})
+
+	entries, err := os.ReadDir(tmp)
+	if err != nil {
+		t.Fatalf("ReadDir: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 file, got %d", len(entries))
+	}
+	if !strings.HasSuffix(entries[0].Name(), "-stitch-report.yaml") {
+		t.Errorf("unexpected filename: %s", entries[0].Name())
+	}
+}
+
+func TestSaveHistoryStats_EmptyHistoryDir_NoOp(t *testing.T) {
+	o := New(Config{})
+	o.cfg.Cobbler.HistoryDir = ""
+	o.saveHistoryStats("20260101T120000", "stitch", HistoryStats{})
+	// success: did not panic
+}
+
+func TestSaveHistoryPrompt_EmptyHistoryDir_NoOp(t *testing.T) {
+	o := New(Config{})
+	o.cfg.Cobbler.HistoryDir = ""
+	o.saveHistoryPrompt("20260101T120000", "stitch", "prompt text")
+	// success: did not panic
+}
+
+func TestSaveHistoryLog_EmptyHistoryDir_NoOp(t *testing.T) {
+	o := New(Config{})
+	o.cfg.Cobbler.HistoryDir = ""
+	o.saveHistoryLog("20260101T120000", "stitch", []byte("log output"))
+	// success: did not panic
+}

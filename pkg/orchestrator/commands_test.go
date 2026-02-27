@@ -3,7 +3,11 @@
 
 package orchestrator
 
-import "testing"
+import (
+	"os"
+	"strings"
+	"testing"
+)
 
 // --- parseBranchList ---
 
@@ -94,5 +98,58 @@ func TestParseDiffShortstat_SingleFile(t *testing.T) {
 	}
 	if ds.Deletions != 1 {
 		t.Errorf("Deletions: got %d, want 1", ds.Deletions)
+	}
+}
+
+// --- orDefault ---
+
+func TestOrDefault(t *testing.T) {
+	tests := []struct {
+		name     string
+		val      string
+		fallback string
+		want     string
+	}{
+		{
+			name:     "non-empty val returns val unchanged",
+			val:      "custom.yaml",
+			fallback: "default.yaml",
+			want:     "custom.yaml",
+		},
+		{
+			name:     "empty val returns fallback",
+			val:      "",
+			fallback: "default.yaml",
+			want:     "default.yaml",
+		},
+		{
+			name:     "both empty returns empty string",
+			val:      "",
+			fallback: "",
+			want:     "",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := orDefault(tc.val, tc.fallback)
+			if got != tc.want {
+				t.Errorf("orDefault(%q, %q) = %q, want %q", tc.val, tc.fallback, got, tc.want)
+			}
+		})
+	}
+}
+
+// --- init ---
+
+func TestCommandsInit_PopulatesPath(t *testing.T) {
+	// init() runs automatically when the package is loaded. Verify that
+	// PATH is non-empty and contains a directory with "bin" in its name,
+	// which indicates that GOBIN or GOPATH/bin was prepended.
+	path := os.Getenv("PATH")
+	if path == "" {
+		t.Error("PATH is empty after init()")
+	}
+	if !strings.Contains(path, "bin") {
+		t.Errorf("PATH = %q, expected it to contain 'bin' after init()", path)
 	}
 }

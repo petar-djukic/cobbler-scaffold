@@ -434,6 +434,134 @@ func TestLoadContextFileIntoSetsFilePath(t *testing.T) {
 	}
 }
 
+func TestParseIssuesJSON(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		wantLen int
+		wantNil bool
+	}{
+		{
+			name:    "empty string returns nil",
+			input:   "",
+			wantNil: true,
+		},
+		{
+			name:    "literal [] returns nil",
+			input:   "[]",
+			wantNil: true,
+		},
+		{
+			name:    "malformed JSON returns nil",
+			input:   "{not valid json",
+			wantNil: true,
+		},
+		{
+			name:    "valid JSON array returns issues",
+			input:   `[{"id":"i1","title":"Fix bug","status":"open","type":"code"}]`,
+			wantLen: 1,
+		},
+		{
+			name:    "valid JSON array with multiple items",
+			input:   `[{"id":"i1","title":"A","status":"open","type":"code"},{"id":"i2","title":"B","status":"done","type":"doc"}]`,
+			wantLen: 2,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := parseIssuesJSON(tc.input)
+			if tc.wantNil {
+				if got != nil {
+					t.Errorf("parseIssuesJSON(%q) = %v, want nil", tc.input, got)
+				}
+				return
+			}
+			if len(got) != tc.wantLen {
+				t.Errorf("parseIssuesJSON() len = %d, want %d", len(got), tc.wantLen)
+			}
+		})
+	}
+}
+
+func TestLoadContextFileInto_SpecAux(t *testing.T) {
+	tmp := t.TempDir()
+	orig, _ := os.Getwd()
+	os.Chdir(tmp)
+	defer os.Chdir(orig)
+
+	os.MkdirAll(filepath.Join("docs", "specs"), 0o755)
+
+	// dependency-map.yaml -> ctx.Specs.DependencyMap
+	os.WriteFile(filepath.Join("docs", "specs", "dependency-map.yaml"), []byte("name: depmap\n"), 0o644)
+	// sources.yaml -> ctx.Specs.Sources
+	os.WriteFile(filepath.Join("docs", "specs", "sources.yaml"), []byte("name: sources\n"), 0o644)
+	// unknown file -> ctx.Extra
+	os.WriteFile(filepath.Join("docs", "specs", "utilities.yaml"), []byte("name: utilities\n"), 0o644)
+
+	ctx := &ProjectContext{Specs: &SpecsCollection{}}
+	noFilter := releaseFilter{}
+	loadContextFileInto(ctx, filepath.Join("docs", "specs", "dependency-map.yaml"), noFilter)
+	loadContextFileInto(ctx, filepath.Join("docs", "specs", "sources.yaml"), noFilter)
+	loadContextFileInto(ctx, filepath.Join("docs", "specs", "utilities.yaml"), noFilter)
+
+	if ctx.Specs.DependencyMap == nil {
+		t.Error("Specs.DependencyMap should be set for dependency-map.yaml")
+	} else if ctx.Specs.DependencyMap.File != filepath.Join("docs", "specs", "dependency-map.yaml") {
+		t.Errorf("DependencyMap.File = %q, want %q", ctx.Specs.DependencyMap.File, filepath.Join("docs", "specs", "dependency-map.yaml"))
+	}
+	if ctx.Specs.Sources == nil {
+		t.Error("Specs.Sources should be set for sources.yaml")
+	} else if ctx.Specs.Sources.File != filepath.Join("docs", "specs", "sources.yaml") {
+		t.Errorf("Sources.File = %q, want %q", ctx.Specs.Sources.File, filepath.Join("docs", "specs", "sources.yaml"))
+	}
+	if len(ctx.Extra) != 1 {
+		t.Errorf("Extra len = %d, want 1 (for utilities.yaml)", len(ctx.Extra))
+	} else if ctx.Extra[0].File != filepath.Join("docs", "specs", "utilities.yaml") {
+		t.Errorf("Extra[0].File = %q, want utilities.yaml path", ctx.Extra[0].File)
+	}
+}
+
+func TestLoadContextFileInto_Engineering(t *testing.T) {
+	tmp := t.TempDir()
+	orig, _ := os.Getwd()
+	os.Chdir(tmp)
+	defer os.Chdir(orig)
+
+	os.MkdirAll(filepath.Join("docs", "engineering"), 0o755)
+	os.WriteFile(filepath.Join("docs", "engineering", "eng01-testing.yaml"), []byte("id: eng01\ntitle: Testing Guide\n"), 0o644)
+
+	ctx := &ProjectContext{Specs: &SpecsCollection{}}
+	noFilter := releaseFilter{}
+	loadContextFileInto(ctx, filepath.Join("docs", "engineering", "eng01-testing.yaml"), noFilter)
+
+	if len(ctx.Engineering) != 1 {
+		t.Fatalf("Engineering len = %d, want 1", len(ctx.Engineering))
+	}
+	if ctx.Engineering[0].File != filepath.Join("docs", "engineering", "eng01-testing.yaml") {
+		t.Errorf("Engineering[0].File = %q", ctx.Engineering[0].File)
+	}
+}
+
+func TestLoadContextFileInto_Extra(t *testing.T) {
+	tmp := t.TempDir()
+	orig, _ := os.Getwd()
+	os.Chdir(tmp)
+	defer os.Chdir(orig)
+
+	os.WriteFile("notes.yaml", []byte("name: notes\n"), 0o644)
+
+	ctx := &ProjectContext{Specs: &SpecsCollection{}}
+	noFilter := releaseFilter{}
+	loadContextFileInto(ctx, "notes.yaml", noFilter)
+
+	if len(ctx.Extra) != 1 {
+		t.Fatalf("Extra len = %d, want 1", len(ctx.Extra))
+	}
+	if ctx.Extra[0].File != "notes.yaml" {
+		t.Errorf("Extra[0].File = %q, want %q", ctx.Extra[0].File, "notes.yaml")
+	}
+}
+
 func TestBuildProjectContextNoConstitutions(t *testing.T) {
 	// Build a minimal ProjectContext and verify no Constitutions field
 	// appears in marshaled YAML.

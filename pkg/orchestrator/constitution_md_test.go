@@ -4,6 +4,9 @@
 package orchestrator
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -68,5 +71,39 @@ func TestConstitutionToMarkdown(t *testing.T) {
 				t.Errorf("ConstitutionToMarkdown() mismatch\ngot:  %q\nwant: %q", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestConstitutionPreviewFile_Success(t *testing.T) {
+	tmp := t.TempDir()
+	path := filepath.Join(tmp, "test-constitution.yaml")
+	content := "sections:\n  - tag: articles\n    title: Core Principles\n    content: |\n      Five principles govern.\n"
+	os.WriteFile(path, []byte(content), 0o644)
+
+	o := &Orchestrator{}
+	if err := o.ConstitutionPreviewFile(path); err != nil {
+		t.Errorf("ConstitutionPreviewFile() unexpected error: %v", err)
+	}
+}
+
+func TestConstitutionPreviewFile_EmptySections(t *testing.T) {
+	tmp := t.TempDir()
+	path := filepath.Join(tmp, "empty.yaml")
+	os.WriteFile(path, []byte("id: no-sections\ntitle: Empty\n"), 0o644)
+
+	o := &Orchestrator{}
+	err := o.ConstitutionPreviewFile(path)
+	if err == nil {
+		t.Error("ConstitutionPreviewFile() expected error for file with no sections, got nil")
+	} else if !strings.Contains(err.Error(), "no sections") {
+		t.Errorf("ConstitutionPreviewFile() error = %q, want it to mention 'no sections'", err.Error())
+	}
+}
+
+func TestConstitutionPreviewFile_MissingFile(t *testing.T) {
+	o := &Orchestrator{}
+	err := o.ConstitutionPreviewFile("/nonexistent/path/constitution.yaml")
+	if err == nil {
+		t.Error("ConstitutionPreviewFile() expected error for missing file, got nil")
 	}
 }

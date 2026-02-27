@@ -256,3 +256,88 @@ func TestResetOrphanedIssues_BugRegression_ReadyStatusInvisible(t *testing.T) {
 		t.Fatalf("status 'open' should be visible to bd ready, but got %d tasks", n)
 	}
 }
+
+// --- buildStitchPrompt ---
+
+func TestBuildStitchPrompt_NilContext(t *testing.T) {
+	// When worktreeDir is empty, buildStitchPrompt skips project context
+	// assembly. The function should still produce valid YAML output using
+	// embedded constitution defaults.
+	o := New(Config{})
+	task := stitchTask{
+		id:        "test-01",
+		title:     "Add unit tests",
+		issueType: "code",
+	}
+	out, err := o.buildStitchPrompt(task)
+	if err != nil {
+		t.Fatalf("buildStitchPrompt() unexpected error: %v", err)
+	}
+	if !strings.Contains(out, "role:") {
+		t.Errorf("buildStitchPrompt() output missing 'role:' field")
+	}
+	if strings.Contains(out, "project_context:") {
+		t.Errorf("buildStitchPrompt() should omit project_context when nil")
+	}
+}
+
+func TestBuildStitchPrompt_ConstitutionDocs(t *testing.T) {
+	// When a worktree dir is set, buildStitchPrompt should include
+	// ExecutionConstitution and GoStyleConstitution from embedded defaults
+	// even when no project docs exist in the worktree.
+	tmp := t.TempDir()
+	o := New(Config{})
+	task := stitchTask{
+		id:          "test-02",
+		title:       "Implement feature",
+		issueType:   "code",
+		worktreeDir: tmp,
+	}
+	out, err := o.buildStitchPrompt(task)
+	if err != nil {
+		t.Fatalf("buildStitchPrompt() unexpected error: %v", err)
+	}
+	if !strings.Contains(out, "execution_constitution:") {
+		t.Errorf("buildStitchPrompt() output missing 'execution_constitution:' field")
+	}
+	if !strings.Contains(out, "go_style_constitution:") {
+		t.Errorf("buildStitchPrompt() output missing 'go_style_constitution:' field")
+	}
+}
+
+func TestBuildStitchPrompt_InvalidTemplate(t *testing.T) {
+	// An invalid stitch prompt YAML should cause buildStitchPrompt to return
+	// an error immediately, before any context assembly is attempted.
+	cfg := Config{}
+	cfg.Cobbler.StitchPrompt = "role: [unclosed bracket"
+	o := New(cfg)
+	task := stitchTask{id: "test-03", title: "Test", issueType: "code"}
+	_, err := o.buildStitchPrompt(task)
+	if err == nil {
+		t.Error("buildStitchPrompt() expected error for invalid template, got nil")
+	}
+}
+
+func TestBuildStitchPrompt_RequiredReadingFilter(t *testing.T) {
+	// When description contains required_reading with .go paths and a
+	// worktreeDir is set, the source file filter path is exercised.
+	tmp := t.TempDir()
+	o := New(Config{})
+	task := stitchTask{
+		id:        "test-04",
+		title:     "Filter sources",
+		issueType: "code",
+		description: `required_reading:
+  - pkg/orchestrator/context.go
+  - pkg/orchestrator/stitch.go
+`,
+		worktreeDir: tmp,
+	}
+	out, err := o.buildStitchPrompt(task)
+	if err != nil {
+		t.Fatalf("buildStitchPrompt() unexpected error: %v", err)
+	}
+	if !strings.Contains(out, "execution_constitution:") {
+		t.Errorf("buildStitchPrompt() output missing 'execution_constitution:'")
+	}
+}
