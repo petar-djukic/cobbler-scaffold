@@ -1,0 +1,35 @@
+id: rel01.0-uc007-build-tooling
+title: Build, Lint, Install, and Clean Consuming Project
+
+summary: |
+  A developer uses mage targets to compile, lint, install, or clean the
+  consuming project binary. The orchestrator delegates to go build, go install,
+  golangci-lint, and os.RemoveAll using the BinaryDir, BinaryName, and
+  MainPackage values from Config. Targets skip work gracefully when
+  MainPackage is not configured.
+
+actor: Developer building or testing the consuming project
+
+trigger: Running mage build, mage lint, mage install, or mage clean
+
+flow:
+  - F1: "Build: run go build -o {BinaryDir}/{BinaryName} {MainPackage}; skip when MainPackage is empty"
+  - F2: "Lint: run golangci-lint run ./... and stream output to stdout and stderr"
+  - F3: "Install: run go install {MainPackage}; skip when MainPackage is empty"
+  - F4: "Clean: remove the BinaryDir directory and all contents"
+
+touchpoints:
+  - T1: "BinaryDir, BinaryName, MainPackage Config fields: prd001-orchestrator-core R1.2, R1.3, R1.4"
+
+success_criteria:
+  - S1: Build produces a binary at {BinaryDir}/{BinaryName} when MainPackage is set
+  - S2: Build exits zero on success and propagates go build errors on failure
+  - S3: Lint runs golangci-lint and exits zero when no lint errors are found
+  - S4: Install places the binary in GOPATH/bin and exits zero on success
+  - S5: Clean removes BinaryDir without error, including when it does not exist
+  - S6: Build and Install skip silently and return nil when MainPackage is empty
+
+out_of_scope:
+  - Cross-generation comparison builds (see rel03.0-uc001)
+  - Container image builds (Podman image management)
+  - VS Code extension builds (see rel02.0-uc001)

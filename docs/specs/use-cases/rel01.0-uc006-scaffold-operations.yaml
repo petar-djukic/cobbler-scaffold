@@ -1,0 +1,44 @@
+id: rel01.0-uc006-scaffold-operations
+title: Scaffold and Uninstall Orchestrator into Consuming Project
+
+summary: |
+  A developer runs mage scaffold to wire the orchestrator into an existing
+  Go repository. The orchestrator detects project structure (module path,
+  binary name, main package, source directories), copies magefiles/orchestrator.go,
+  writes constitutions and prompt templates to docs/, writes phase context
+  files to .cobbler/, generates configuration.yaml, and wires magefiles/go.mod.
+  The developer can run mage uninstall to remove all scaffold artifacts.
+
+actor: Developer initializing a new consuming project
+
+trigger: Running mage scaffold on a Go repository that does not yet use the orchestrator
+
+flow:
+  - F1: "Clear magefiles: remove existing .go files from magefiles/ and copy the orchestrator.go template"
+  - F2: "Write constitutions: copy design.yaml, planning.yaml, execution.yaml, and go-style.yaml to docs/constitutions/"
+  - F3: "Write prompts: copy measure.yaml and stitch.yaml to docs/prompts/"
+  - F4: "Write phase context files: write measure_context.yaml and stitch_context.yaml to .cobbler/"
+  - F5: "Detect structure: read go.mod for module path; scan for main package, source directories, and binary name"
+  - F6: "Generate configuration.yaml: write a Config with detected values and constitution/prompt path references"
+  - F7: "Write seed template: if a main package is found, write a version.go seed template to magefiles/ and reference it in SeedFiles"
+  - F8: "Wire go.mod: update magefiles/go.mod with the orchestrator module dependency"
+  - F9: "Verify: run mage -l to confirm the wired magefiles compile; retry with a local replace directive if verification fails"
+  - F10: "Uninstall: remove magefiles/orchestrator.go, docs/constitutions/, docs/prompts/, and configuration.yaml; remove orchestrator replace directive from magefiles/go.mod; run go mod tidy"
+
+touchpoints:
+  - T1: "Config struct and defaults: prd001-orchestrator-core R1, R2"
+  - T2: "SeedFiles mechanism: prd001-orchestrator-core R6"
+  - T3: "YAML configuration loading: prd001-orchestrator-core R4"
+
+success_criteria:
+  - S1: Scaffold writes magefiles/orchestrator.go from the embedded template
+  - S2: docs/constitutions/ contains design.yaml, planning.yaml, execution.yaml, and go-style.yaml
+  - S3: docs/prompts/ contains measure.yaml and stitch.yaml
+  - S4: configuration.yaml exists at the repository root with detected values filled in
+  - S5: magefiles/go.mod references the orchestrator module
+  - S6: mage -l succeeds in the target repository after scaffolding
+  - S7: Uninstall removes all scaffold artifacts and mage -l succeeds without orchestrator targets
+
+out_of_scope:
+  - Generation lifecycle and run operations (see rel01.0-uc002, rel01.0-uc003)
+  - E2E test repository preparation (PrepareTestRepo)
