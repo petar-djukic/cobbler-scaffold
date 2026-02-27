@@ -10,9 +10,7 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"path/filepath"
 	"sort"
-	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -126,75 +124,19 @@ func (o *Orchestrator) TokenStats() error {
 }
 
 // enumerateContextFiles lists all files that buildProjectContext loads,
-// grouped by category. Uses resolveStandardFiles for the standard
-// document structure and resolveContextSources for extras. Source code
-// and prompt templates are added separately.
+// grouped by category. Delegates to resolveContextFileEntries so that
+// ContextInclude, ContextExclude, and source filtering are applied
+// consistently with buildProjectContext.
 func (o *Orchestrator) enumerateContextFiles() []FileTokenStat {
-	var files []FileTokenStat
-
-	// Standard documentation files.
-	standardFiles := resolveStandardFiles()
-	standardSet := make(map[string]bool, len(standardFiles))
-	for _, path := range standardFiles {
-		standardSet[path] = true
-		info, err := os.Stat(path)
-		if err != nil {
-			continue
-		}
+	entries := o.resolveContextFileEntries()
+	files := make([]FileTokenStat, 0, len(entries))
+	for _, e := range entries {
 		files = append(files, FileTokenStat{
-			Category: classifyContextFile(path),
-			Path:     path,
-			Bytes:    int(info.Size()),
+			Category: e.Category,
+			Path:     e.Path,
+			Bytes:    e.Bytes,
 		})
 	}
-
-	// Extra context source files from configuration.
-	if o.cfg.Project.ContextSources != "" {
-		extras := resolveContextSources(o.cfg.Project.ContextSources)
-		for _, path := range extras {
-			if standardSet[path] {
-				continue
-			}
-			info, err := os.Stat(path)
-			if err != nil {
-				continue
-			}
-			files = append(files, FileTokenStat{
-				Category: "extra",
-				Path:     path,
-				Bytes:    int(info.Size()),
-			})
-		}
-	}
-
-	// Source code from configured directories.
-	for _, dir := range o.cfg.Project.GoSourceDirs {
-		_ = filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
-			if err != nil || info.IsDir() || !strings.HasSuffix(path, ".go") {
-				return nil
-			}
-			files = append(files, FileTokenStat{
-				Category: "source",
-				Path:     path,
-				Bytes:    int(info.Size()),
-			})
-			return nil
-		})
-	}
-
-	// Prompt templates.
-	for _, p := range []string{"docs/prompts/measure.yaml", "docs/prompts/stitch.yaml"} {
-		info, err := os.Stat(p)
-		if err != nil {
-			continue
-		}
-		files = append(files, FileTokenStat{
-			Category: "prompts",
-			Path:     p,
-			Bytes:    int(info.Size()),
-		})
-	}
-
 	return files
 }
 

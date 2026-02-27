@@ -10,4 +10,5 @@ Run the full release workflow: analyze, test, tag, and push.
 6. Replace the lightweight tag with an annotated tag carrying the summary: `git tag -d <new-tag> && git tag -a <new-tag> -m "<summary>"`. Print the summary to the user.
 7. Push the current branch to `origin`. If `git remote | grep -q release` succeeds, also push the branch to `release`.
 8. Push tags to `origin` with `git push origin --tags`. If the `release` remote exists, also push tags to `release` with `git push release --tags`.
-9. Report the tag name, branch, which remotes received the push, and the change summary.
+9. Resolve the module path with `go list -m` and run `go get <module>@<new-tag>` to fetch the new version via the Go module proxy. Report any errors but do not fail the release.
+10. Report the tag name, branch, which remotes received the push, and the change summary.

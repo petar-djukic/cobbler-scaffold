@@ -288,6 +288,9 @@ func (Prompt) Measure() error { return newOrch().DumpMeasurePrompt() }
 // Stitch prints the assembled stitch prompt to stdout.
 func (Prompt) Stitch() error { return newOrch().DumpStitchPrompt() }
 
+// Files lists all files that will be appended to the Claude prompt with sizes and token estimates.
+func (Prompt) Files() error { return newOrch().PrintContextFiles() }
+
 // --- Podman targets ---
 
 // Build builds the container image from the embedded Dockerfile with versioned and latest tags.
