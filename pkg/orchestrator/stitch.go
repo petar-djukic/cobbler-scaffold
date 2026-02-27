@@ -659,8 +659,11 @@ func (o *Orchestrator) buildStitchPrompt(task stitchTask) (string, error) {
 	taskContext := fmt.Sprintf("Task ID: %s\nType: %s\nTitle: %s",
 		task.id, task.issueType, task.title)
 
+	repoFiles := gitLsFiles(task.worktreeDir)
+
 	doc := StitchPromptDoc{
 		Role:                  tmpl.Role,
+		RepositoryFiles:       repoFiles,
 		ProjectContext:        projectCtx,
 		Context:               taskContext,
 		ExecutionConstitution: parseYAMLNode(executionConst),

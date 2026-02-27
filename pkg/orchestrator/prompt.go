@@ -29,6 +29,7 @@ type MeasurePromptDoc struct {
 // StitchPromptDoc is the complete stitch prompt as a YAML document.
 type StitchPromptDoc struct {
 	Role                  string          `yaml:"role"`
+	RepositoryFiles       []string        `yaml:"repository_files,omitempty"`
 	ProjectContext        *ProjectContext `yaml:"project_context,omitempty"`
 	Context               string          `yaml:"context"`
 	ExecutionConstitution *yaml.Node     `yaml:"execution_constitution,omitempty"`

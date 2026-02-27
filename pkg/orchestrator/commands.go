@@ -121,6 +121,21 @@ func gitListTags(pattern string) []string {
 	return parseBranchList(string(out))
 }
 
+// gitLsFiles returns all git-tracked file paths in dir, relative to dir.
+// Returns nil if dir is empty, if git ls-files produces no output, or on error.
+func gitLsFiles(dir string) []string {
+	if dir == "" {
+		return nil
+	}
+	cmd := exec.Command(binGit, "ls-files")
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if err != nil || len(out) == 0 {
+		return nil
+	}
+	return parseBranchList(string(out))
+}
+
 func gitStageAll() error {
 	return exec.Command(binGit, "add", "-A").Run()
 }

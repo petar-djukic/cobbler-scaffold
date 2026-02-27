@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -331,6 +332,44 @@ func TestCleanupWorktree_NonExistentDir_NoOp(t *testing.T) {
 		branchName:  "stitch-test-cleanup",
 	}
 	cleanupWorktree(task) // must not panic
+}
+
+func TestBuildStitchPrompt_RepositoryFiles(t *testing.T) {
+	// When worktreeDir is a git repo with staged files, buildStitchPrompt
+	// must include repository_files: in the output listing those files.
+	tmp := t.TempDir()
+	run := func(args ...string) {
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Dir = tmp
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("setup %v: %v", args, err)
+		}
+	}
+	run("git", "init")
+	run("git", "config", "user.email", "test@example.com")
+	run("git", "config", "user.name", "Test")
+	if err := os.WriteFile(filepath.Join(tmp, "main.go"), []byte("package main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run("git", "add", "main.go")
+
+	o := New(Config{})
+	task := stitchTask{
+		id:          "test-05",
+		title:       "Repository files test",
+		issueType:   "code",
+		worktreeDir: tmp,
+	}
+	out, err := o.buildStitchPrompt(task)
+	if err != nil {
+		t.Fatalf("buildStitchPrompt() unexpected error: %v", err)
+	}
+	if !strings.Contains(out, "repository_files:") {
+		t.Errorf("buildStitchPrompt() output missing 'repository_files:' field")
+	}
+	if !strings.Contains(out, "main.go") {
+		t.Errorf("buildStitchPrompt() output missing 'main.go' in repository_files")
+	}
 }
 
 func TestBuildStitchPrompt_RequiredReadingFilter(t *testing.T) {
