@@ -107,6 +107,28 @@ func bdReadyCount(t *testing.T, dir string) int {
 	return len(tasks)
 }
 
+// bdGetStatus returns the status string of a beads issue via bd show --json.
+// bd show --json returns a JSON array; we extract status from the first element.
+func bdGetStatus(t *testing.T, dir, id string) string {
+	t.Helper()
+	cmd := exec.Command("bd", "show", "--json", id)
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("bd show --json %s: %v", id, err)
+	}
+	var issues []struct {
+		Status string `json:"status"`
+	}
+	if err := json.Unmarshal(out, &issues); err != nil {
+		t.Fatalf("bd show JSON parse for %s: %v\noutput: %s", id, err, out)
+	}
+	if len(issues) == 0 {
+		t.Fatalf("bd show --json %s: empty result", id)
+	}
+	return issues[0].Status
+}
+
 // requireBd skips the test if the bd CLI is not installed.
 func requireBd(t *testing.T) {
 	t.Helper()
@@ -209,9 +231,11 @@ func TestResetOrphanedIssues_SetsStatusToOpen(t *testing.T) {
 	id := testCreateTask(t, dir, "orphaned task")
 	bdSetStatus(t, dir, id, "in_progress")
 
-	// Verify the task is NOT returned by bd ready (it's in_progress).
-	if n := bdReadyCount(t, dir); n != 0 {
-		t.Fatalf("before reset: bd ready returned %d tasks, want 0", n)
+	// Verify the task is in_progress before the reset.
+	// Note: bd 0.46.0 returns in_progress tasks from bd ready, so we check
+	// the status directly rather than relying on bd ready returning 0.
+	if s := bdGetStatus(t, dir, id); s != "in_progress" {
+		t.Fatalf("before reset: task status = %q, want in_progress", s)
 	}
 
 	// Call resetOrphanedIssues with baseBranch "main". The task has no
@@ -221,13 +245,25 @@ func TestResetOrphanedIssues_SetsStatusToOpen(t *testing.T) {
 		t.Fatal("resetOrphanedIssues returned false, expected true (should recover orphaned task)")
 	}
 
-	// Verify the task is now returned by bd ready.
+	// Verify the task is now open (reset by resetOrphanedIssues).
+	if s := bdGetStatus(t, dir, id); s != "open" {
+		t.Fatalf("after reset: task status = %q, want open", s)
+	}
+
+	// Verify the task is returned by bd ready.
 	if n := bdReadyCount(t, dir); n != 1 {
 		t.Fatalf("after reset: bd ready returned %d tasks, want 1", n)
 	}
 }
 
-func TestResetOrphanedIssues_BugRegression_ReadyStatusInvisible(t *testing.T) {
+// TestResetOrphanedIssues_BugRegression_OpenStatusVisible verifies that
+// resetOrphanedIssues uses statusOpen ("open") to make tasks available.
+//
+// Historical note: the old code path used "ready" as the reset status.
+// In bd ≥0.46.0 "ready" is no longer a valid status (bd update exits 0 with
+// an error, leaving the status unchanged). Using statusOpen ("open") ensures
+// tasks are always visible to bd ready regardless of bd version.
+func TestResetOrphanedIssues_BugRegression_OpenStatusVisible(t *testing.T) {
 	requireBd(t)
 
 	dir := setupBeadsRepo(t)
@@ -241,20 +277,29 @@ func TestResetOrphanedIssues_BugRegression_ReadyStatusInvisible(t *testing.T) {
 	}
 	t.Cleanup(func() { os.Chdir(origDir) })
 
-	// Demonstrate the bug: setting status to "ready" (the old code path)
-	// makes the task invisible to bd ready.
-	id := testCreateTask(t, dir, "invisible task")
-	bdSetStatus(t, dir, id, "ready")
-
-	if n := bdReadyCount(t, dir); n != 0 {
-		t.Fatalf("status 'ready' should be invisible to bd ready, but got %d tasks", n)
+	// statusOpen must be "open" — the only status that reliably makes tasks
+	// available via bd ready across all bd versions. The old bug used "ready".
+	if statusOpen != "open" {
+		t.Fatalf("statusOpen = %q, must be %q to ensure tasks are visible to bd ready", statusOpen, "open")
 	}
 
-	// Setting to "open" (the fix) makes it visible.
-	bdSetStatus(t, dir, id, statusOpen)
+	id := testCreateTask(t, dir, "reset task")
 
+	// Set to in_progress (simulates a stitch claiming it).
+	bdSetStatus(t, dir, id, "in_progress")
+	if s := bdGetStatus(t, dir, id); s != "in_progress" {
+		t.Fatalf("expected status in_progress, got %q", s)
+	}
+
+	// Reset to statusOpen ("open") — this is what resetOrphanedIssues does.
+	bdSetStatus(t, dir, id, statusOpen)
+	if s := bdGetStatus(t, dir, id); s != "open" {
+		t.Fatalf("expected status open after reset, got %q", s)
+	}
+
+	// Verify the task is visible to bd ready after being set to "open".
 	if n := bdReadyCount(t, dir); n != 1 {
-		t.Fatalf("status 'open' should be visible to bd ready, but got %d tasks", n)
+		t.Fatalf("status 'open' should be visible to bd ready, got %d tasks", n)
 	}
 }
 
