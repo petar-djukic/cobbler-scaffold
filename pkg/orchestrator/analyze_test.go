@@ -534,6 +534,329 @@ func TestCollectAnalyzeResult_PRDsSpanningMultipleReleases_Fail(t *testing.T) {
 	}
 }
 
+// --- Validate() methods on document structs ---
+
+func TestVisionDoc_Validate_AllPresent(t *testing.T) {
+	d := &VisionDoc{
+		ID:               "vision-01",
+		Title:            "Test Vision",
+		ExecutiveSummary: "Summary text",
+		Problem:          "Problem text",
+		WhatThisDoes:     "What it does",
+		WhyWeBuildThis:   "Why we build",
+	}
+	if errs := d.Validate(); len(errs) != 0 {
+		t.Errorf("expected no errors, got %v", errs)
+	}
+}
+
+func TestVisionDoc_Validate_MissingFields(t *testing.T) {
+	d := &VisionDoc{ID: "vision-01"}
+	errs := d.Validate()
+	wantCount := 5 // title, executive_summary, problem, what_this_does, why_we_build_this
+	if len(errs) != wantCount {
+		t.Fatalf("got %d errors, want %d: %v", len(errs), wantCount, errs)
+	}
+}
+
+func TestArchitectureDoc_Validate_AllPresent(t *testing.T) {
+	d := &ArchitectureDoc{ID: "arch-01", Title: "Architecture"}
+	if errs := d.Validate(); len(errs) != 0 {
+		t.Errorf("expected no errors, got %v", errs)
+	}
+}
+
+func TestArchitectureDoc_Validate_MissingID(t *testing.T) {
+	d := &ArchitectureDoc{Title: "Architecture"}
+	errs := d.Validate()
+	if len(errs) != 1 || errs[0] != "id is required" {
+		t.Errorf("got %v, want [id is required]", errs)
+	}
+}
+
+func TestSpecificationsDoc_Validate_AllPresent(t *testing.T) {
+	d := &SpecificationsDoc{ID: "spec-01", Title: "Specs", Overview: "Overview text"}
+	if errs := d.Validate(); len(errs) != 0 {
+		t.Errorf("expected no errors, got %v", errs)
+	}
+}
+
+func TestSpecificationsDoc_Validate_MissingOverview(t *testing.T) {
+	d := &SpecificationsDoc{ID: "spec-01", Title: "Specs"}
+	errs := d.Validate()
+	if len(errs) != 1 || errs[0] != "overview is required" {
+		t.Errorf("got %v, want [overview is required]", errs)
+	}
+}
+
+func TestRoadmapDoc_Validate_AllPresent(t *testing.T) {
+	d := &RoadmapDoc{ID: "rm-01", Title: "Roadmap"}
+	if errs := d.Validate(); len(errs) != 0 {
+		t.Errorf("expected no errors, got %v", errs)
+	}
+}
+
+func TestRoadmapDoc_Validate_MissingTitle(t *testing.T) {
+	d := &RoadmapDoc{ID: "rm-01"}
+	errs := d.Validate()
+	if len(errs) != 1 || errs[0] != "title is required" {
+		t.Errorf("got %v, want [title is required]", errs)
+	}
+}
+
+func TestPRDDoc_Validate_AllPresent(t *testing.T) {
+	d := &PRDDoc{
+		ID:      "prd001-core",
+		Title:   "Core",
+		Problem: "The problem",
+		Requirements: map[string]PRDRequirementGroup{
+			"R1": {Title: "Group 1", Items: []map[string]string{{"R1.1": "Do X"}}},
+		},
+	}
+	if errs := d.Validate(); len(errs) != 0 {
+		t.Errorf("expected no errors, got %v", errs)
+	}
+}
+
+func TestPRDDoc_Validate_MissingProblem(t *testing.T) {
+	d := &PRDDoc{ID: "prd001-core", Title: "Core"}
+	errs := d.Validate()
+	if len(errs) != 1 || errs[0] != "problem is required" {
+		t.Errorf("got %v, want [problem is required]", errs)
+	}
+}
+
+func TestPRDDoc_Validate_RequirementGroupMissingTitle(t *testing.T) {
+	d := &PRDDoc{
+		ID:      "prd001-core",
+		Title:   "Core",
+		Problem: "The problem",
+		Requirements: map[string]PRDRequirementGroup{
+			"R1": {Items: []map[string]string{{"R1.1": "Do X"}}},
+		},
+	}
+	errs := d.Validate()
+	if len(errs) != 1 {
+		t.Fatalf("got %d errors, want 1: %v", len(errs), errs)
+	}
+	if errs[0] != "requirements.R1.title is required" {
+		t.Errorf("got %q, want %q", errs[0], "requirements.R1.title is required")
+	}
+}
+
+func TestPRDDoc_Validate_RequirementGroupEmptyItems(t *testing.T) {
+	d := &PRDDoc{
+		ID:      "prd001-core",
+		Title:   "Core",
+		Problem: "The problem",
+		Requirements: map[string]PRDRequirementGroup{
+			"R1": {Title: "Group 1"},
+		},
+	}
+	errs := d.Validate()
+	if len(errs) != 1 {
+		t.Fatalf("got %d errors, want 1: %v", len(errs), errs)
+	}
+	if errs[0] != "requirements.R1.items is required" {
+		t.Errorf("got %q, want %q", errs[0], "requirements.R1.items is required")
+	}
+}
+
+func TestUseCaseDoc_Validate_AllPresent(t *testing.T) {
+	d := &UseCaseDoc{
+		ID:      "rel01.0-uc001-init",
+		Title:   "Init",
+		Summary: "Summary text",
+		Actor:   "Developer",
+		Trigger: "Runs mage init",
+	}
+	if errs := d.Validate(); len(errs) != 0 {
+		t.Errorf("expected no errors, got %v", errs)
+	}
+}
+
+func TestUseCaseDoc_Validate_MissingSummary(t *testing.T) {
+	d := &UseCaseDoc{
+		ID:      "rel01.0-uc001-init",
+		Title:   "Init",
+		Actor:   "Developer",
+		Trigger: "Runs mage init",
+	}
+	errs := d.Validate()
+	if len(errs) != 1 || errs[0] != "summary is required" {
+		t.Errorf("got %v, want [summary is required]", errs)
+	}
+}
+
+func TestUseCaseDoc_Validate_MissingMultipleFields(t *testing.T) {
+	d := &UseCaseDoc{ID: "rel01.0-uc001-init"}
+	errs := d.Validate()
+	wantCount := 4 // title, summary, actor, trigger
+	if len(errs) != wantCount {
+		t.Errorf("got %d errors, want %d: %v", len(errs), wantCount, errs)
+	}
+}
+
+func TestTestSuiteDoc_Validate_AllPresent(t *testing.T) {
+	d := &TestSuiteDoc{ID: "test-rel01.0", Title: "Tests", Release: "01.0"}
+	if errs := d.Validate(); len(errs) != 0 {
+		t.Errorf("expected no errors, got %v", errs)
+	}
+}
+
+func TestTestSuiteDoc_Validate_MissingRelease(t *testing.T) {
+	d := &TestSuiteDoc{ID: "test-rel01.0", Title: "Tests"}
+	errs := d.Validate()
+	if len(errs) != 1 || errs[0] != "release is required" {
+		t.Errorf("got %v, want [release is required]", errs)
+	}
+}
+
+func TestEngineeringDoc_Validate_AllPresent(t *testing.T) {
+	d := &EngineeringDoc{
+		ID:           "eng01-style",
+		Title:        "Style Guide",
+		Introduction: "Intro text",
+		Sections: []DocSection{
+			{Title: "Section 1", Content: "Content text"},
+		},
+	}
+	if errs := d.Validate(); len(errs) != 0 {
+		t.Errorf("expected no errors, got %v", errs)
+	}
+}
+
+func TestEngineeringDoc_Validate_MissingIntroduction(t *testing.T) {
+	d := &EngineeringDoc{ID: "eng01-style", Title: "Style Guide"}
+	errs := d.Validate()
+	if len(errs) != 1 || errs[0] != "introduction is required" {
+		t.Errorf("got %v, want [introduction is required]", errs)
+	}
+}
+
+func TestEngineeringDoc_Validate_SectionMissingContent(t *testing.T) {
+	d := &EngineeringDoc{
+		ID:           "eng01-style",
+		Title:        "Style Guide",
+		Introduction: "Intro",
+		Sections:     []DocSection{{Title: "Sec 1"}},
+	}
+	errs := d.Validate()
+	if len(errs) != 1 || errs[0] != "sections[0].content is required" {
+		t.Errorf("got %v, want [sections[0].content is required]", errs)
+	}
+}
+
+func TestEngineeringDoc_Validate_SectionMissingTitle(t *testing.T) {
+	d := &EngineeringDoc{
+		ID:           "eng01-style",
+		Title:        "Style Guide",
+		Introduction: "Intro",
+		Sections:     []DocSection{{Content: "Content"}},
+	}
+	errs := d.Validate()
+	if len(errs) != 1 || errs[0] != "sections[0].title is required" {
+		t.Errorf("got %v, want [sections[0].title is required]", errs)
+	}
+}
+
+// --- validateYAMLStrict with required-field validation ---
+
+func TestValidateYAMLStrict_UseCaseDoc_MissingSummary(t *testing.T) {
+	// A use case missing summary should produce a required-field error.
+	content := `id: rel01.0-uc001-init
+title: Init
+actor: Developer
+trigger: Runs mage init
+`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "rel01.0-uc001-init.yaml")
+	os.WriteFile(path, []byte(content), 0o644)
+
+	errs := validateYAMLStrict[UseCaseDoc](path)
+	if len(errs) == 0 {
+		t.Fatal("expected errors for missing summary, got none")
+	}
+	found := false
+	for _, e := range errs {
+		if strings.Contains(e, "summary is required") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected error containing 'summary is required', got %v", errs)
+	}
+}
+
+func TestValidateYAMLStrict_PRDDoc_MissingProblem(t *testing.T) {
+	content := `id: prd001-core
+title: Core PRD
+`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "prd001-core.yaml")
+	os.WriteFile(path, []byte(content), 0o644)
+
+	errs := validateYAMLStrict[PRDDoc](path)
+	if len(errs) == 0 {
+		t.Fatal("expected errors for missing problem, got none")
+	}
+	found := false
+	for _, e := range errs {
+		if strings.Contains(e, "problem is required") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected error containing 'problem is required', got %v", errs)
+	}
+	// Error must include the file path.
+	if !strings.Contains(errs[0], path) {
+		t.Errorf("expected error to contain file path %q, got %q", path, errs[0])
+	}
+}
+
+func TestValidateYAMLStrict_EngineeringDoc_SectionMissingContent(t *testing.T) {
+	content := `id: eng01-style
+title: Style Guide
+introduction: Intro text
+sections:
+  - title: Section 1
+    content: ""
+`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "eng01-style.yaml")
+	os.WriteFile(path, []byte(content), 0o644)
+
+	errs := validateYAMLStrict[EngineeringDoc](path)
+	if len(errs) == 0 {
+		t.Fatal("expected errors for empty section content, got none")
+	}
+	found := false
+	for _, e := range errs {
+		if strings.Contains(e, "sections[0].content is required") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected error containing 'sections[0].content is required', got %v", errs)
+	}
+}
+
+func TestValidateYAMLStrict_DesignDoc_NoRequiredFieldValidation(t *testing.T) {
+	// DesignDoc does not implement docValidator so Validate() should not be called.
+	// An empty DesignDoc should produce no required-field errors (only unknown-field
+	// errors matter for constitution types).
+	content := "articles: []\n"
+	dir := t.TempDir()
+	path := filepath.Join(dir, "design.yaml")
+	os.WriteFile(path, []byte(content), 0o644)
+
+	errs := validateYAMLStrict[DesignDoc](path)
+	if len(errs) != 0 {
+		t.Errorf("DesignDoc should not trigger required-field errors, got %v", errs)
+	}
+}
+
 func TestCollectAnalyzeResult_EmptyReleasesNoValidation(t *testing.T) {
 	dir := t.TempDir()
 	orig, _ := os.Getwd()

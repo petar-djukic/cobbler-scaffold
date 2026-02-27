@@ -1431,3 +1431,165 @@ func buildProjectContext(existingIssuesJSON string, project ProjectConfig, phase
 	)
 	return ctx, nil
 }
+
+// ---------------------------------------------------------------------------
+// Required-field validation
+//
+// Each document type that participates in required-field checking implements
+// Validate() []string. Validate returns human-readable error strings (without
+// the file path) for any empty required field. The caller (validateYAMLStrict
+// in analyze.go) prepends the file path to each error.
+// ---------------------------------------------------------------------------
+
+// Validate checks that all required fields in VisionDoc are non-empty.
+func (d *VisionDoc) Validate() []string {
+	var errs []string
+	if d.ID == "" {
+		errs = append(errs, "id is required")
+	}
+	if d.Title == "" {
+		errs = append(errs, "title is required")
+	}
+	if d.ExecutiveSummary == "" {
+		errs = append(errs, "executive_summary is required")
+	}
+	if d.Problem == "" {
+		errs = append(errs, "problem is required")
+	}
+	if d.WhatThisDoes == "" {
+		errs = append(errs, "what_this_does is required")
+	}
+	if d.WhyWeBuildThis == "" {
+		errs = append(errs, "why_we_build_this is required")
+	}
+	return errs
+}
+
+// Validate checks that all required fields in ArchitectureDoc are non-empty.
+func (d *ArchitectureDoc) Validate() []string {
+	var errs []string
+	if d.ID == "" {
+		errs = append(errs, "id is required")
+	}
+	if d.Title == "" {
+		errs = append(errs, "title is required")
+	}
+	return errs
+}
+
+// Validate checks that all required fields in SpecificationsDoc are non-empty.
+func (d *SpecificationsDoc) Validate() []string {
+	var errs []string
+	if d.ID == "" {
+		errs = append(errs, "id is required")
+	}
+	if d.Title == "" {
+		errs = append(errs, "title is required")
+	}
+	if d.Overview == "" {
+		errs = append(errs, "overview is required")
+	}
+	return errs
+}
+
+// Validate checks that all required fields in RoadmapDoc are non-empty.
+func (d *RoadmapDoc) Validate() []string {
+	var errs []string
+	if d.ID == "" {
+		errs = append(errs, "id is required")
+	}
+	if d.Title == "" {
+		errs = append(errs, "title is required")
+	}
+	return errs
+}
+
+// Validate checks that all required fields in PRDDoc are non-empty, including
+// each requirement group's title and items.
+func (d *PRDDoc) Validate() []string {
+	var errs []string
+	if d.ID == "" {
+		errs = append(errs, "id is required")
+	}
+	if d.Title == "" {
+		errs = append(errs, "title is required")
+	}
+	if d.Problem == "" {
+		errs = append(errs, "problem is required")
+	}
+	keys := make([]string, 0, len(d.Requirements))
+	for k := range d.Requirements {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		g := d.Requirements[k]
+		if g.Title == "" {
+			errs = append(errs, fmt.Sprintf("requirements.%s.title is required", k))
+		}
+		if len(g.Items) == 0 {
+			errs = append(errs, fmt.Sprintf("requirements.%s.items is required", k))
+		}
+	}
+	return errs
+}
+
+// Validate checks that all required fields in UseCaseDoc are non-empty.
+func (d *UseCaseDoc) Validate() []string {
+	var errs []string
+	if d.ID == "" {
+		errs = append(errs, "id is required")
+	}
+	if d.Title == "" {
+		errs = append(errs, "title is required")
+	}
+	if d.Summary == "" {
+		errs = append(errs, "summary is required")
+	}
+	if d.Actor == "" {
+		errs = append(errs, "actor is required")
+	}
+	if d.Trigger == "" {
+		errs = append(errs, "trigger is required")
+	}
+	return errs
+}
+
+// Validate checks that all required fields in TestSuiteDoc are non-empty.
+func (d *TestSuiteDoc) Validate() []string {
+	var errs []string
+	if d.ID == "" {
+		errs = append(errs, "id is required")
+	}
+	if d.Title == "" {
+		errs = append(errs, "title is required")
+	}
+	if d.Release == "" {
+		errs = append(errs, "release is required")
+	}
+	return errs
+}
+
+// Validate checks that all required fields in EngineeringDoc are non-empty,
+// including each section's title and content.
+func (d *EngineeringDoc) Validate() []string {
+	var errs []string
+	if d.ID == "" {
+		errs = append(errs, "id is required")
+	}
+	if d.Title == "" {
+		errs = append(errs, "title is required")
+	}
+	if d.Introduction == "" {
+		errs = append(errs, "introduction is required")
+	}
+	for i, s := range d.Sections {
+		if s.Title == "" {
+			errs = append(errs, fmt.Sprintf("sections[%d].title is required", i))
+		}
+		if s.Content == "" {
+			errs = append(errs, fmt.Sprintf("sections[%d].content is required", i))
+		}
+	}
+	return errs
+}

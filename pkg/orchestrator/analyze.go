@@ -509,9 +509,18 @@ func (o *Orchestrator) validateDocSchemas() []string {
 	return errs
 }
 
+// docValidator is implemented by document structs that support required-field
+// validation beyond unknown-field checking. validateYAMLStrict calls Validate()
+// after a successful strict decode and prepends the file path to each error.
+type docValidator interface {
+	Validate() []string
+}
+
 // validateYAMLStrict reads a YAML file and decodes it into T with
 // KnownFields enabled. Any YAML key not present in the struct is
-// reported as an error. Returns nil if the file doesn't exist.
+// reported as an error. After a successful decode, if T implements
+// docValidator, Validate() is called to check required fields.
+// Returns nil if the file doesn't exist.
 func validateYAMLStrict[T any](path string) []string {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -523,7 +532,13 @@ func validateYAMLStrict[T any](path string) []string {
 	if err := dec.Decode(&v); err != nil {
 		return []string{fmt.Sprintf("%s: %v", path, err)}
 	}
-	return nil
+	var errs []string
+	if val, ok := any(&v).(docValidator); ok {
+		for _, e := range val.Validate() {
+			errs = append(errs, fmt.Sprintf("%s: %s", path, e))
+		}
+	}
+	return errs
 }
 
 // detectConstitutionDrift compares each constitution file in
