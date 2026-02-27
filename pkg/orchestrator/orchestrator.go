@@ -38,16 +38,28 @@ func NewFromFile(path string) (*Orchestrator, error) {
 	return New(cfg), nil
 }
 
+// phaseMu protects the currentGeneration, currentPhase, and phaseStart
+// variables from concurrent access. Writers use Lock, logf uses RLock.
+var phaseMu sync.RWMutex
+
 // currentGeneration holds the active generation name. When set, logf
 // includes it right after the timestamp so every log line within a
 // generation is tagged automatically.
 var currentGeneration string
 
 // setGeneration sets the active generation name for log tagging.
-func setGeneration(name string) { currentGeneration = name }
+func setGeneration(name string) {
+	phaseMu.Lock()
+	currentGeneration = name
+	phaseMu.Unlock()
+}
 
 // clearGeneration removes the generation tag from subsequent log lines.
-func clearGeneration() { currentGeneration = "" }
+func clearGeneration() {
+	phaseMu.Lock()
+	currentGeneration = ""
+	phaseMu.Unlock()
+}
 
 // currentPhase holds the active workflow phase (e.g. "measure", "stitch").
 // When set, logf includes it and the elapsed time since the phase started.
@@ -56,14 +68,18 @@ var phaseStart time.Time
 
 // setPhase sets the active workflow phase for log tagging.
 func setPhase(name string) {
+	phaseMu.Lock()
 	currentPhase = name
 	phaseStart = time.Now()
+	phaseMu.Unlock()
 }
 
 // clearPhase removes the phase tag from subsequent log lines.
 func clearPhase() {
+	phaseMu.Lock()
 	currentPhase = ""
 	phaseStart = time.Time{}
+	phaseMu.Unlock()
 }
 
 // logSink is an optional secondary destination for logf output.
@@ -111,15 +127,21 @@ func logf(format string, args ...any) {
 	msg := fmt.Sprintf(format, args...)
 	ts := time.Now().Format(time.RFC3339)
 
+	phaseMu.RLock()
+	gen := currentGeneration
+	phase := currentPhase
+	start := phaseStart
+	phaseMu.RUnlock()
+
 	var prefix string
-	if currentGeneration != "" && currentPhase != "" {
-		elapsed := time.Since(phaseStart).Round(time.Second)
-		prefix = fmt.Sprintf("[%s] [%s] [%s +%s]", ts, currentGeneration, currentPhase, elapsed)
-	} else if currentGeneration != "" {
-		prefix = fmt.Sprintf("[%s] [%s]", ts, currentGeneration)
-	} else if currentPhase != "" {
-		elapsed := time.Since(phaseStart).Round(time.Second)
-		prefix = fmt.Sprintf("[%s] [%s +%s]", ts, currentPhase, elapsed)
+	if gen != "" && phase != "" {
+		elapsed := time.Since(start).Round(time.Second)
+		prefix = fmt.Sprintf("[%s] [%s] [%s +%s]", ts, gen, phase, elapsed)
+	} else if gen != "" {
+		prefix = fmt.Sprintf("[%s] [%s]", ts, gen)
+	} else if phase != "" {
+		elapsed := time.Since(start).Round(time.Second)
+		prefix = fmt.Sprintf("[%s] [%s +%s]", ts, phase, elapsed)
 	} else {
 		prefix = fmt.Sprintf("[%s]", ts)
 	}

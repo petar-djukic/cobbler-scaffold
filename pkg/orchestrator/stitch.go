@@ -557,7 +557,7 @@ func createWorktree(task stitchTask) error {
 	logf("createWorktree: dir=%s branch=%s", task.worktreeDir, task.branchName)
 
 	if err := os.MkdirAll(filepath.Dir(task.worktreeDir), 0o755); err != nil {
-		logf("createWorktree: MkdirAll failed: %v", err)
+		return fmt.Errorf("creating worktree parent directory: %w", err)
 	}
 
 	if !gitBranchExists(task.branchName) {
@@ -743,14 +743,17 @@ func (o *Orchestrator) resetTask(task stitchTask, reason string) {
 		logf("resetTask: WARNING bdUpdateStatus failed for %s: %v", task.id, err)
 	}
 	cleanupWorktree(task)
-	gitForceDeleteBranch(task.branchName)
+	if err := gitForceDeleteBranch(task.branchName); err != nil {
+		logf("resetTask: WARNING force branch delete failed for %s: %v", task.branchName, err)
+	}
 	o.beadsCommit(fmt.Sprintf("Reset %s after %s", task.id, reason))
 }
 
 func cleanupWorktree(task stitchTask) {
 	logf("cleanupWorktree: removing worktree %s", task.worktreeDir)
 	if err := gitWorktreeRemove(task.worktreeDir); err != nil {
-		logf("cleanupWorktree: worktree remove warning: %v", err)
+		logf("cleanupWorktree: worktree remove failed, skipping branch delete: %v", err)
+		return
 	}
 
 	logf("cleanupWorktree: deleting branch %s", task.branchName)

@@ -417,3 +417,137 @@ func TestSaveHistoryReport_NoOpWhenHistoryDirEmpty(t *testing.T) {
 		Status: "success",
 	})
 }
+
+// --- historyDir ---
+
+func TestHistoryDir_Empty(t *testing.T) {
+	t.Parallel()
+	o := &Orchestrator{cfg: Config{Cobbler: CobblerConfig{HistoryDir: ""}}}
+	if got := o.historyDir(); got != "" {
+		t.Errorf("historyDir() = %q, want empty", got)
+	}
+}
+
+func TestHistoryDir_Absolute(t *testing.T) {
+	t.Parallel()
+	o := &Orchestrator{cfg: Config{Cobbler: CobblerConfig{
+		Dir:        ".cobbler/",
+		HistoryDir: "/tmp/history",
+	}}}
+	if got := o.historyDir(); got != "/tmp/history" {
+		t.Errorf("historyDir() = %q, want %q", got, "/tmp/history")
+	}
+}
+
+func TestHistoryDir_Relative(t *testing.T) {
+	t.Parallel()
+	o := &Orchestrator{cfg: Config{Cobbler: CobblerConfig{
+		Dir:        ".cobbler/",
+		HistoryDir: "history",
+	}}}
+	want := filepath.Join(".cobbler/", "history")
+	if got := o.historyDir(); got != want {
+		t.Errorf("historyDir() = %q, want %q", got, want)
+	}
+}
+
+// --- worktreeBasePath ---
+
+func TestWorktreeBasePath(t *testing.T) {
+	t.Parallel()
+	got := worktreeBasePath()
+	if got == "" {
+		t.Fatal("worktreeBasePath() returned empty string")
+	}
+	if !strings.HasSuffix(got, "-worktrees") {
+		t.Errorf("worktreeBasePath() = %q, want suffix '-worktrees'", got)
+	}
+}
+
+// --- saveHistoryStats ---
+
+func TestSaveHistoryStats_WritesFile(t *testing.T) {
+	dir := t.TempDir()
+	o := &Orchestrator{cfg: Config{Cobbler: CobblerConfig{
+		Dir:        dir + "/",
+		HistoryDir: "hist",
+	}}}
+
+	stats := HistoryStats{
+		Caller: "test",
+		TaskID: "task-001",
+		Status: "success",
+	}
+	o.saveHistoryStats("2026-02-26-10-00-00", "stitch", stats)
+
+	path := filepath.Join(dir, "hist", "2026-02-26-10-00-00-stitch-stats.yaml")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("expected file at %s: %v", path, err)
+	}
+	if !strings.Contains(string(data), "task-001") {
+		t.Errorf("file content should contain task ID, got: %s", data)
+	}
+}
+
+func TestSaveHistoryStats_NoOpWhenEmpty(t *testing.T) {
+	t.Parallel()
+	o := &Orchestrator{cfg: Config{Cobbler: CobblerConfig{HistoryDir: ""}}}
+	// Should not panic.
+	o.saveHistoryStats("ts", "phase", HistoryStats{})
+}
+
+// --- saveHistoryPrompt ---
+
+func TestSaveHistoryPrompt_WritesFile(t *testing.T) {
+	dir := t.TempDir()
+	o := &Orchestrator{cfg: Config{Cobbler: CobblerConfig{
+		Dir:        dir + "/",
+		HistoryDir: "hist",
+	}}}
+
+	o.saveHistoryPrompt("2026-02-26-10-00-00", "measure", "prompt content here")
+
+	path := filepath.Join(dir, "hist", "2026-02-26-10-00-00-measure-prompt.yaml")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("expected file at %s: %v", path, err)
+	}
+	if string(data) != "prompt content here" {
+		t.Errorf("file content = %q, want %q", string(data), "prompt content here")
+	}
+}
+
+func TestSaveHistoryPrompt_NoOpWhenEmpty(t *testing.T) {
+	t.Parallel()
+	o := &Orchestrator{cfg: Config{Cobbler: CobblerConfig{HistoryDir: ""}}}
+	o.saveHistoryPrompt("ts", "phase", "prompt")
+}
+
+// --- saveHistoryLog ---
+
+func TestSaveHistoryLog_WritesFile(t *testing.T) {
+	dir := t.TempDir()
+	o := &Orchestrator{cfg: Config{Cobbler: CobblerConfig{
+		Dir:        dir + "/",
+		HistoryDir: "hist",
+	}}}
+
+	logData := []byte(`{"type":"assistant","message":"hello"}`)
+	o.saveHistoryLog("2026-02-26-10-00-00", "stitch", logData)
+
+	path := filepath.Join(dir, "hist", "2026-02-26-10-00-00-stitch-log.log")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("expected file at %s: %v", path, err)
+	}
+	if string(data) != string(logData) {
+		t.Errorf("file content mismatch")
+	}
+}
+
+func TestSaveHistoryLog_NoOpWhenEmpty(t *testing.T) {
+	t.Parallel()
+	o := &Orchestrator{cfg: Config{Cobbler: CobblerConfig{HistoryDir: ""}}}
+	o.saveHistoryLog("ts", "phase", []byte("data"))
+}
