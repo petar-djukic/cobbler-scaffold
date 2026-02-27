@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator"
 	"gopkg.in/yaml.v3"
@@ -177,6 +178,142 @@ func TestSelectiveContext_PromptSavedBeforeClaude(t *testing.T) {
 	}
 }
 
+// TestSelectiveContext_FullPipeline validates end-to-end selective context
+// filtering by running the stitch workflow against a minimal repo whose
+// task's required_reading lists only one of three source files. It verifies
+// that the saved stitch prompt contains only that file and that the prompt
+// size stays within MaxContextBytes.
+//
+// Requires COBBLER_E2E_CLAUDE=1 and podman; skips otherwise.
+// Set COBBLER_E2E_SECRETS_DIR to override the credentials directory
+// (default: ../../.secrets relative to the test working directory).
+func TestSelectiveContext_FullPipeline(t *testing.T) {
+	if os.Getenv("COBBLER_E2E_CLAUDE") != "1" {
+		t.Skip("set COBBLER_E2E_CLAUDE=1 to run full pipeline e2e test")
+	}
+	if _, err := exec.LookPath("podman"); err != nil {
+		t.Skip("podman not found on PATH")
+	}
+	requireBD(t)
+
+	dir := setupMinimalRepo(t)
+	historyDir := t.TempDir()
+
+	// Create a task with required_reading limited to pkg/core/core.go.
+	// pkg/core/types.go and pkg/util/util.go are present in the repo but
+	// must be absent from the filtered prompt.
+	desc := "deliverable_type: code\n" +
+		"required_reading:\n" +
+		"  - pkg/core/core.go (Hello function)\n" +
+		"files:\n" +
+		"  - path: pkg/core/core.go\n" +
+		"    action: modify\n" +
+		"requirements:\n" +
+		"  - id: R1\n" +
+		"    text: Add a Greet function\n" +
+		"acceptance_criteria:\n" +
+		"  - id: AC1\n" +
+		"    text: Greet function exists\n"
+	createBDTask(t, dir, "Add Greet function (pipeline test)", desc)
+
+	origDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+
+	// Resolve the credentials directory to an absolute path so that
+	// os.Chdir below does not invalidate it.
+	secretsDir := os.Getenv("COBBLER_E2E_SECRETS_DIR")
+	if secretsDir == "" {
+		// Two levels up from tests/e2e/ reaches the project root.
+		secretsDir = filepath.Clean(filepath.Join(origDir, "../../.secrets"))
+	}
+
+	const maxContextBytes = 500_000
+	cfg := orchestrator.Config{
+		Project: orchestrator.ProjectConfig{
+			ModulePath:   "example.com/test",
+			BinaryName:   "test",
+			GoSourceDirs: []string{"pkg/"},
+		},
+		Cobbler: orchestrator.CobblerConfig{
+			MaxStitchIssuesPerCycle: 1,
+			MaxContextBytes:         maxContextBytes,
+			HistoryDir:              historyDir,
+		},
+		Claude: orchestrator.ClaudeConfig{
+			SecretsDir: secretsDir,
+			MaxTimeSec: 5,
+		},
+	}
+	o := orchestrator.New(cfg)
+
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("chdir to minimal repo: %v", err)
+	}
+	defer os.Chdir(origDir) //nolint:errcheck
+
+	// Run stitch in the background. The prompt is saved to HistoryDir
+	// before Claude is invoked, so the file appears within seconds
+	// regardless of whether Claude ultimately succeeds or times out.
+	go func() { _, _ = o.RunStitchN(1) }()
+
+	// Poll for the first saved prompt file (up to 30 s).
+	const (
+		pollInterval = 300 * time.Millisecond
+		maxWait      = 30 * time.Second
+	)
+	deadline := time.Now().Add(maxWait)
+	var promptFile string
+	for time.Now().Before(deadline) {
+		matches, _ := filepath.Glob(filepath.Join(historyDir, "*-stitch-prompt.yaml"))
+		if len(matches) > 0 {
+			promptFile = matches[0]
+			break
+		}
+		time.Sleep(pollInterval)
+	}
+	if promptFile == "" {
+		t.Fatalf("no stitch-prompt.yaml appeared in %s within %s", historyDir, maxWait)
+	}
+
+	promptBytes, err := os.ReadFile(promptFile)
+	if err != nil {
+		t.Fatalf("read prompt file: %v", err)
+	}
+
+	// Verify prompt size is within MaxContextBytes.
+	if len(promptBytes) > maxContextBytes {
+		t.Errorf("prompt size %d exceeds MaxContextBytes %d", len(promptBytes), maxContextBytes)
+	}
+
+	// Unmarshal and verify selective context filtering.
+	var doc orchestrator.StitchPromptDoc
+	if err := yaml.Unmarshal(promptBytes, &doc); err != nil {
+		t.Fatalf("unmarshal stitch prompt: %v", err)
+	}
+	if doc.ProjectContext == nil {
+		t.Fatal("stitch prompt has no project_context; filtering cannot be verified")
+	}
+
+	var sourceFiles []string
+	for _, sf := range doc.ProjectContext.SourceCode {
+		sourceFiles = append(sourceFiles, sf.File)
+	}
+	t.Logf("prompt size: %d bytes; source_code files: %v", len(promptBytes), sourceFiles)
+
+	// pkg/core/core.go must be present (listed in required_reading).
+	if !hasSourceFile(sourceFiles, "pkg/core/core.go") {
+		t.Errorf("required file pkg/core/core.go missing from source_code; got %v", sourceFiles)
+	}
+	// pkg/core/types.go and pkg/util/util.go must be absent (not in required_reading).
+	for _, unwanted := range []string{"pkg/core/types.go", "pkg/util/util.go"} {
+		if hasSourceFile(sourceFiles, unwanted) {
+			t.Errorf("source_code contains %q which is not in required_reading; filtering failed", unwanted)
+		}
+	}
+}
+
 // --- helpers ---
 
 func numberedLines(content string) string {
@@ -290,4 +427,15 @@ func writeTestFile(t *testing.T, dir, rel, content string) {
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatalf("writing %s: %v", rel, err)
 	}
+}
+
+// hasSourceFile reports whether any element of files ends with the given path suffix.
+// Uses the same suffix-matching logic as filterSourceFiles in the orchestrator.
+func hasSourceFile(files []string, suffix string) bool {
+	for _, f := range files {
+		if strings.HasSuffix(f, suffix) {
+			return true
+		}
+	}
+	return false
 }
