@@ -36,7 +36,7 @@ touchpoints:
   - T6: "Duration display: prd006-vscode-extension R5.6"
   - T7: "HTML table rendering: prd006-vscode-extension R5.7"
   - T8: "Data refresh: prd006-vscode-extension R5.8"
-  - T9: "InvocationRecord data model: prd005-metrics-collection R1"
+  - T9: "InvocationRecord data model: token counts (input, output, cache creation, cache read), cost, LOC before/after, duration, diff stats read from .beads/issues.jsonl comments"
 
 success_criteria:
   - S1: Dashboard command opens a webview panel with aggregated metrics from .beads/issues.jsonl

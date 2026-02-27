@@ -32,8 +32,8 @@ touchpoints:
   - T5: "Generation branch comparison: prd006-vscode-extension R3.5"
   - T6: "TreeDataProvider for changed files: prd006-vscode-extension R3.6"
   - T7: "Generation Browser context menu: prd006-vscode-extension R2.8"
-  - T8: "Tag naming convention: prd002-generation-lifecycle R1.2"
-  - T9: "Version tag format: prd002-generation-lifecycle R5.6"
+  - T8: "Tag naming convention: generation tags follow {GenPrefix}*-{suffix} pattern; suffixes are -start, -finished, -merged, -abandoned"
+  - T9: "Version tag format: v[REL].[DATE].[REVISION] where REL is the release version and DATE is the build date"
 
 success_criteria:
   - S1: Quick-pick list displays all version tags matching the v[REL].[DATE].[REVISION] pattern

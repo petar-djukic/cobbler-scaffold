@@ -30,12 +30,12 @@ flow:
 
 touchpoints:
   - T1: "TreeDataProvider for status view: prd006-vscode-extension R2.1"
-  - T2: "Git tag discovery via {GenPrefix}*-start pattern: prd006-vscode-extension R2.2, prd002-generation-lifecycle R1.2"
-  - T3: "Lifecycle state from tag suffixes: prd006-vscode-extension R2.3, prd002-generation-lifecycle R1.2"
+  - T2: "Git tag discovery via {GenPrefix}*-start pattern: prd006-vscode-extension R2.2"
+  - T3: "Lifecycle state from tag suffixes (-start, -finished, -merged, -abandoned): prd006-vscode-extension R2.3"
   - T4: "Version tag display: prd006-vscode-extension R2.4"
   - T5: "Current generation indicator: prd006-vscode-extension R2.5"
   - T6: "Expandable lifecycle and version tag children: prd006-vscode-extension R2.6"
-  - T7: "Switch context menu action: prd006-vscode-extension R2.7, prd002-generation-lifecycle R8"
+  - T7: "Switch context menu action: prd006-vscode-extension R2.7"
   - T8: "Compare context menu action: prd006-vscode-extension R2.8 (delegates to rel02.0-uc003)"
   - T9: "FileSystemWatcher on .git/refs/: prd006-vscode-extension R2.9, R7.2"
 

@@ -32,7 +32,7 @@ touchpoints:
   - T4: "Test case loading from YAML specs: prd004-differential-comparison R4"
   - T5: "Comparison execution and timeout: prd004-differential-comparison R5"
   - T6: "Output formatting and mage target: prd004-differential-comparison R6"
-  - T7: "Git worktree management: prd003-cobbler-workflows R3.7 (worktree pattern reuse)"
+  - T7: "Git worktree management: git worktree add/remove pattern reused from stitch workflow (create branch worktree, build, clean up)"
 
 success_criteria:
   - S1: Two generation tags can be compared with mage compare:run and produce pass/fail results

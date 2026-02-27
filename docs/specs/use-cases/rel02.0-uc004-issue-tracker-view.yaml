@@ -35,7 +35,7 @@ touchpoints:
   - T6: "InvocationRecord formatting: prd006-vscode-extension R4.6"
   - T7: "FileSystemWatcher auto-refresh: prd006-vscode-extension R4.7"
   - T8: "Context menu open in editor: prd006-vscode-extension R4.8"
-  - T9: "InvocationRecord data shape: prd005-metrics-collection R1.1, R1.2, R1.3, R1.4, R1.5, R1.6, R1.7"
+  - T9: "InvocationRecord data shape: fields input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens, cost, loc_before, loc_after, duration_sec, git_diff_stat parsed from issue comments"
 
 success_criteria:
   - S1: Issue Tracker tree displays Open, In Progress, and Closed as collapsible parent nodes

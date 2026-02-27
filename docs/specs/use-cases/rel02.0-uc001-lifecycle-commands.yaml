@@ -31,7 +31,7 @@ touchpoints:
   - T4: "Confirmation dialogs: prd006-vscode-extension R1.4"
   - T5: "View refresh: prd006-vscode-extension R1.5"
   - T6: "Command enablement: prd006-vscode-extension R1.6"
-  - T7: "Generation lifecycle: prd002-generation-lifecycle (all operations)"
+  - T7: "Generation lifecycle operations: GeneratorStart, Run, Resume, Stop, Reset, Switch mage targets invoked via integrated terminal"
 
 success_criteria:
   - S1: All six lifecycle commands appear in Command Palette when configuration.yaml exists in workspace
