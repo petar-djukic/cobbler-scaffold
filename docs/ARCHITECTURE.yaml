@@ -285,12 +285,89 @@ components:
       Three YAML constitutions (design, planning, execution) govern the three workflow phases.
       Design constitution is scaffolded to consuming projects. Planning and execution
       constitutions are embedded in the binary and injected into measure and stitch prompts.
+      constitution_md.go provides ConstitutionToMarkdown() and ConstitutionPreviewFile()
+      to render any YAML constitution to markdown for human inspection.
     capabilities:
       - Design constitution (design.yaml) defines documentation standards, format schemas, and traceability model
       - Planning constitution (planning.yaml) defines release priority, task sizing, and issue structure
       - Execution constitution (execution.yaml) defines coding standards, design patterns, and session completion
+      - ConstitutionToMarkdown converts a constitution's sections slice to markdown
+      - ConstitutionPreviewFile reads a constitution YAML file and prints rendered markdown to stdout
     references:
       - Design decision 8 (three-phase constitution architecture)
+
+  - name: Pre-Cycle Analysis
+    responsibility: |
+      Runs cross-artifact consistency checks and code status detection before each
+      measure/stitch cycle. Writes the combined result as analysis.yaml into the cobbler
+      scratch directory so Claude sees the current project health in both measure and
+      stitch prompts. Errors are advisory — they are logged but do not block the cycle.
+    capabilities:
+      - Run cross-artifact consistency checks and collect details into AnalysisDoc
+      - Run code status detection (roadmap spec status vs test file presence)
+      - Marshal and write AnalysisDoc to {ScratchDir}/analysis.yaml
+      - Load analysis.yaml for inclusion in ProjectContext
+    references:
+      - prd003-cobbler-workflows
+
+  - name: Prompt Builder
+    responsibility: |
+      Defines the typed document structures for measure and stitch prompts
+      (MeasurePromptDoc and StitchPromptDoc) and the shared promptTemplate parser.
+      Provides parseYAMLNode and substitutePlaceholders utilities used when assembling
+      prompts from configuration and template files.
+    capabilities:
+      - Define MeasurePromptDoc and StitchPromptDoc as YAML-serializable prompt envelopes
+      - Parse prompt template YAML files into promptTemplate structs
+      - Validate prompt template files for schema conformance
+      - Substitute {key} placeholders in template text
+    references:
+      - prd003-cobbler-workflows
+
+  - name: Code Status
+    responsibility: |
+      Implements the CodeStatus() method (exposed as mage status). Scans the tests/
+      directory for per-use-case test subdirectories, compares presence of _test.go
+      files against roadmap spec status, and reports gaps where a use case is marked
+      done in road-map.yaml but has no test coverage.
+    capabilities:
+      - Scan tests/rel*/uc* directories for _test.go files
+      - Compute per-release and per-use-case implementation status
+      - Detect spec-vs-code gaps and report them
+      - Write CodeStatusReport into AnalysisDoc for pre-cycle context
+    references:
+      - prd001-orchestrator-core
+
+  - name: Cross-Generation Comparison
+    responsibility: |
+      Builds binaries from two git references (or resolves paths directly) and runs
+      test cases loaded from YAML spec test suites to detect behavioral differences
+      between implementations. compare.go implements the top-level Compare() method
+      and binary build/resolve logic; testloader.go loads CompareTestCase records
+      from test suite YAML files and runs them against both binaries.
+    capabilities:
+      - Resolve binary paths from git tags or local paths
+      - Build binaries from git tags into a temp directory
+      - Load CompareTestCase records from YAML test suite files
+      - Run both binaries with identical inputs and compare stdout, stderr, and exit code byte-for-byte
+      - Format and report pass/fail results with diff details and summary counts
+    references:
+      - prd004-differential-comparison
+
+  - name: Token Stats
+    responsibility: |
+      Enumerates all files that buildProjectContext would load, grouped by category,
+      and reports their byte sizes. Optionally calls the Anthropic Token Counting API
+      with the assembled measure prompt to produce an exact token count. Exposes the
+      TokenStats() method (mage stats:tokens target).
+    capabilities:
+      - Enumerate standard documentation, extra context, source code, and prompt template files
+      - Classify files by category (docs, source, prompts, extra)
+      - Compute per-category and total byte counts
+      - Estimate token counts from byte size (len/4 heuristic)
+      - Call Anthropic Token Counting API for exact counts when ANTHROPIC_API_KEY is set
+    references:
+      - prd005-metrics-collection
 
   - name: VS Code Extension
     responsibility: |
@@ -482,6 +559,18 @@ project_structure:
     role: Go build, lint, test, install, credential extraction
   - path: pkg/orchestrator/vscode.go
     role: VS Code extension build, package, install, uninstall
+  - path: pkg/orchestrator/precycle.go
+    role: Pre-cycle analysis — cross-artifact consistency check, code status, writes analysis.yaml to scratch directory before each cycle
+  - path: pkg/orchestrator/constitution_md.go
+    role: Constitution YAML to markdown conversion and ConstitutionPreviewFile helper
+  - path: pkg/orchestrator/prompt.go
+    role: Prompt document types (MeasurePromptDoc, StitchPromptDoc), template parsing, placeholder substitution
+  - path: pkg/orchestrator/codestatus.go
+    role: Code implementation status — scan tests/ for use-case test directories, compare roadmap spec status with test file presence, detect spec-vs-code gaps
+  - path: pkg/orchestrator/testloader.go
+    role: YAML test suite loader and differential binary runner for cross-generation comparison (prd004 R4-R6)
+  - path: pkg/orchestrator/token_stats.go
+    role: Token statistics — enumerate context files by category with byte sizes, optional Anthropic Token Counting API for exact prompt token counts
   - path: pkg/orchestrator/Dockerfile.claude
     role: Embedded Dockerfile for Claude container
   - path: pkg/orchestrator/prompts/
