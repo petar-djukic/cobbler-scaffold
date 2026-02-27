@@ -463,6 +463,77 @@ releases:
 	}
 }
 
+// --- PRDsSpanningMultipleReleases ---
+
+func TestCollectAnalyzeResult_PRDsSpanningMultipleReleases_Pass(t *testing.T) {
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(orig)
+
+	os.MkdirAll("docs/specs/product-requirements", 0o755)
+	os.MkdirAll("docs/specs/use-cases", 0o755)
+	os.MkdirAll("docs/specs/test-suites", 0o755)
+	os.MkdirAll("docs/constitutions", 0o755)
+	os.MkdirAll("pkg/orchestrator/constitutions", 0o755)
+
+	// Two use cases in the same release both reference prd001-core → no violation.
+	os.WriteFile("docs/specs/product-requirements/prd001-core.yaml",
+		[]byte("id: prd001-core\ntitle: Core\nrequirements:\n  R1:\n    title: Req 1\n    items:\n      - R1.1: Do X\n"), 0o644)
+	os.WriteFile("docs/specs/use-cases/rel01.0-uc001-a.yaml",
+		[]byte("id: rel01.0-uc001-a\ntitle: A\ntouchpoints:\n  - T1: prd001-core R1\n"), 0o644)
+	os.WriteFile("docs/specs/use-cases/rel01.0-uc002-b.yaml",
+		[]byte("id: rel01.0-uc002-b\ntitle: B\ntouchpoints:\n  - T1: prd001-core R1\n"), 0o644)
+	os.WriteFile("docs/road-map.yaml", []byte("id: rm\ntitle: RM\nreleases: []\n"), 0o644)
+
+	o := &Orchestrator{cfg: Config{}}
+	result, _, err := o.collectAnalyzeResult()
+	if err != nil {
+		t.Fatalf("collectAnalyzeResult: %v", err)
+	}
+	if len(result.PRDsSpanningMultipleReleases) != 0 {
+		t.Errorf("expected no violations, got %v", result.PRDsSpanningMultipleReleases)
+	}
+}
+
+func TestCollectAnalyzeResult_PRDsSpanningMultipleReleases_Fail(t *testing.T) {
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(orig)
+
+	os.MkdirAll("docs/specs/product-requirements", 0o755)
+	os.MkdirAll("docs/specs/use-cases", 0o755)
+	os.MkdirAll("docs/specs/test-suites", 0o755)
+	os.MkdirAll("docs/constitutions", 0o755)
+	os.MkdirAll("pkg/orchestrator/constitutions", 0o755)
+
+	// prd003-workflows referenced by rel01.0 and rel03.0 → one violation.
+	os.WriteFile("docs/specs/product-requirements/prd003-workflows.yaml",
+		[]byte("id: prd003-workflows\ntitle: Workflows\nrequirements:\n  R1:\n    title: Req 1\n    items:\n      - R1.1: Do X\n"), 0o644)
+	os.WriteFile("docs/specs/use-cases/rel01.0-uc001-measure.yaml",
+		[]byte("id: rel01.0-uc001-measure\ntitle: Measure\ntouchpoints:\n  - T1: prd003-workflows R1\n"), 0o644)
+	os.WriteFile("docs/specs/use-cases/rel03.0-uc001-compare.yaml",
+		[]byte("id: rel03.0-uc001-compare\ntitle: Compare\ntouchpoints:\n  - T1: prd003-workflows R1\n"), 0o644)
+	os.WriteFile("docs/road-map.yaml", []byte("id: rm\ntitle: RM\nreleases: []\n"), 0o644)
+
+	o := &Orchestrator{cfg: Config{}}
+	result, _, err := o.collectAnalyzeResult()
+	if err != nil {
+		t.Fatalf("collectAnalyzeResult: %v", err)
+	}
+	if len(result.PRDsSpanningMultipleReleases) != 1 {
+		t.Fatalf("expected 1 violation, got %d: %v", len(result.PRDsSpanningMultipleReleases), result.PRDsSpanningMultipleReleases)
+	}
+	msg := result.PRDsSpanningMultipleReleases[0]
+	if !strings.Contains(msg, "prd003-workflows") {
+		t.Errorf("expected message to mention prd003-workflows, got %q", msg)
+	}
+	if !strings.Contains(msg, "01.0") || !strings.Contains(msg, "03.0") {
+		t.Errorf("expected message to mention both releases, got %q", msg)
+	}
+}
+
 func TestCollectAnalyzeResult_EmptyReleasesNoValidation(t *testing.T) {
 	dir := t.TempDir()
 	orig, _ := os.Getwd()

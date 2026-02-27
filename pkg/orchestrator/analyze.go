@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -23,8 +24,9 @@ type AnalyzeResult struct {
 	UseCasesNotInRoadmap      []string // Use cases not listed in road-map.yaml
 	SchemaErrors              []string // YAML files with fields not matching typed structs
 	ConstitutionDrift         []string // Files in docs/constitutions/ that differ from embedded copies
-	BrokenCitations           []string // Touchpoints citing non-existent requirement groups in PRDs
-	InvalidReleases           []string // Configured releases not found in road-map.yaml
+	BrokenCitations                []string // Touchpoints citing non-existent requirement groups in PRDs
+	InvalidReleases                []string // Configured releases not found in road-map.yaml
+	PRDsSpanningMultipleReleases   []string // PRDs referenced by use cases from more than one release
 }
 
 // analyzeCounts holds the artifact counts discovered during analysis.
@@ -70,8 +72,9 @@ func (o *Orchestrator) collectAnalyzeResult() (AnalyzeResult, analyzeCounts, err
 		return result, analyzeCounts{}, fmt.Errorf("globbing use cases: %w", err)
 	}
 	ucIDs := make(map[string]bool)
-	ucToPRDs := make(map[string][]string)    // use case ID -> PRD IDs from touchpoints
+	ucToPRDs := make(map[string][]string)      // use case ID -> PRD IDs from touchpoints
 	ucTouchpoints := make(map[string][]string) // use case ID -> raw touchpoint strings
+	prdToReleases := make(map[string]map[string]bool) // PRD ID -> set of releases that reference it
 	for _, path := range ucFiles {
 		uc, err := loadUseCase(path)
 		if err != nil {
@@ -81,6 +84,15 @@ func (o *Orchestrator) collectAnalyzeResult() (AnalyzeResult, analyzeCounts, err
 		ucIDs[uc.ID] = true
 		ucToPRDs[uc.ID] = extractPRDsFromTouchpoints(uc.Touchpoints)
 		ucTouchpoints[uc.ID] = uc.Touchpoints
+		release := extractFileRelease(path)
+		if release != "" {
+			for _, prdID := range ucToPRDs[uc.ID] {
+				if prdToReleases[prdID] == nil {
+					prdToReleases[prdID] = make(map[string]bool)
+				}
+				prdToReleases[prdID][release] = true
+			}
+		}
 	}
 	logf("analyze: found %d use cases", len(ucIDs))
 
@@ -204,6 +216,21 @@ func (o *Orchestrator) collectAnalyzeResult() (AnalyzeResult, analyzeCounts, err
 	}
 	logf("analyze: broken citations found %d", len(result.BrokenCitations))
 
+	// Check 9: PRDs spanning multiple releases
+	for prdID, releases := range prdToReleases {
+		if len(releases) > 1 {
+			sorted := make([]string, 0, len(releases))
+			for r := range releases {
+				sorted = append(sorted, r)
+			}
+			sort.Strings(sorted)
+			result.PRDsSpanningMultipleReleases = append(result.PRDsSpanningMultipleReleases,
+				fmt.Sprintf("%s: referenced by releases %s", prdID, strings.Join(sorted, ", ")))
+		}
+	}
+	sort.Strings(result.PRDsSpanningMultipleReleases)
+	logf("analyze: PRDs spanning multiple releases found %d", len(result.PRDsSpanningMultipleReleases))
+
 	// Check 7: YAML schema validation — load all docs into typed structs
 	// with strict field checking. Unknown YAML fields indicate a schema
 	// mismatch that will cause data loss during measure prompt assembly.
@@ -258,6 +285,7 @@ func (r AnalyzeResult) printReport(prdCount, ucCount, tsCount int) error {
 	hasIssues = printSection("Constitution drift (docs/constitutions/ differs from embedded pkg/orchestrator/constitutions/)", r.ConstitutionDrift) || hasIssues
 	hasIssues = printSection("Broken citations (touchpoint cites non-existent requirement group)", r.BrokenCitations) || hasIssues
 	hasIssues = printSection("Invalid configured releases (not found in road-map.yaml)", r.InvalidReleases) || hasIssues
+	hasIssues = printSection("PRDs spanning multiple releases (each PRD must belong to exactly one release)", r.PRDsSpanningMultipleReleases) || hasIssues
 
 	if !hasIssues {
 		fmt.Printf("\n✅ All consistency checks passed\n")
