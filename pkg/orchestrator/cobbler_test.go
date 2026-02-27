@@ -728,3 +728,110 @@ func TestSaveHistoryLog_EmptyHistoryDir_NoOp(t *testing.T) {
 	o.saveHistoryLog("20260101T120000", "stitch", []byte("log output"))
 	// success: did not panic
 }
+
+// --- captureLOC ---
+
+func TestCaptureLOC_CountsProductionAndTestFiles(t *testing.T) {
+	// Not parallel: uses os.Chdir.
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "a.go"), []byte("line 1\nline 2\n"), 0644)
+	os.WriteFile(filepath.Join(dir, "b_test.go"), []byte("test 1\ntest 2\ntest 3\n"), 0644)
+
+	origDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chdir(origDir) })
+
+	o := New(Config{})
+	snap := o.captureLOC()
+	if snap.Production != 2 {
+		t.Errorf("Production = %d, want 2", snap.Production)
+	}
+	if snap.Test != 3 {
+		t.Errorf("Test = %d, want 3", snap.Test)
+	}
+}
+
+func TestCaptureLOC_EmptyDir_ReturnsZero(t *testing.T) {
+	// Not parallel: uses os.Chdir.
+	dir := t.TempDir()
+	origDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chdir(origDir) })
+
+	o := New(Config{})
+	snap := o.captureLOC()
+	if snap.Production != 0 || snap.Test != 0 {
+		t.Errorf("empty dir: got {%d %d}, want {0 0}", snap.Production, snap.Test)
+	}
+}
+
+// --- InvocationRecord JSON serialization (covers recordInvocation marshaling) ---
+
+func TestInvocationRecord_JSONShape(t *testing.T) {
+	t.Parallel()
+	rec := InvocationRecord{
+		Caller:    "stitch",
+		StartedAt: "2026-02-27T10:00:00Z",
+		DurationS: 42,
+		Tokens:    claudeTokens{Input: 1500, Output: 500, CacheCreation: 200, CacheRead: 300, CostUSD: 0.0325},
+		LOCBefore: LocSnapshot{Production: 100, Test: 50},
+		LOCAfter:  LocSnapshot{Production: 110, Test: 55},
+		Diff:      diffRecord{Files: 3, Insertions: 20, Deletions: 5},
+	}
+
+	data, err := json.Marshal(rec)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+
+	var got map[string]json.RawMessage
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("unmarshal top-level: %v", err)
+	}
+
+	// All required fields must be present (prd005 R1.1-R1.7).
+	for _, key := range []string{"caller", "started_at", "duration_s", "tokens", "loc_before", "loc_after", "diff"} {
+		if _, ok := got[key]; !ok {
+			t.Errorf("InvocationRecord JSON missing field %q", key)
+		}
+	}
+
+	// Spot-check values.
+	var caller string
+	json.Unmarshal(got["caller"], &caller)
+	if caller != "stitch" {
+		t.Errorf("caller = %q, want stitch", caller)
+	}
+
+	var tokens claudeTokens
+	json.Unmarshal(got["tokens"], &tokens)
+	if tokens.Input != 1500 || tokens.Output != 500 {
+		t.Errorf("tokens = %+v, want {Input:1500 Output:500}", tokens)
+	}
+	if tokens.CacheCreation != 200 || tokens.CacheRead != 300 {
+		t.Errorf("tokens cache = {CacheCreation:%d CacheRead:%d}, want {200 300}", tokens.CacheCreation, tokens.CacheRead)
+	}
+}
+
+// --- parseClaudeTokens error branch ---
+
+func TestParseClaudeTokens_MalformedResultEvent(t *testing.T) {
+	t.Parallel()
+	// type="result" line present but usage field is malformed JSON.
+	output := []byte(`{"type":"result","usage":"not_an_object"}`)
+	got := parseClaudeTokens(output)
+	// Malformed result: should return zero values gracefully.
+	if got.InputTokens != 0 || got.OutputTokens != 0 {
+		t.Errorf("malformed result: got in=%d out=%d, want 0 0", got.InputTokens, got.OutputTokens)
+	}
+}
