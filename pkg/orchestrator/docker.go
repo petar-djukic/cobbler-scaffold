@@ -4,11 +4,13 @@
 package orchestrator
 
 import (
+	"context"
 	_ "embed"
 	"fmt"
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 //go:embed Dockerfile.claude
@@ -142,9 +144,18 @@ func buildFromEmbeddedDockerfile(tags ...string) error {
 }
 
 // podmanImageExists returns true if the given image reference exists
-// in the local podman image store.
+// in the local podman image store. A 15-second deadline prevents a
+// slow or unresponsive podman socket from blocking indefinitely.
 func podmanImageExists(image string) bool {
-	return exec.Command(binPodman, "image", "exists", image).Run() == nil
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	if err := exec.CommandContext(ctx, binPodman, "image", "exists", image).Run(); err != nil {
+		if ctx.Err() != nil {
+			logf("podmanImageExists: timed out querying podman for %s", image)
+		}
+		return false
+	}
+	return true
 }
 
 // podmanImageID resolves an image name/tag to its full image ID.
