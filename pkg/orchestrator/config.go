@@ -194,6 +194,15 @@ type CobblerConfig struct {
 	// HistoryDir is the directory for saving measure artifacts (prompt,
 	// issues YAML, stream-json log) per iteration. Default "history".
 	HistoryDir string `yaml:"history_dir"`
+
+	// DocTagPrefix is the prefix used when creating documentation release
+	// tags (default "v0."). Tags are formed as <DocTagPrefix><YYYYMMDD>.<N>.
+	DocTagPrefix string `yaml:"doc_tag_prefix"`
+
+	// BaseBranch is the branch from which documentation release tags must
+	// be created (default "main"). Tag() returns an error if the current
+	// branch does not match this value.
+	BaseBranch string `yaml:"base_branch"`
 }
 
 // PodmanConfig holds settings for the podman container runtime.
@@ -371,6 +380,12 @@ func (c *Config) applyDefaults() {
 	}
 	if c.Cobbler.HistoryDir == "" {
 		c.Cobbler.HistoryDir = "history"
+	}
+	if c.Cobbler.DocTagPrefix == "" {
+		c.Cobbler.DocTagPrefix = "v0."
+	}
+	if c.Cobbler.BaseBranch == "" {
+		c.Cobbler.BaseBranch = "main"
 	}
 	if c.Claude.MaxTimeSec == 0 {
 		c.Claude.MaxTimeSec = 300

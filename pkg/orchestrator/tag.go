@@ -21,23 +21,23 @@ import (
 //
 // Exposed as a mage target (e.g., mage tag).
 func (o *Orchestrator) Tag() error {
-	// Ensure we're on main branch for REL=0 tags.
+	// Ensure we're on the configured base branch for doc tags.
 	current, err := gitCurrentBranch()
 	if err != nil {
 		return fmt.Errorf("getting current branch: %w", err)
 	}
-	if current != "main" {
-		return fmt.Errorf("tag must be run from main branch (currently on %s)", current)
+	if current != o.cfg.Cobbler.BaseBranch {
+		return fmt.Errorf("tag must be run from %s branch (currently on %s)", o.cfg.Cobbler.BaseBranch, current)
 	}
 
 	// Get today's date in YYYYMMDD format.
 	today := time.Now().Format("20060102")
 
 	// Find the next revision for today.
-	revision := nextDocRevision(today)
+	revision := nextDocRevision(o.cfg.Cobbler.DocTagPrefix, today)
 
 	// Create the tag name.
-	tag := fmt.Sprintf("v0.%s.%d", today, revision)
+	tag := fmt.Sprintf("%s%s.%d", o.cfg.Cobbler.DocTagPrefix, today, revision)
 
 	logf("tag: creating documentation release %s", tag)
 
@@ -69,11 +69,11 @@ func (o *Orchestrator) Tag() error {
 	return nil
 }
 
-// nextDocRevision returns the next revision number for v0.DATE.* tags.
+// nextDocRevision returns the next revision number for <prefix>DATE.* tags.
 // Returns 0 if no tags exist for the given date, otherwise returns the
 // highest existing revision + 1.
-func nextDocRevision(date string) int {
-	pattern := fmt.Sprintf("v0.%s.*", date)
+func nextDocRevision(prefix, date string) int {
+	pattern := fmt.Sprintf("%s%s.*", prefix, date)
 	tags := gitListTags(pattern)
 	if len(tags) == 0 {
 		return 0
@@ -81,7 +81,7 @@ func nextDocRevision(date string) int {
 
 	// Extract revision numbers from tags like v0.20260219.0, v0.20260219.1, etc.
 	// Find the highest revision.
-	revPattern := regexp.MustCompile(`^v0\.` + regexp.QuoteMeta(date) + `\.(\d+)$`)
+	revPattern := regexp.MustCompile(`^` + regexp.QuoteMeta(prefix) + regexp.QuoteMeta(date) + `\.(\d+)$`)
 	maxRev := -1
 	for _, t := range tags {
 		matches := revPattern.FindStringSubmatch(t)
