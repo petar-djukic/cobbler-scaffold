@@ -30,6 +30,7 @@ constraints: |
   - When source_code contains .go files for a package, that package already exists. Do not propose creating or reimplementing it. Trust the source code over prose descriptions in documentation (e.g., implementation_status sections in ARCHITECTURE.yaml may be stale).
   - Do NOT exceed {limit} tasks. If more work is needed, create additional tasks in a future session.
   - Do NOT create tasks larger than {lines_max} lines of production code. Target {lines_min}-{lines_max} lines per task, touching 5-7 files. Split aggressively: a task that creates a struct and implements its methods is two tasks.
+  - Each task must contain at most {max_requirements} requirements. Split any task that would exceed this limit.
   - Each task MUST be independently executable by an agent that has no context beyond the task description and the execution constitution.
   - Do NOT assume the stitch agent has access to your analysis, the existing issues list, or any context from this conversation.
   - Do NOT propose tasks that require human judgment or manual testing. Each task must have checkable acceptance criteria.

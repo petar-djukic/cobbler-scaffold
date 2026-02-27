@@ -205,8 +205,25 @@ func TestMeasurePromptSubstitutesPlaceholders(t *testing.T) {
 	if strings.Contains(prompt, "{lines_min}") {
 		t.Error("measure prompt has unsubstituted {lines_min} placeholder")
 	}
+	if strings.Contains(prompt, "{max_requirements}") {
+		t.Error("measure prompt has unsubstituted {max_requirements} placeholder")
+	}
 	if strings.Contains(prompt, "{output_path}") {
 		t.Error("measure prompt still references removed {output_path} placeholder")
+	}
+}
+
+func TestBuildMeasurePrompt_MaxRequirementsPlaceholder(t *testing.T) {
+	cfg := Config{}
+	cfg.applyDefaults()
+	cfg.Cobbler.MaxRequirementsPerTask = 7
+	o := New(cfg)
+	prompt, err := o.buildMeasurePrompt("", "[]", 1)
+	if err != nil {
+		t.Fatalf("buildMeasurePrompt: %v", err)
+	}
+	if !strings.Contains(prompt, "7") {
+		t.Error("measure prompt does not contain the configured max_requirements value (7)")
 	}
 }
 

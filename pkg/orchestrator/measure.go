@@ -445,9 +445,10 @@ func (o *Orchestrator) buildMeasurePrompt(userInput, existingIssues string, limi
 	projectCtx.CompletedWork = getCompletedWork()
 
 	placeholders := map[string]string{
-		"limit":     fmt.Sprintf("%d", limit),
-		"lines_min": fmt.Sprintf("%d", o.cfg.Cobbler.EstimatedLinesMin),
-		"lines_max": fmt.Sprintf("%d", o.cfg.Cobbler.EstimatedLinesMax),
+		"limit":            fmt.Sprintf("%d", limit),
+		"lines_min":        fmt.Sprintf("%d", o.cfg.Cobbler.EstimatedLinesMin),
+		"lines_max":        fmt.Sprintf("%d", o.cfg.Cobbler.EstimatedLinesMax),
+		"max_requirements": fmt.Sprintf("%d", o.cfg.Cobbler.MaxRequirementsPerTask),
 	}
 
 	doc := MeasurePromptDoc{
