@@ -69,3 +69,13 @@ articles:
         mage test:uc001OrchestratorInitialization
         mage test:uc003MeasureWorkflow
         mage test:usecase
+
+sections:
+  - tag: articles
+    title: Testing Principles
+    content: |
+      Five principles govern the testing phase: hierarchical test naming
+      (Test{Suite}_UC{NNN}_DescriptiveName), one file per use case,
+      bidirectional spec-to-code traceability, a test count invariant that
+      never allows fewer tests than spec entries, and mage test:uc{NNN} targets
+      for each use case.

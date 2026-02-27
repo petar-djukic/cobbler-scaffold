@@ -266,3 +266,30 @@ example_code_issue: |
       text: Tests pass for each operation
     - id: AC3
       text: Errors match PRD error types
+
+sections:
+  - tag: articles
+    title: Core Principles
+    content: |
+      Three principles govern the planning phase: decompose work to fit within
+      one session, write specifications before code, and never create
+      implementation issues without an existing test suite for the use case.
+  - tag: issue_structure
+    title: Issue Structure
+    content: |
+      All issues share five common fields: deliverable_type, required_reading,
+      files, requirements, and acceptance_criteria. Documentation issues add
+      format_rule and required_sections. Code issues specify files to modify
+      with explicit actions and size constraints.
+  - tag: example_documentation_issue
+    title: Documentation Issue Example
+    content: |
+      A worked example shows a properly structured documentation issue for
+      writing a PRD, including required reading, output path, format rule, and
+      acceptance criteria.
+  - tag: example_code_issue
+    title: Code Issue Example
+    content: |
+      A worked example shows a properly structured code issue for implementing a
+      feature, including required reading, files to create or modify,
+      requirements with IDs, and acceptance criteria.

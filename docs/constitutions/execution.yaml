@@ -167,3 +167,41 @@ technology:
 
 git_conventions:
   note: Git is managed externally. Do NOT run any git commands.
+
+sections:
+  - tag: articles
+    title: Core Principles
+    content: |
+      Six principles govern the stitch phase: specification-first development,
+      commit traceability, no scope creep, session completion via
+      orchestrator-managed git, quality gate enforcement, and prohibition of
+      magic test values.
+  - tag: coding_standards
+    title: Coding Standards
+    content: |
+      Go code follows the project's style guide: typed error handling, no magic
+      strings, one concept per struct, and design patterns applied to eliminate
+      conditional branching. Interfaces are introduced only when two concrete
+      implementations exist.
+  - tag: traceability
+    title: Traceability
+    content: |
+      Before implementing, read the specified PRDs and architecture sections.
+      Commit messages must cite PRDs. Add a PRD list to file or package comments
+      where useful.
+  - tag: session_completion
+    title: Session Completion
+    content: |
+      Work is complete when all files are written and tests pass. Git operations
+      are managed externally by the orchestrator; do not run any git commands.
+  - tag: technology
+    title: Technology Stack
+    content: |
+      The project uses Go with mage for build automation, cobra for CLI, viper
+      for configuration, yaml.v3 for YAML parsing, and cupboard (migrating from
+      beads) for issue tracking.
+  - tag: git_conventions
+    title: Git Conventions
+    content: |
+      Git is managed externally. Do not run any git commands during a stitch
+      session; the orchestrator handles all staging, committing, and branching.

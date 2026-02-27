@@ -291,3 +291,48 @@ completeness_checklists:
     - Inputs use real commands and data
     - Expected outputs are specific and checkable
     - File saved as test-[use-case-id].yaml
+
+sections:
+  - tag: articles
+    title: Core Principles
+    content: |
+      Five principles govern the design phase: specifications are the source of
+      truth, YAML is the format for structured documents, every use case must
+      link to a test suite, all artifacts trace through a chain from vision to
+      code, and releases are roadmap-driven.
+  - tag: documentation_standards
+    title: Documentation Standards
+    content: |
+      Write in the style of Strunk and White: concise, active voice, specific,
+      no unnecessary words. Use the royal "we." Tables over lists for short
+      entries. Avoid forbidden terms such as "critical," "key," and "strategic."
+  - tag: document_types
+    title: Document Types
+    content: |
+      Seven document types are defined: vision, architecture, PRD, use case,
+      test suite, engineering guideline, and specification. Each has a canonical
+      location, format rule, required fields, and optional fields.
+  - tag: naming_conventions
+    title: Naming Conventions
+    content: |
+      File names follow strict patterns per document type (e.g.,
+      prd[NNN]-[feature].yaml, rel[NN].[N]-uc[NNN]-[name].yaml). Use lowercase
+      kebab-case throughout.
+  - tag: writing_guidelines
+    title: Writing Guidelines
+    content: |
+      Write for developers, agents, and reviewers. Describe structure and
+      contracts; point to upstream docs for detail. Use "we" in active voice and
+      present tense.
+  - tag: traceability_model
+    title: Traceability Model
+    content: |
+      Every artifact traces through the chain: vision goals → architecture
+      components → PRD requirements → use case tracer bullets → test suite
+      validation → code implementation.
+  - tag: completeness_checklists
+    title: Completeness Checklists
+    content: |
+      Each document type has a checklist of required fields and cross-references
+      to verify before closing an issue. Run mage analyze to catch missing
+      linkages automatically.

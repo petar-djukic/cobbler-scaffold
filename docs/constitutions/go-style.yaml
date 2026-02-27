@@ -201,3 +201,81 @@ code_review_checklist:
   - "Config structs embed shared fields rather than duplicating them."
   - "context.Context is threaded through I/O paths."
   - "Tests cover the contract, not the implementation."
+
+sections:
+  - tag: copyright_header
+    title: Copyright Header
+    content: |
+      Every Go file must begin with the SPDX copyright header line.
+  - tag: duplication
+    title: Code Duplication
+    content: |
+      Search for existing code before writing a new function. Extract shared
+      logic at the two-occurrence threshold — if you write the same thing twice,
+      extract it.
+  - tag: design_patterns
+    title: Design Patterns
+    content: |
+      Six patterns apply: Strategy, Command, Facade, Factory, Decorator, and
+      Adapter. Select patterns to eliminate if/else ladders and centralize
+      construction logic.
+  - tag: interfaces
+    title: Interfaces
+    content: |
+      Introduce an interface only when two concrete implementations exist or a
+      dependency must be mocked in tests. Accept interfaces as parameters;
+      return concrete structs. Keep interfaces small: one to three methods.
+  - tag: struct_and_function_design
+    title: Struct and Function Design
+    content: |
+      Each struct represents one concept; each function does one thing. Group
+      more than three parameters into a config struct. Split functions exceeding
+      40 lines at a natural seam.
+  - tag: error_handling
+    title: Error Handling
+    content: |
+      Handle errors at the point they occur with guard clauses. Wrap errors with
+      context using fmt.Errorf. Never silently discard an error except for
+      best-effort cleanup, and always leave a comment when discarding.
+  - tag: no_magic_strings
+    title: No Magic Strings
+    content: |
+      Centralize all string literals for binary names, file paths, URLs, and
+      repeated text as named constants. Never scatter raw string literals.
+  - tag: project_structure
+    title: Project Structure
+    content: |
+      cmd/ for entry points, internal/ for private implementation, pkg/ for
+      public shared types, tests/ for integration tests, magefiles/ for build
+      tooling. Align package structure to PRD component structure.
+  - tag: standard_packages
+    title: Standard Packages
+    content: |
+      Approved dependencies: mage for build automation, cobra for CLI, viper for
+      configuration, testify for test assertions, yaml.v3 for YAML parsing, and
+      encoding/json from the standard library.
+  - tag: naming_conventions
+    title: Naming Conventions
+    content: |
+      Exported names use CamelCase; unexported use camelCase. CLI flags use
+      kebab-case. Binary constants use the binXxx prefix. Factories use NewXxx.
+      Interfaces are named to describe behavior, not implementation.
+  - tag: concurrency
+    title: Concurrency
+    content: |
+      Use sync.Mutex for shared mutable state. Avoid global variables accessed
+      from goroutines. Thread context.Context through all I/O paths.
+  - tag: testing
+    title: Testing
+    content: |
+      Write table-driven tests using t.Run subtests. Use testify assertions.
+      Mock external dependencies via interfaces. Tests cover contract, not
+      implementation; include edge cases, boundary lengths, and concurrent access.
+  - tag: code_review_checklist
+    title: Code Review Checklist
+    content: |
+      Before closing, verify: no duplicated logic, no magic strings, every error
+      handled or discarded with a comment, single-responsibility structs,
+      functions under 200 lines, small interfaces with at least two
+      implementations, no boolean-toggle parameters, and tests covering the
+      contract.

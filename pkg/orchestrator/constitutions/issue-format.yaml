@@ -197,3 +197,29 @@ examples:
         text: File saved as prd-feature-name.yaml
       - id: AC3
         text: Requirements numbered and specific
+
+sections:
+  - tag: schema
+    title: Issue Schema
+    content: |
+      Each beads issue description is a YAML document with five required fields:
+      deliverable_type, required_reading, files, requirements, and
+      acceptance_criteria. Optional fields include design_decisions and
+      format_rule.
+  - tag: yaml_rules
+    title: YAML Formatting Rules
+    content: |
+      Use multi-line block literals (|) for prose. Keys are lowercase with
+      underscores. Avoid unnecessary quoting. Each requirement and acceptance
+      criterion is a mapping with id and text fields.
+  - tag: field_specs
+    title: Field Specifications
+    content: |
+      Field specifications define the type, allowed values, whether the field is
+      required, and sub-field structure for each issue description field.
+  - tag: examples
+    title: Examples
+    content: |
+      Reference examples for documentation issues and code issues show the full
+      expected YAML structure, including required reading, output paths, format
+      rules, requirements, and acceptance criteria.
