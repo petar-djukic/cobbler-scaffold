@@ -463,6 +463,11 @@ func (o *Orchestrator) buildMeasurePrompt(userInput, existingIssues string, limi
 		AdditionalContext:       userInput,
 	}
 
+	// Enforce releases scope: the roadmap is not filtered by release, so
+	// without an explicit constraint the agent may propose tasks from adjacent
+	// releases after exhausting the configured ones.
+	doc.Constraints += measureReleasesConstraint(o.cfg.Project.Releases, o.cfg.Project.Release)
+
 	out, err := yaml.Marshal(&doc)
 	if err != nil {
 		return "", fmt.Errorf("marshaling measure prompt: %w", err)
@@ -471,6 +476,25 @@ func (o *Orchestrator) buildMeasurePrompt(userInput, existingIssues string, limi
 	logf("buildMeasurePrompt: %d bytes limit=%d userInput=%v",
 		len(out), limit, userInput != "")
 	return string(out), nil
+}
+
+// measureReleasesConstraint returns a hard constraint string to append to the
+// measure prompt when a release scope is configured. Returns "" when no scope
+// is set. Releases (list) takes precedence over Release (single string).
+func measureReleasesConstraint(releases []string, release string) string {
+	if len(releases) > 0 {
+		return fmt.Sprintf(
+			"\n\nRelease scope: You MUST only propose tasks for use cases in releases [%s]. Do not propose tasks for any other release.",
+			strings.Join(releases, ", "),
+		)
+	}
+	if release != "" {
+		return fmt.Sprintf(
+			"\n\nRelease scope: You MUST only propose tasks for use cases in release %q or earlier. Do not propose tasks for later releases.",
+			release,
+		)
+	}
+	return ""
 }
 
 type proposedIssue struct {
