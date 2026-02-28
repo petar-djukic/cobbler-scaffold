@@ -1,6 +1,8 @@
 <!-- Copyright (c) 2026 Petar Djukic. All rights reserved. SPDX-License-Identifier: MIT -->
 
-Pop a GitHub issue from the current repository, decompose it into a local beads epic with sub-issues on a feature branch, and open a PR when the epic is complete.
+Pop a GitHub issue from the current repository, decompose it into GitHub sub-issues on a feature branch, and open a PR when all sub-issues are closed.
+
+Sub-issue progress is visible directly on the parent issue page.
 
 ## Input
 
@@ -15,7 +17,7 @@ If arguments contain an issue number (e.g. `42` or `#42`), use that issue. If ar
 ## Phase 1 -- Fetch the GitHub Issue
 
 1. Fetch the issue:
-   ```
+   ```bash
    gh issue view <number> --repo <owner>/<repo> --json number,title,body,labels,state
    ```
 2. If the issue is not open, stop and report its state.
@@ -23,31 +25,30 @@ If arguments contain an issue number (e.g. `42` or `#42`), use that issue. If ar
 
 ## Phase 2 -- Gather Project Context
 
-Same as `/make-work`:
-
 1. Read VISION.yaml, ARCHITECTURE.yaml, road-map.yaml, and `docs/constitutions/design.yaml`.
 2. Read READMEs for product requirements and use cases relevant to the issue.
-3. Run `bd list` to see existing epics and issues.
+3. List open sub-issues already attached to this parent (in case this is a resumed session):
+   ```bash
+   gh api repos/<owner>/<repo>/issues/<number>/sub_issues --jq '[.[] | {number: .number, title: .title, state: .state}]'
+   ```
 4. Run `mage analyze` to identify spec issues.
 5. Run `mage stats` for current LOC and documentation metrics.
 6. Summarize the current project state.
 
-## Phase 3 -- Propose Epic and Issues
+## Phase 3 -- Propose Sub-Issues
 
-Using the GitHub issue as the work item, propose:
+Using the GitHub issue as the epic, propose sub-issues that decompose it into actionable work:
 
-1. A beads epic whose title matches the GitHub issue title, prefixed with the GitHub issue number (e.g. `GH-42: Feature title`).
-2. Sub-issues that decompose the GitHub issue into actionable work, following the same crumb-format rules as `/make-work`:
-   - Type: documentation or code
-   - Required Reading: mandatory list of files the agent must read
-   - Files to Create/Modify: explicit file list
-   - Structure: Requirements, Design Decisions (optional), Acceptance Criteria
-   - Code task sizing: 300-700 lines of production code, no more than 5 files
-   - No more than 10 sub-issues
+- Type: documentation or code
+- Required Reading: mandatory list of files the agent must read
+- Files to Create/Modify: explicit file list
+- Structure: Requirements, Design Decisions (optional), Acceptance Criteria
+- Code task sizing: 300-700 lines of production code, no more than 5 files
+- No more than 10 sub-issues
 
-3. Present the proposed breakdown to the user for approval. Do not create anything until the user agrees.
+Present the proposed breakdown to the user for approval. Do not create anything until the user agrees.
 
-## Phase 4 -- Create Branch and Work Items
+## Phase 4 -- Create Branch and Sub-Issues
 
 After user approval:
 
@@ -63,30 +64,36 @@ After user approval:
    ```
    Where `<slug>` is a short kebab-case summary of the issue title (e.g. `gh-42-add-scaffold-validation`).
 
-3. Create the epic:
+3. Create each sub-issue on GitHub:
+   ```bash
+   gh issue create --repo <owner>/<repo> \
+     --title "<sub-issue title>" \
+     --body "<structured description with Required Reading, Files to Create/Modify, Requirements, Acceptance Criteria>"
    ```
-   bd create "GH-<number>: <title>" --type epic --description "<GitHub issue body + link>"
-   ```
-   Include in the epic description:
-   - The full GitHub issue body
-   - A reference line: `GitHub: <owner>/<repo>#<number>`
+   Capture the issue number returned for each sub-issue.
 
-4. Create sub-issues under the epic:
+4. Link each sub-issue to the parent using the GitHub sub-issues API:
+   ```bash
+   gh api repos/<owner>/<repo>/issues/<parent-number>/sub_issues \
+     --method POST \
+     --field sub_issue_id=<sub-issue-database-id>
    ```
-   bd create "<sub-issue title>" --parent <epic-id> --type <documentation|code> --description "<structured description>"
-   ```
+   Get the database ID with: `gh api repos/<owner>/<repo>/issues/<sub-number> --jq '.id'`
+   Repeat for each sub-issue. The parent issue will show a progress checklist.
 
-5. Sync and commit on the feature branch:
-   ```
-   bd sync
-   git add -A
-   git commit -m "Pop GH-<number>: <title> into local epic"
+5. Commit the feature branch (no beads state to commit — just record the branch creation):
+   ```bash
+   git commit --allow-empty -m "Pop GH-<number>: <title> into feature branch
+
+   Sub-issues: <comma-separated list of #N>"
    ```
 
 6. Push the branch:
-   ```
+   ```bash
    git push -u origin gh-<number>-<slug>
    ```
+
+7. Report the parent issue URL and the list of sub-issue URLs to the user.
 
 All subsequent `/do-work` happens on this branch. Before starting work, verify you are on the correct branch:
 ```
@@ -95,20 +102,19 @@ git branch --show-current  # should show gh-<number>-<slug>
 
 ## Phase 5 -- Open a Pull Request
 
-When ALL sub-issues in the epic are closed (check with `bd epic close-eligible`):
+When ALL sub-issues on the parent are closed:
 
 1. If the issue is recurring (see Phase 6), execute Phase 6 now — before merging — so the next instance exists before this one closes.
 
-2. Close the beads epic:
+2. Verify all sub-issues are closed:
+   ```bash
+   gh api repos/<owner>/<repo>/issues/<number>/sub_issues \
+     --jq '[.[] | select(.state=="open")] | length'
    ```
-   bd epic close-eligible
-   ```
+   If the count is not 0, do not proceed — report which sub-issues are still open.
 
-3. Final commit on the feature branch:
-   ```
-   bd sync
-   git add -A
-   git commit -m "Complete GH-<number>: <title>"
+3. Push the final state of the feature branch:
+   ```bash
    git push
    ```
 
@@ -125,7 +131,7 @@ When ALL sub-issues in the epic are closed (check with `bd epic close-eligible`)
 
    ## Changes
 
-   <bulleted list of sub-issues completed and what each produced>
+   <bulleted list of sub-issues completed and what each produced, with #N references>
 
    ## Stats
 
@@ -142,42 +148,36 @@ When ALL sub-issues in the epic are closed (check with `bd epic close-eligible`)
    )"
    ```
 
-   The `Closes #<number>` line auto-closes the GitHub issue when the PR merges.
+   The `Closes #<number>` line auto-closes the parent GitHub issue when the PR merges.
 
 5. Merge the pull request and delete the remote feature branch:
-
    ```bash
    gh pr merge --repo <owner>/<repo> --merge --delete-branch
    ```
 
 6. Return to main and pull the merged changes:
-
    ```bash
    git checkout main
    git pull origin main
    ```
 
 7. Delete the local feature branch (now merged):
-
    ```bash
    git branch -d gh-<number>-<slug>
    ```
 
-8. Verify the GitHub issue was closed by the merge:
-
+8. Verify the parent GitHub issue was closed by the merge:
    ```bash
    gh issue view <number> --repo <owner>/<repo> --json state -q .state
    ```
-
-   If the issue is still open, close it explicitly:
-
+   If still open, close it explicitly:
    ```bash
    gh issue close <number> --repo <owner>/<repo> --comment "Completed via PR #<pr-number>"
    ```
 
 9. Report the PR URL and confirm the issue is closed.
 
-**Note:** Phase 5 may happen in a later session. When running `/do-work` and completing the last issue in an epic that has a `GH-` prefix in its title, check if the epic is close-eligible and execute Phase 5 automatically.
+**Note:** Phase 5 may happen in a later session. When running `/do-work` and closing the last sub-issue, check the open sub-issue count and execute Phase 5 automatically if it reaches 0.
 
 ## Phase 6 -- Re-create Recurring Issues
 

@@ -6,16 +6,40 @@ Pick **one** of the two workflows below depending on the deliverable type. Use *
 
 ## Task Priority
 
-When selecting from available issues, **prefer documentation issues over code issues**. Documentation establishes the design before implementation begins. Complete PRDs, use cases, and architecture updates before moving to code tasks.
+When selecting from available sub-issues, **prefer documentation sub-issues over code sub-issues**. Documentation establishes the design before implementation begins.
 
 ## How to Choose
 
-Run `bd ready` and look at the issue description:
+1. Determine the parent issue number from the current branch name:
 
-| Deliverable      | Workflow                                                  | Indicators                                                                                                                                                                                          |
-|------------------|-----------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| **Documentation** | [Documentation Workflow](#documentation-workflow)         | Output path under `docs/` (PRD, use case, test suite, ARCHITECTURE, engineering guideline, SPECIFICATIONS); has "Required sections", "Format rule", or doc format name                            |
-| **Code**          | [Code Workflow](#code-workflow)                           | Output under `pkg/`, `internal/`, `cmd/`; has Requirements, Design Decisions, tests or observable behaviour in Acceptance Criteria                                                                |
+   ```bash
+   git branch --show-current  # e.g. gh-42-add-scaffold-validation -> parent is #42
+   ```
+
+2. List open sub-issues on the parent:
+
+   ```bash
+   gh repo view --json nameWithOwner -q .nameWithOwner  # get <owner>/<repo>
+   gh api repos/<owner>/<repo>/issues/<parent>/sub_issues \
+     --jq '[.[] | select(.state=="open") | {number: .number, title: .title}]'
+   ```
+
+3. Read the body of each open sub-issue to determine type:
+
+   ```bash
+   gh issue view <number> --repo <owner>/<repo> --json body -q .body
+   ```
+
+4. Pick a sub-issue and claim it by assigning yourself:
+
+   ```bash
+   gh issue edit <number> --repo <owner>/<repo> --add-assignee @me
+   ```
+
+| Deliverable      | Workflow                                                  | Indicators                                                                                                                          |
+|------------------|-----------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------|
+| **Documentation** | [Documentation Workflow](#documentation-workflow)         | Output path under `docs/`; has "Required sections", "Format rule", or doc format name                                             |
+| **Code**          | [Code Workflow](#code-workflow)                           | Output under `pkg/`, `internal/`, `cmd/`; has Requirements, Design Decisions, Acceptance Criteria with tests or observable behaviour |
 
 ---
 
@@ -23,89 +47,74 @@ Run `bd ready` and look at the issue description:
 
 Use this workflow when the deliverable is **YAML documentation** under `docs/`: PRDs, use cases, test suites, ARCHITECTURE, engineering guidelines, SPECIFICATIONS.
 
-The issue `deliverable_type` field will be `documentation` and will specify a `format_rule` (e.g., prd-format, use-case-format, architecture-format).
-
-Read VISION.yaml and ARCHITECTURE.yaml for context. For PRDs scan existing `docs/specs/product-requirements/`; for use cases `docs/specs/use-cases/`; for test suites (release-level YAML specs) `docs/specs/test-suites/`; for generated Go tests `tests/`.
+Read VISION.yaml and ARCHITECTURE.yaml for context. For PRDs scan existing `docs/specs/product-requirements/`; for use cases `docs/specs/use-cases/`; for test suites `docs/specs/test-suites/`.
 
 ## 1. Select a documentation task
 
-1. Run `bd ready` to see available work
-2. **Pick a documentation issue**: one whose description specifies `deliverable_type: documentation` and an output path under `docs/` (e.g., `docs/specs/product-requirements/prd*.yaml`, `docs/specs/use-cases/rel*-uc*-*.yaml`, `docs/ARCHITECTURE.yaml`)
-3. Run `bd update <issue-id> --status in_progress` to claim it
+1. List open sub-issues and pick a documentation one (output path under `docs/`)
+2. Assign yourself to claim it:
+
+   ```bash
+   gh issue edit <number> --repo <owner>/<repo> --add-assignee @me
+   ```
 
 ## 2. Before writing
 
-1. **Read the issue** and note:
-   - **Output path** (exact file, e.g., `docs/specs/product-requirements/prd-feature.yaml`)
+1. **Read the sub-issue body** and note:
+   - **Output path** (exact file)
    - **Format rule** (e.g., prd-format, use-case-format, architecture-format)
-   - **Required fields** or sections from the format rule
-   - **Scope or content hints** (Problem, Goals, requirements, non-goals, etc.)
+   - **Required Reading** file list — read all of them
+   - **Acceptance Criteria**
 
-2. **Read the format rule** from `docs/constitutions/design.yaml` (document_types section) and follow its structure
+2. **Read the format rule** from `docs/constitutions/design.yaml` (document_types section)
 
-3. If the doc references or extends existing content (e.g., ARCHITECTURE, another PRD), read the relevant sections so the new doc is consistent
+3. Read any referenced existing content for consistency
 
 ## 3. Write the doc
 
-1. Produce the deliverable at the **exact output path** given in the issue
-2. Include all **required fields** from the format rule (see design.yaml document_types)
-3. Follow **documentation standards** from design.yaml (concise, active voice, no forbidden terms)
-4. For diagrams: define Mermaid inline in markdown using fenced code blocks. Do not create separate image files
-5. Verify the issue **Acceptance Criteria**
+1. Produce the deliverable at the exact output path given in the sub-issue body
+2. Include all required fields from the format rule
+3. Follow documentation standards from design.yaml (concise, active voice, no forbidden terms)
+4. Verify the Acceptance Criteria
 
 ## 4. After writing
 
-1. **Check completeness** against the issue Acceptance Criteria and the format rule checklist
-2. **Run `mage analyze`** to validate the documentation:
-   - No orphaned PRDs (all PRDs referenced by use cases)
-   - No releases without test suites (all releases in road-map.yaml have a test-rel-*.yaml)
-   - No broken references (touchpoints reference valid PRDs)
-   - All use cases in roadmap
-
-   Fix any issues before proceeding.
-
+1. **Check completeness** against Acceptance Criteria and the format rule checklist
+2. **Run `mage analyze`** to validate documentation consistency. Fix any issues before proceeding.
 3. **Calculate metrics**: tokens used; run `mage stats` for LOC and doc word counts
-
 4. **Log metrics and close**:
 
    ```bash
-   bd comments add <issue-id> "tokens: <count>"
-   bd close <issue-id>
+   gh issue comment <number> --repo <owner>/<repo> --body "tokens: <count>"
+   gh issue close <number> --repo <owner>/<repo>
    ```
 
-5. **Commit** changes and `.beads/issues.jsonl`:
+5. **Commit** changes:
 
    ```bash
    git add -A
-   git commit -m "Add <doc name> (<output path>)
+   git commit -m "Add <doc name> (<output path>) (GH-<parent>#<sub-issue>)
 
    Stats:
      Lines of code (Go, production): <prod_loc> (+<delta>)
      Lines of code (Go, tests):      <test_loc> (+<delta>)
      Words (documentation):          <doc_words> (+<delta>)"
+   git push
    ```
 
-6. If you found follow-up work, file it in Beads
+6. If you found follow-up work, file it with `gh issue create`
 
-## 5. After completing an epic (documentation)
+## 5. After completing the last sub-issue (documentation)
 
-When you close the **last issue in an epic** (all child tasks complete):
+When you close a sub-issue and the open count drops to 0:
 
 1. **Review all docs** created or modified during the epic for consistency
-2. **Verify epic-level acceptance criteria** (from the epic issue description)
+2. **Verify parent issue acceptance criteria**
 3. **Evaluate use case completion**:
    - Identify which use case(s) this epic contributes to
-   - Review success criteria in `docs/specs/use-cases/`
    - If all criteria are met, update road-map.yaml to mark the use case status as "done"
-   - If not complete, note what remains and ensure follow-up tasks exist
-4. **File follow-up issues** for any gaps discovered
-5. **Complete PR workflow for GitHub issue** (if applicable):
-   - If the epic title starts with `GH-<number>:`, execute `/git-issue-pop` Phase 5 in full:
-     close the beads epic, push the feature branch, open a PR against `main`
-     with `Closes #<number>` in the body, merge the PR, delete the feature branch,
-     return to `main`, and verify the GitHub issue is closed.
-
-6. **Summarize epic completion**: run `mage stats` and report what was built and use case status
+4. **File follow-up issues** for any gaps via `gh issue create`
+5. **Execute `/git-issue-pop` Phase 5** in full to open and merge the PR
 
 ---
 
@@ -113,56 +122,51 @@ When you close the **last issue in an epic** (all child tasks complete):
 
 Use this workflow when the deliverable is **implementation**: packages, internal logic, cmd, workers, tests.
 
-Follow the **code-prd-architecture-linking** rule: code must correspond to existing PRDs and architecture; commits must mention PRDs; add PRD references in code where appropriate (e.g., top of file).
+Follow the **code-prd-architecture-linking** rule: code must correspond to existing PRDs and architecture; commits must mention PRDs.
 
 Read VISION.yaml and ARCHITECTURE.yaml for context.
 
 ## 1. Select a code task
 
-1. Run `bd ready` to see available work
-2. **Pick a code issue**: one whose description specifies `deliverable_type: code` and an implementation deliverable under `pkg/`, `internal/`, `cmd/`; has Requirements and Design Decisions for code; Acceptance Criteria like tests or observable behaviour
-3. Run `bd update <issue-id> --status in_progress` to claim it
+1. List open sub-issues and pick a code one (output under `pkg/`, `internal/`, `cmd/`)
+2. Assign yourself to claim it:
+
+   ```bash
+   gh issue edit <number> --repo <owner>/<repo> --add-assignee @me
+   ```
 
 ## 2. Before implementing
 
-1. **Identify related PRDs and docs** from the issue (deliverable path, component, requirements). See `docs/specs/product-requirements/prd*.yaml` and `docs/ARCHITECTURE.yaml`
-
-2. **Read** the relevant sections so behaviour, data shapes, and contracts are clear
-
-3. Read the issue description (Requirements, Design Decisions, Acceptance Criteria) in full
-
-4. **Read existing code** that you will modify or extend:
+1. **Identify related PRDs and docs** from the sub-issue body. Read them.
+2. Read the sub-issue body (Requirements, Design Decisions, Acceptance Criteria) in full.
+3. **Read existing code** that you will modify or extend:
+   - Read all files listed in Required Reading
    - **NEVER propose changes to code you haven't read first**
-   - Read files in the target component or package (`pkg/`, `internal/`, `cmd/`)
    - Understand existing patterns, conventions, and interfaces
-   - Identify where your changes will fit into the existing structure
-   - Check for related test files and understand the testing approach
 
 ## 3. Implement
 
-1. Implement according to the issue **Requirements and Design Decisions** and the **related PRDs/architecture**
-2. Verify the **Acceptance Criteria** are met (tests, behaviour, observability if specified)
-3. Write tests if the issue or PRD specifies them
-4. Where appropriate (e.g., package doc or top of file), add a short comment listing **implemented PRDs** (see code-prd-architecture-linking rule)
+1. Implement according to Requirements and Design Decisions and the related PRDs/architecture
+2. Verify the Acceptance Criteria are met (tests, behaviour, observability if specified)
+3. Write tests if the sub-issue or PRD specifies them
+4. Where appropriate, add a short comment listing implemented PRDs
 
 ## 4. After implementation
 
 1. **Run any tests** to verify your work
-
 2. **Calculate metrics**: tokens used; run `mage stats` for LOC deltas
-
 3. **Log metrics and close**:
 
    ```bash
-   bd comments add <issue-id> "tokens: <count>"
-   bd close <issue-id>
+   gh issue comment <number> --repo <owner>/<repo> --body "tokens: <count>"
+   gh issue close <number> --repo <owner>/<repo>
    ```
 
-4. **Commit** changes and `.beads/issues.jsonl`. **Commit message must mention which PRDs are implemented**:
+4. **Commit** changes. **Commit message must mention which PRDs are implemented**:
 
    ```bash
    git add -A
-   git commit -m "Implement X (prd-feature-name, prd-component-name)
+   git commit -m "Implement X (prd-feature-name) (GH-<parent>#<sub-issue>)
 
    - Description of changes
 
@@ -170,70 +174,55 @@ Read VISION.yaml and ARCHITECTURE.yaml for context.
      Lines of code (Go, production): <prod_loc> (+<delta>)
      Lines of code (Go, tests):      <test_loc> (+<delta>)
      Words (documentation):          <doc_words> (+<delta>)"
+   git push
    ```
 
-5. If you discovered new work or issues, file them in Beads
+5. If you discovered new work, file it with `gh issue create`
 
-## 5. After completing an epic (code)
+## 5. After completing the last sub-issue (code)
 
-When you close the **last issue in an epic** (all child tasks complete), perform a **thorough code inspection**:
+When you close a sub-issue, check the open count:
 
-1. **Read all files** that were created or modified during the epic
-2. **Check for inconsistencies**:
-   - Naming conventions across files and packages
-   - Error handling patterns
-   - Code duplication or missed abstractions
-   - Test coverage gaps
-3. **Verify epic-level acceptance criteria** (from the epic issue description)
+```bash
+gh api repos/<owner>/<repo>/issues/<parent>/sub_issues \
+  --jq '[.[] | select(.state=="open")] | length'
+```
+
+If it reaches 0, perform a **thorough code inspection**:
+
+1. **Read all files** created or modified during the epic
+2. **Check for inconsistencies**: naming conventions, error handling, duplication, test coverage gaps
+3. **Verify parent issue acceptance criteria**
 4. **Run full test suite** and any integration tests
-5. **File follow-up issues** for any technical debt, refactoring, or improvements discovered
-6. **Check for doc updates needed**: if implementation revealed design changes or clarifications, **ask the user** before updating architecture or PRD docs
+5. **File follow-up issues** for technical debt or improvements via `gh issue create`
+6. **Check for doc updates needed**: if implementation revealed design changes, ask the user before updating architecture or PRD docs
 7. **Evaluate use case completion**:
    - Identify which use case(s) this epic contributes to
-   - Review success criteria in `docs/specs/use-cases/`
    - If all criteria are met, update road-map.yaml to mark the use case status as "done"
-   - If not complete, note what remains and ensure follow-up tasks exist
-8. **Complete PR workflow for GitHub issue** (if applicable):
-   - If the epic title starts with `GH-<number>:`, execute `/git-issue-pop` Phase 5 in full:
-     close the beads epic, push the feature branch, open a PR against `main`
-     with `Closes #<number>` in the body, merge the PR, delete the feature branch,
-     return to `main`, and verify the GitHub issue is closed.
-
-9. **Summarize epic completion**: run `mage stats` and report:
-   - What was built (components, features)
-   - Total metrics (tokens, LOC across all child issues)
-   - Any deviations from original design
-   - Follow-up work filed
-   - Use case status (done or remaining work)
+8. **Execute `/git-issue-pop` Phase 5** in full to open and merge the PR
+9. **Summarize epic completion**: run `mage stats` and report what was built, total metrics, deviations, follow-up work, use case status
 
 ---
 
 ## Important Notes
 
-- Never edit `.beads/` by hand; use `bd` only
-- Always commit `.beads/issues.jsonl` along with your changes
-- Track token usage for every issue closed
-- **Code workflow**: link code to docs → identify PRDs/architecture → implement to fit → commit with PRD refs → optional PRD list in file/package comments
-- **Documentation workflow**: follow format rules from design.yaml → verify completeness → commit with deliverable path
+- No beads commands — all tracking is via `gh issue` and `gh api`
+- Token usage goes in a GitHub comment: `gh issue comment <number> --body "tokens: <count>"`
+- Follow-up work goes in new GitHub issues: `gh issue create --repo <owner>/<repo>`
+- Always run `mage stats` and include the full Stats block in commit messages
+- Always push after every commit: `git push`
 - **Update road-map.yaml** when use cases are completed
-- Always run `mage stats` and include full Stats block in commit messages (not condensed format)
 
-## Branch Discipline for GH- Epics
-
-When working on an issue that belongs to a `GH-<number>` epic (created by `/git-issue-pop`):
+## Branch Discipline
 
 1. **Verify you are on the correct feature branch** before starting work:
+
    ```bash
    git branch --show-current  # should show gh-<number>-<slug>
    ```
+
    If you are on `main`, switch to the feature branch first.
 
-2. **All commits go to the feature branch**, not `main`. Push regularly:
-   ```bash
-   git push
-   ```
+2. **All commits go to the feature branch**, not `main`. Push after every commit.
 
-3. **When you close the last issue in a GH- epic**, execute `/git-issue-pop` Phase 5 in full:
-   - Close the beads epic with `bd epic close-eligible`
-   - Push the feature branch, open a PR against `main` with `Closes #<number>` in the body
-   - Merge the PR, delete the feature branch, return to `main`, and verify the GitHub issue is closed
+3. **When the open sub-issue count reaches 0**, execute `/git-issue-pop` Phase 5 automatically.
