@@ -196,6 +196,34 @@ func TestRemoveIfExists_MissingFile_IsNoOp(t *testing.T) {
 	}
 }
 
+// --- Uninstall .cobbler/ cleanup ---
+
+func TestUninstall_RemovesCobblerDir(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	// Simulate what Scaffold writes: create .cobbler/ with context files.
+	cobblerDir := filepath.Join(dir, dirCobbler)
+	if err := os.MkdirAll(cobblerDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"measure_context.yaml", "stitch_context.yaml"} {
+		if err := os.WriteFile(filepath.Join(cobblerDir, name), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	o := &Orchestrator{}
+	// Uninstall should not fail even when other scaffolded files are absent.
+	if err := o.Uninstall(dir); err != nil {
+		t.Fatalf("Uninstall: %v", err)
+	}
+
+	if _, err := os.Stat(cobblerDir); !os.IsNotExist(err) {
+		t.Errorf(".cobbler/ should have been removed, got stat err: %v", err)
+	}
+}
+
 // --- writeScaffoldConfig ---
 
 func TestWriteScaffoldConfig_WritesValidYAML(t *testing.T) {

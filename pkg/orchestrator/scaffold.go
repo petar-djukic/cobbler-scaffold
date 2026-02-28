@@ -193,9 +193,10 @@ func (o *Orchestrator) Scaffold(targetDir, orchestratorRoot string) error {
 }
 
 // Uninstall removes the files added by Scaffold from targetDir:
-// magefiles/orchestrator.go, docs/constitutions/, docs/prompts/, and
-// configuration.yaml. It also removes the orchestrator replace directive
-// from magefiles/go.mod and runs go mod tidy to clean up unused dependencies.
+// magefiles/orchestrator.go, docs/constitutions/, docs/prompts/,
+// configuration.yaml, and .cobbler/. It also removes the orchestrator replace
+// directive from magefiles/go.mod and runs go mod tidy to clean up unused
+// dependencies.
 func (o *Orchestrator) Uninstall(targetDir string) error {
 	logf("uninstall: removing orchestrator files from %s", targetDir)
 
@@ -217,6 +218,13 @@ func (o *Orchestrator) Uninstall(targetDir string) error {
 		return fmt.Errorf("removing docs/prompts: %w", err)
 	}
 	logf("uninstall: removed %s", promptsDir)
+
+	// Remove .cobbler/ directory written by Scaffold.
+	cobblerDir := filepath.Join(targetDir, dirCobbler)
+	if err := os.RemoveAll(cobblerDir); err != nil {
+		return fmt.Errorf("removing .cobbler: %w", err)
+	}
+	logf("uninstall: removed %s", cobblerDir)
 
 	// Remove configuration.yaml.
 	cfgPath := filepath.Join(targetDir, DefaultConfigFile)
