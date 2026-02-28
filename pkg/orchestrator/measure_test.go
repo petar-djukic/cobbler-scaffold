@@ -576,6 +576,47 @@ func TestParseCompletedWork_NilInput(t *testing.T) {
 	}
 }
 
+func TestMeasureReleasesConstraint_WithReleases(t *testing.T) {
+	t.Parallel()
+	got := measureReleasesConstraint([]string{"01.0", "02.0"}, "")
+	if !contains(got, "01.0, 02.0") {
+		t.Errorf("expected releases list in constraint, got %q", got)
+	}
+	if !contains(got, "MUST") {
+		t.Errorf("expected hard constraint keyword, got %q", got)
+	}
+}
+
+func TestMeasureReleasesConstraint_WithRelease(t *testing.T) {
+	t.Parallel()
+	got := measureReleasesConstraint(nil, "01.0")
+	if !contains(got, "01.0") {
+		t.Errorf("expected release in constraint, got %q", got)
+	}
+	if !contains(got, "MUST") {
+		t.Errorf("expected hard constraint keyword, got %q", got)
+	}
+}
+
+func TestMeasureReleasesConstraint_None(t *testing.T) {
+	t.Parallel()
+	got := measureReleasesConstraint(nil, "")
+	if got != "" {
+		t.Errorf("expected empty constraint, got %q", got)
+	}
+}
+
+func TestMeasureReleasesConstraint_ReleasesTakePrecedence(t *testing.T) {
+	t.Parallel()
+	got := measureReleasesConstraint([]string{"01.0"}, "00.5")
+	if !contains(got, "01.0") {
+		t.Errorf("expected releases list in constraint, got %q", got)
+	}
+	if contains(got, "00.5") {
+		t.Errorf("expected legacy release to be ignored when releases is set, got %q", got)
+	}
+}
+
 // contains checks if substr is in s. Avoids importing strings in test.
 func contains(s, substr string) bool {
 	for i := 0; i+len(substr) <= len(s); i++ {
