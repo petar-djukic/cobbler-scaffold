@@ -247,7 +247,9 @@ func (Cobbler) Reset() error { return newOrch().CobblerReset() }
 func (Generator) Start() error { return newOrch().GeneratorStart() }
 
 // Run executes N cycles of measure + stitch within the current generation.
-func (Generator) Run() error { return newOrch().GeneratorRun() }
+// Pass cycles > 0 to override the generation.cycles value in configuration.yaml for this run only.
+// Pass 0 to use the configured value (or run until all issues are closed if also 0).
+func (Generator) Run(cycles int) error { return newOrch().GeneratorRun(cycles) }
 
 // Resume recovers from an interrupted run and continues.
 func (Generator) Resume() error { return newOrch().GeneratorResume() }

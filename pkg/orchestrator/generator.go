@@ -16,13 +16,17 @@ import (
 )
 
 // GeneratorRun executes N cycles of Measure + Stitch within the current generation.
-// Reads cycles and max-issues from Config.
-func (o *Orchestrator) GeneratorRun() error {
+// If cycles > 0 it overrides configuration.yaml's generation.cycles for this run only.
+// cycles == 0 means use the configured value (or unlimited if that is also 0).
+func (o *Orchestrator) GeneratorRun(cycles int) error {
 	currentBranch, err := gitCurrentBranch()
 	if err != nil {
 		return fmt.Errorf("getting current branch: %w", err)
 	}
 
+	if cycles > 0 {
+		o.cfg.Generation.Cycles = cycles
+	}
 	o.cfg.Generation.Branch = currentBranch
 	setGeneration(currentBranch)
 	defer clearGeneration()
