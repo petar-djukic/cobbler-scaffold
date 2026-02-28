@@ -298,10 +298,6 @@ func bdListReadyTasks() ([]byte, error) {
 	return exec.Command(binBd, "ready", "--json", "--type", "task").Output()
 }
 
-func bdCommentAdd(id, comment string) error {
-	return exec.Command(binBd, "comments", "add", id, comment).Run()
-}
-
 func bdShowJSON(id string) ([]byte, error) {
 	return exec.Command(binBd, "show", "--json", id).Output()
 }

@@ -473,6 +473,27 @@ func (o *Orchestrator) doOneTask(task stitchTask, baseBranch, repoRoot string) e
 		return errTaskReset
 	}
 
+	// Append outcome trailers to the worktree commit before merging.
+	// Trailers must be on the pre-merge commit so they travel into the
+	// generation branch history. LOCAfter and Diff are not yet available
+	// at this point; the full record is saved in HistoryStats YAML files.
+	trailerRec := InvocationRecord{
+		Caller:    "stitch",
+		StartedAt: claudeStart.UTC().Format(time.RFC3339),
+		DurationS: int(time.Since(claudeStart).Seconds()),
+		Tokens: claudeTokens{
+			Input:         tokens.InputTokens,
+			Output:        tokens.OutputTokens,
+			CacheCreation: tokens.CacheCreationTokens,
+			CacheRead:     tokens.CacheReadTokens,
+			CostUSD:       tokens.CostUSD,
+		},
+		LOCBefore: locBefore,
+	}
+	if err := appendOutcomeTrailers(task.worktreeDir, trailerRec); err != nil {
+		logf("doOneTask: outcome trailer warning for %s: %v", task.id, err)
+	}
+
 	// Capture pre-merge HEAD for diffstat.
 	preMergeRef, err := gitRevParseHEAD()
 	if err != nil {
@@ -782,8 +803,6 @@ func cleanupWorktree(task stitchTask) {
 
 func (o *Orchestrator) closeStitchTask(task stitchTask, rec InvocationRecord) {
 	logf("closeStitchTask: closing %s", task.id)
-
-	recordInvocation(task.id, rec)
 
 	if err := bdClose(task.id); err != nil {
 		logf("closeStitchTask: bd close warning for %s: %v", task.id, err)

@@ -252,18 +252,6 @@ func (o *Orchestrator) RunMeasure() error {
 		logf("iteration %d imported %d issue(s)", i+1, len(createdIDs))
 
 		// Record invocation metrics on each created issue.
-		if len(createdIDs) > 0 {
-			rec := InvocationRecord{
-				Caller:    "measure",
-				StartedAt: time.Now().UTC().Format(time.RFC3339),
-				Tokens:    claudeTokens{Input: totalTokens.InputTokens, Output: totalTokens.OutputTokens, CacheCreation: totalTokens.CacheCreationTokens, CacheRead: totalTokens.CacheReadTokens, CostUSD: totalTokens.CostUSD},
-				LOCBefore: locBefore,
-				LOCAfter:  o.captureLOC(),
-			}
-			for _, id := range createdIDs {
-				recordInvocation(id, rec)
-			}
-		}
 
 		allCreatedIDs = append(allCreatedIDs, createdIDs...)
 
@@ -325,24 +313,6 @@ func (o *Orchestrator) closeMeasureTrackingIssue(trackingID string, claudeStart,
 	if trackingID == "" {
 		return
 	}
-
-	rec := InvocationRecord{
-		Caller:    "measure",
-		StartedAt: claudeStart.UTC().Format(time.RFC3339),
-		DurationS: int(time.Since(measureStart).Seconds()),
-		Tokens:    claudeTokens{Input: tokens.InputTokens, Output: tokens.OutputTokens, CacheCreation: tokens.CacheCreationTokens, CacheRead: tokens.CacheReadTokens, CostUSD: tokens.CostUSD},
-		LOCBefore: locBefore,
-		LOCAfter:  locAfter,
-	}
-	recordInvocation(trackingID, rec)
-
-	// Add a summary comment.
-	status := "success"
-	if claudeErr != nil {
-		status = fmt.Sprintf("failed: %v", claudeErr)
-	}
-	summary := fmt.Sprintf("issues_created: %d, status: %s", issuesCreated, status)
-	_ = bdCommentAdd(trackingID, summary) // best-effort; issue is about to be closed
 
 	if err := bdClose(trackingID); err != nil {
 		logf("closeMeasureTrackingIssue: bd close warning: %v", err)

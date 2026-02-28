@@ -285,6 +285,9 @@ func (Stats) Loc() error { return newOrch().Stats() }
 // Tokens enumerates prompt-attached files and counts tokens via the Anthropic API.
 func (Stats) Tokens() error { return newOrch().TokenStats() }
 
+// Outcomes prints a summary table of task outcome trailers from git history.
+func (Stats) Outcomes() error { return newOrch().Outcomes() }
+
 // --- Prompt targets ---
 
 // Measure prints the assembled measure prompt to stdout.

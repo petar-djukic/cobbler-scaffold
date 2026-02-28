@@ -835,3 +835,110 @@ func TestParseClaudeTokens_MalformedResultEvent(t *testing.T) {
 		t.Errorf("malformed result: got in=%d out=%d, want 0 0", got.InputTokens, got.OutputTokens)
 	}
 }
+
+// --- formatOutcomeTrailers ---
+
+func TestFormatOutcomeTrailers_ReturnsTenStrings(t *testing.T) {
+	t.Parallel()
+	rec := InvocationRecord{
+		Caller:    "stitch",
+		StartedAt: "2026-02-28T00:00:00Z",
+		DurationS: 1234,
+		Tokens:    claudeTokens{Input: 45000, Output: 12000, CacheCreation: 5000, CacheRead: 3000, CostUSD: 0.75},
+		LOCBefore: LocSnapshot{Production: 441, Test: 0},
+		LOCAfter:  LocSnapshot{Production: 520, Test: 45},
+	}
+	trailers := formatOutcomeTrailers(rec)
+	if len(trailers) != 10 {
+		t.Fatalf("formatOutcomeTrailers: got %d trailers, want 10; trailers=%v", len(trailers), trailers)
+	}
+	expected := []string{
+		"Tokens-Input: 45000",
+		"Tokens-Output: 12000",
+		"Tokens-Cache-Creation: 5000",
+		"Tokens-Cache-Read: 3000",
+		"Tokens-Cost-USD: 0.7500",
+		"Loc-Prod-Before: 441",
+		"Loc-Prod-After: 520",
+		"Loc-Test-Before: 0",
+		"Loc-Test-After: 45",
+		"Duration-Seconds: 1234",
+	}
+	for i, want := range expected {
+		if trailers[i] != want {
+			t.Errorf("trailer[%d]: got %q, want %q", i, trailers[i], want)
+		}
+	}
+}
+
+func TestFormatOutcomeTrailers_ZeroRecord(t *testing.T) {
+	t.Parallel()
+	trailers := formatOutcomeTrailers(InvocationRecord{})
+	if len(trailers) != 10 {
+		t.Fatalf("zero record: got %d trailers, want 10", len(trailers))
+	}
+	// Zero cost should format as 0.0000.
+	if trailers[4] != "Tokens-Cost-USD: 0.0000" {
+		t.Errorf("zero cost trailer: got %q, want %q", trailers[4], "Tokens-Cost-USD: 0.0000")
+	}
+}
+
+// --- appendOutcomeTrailers ---
+
+func TestAppendOutcomeTrailers_AmendsLastCommit(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	// Initialize a minimal git repo.
+	gitSetup := [][]string{
+		{"init"},
+		{"config", "user.email", "test@example.com"},
+		{"config", "user.name", "Test"},
+	}
+	for _, args := range gitSetup {
+		cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Skipf("git setup: %v\n%s", err, out)
+		}
+	}
+
+	// Write a file and make an initial commit.
+	if err := os.WriteFile(filepath.Join(dir, "hello.go"), []byte("package main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"add", "."}, {"commit", "-m", "Initial commit"}} {
+		cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+
+	rec := InvocationRecord{
+		DurationS: 120,
+		Tokens:    claudeTokens{Input: 1000, Output: 200, CacheCreation: 50, CacheRead: 30, CostUSD: 0.05},
+		LOCBefore: LocSnapshot{Production: 100, Test: 20},
+		LOCAfter:  LocSnapshot{Production: 150, Test: 30},
+	}
+	if err := appendOutcomeTrailers(dir, rec); err != nil {
+		// git commit --amend --trailer requires git >= 2.38; skip if unsupported.
+		t.Skipf("appendOutcomeTrailers: %v", err)
+	}
+
+	out, err := exec.Command("git", "-C", dir, "log", "-1", "--format=%(trailers)").Output()
+	if err != nil {
+		t.Fatalf("git log: %v", err)
+	}
+	trailerStr := string(out)
+	for _, wantKey := range []string{
+		"Tokens-Input:",
+		"Tokens-Output:",
+		"Tokens-Cost-USD:",
+		"Duration-Seconds:",
+		"Loc-Prod-Before:",
+		"Loc-Prod-After:",
+	} {
+		if !strings.Contains(trailerStr, wantKey) {
+			t.Errorf("trailer output missing key %q\ngot:\n%s", wantKey, trailerStr)
+		}
+	}
+}

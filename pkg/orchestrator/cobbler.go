@@ -221,17 +221,41 @@ func (o *Orchestrator) saveHistoryLog(ts, phase string, rawOutput []byte) {
 	}
 }
 
-// recordInvocation serializes an InvocationRecord to JSON and adds it
-// as a beads comment on the given issue.
-func recordInvocation(issueID string, rec InvocationRecord) {
-	data, err := json.Marshal(rec)
-	if err != nil {
-		logf("recordInvocation: marshal error: %v", err)
-		return
+// formatOutcomeTrailers returns the set of git trailer strings for rec.
+// Each string has the form "Key: Value" suitable for use with
+// git commit --trailer. The order is stable; always ten entries.
+func formatOutcomeTrailers(rec InvocationRecord) []string {
+	return []string{
+		fmt.Sprintf("Tokens-Input: %d", rec.Tokens.Input),
+		fmt.Sprintf("Tokens-Output: %d", rec.Tokens.Output),
+		fmt.Sprintf("Tokens-Cache-Creation: %d", rec.Tokens.CacheCreation),
+		fmt.Sprintf("Tokens-Cache-Read: %d", rec.Tokens.CacheRead),
+		fmt.Sprintf("Tokens-Cost-USD: %.4f", rec.Tokens.CostUSD),
+		fmt.Sprintf("Loc-Prod-Before: %d", rec.LOCBefore.Production),
+		fmt.Sprintf("Loc-Prod-After: %d", rec.LOCAfter.Production),
+		fmt.Sprintf("Loc-Test-Before: %d", rec.LOCBefore.Test),
+		fmt.Sprintf("Loc-Test-After: %d", rec.LOCAfter.Test),
+		fmt.Sprintf("Duration-Seconds: %d", rec.DurationS),
 	}
-	if err := bdCommentAdd(issueID, string(data)); err != nil {
-		logf("recordInvocation: bd comment error for %s: %v", issueID, err)
+}
+
+// appendOutcomeTrailers amends the last commit in the given git worktree
+// directory with outcome trailers from rec. All trailers are added in a
+// single git commit --amend invocation (requires git >= 2.38.0).
+//
+// This function must be called before the worktree branch is merged so that
+// the trailers travel with the commit into the generation branch history.
+// Errors are returned but treated as non-fatal by callers.
+func appendOutcomeTrailers(worktreeDir string, rec InvocationRecord) error {
+	args := []string{"-C", worktreeDir, "commit", "--amend", "--no-edit"}
+	for _, t := range formatOutcomeTrailers(rec) {
+		args = append(args, "--trailer", t)
 	}
+	cmd := exec.Command(binGit, args...)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("git commit --amend: %w\n%s", err, out)
+	}
+	return nil
 }
 
 // progressWriter wraps a bytes.Buffer, logging concise one-line summaries
