@@ -5,7 +5,6 @@ package orchestrator
 
 import (
 	_ "embed"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -16,10 +15,6 @@ import (
 
 	"gopkg.in/yaml.v3"
 )
-
-// statusOpen is the beads status for tasks available for execution. The
-// bd ready command returns issues with status "open", not "ready".
-const statusOpen = "open"
 
 // errTaskReset is returned by doOneTask when a task fails but the stitch
 // loop should continue to the next task (e.g., Claude failure, worktree
@@ -74,11 +69,6 @@ func (o *Orchestrator) RunStitchN(limit int) (int, error) {
 		return 0, err
 	}
 
-	if err := o.requireBeads(); err != nil {
-		logf("beads not initialized: %v", err)
-		return 0, err
-	}
-
 	branch, err := o.resolveBranch(o.cfg.Generation.Branch)
 	if err != nil {
 		logf("resolveBranch failed: %v", err)
@@ -101,6 +91,18 @@ func (o *Orchestrator) RunStitchN(limit int) (int, error) {
 	}
 	logf("repoRoot=%s", repoRoot)
 
+	// Resolve GitHub repo and ensure cobbler labels exist.
+	ghRepo, err := detectGitHubRepo(repoRoot, o.cfg)
+	if err != nil {
+		logf("detectGitHubRepo failed: %v", err)
+		return 0, fmt.Errorf("detecting GitHub repo: %w", err)
+	}
+	generation := branch
+	logf("using GitHub repo %s generation %s for issues", ghRepo, generation)
+	if err := ensureCobblerLabels(ghRepo); err != nil {
+		logf("ensureCobblerLabels warning: %v", err)
+	}
+
 	worktreeBase := worktreeBasePath()
 	logf("worktreeBase=%s", worktreeBase)
 
@@ -111,15 +113,15 @@ func (o *Orchestrator) RunStitchN(limit int) (int, error) {
 	logf("baseBranch=%s", baseBranch)
 
 	logf("recovering stale tasks")
-	if err := o.recoverStaleTasks(baseBranch, worktreeBase); err != nil {
+	if err := o.recoverStaleTasks(baseBranch, worktreeBase, ghRepo, generation); err != nil {
 		logf("recovery failed: %v", err)
 		return 0, fmt.Errorf("recovery: %w", err)
 	}
 
 	totalTasks := 0
 	// failedTaskIDs tracks tasks that returned errTaskReset in this cycle.
-	// A task reset to open is immediately re-eligible in beads, so without
-	// this set the stitch loop retries the same task indefinitely.
+	// A task whose in-progress label is removed is re-eligible immediately,
+	// so without this set the stitch loop retries the same task indefinitely.
 	failedTaskIDs := map[string]struct{}{}
 	for {
 		if limit > 0 && totalTasks >= limit {
@@ -128,7 +130,7 @@ func (o *Orchestrator) RunStitchN(limit int) (int, error) {
 		}
 
 		logf("looking for next ready task (completed %d so far)", totalTasks)
-		task, err := pickTask(baseBranch, worktreeBase)
+		task, err := pickTask(baseBranch, worktreeBase, ghRepo, generation)
 		if err != nil {
 			logf("no more tasks: %v", err)
 			break
@@ -174,22 +176,25 @@ func taskBranchPattern(baseBranch string) string {
 }
 
 type stitchTask struct {
-	id          string
+	id          string // cobbler_index as string — used for branch/worktree naming
 	title       string
 	description string
 	issueType   string
 	branchName  string
 	worktreeDir string
+	ghNumber    int    // GitHub issue number — used for closing/labelling
+	generation  string // generation label value
+	repo        string // GitHub owner/repo
 }
 
 // recoverStaleTasks cleans up task branches and orphaned in_progress issues
 // from a previous interrupted run.
-func (o *Orchestrator) recoverStaleTasks(baseBranch, worktreeBase string) error {
+func (o *Orchestrator) recoverStaleTasks(baseBranch, worktreeBase, repo, generation string) error {
 	logf("recoverStaleTasks: checking for stale branches with pattern %s", taskBranchPattern(baseBranch))
-	staleBranches := recoverStaleBranches(baseBranch, worktreeBase)
+	staleBranches := recoverStaleBranches(baseBranch, worktreeBase, repo)
 
 	logf("recoverStaleTasks: checking for orphaned in_progress issues")
-	orphanedIssues := resetOrphanedIssues(baseBranch)
+	orphanedIssues := resetOrphanedIssues(baseBranch, repo, generation)
 
 	logf("recoverStaleTasks: pruning worktrees")
 	if err := gitWorktreePrune(); err != nil {
@@ -197,8 +202,7 @@ func (o *Orchestrator) recoverStaleTasks(baseBranch, worktreeBase string) error 
 	}
 
 	if staleBranches || orphanedIssues {
-		logf("recoverStaleTasks: recovered stale state (branches=%v orphans=%v), committing", staleBranches, orphanedIssues)
-		o.beadsCommit("Recover stale tasks from interrupted run")
+		logf("recoverStaleTasks: recovered stale state (branches=%v orphans=%v)", staleBranches, orphanedIssues)
 	} else {
 		logf("recoverStaleTasks: no stale state found")
 	}
@@ -207,8 +211,8 @@ func (o *Orchestrator) recoverStaleTasks(baseBranch, worktreeBase string) error 
 }
 
 // recoverStaleBranches removes leftover task branches and worktrees,
-// resetting their issues to open. Returns true if any were recovered.
-func recoverStaleBranches(baseBranch, worktreeBase string) bool {
+// removing the in-progress label from their issues. Returns true if any were recovered.
+func recoverStaleBranches(baseBranch, worktreeBase, repo string) bool {
 	branches := gitListBranches(taskBranchPattern(baseBranch))
 	if len(branches) == 0 {
 		logf("recoverStaleBranches: no stale branches found")
@@ -237,103 +241,66 @@ func recoverStaleBranches(baseBranch, worktreeBase string) bool {
 		}
 
 		if issueID != "" {
-			logf("recoverStaleBranches: resetting issue %s to open", issueID)
-			if err := bdUpdateStatus(issueID, statusOpen); err != nil {
-				logf("recoverStaleBranches: status update warning: %v", err)
+			var num int
+			if _, err := fmt.Sscanf(issueID, "%d", &num); err == nil && num > 0 {
+				logf("recoverStaleBranches: removing in-progress label from issue #%d", num)
+				if err := removeInProgressLabel(repo, num); err != nil {
+					logf("recoverStaleBranches: label removal warning: %v", err)
+				}
 			}
 		}
 	}
 	return true
 }
 
-// resetOrphanedIssues finds in_progress issues with no corresponding task
-// branch and resets them to open. Returns true if any were reset.
-func resetOrphanedIssues(baseBranch string) bool {
-	out, err := bdListInProgressTasks()
+// resetOrphanedIssues finds in_progress GitHub issues with no corresponding
+// task branch and removes their in-progress label. Returns true if any were reset.
+func resetOrphanedIssues(baseBranch, repo, generation string) bool {
+	issues, err := listOpenCobblerIssues(repo, generation)
 	if err != nil {
-		logf("resetOrphanedIssues: bd list in_progress failed: %v", err)
+		logf("resetOrphanedIssues: list issues failed: %v", err)
 		return false
 	}
-	if len(out) == 0 || string(out) == "[]" {
-		logf("resetOrphanedIssues: no in_progress tasks")
-		return false
-	}
-
-	var issues []struct {
-		ID string `json:"id"`
-	}
-	if err := json.Unmarshal(out, &issues); err != nil {
-		logf("resetOrphanedIssues: JSON parse failed: %v", err)
-		return false
-	}
-	logf("resetOrphanedIssues: found %d in_progress task(s)", len(issues))
 
 	recovered := false
-	for _, issue := range issues {
-		taskBranch := taskBranchName(baseBranch, issue.ID)
+	for _, iss := range issues {
+		if !hasLabel(iss, cobblerLabelInProgress) {
+			continue
+		}
+		id := fmt.Sprintf("%d", iss.Number)
+		taskBranch := taskBranchName(baseBranch, id)
 		if !gitBranchExists(taskBranch) {
 			recovered = true
-			logf("resetOrphanedIssues: orphaned issue %s (no branch %s), resetting to open", issue.ID, taskBranch)
-			if err := bdUpdateStatus(issue.ID, statusOpen); err != nil {
-				logf("resetOrphanedIssues: status update warning for %s: %v", issue.ID, err)
+			logf("resetOrphanedIssues: orphaned issue #%d (no branch %s), removing in-progress label", iss.Number, taskBranch)
+			if err := removeInProgressLabel(repo, iss.Number); err != nil {
+				logf("resetOrphanedIssues: label removal warning for #%d: %v", iss.Number, err)
 			}
 		} else {
-			logf("resetOrphanedIssues: issue %s has branch %s, skipping", issue.ID, taskBranch)
+			logf("resetOrphanedIssues: issue #%d has branch %s, skipping", iss.Number, taskBranch)
 		}
 	}
 	return recovered
 }
 
-func pickTask(baseBranch, worktreeBase string) (stitchTask, error) {
-	logf("pickTask: calling bd ready -n 1 --type task")
-	out, err := bdNextReadyTask()
+func pickTask(baseBranch, worktreeBase, repo, generation string) (stitchTask, error) {
+	logf("pickTask: calling pickReadyIssue repo=%s generation=%s", repo, generation)
+	iss, err := pickReadyIssue(repo, generation)
 	if err != nil {
-		logf("pickTask: bd ready failed: %v", err)
+		logf("pickTask: no tasks available: %v", err)
 		return stitchTask{}, fmt.Errorf("no tasks available")
 	}
-	if len(out) == 0 || string(out) == "[]" {
-		logf("pickTask: bd ready returned empty list")
-		return stitchTask{}, fmt.Errorf("no tasks available")
-	}
-	logf("pickTask: bd ready returned %d bytes", len(out))
 
-	var issues []struct {
-		ID          string `json:"id"`
-		Title       string `json:"title"`
-		Description string `json:"description"`
-		Type        string `json:"type"`
-	}
-	if err := json.Unmarshal(out, &issues); err != nil || len(issues) == 0 {
-		logf("pickTask: JSON parse failed or empty: err=%v len=%d raw=%s", err, len(issues), string(out))
-		return stitchTask{}, fmt.Errorf("failed to parse issue")
-	}
-
-	issue := issues[0]
-
-	// Retrieve full issue via bd show --json for a reliable description.
-	if showOut, showErr := bdShowJSON(issue.ID); showErr == nil {
-		var full struct {
-			Description string `json:"description"`
-		}
-		if json.Unmarshal(showOut, &full) == nil && full.Description != "" {
-			issue.Description = full.Description
-			logf("pickTask: refreshed description from bd show --json (%d bytes)", len(full.Description))
-		}
-	} else {
-		logf("pickTask: bd show --json fallback: %v", showErr)
-	}
-
+	id := fmt.Sprintf("%d", iss.Number)
 	task := stitchTask{
-		id:          issue.ID,
-		title:       issue.Title,
-		description: issue.Description,
-		issueType:   issue.Type,
-		branchName:  taskBranchName(baseBranch, issue.ID),
-		worktreeDir: filepath.Join(worktreeBase, issue.ID),
-	}
-
-	if task.issueType == "" {
-		task.issueType = "task"
+		id:          id,
+		title:       iss.Title,
+		description: iss.Description,
+		issueType:   "task",
+		branchName:  taskBranchName(baseBranch, id),
+		worktreeDir: filepath.Join(worktreeBase, id),
+		ghNumber:    iss.Number,
+		generation:  generation,
+		repo:        repo,
 	}
 
 	// Validate the issue description as YAML with required fields.
@@ -341,7 +308,7 @@ func pickTask(baseBranch, worktreeBase string) (stitchTask, error) {
 		logf("pickTask: description validation warning: %v", err)
 	}
 
-	logf("pickTask: picked id=%s type=%s branch=%s worktree=%s", task.id, task.issueType, task.branchName, task.worktreeDir)
+	logf("pickTask: picked #%d id=%s branch=%s worktree=%s", iss.Number, task.id, task.branchName, task.worktreeDir)
 	logf("pickTask: title=%q", task.title)
 	logf("pickTask: descriptionLen=%d", len(task.description))
 	return task, nil
@@ -394,11 +361,8 @@ func (o *Orchestrator) doOneTask(task stitchTask, baseBranch, repoRoot string) e
 	taskStart := time.Now()
 	logf("doOneTask: starting task %s (%s)", task.id, task.title)
 
-	// Claim.
-	logf("doOneTask: claiming task %s (setting status=in_progress)", task.id)
-	if err := bdUpdateStatus(task.id, "in_progress"); err != nil {
-		logf("doOneTask: status update warning for %s: %v", task.id, err)
-	}
+	// The cobbler-in-progress label was added by pickReadyIssue; no separate claim step is needed.
+	logf("doOneTask: task #%d claimed via pickReadyIssue label", task.ghNumber)
 
 	// Create worktree.
 	logf("doOneTask: creating worktree for %s", task.id)
@@ -771,19 +735,17 @@ func commitWorktreeChanges(task stitchTask) error {
 	return nil
 }
 
-// resetTask resets a failed task to open status, cleans up its worktree
-// and branch, and commits the beads state change. The reason string is
-// included in the commit message for traceability.
+// resetTask removes the in-progress label from a failed task, cleans up its
+// worktree and branch. The reason string is included in log messages for traceability.
 func (o *Orchestrator) resetTask(task stitchTask, reason string) {
-	logf("resetTask: resetting %s to open (%s)", task.id, reason)
-	if err := bdUpdateStatus(task.id, statusOpen); err != nil {
-		logf("resetTask: WARNING bdUpdateStatus failed for %s: %v", task.id, err)
+	logf("resetTask: resetting #%d to ready (%s)", task.ghNumber, reason)
+	if err := removeInProgressLabel(task.repo, task.ghNumber); err != nil {
+		logf("resetTask: WARNING removeInProgressLabel failed for #%d: %v", task.ghNumber, err)
 	}
 	cleanupWorktree(task)
 	if err := gitForceDeleteBranch(task.branchName); err != nil {
 		logf("resetTask: WARNING force branch delete failed for %s: %v", task.branchName, err)
 	}
-	o.beadsCommit(fmt.Sprintf("Reset %s after %s", task.id, reason))
 }
 
 func cleanupWorktree(task stitchTask) {
@@ -802,11 +764,9 @@ func cleanupWorktree(task stitchTask) {
 }
 
 func (o *Orchestrator) closeStitchTask(task stitchTask, rec InvocationRecord) {
-	logf("closeStitchTask: closing %s", task.id)
-
-	if err := bdClose(task.id); err != nil {
-		logf("closeStitchTask: bd close warning for %s: %v", task.id, err)
+	logf("closeStitchTask: closing #%d %q", task.ghNumber, task.title)
+	if err := closeCobblerIssue(task.repo, task.ghNumber, task.generation); err != nil {
+		logf("closeStitchTask: closeCobblerIssue warning for #%d: %v", task.ghNumber, err)
 	}
-	o.beadsCommit(fmt.Sprintf("Close %s", task.id))
-	logf("closeStitchTask: %s closed", task.id)
+	logf("closeStitchTask: #%d closed", task.ghNumber)
 }

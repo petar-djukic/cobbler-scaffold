@@ -77,7 +77,8 @@ func (o *Orchestrator) GeneratorResume() error {
 	}
 
 	logf("resume: recovering stale tasks")
-	if err := o.recoverStaleTasks(branch, wtBase); err != nil {
+	ghRepo, _ := detectGitHubRepo(wtBase, o.cfg)
+	if err := o.recoverStaleTasks(branch, wtBase, ghRepo, branch); err != nil {
 		logf("resume: recoverStaleTasks warning: %v", err)
 	}
 
@@ -738,11 +739,12 @@ func (o *Orchestrator) GeneratorReset() error {
 	}
 
 	wtBase := worktreeBasePath()
+	ghRepo, _ := detectGitHubRepo(wtBase, o.cfg)
 	genBranches := o.listGenerationBranches()
 	if len(genBranches) > 0 {
 		logf("generator:reset: removing task branches and worktrees")
 		for _, gb := range genBranches {
-			recoverStaleBranches(gb, wtBase)
+			recoverStaleBranches(gb, wtBase, ghRepo)
 		}
 	}
 
