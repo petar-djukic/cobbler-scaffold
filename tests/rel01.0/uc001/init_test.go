@@ -52,7 +52,6 @@ func TestRel01_UC001_NewAppliesDefaults(t *testing.T) {
 	}{
 		{"Project.BinaryDir", cfg.Project.BinaryDir, "bin"},
 		{"Generation.Prefix", cfg.Generation.Prefix, "generation-"},
-		{"Cobbler.BeadsDir", cfg.Cobbler.BeadsDir, ".beads/"},
 		{"Cobbler.Dir", cfg.Cobbler.Dir, ".cobbler/"},
 		{"Project.MagefilesDir", cfg.Project.MagefilesDir, "magefiles"},
 		{"Claude.SecretsDir", cfg.Claude.SecretsDir, ".secrets"},
@@ -70,7 +69,7 @@ func TestRel01_UC001_NewPreservesValues(t *testing.T) {
 	cfg := orchestrator.Config{
 		Project:    orchestrator.ProjectConfig{ModulePath: "example.com/test", BinaryName: "mybin", BinaryDir: "out"},
 		Generation: orchestrator.GenerationConfig{Prefix: "gen-"},
-		Cobbler:    orchestrator.CobblerConfig{BeadsDir: ".issues/"},
+		Cobbler:    orchestrator.CobblerConfig{IssuesRepo: "owner/repo"},
 	}
 	o := orchestrator.New(cfg)
 	got := o.Config()
@@ -80,8 +79,8 @@ func TestRel01_UC001_NewPreservesValues(t *testing.T) {
 	if got.Generation.Prefix != "gen-" {
 		t.Errorf("Prefix = %q, want %q", got.Generation.Prefix, "gen-")
 	}
-	if got.Cobbler.BeadsDir != ".issues/" {
-		t.Errorf("BeadsDir = %q, want %q", got.Cobbler.BeadsDir, ".issues/")
+	if got.Cobbler.IssuesRepo != "owner/repo" {
+		t.Errorf("IssuesRepo = %q, want %q", got.Cobbler.IssuesRepo, "owner/repo")
 	}
 }
 
@@ -97,17 +96,6 @@ func TestRel01_UC001_NewReturnsNonNil(t *testing.T) {
 
 // --- Init and reset tests ---
 
-func TestRel01_UC001_InitCreatesBD(t *testing.T) {
-	t.Parallel()
-	dir := testutil.SetupRepo(t, snapshotDir)
-	if err := testutil.RunMage(t, dir, "init"); err != nil {
-		t.Fatalf("mage init: %v", err)
-	}
-	if !testutil.FileExists(dir, ".beads") {
-		t.Error("expected .beads/ to exist after mage init")
-	}
-}
-
 func TestRel01_UC001_InitIdempotent(t *testing.T) {
 	t.Parallel()
 	dir := testutil.SetupRepo(t, snapshotDir)
@@ -122,9 +110,6 @@ func TestRel01_UC001_CobblerReset(t *testing.T) {
 	t.Parallel()
 	dir := testutil.SetupRepo(t, snapshotDir)
 
-	if err := testutil.RunMage(t, dir, "beads:init"); err != nil {
-		t.Fatalf("beads:init: %v", err)
-	}
 	cobblerDir := filepath.Join(dir, ".cobbler")
 	if err := os.MkdirAll(cobblerDir, 0o755); err != nil {
 		t.Fatalf("creating .cobbler: %v", err)
@@ -139,45 +124,6 @@ func TestRel01_UC001_CobblerReset(t *testing.T) {
 
 	if testutil.FileExists(dir, ".cobbler") {
 		t.Error(".cobbler/ should not exist after cobbler:reset")
-	}
-	if !testutil.FileExists(dir, ".beads") {
-		t.Error(".beads/ should still exist after cobbler:reset")
-	}
-}
-
-func TestRel01_UC001_BeadsResetKeepsDir(t *testing.T) {
-	t.Parallel()
-	dir := testutil.SetupRepo(t, snapshotDir)
-	if err := testutil.RunMage(t, dir, "beads:init"); err != nil {
-		t.Fatalf("beads:init: %v", err)
-	}
-	if err := testutil.RunMage(t, dir, "beads:reset"); err != nil {
-		t.Fatalf("mage beads:reset: %v", err)
-	}
-	if !testutil.FileExists(dir, ".beads") {
-		t.Error(".beads/ should still exist after beads:reset")
-	}
-}
-
-func TestRel01_UC001_BeadsResetClearsIssues(t *testing.T) {
-	t.Parallel()
-	dir := testutil.SetupRepo(t, snapshotDir)
-	if err := testutil.RunMage(t, dir, "beads:init"); err != nil {
-		t.Fatalf("beads:init: %v", err)
-	}
-
-	bdCreate := exec.Command("bd", "create", "--type", "task",
-		"--title", "e2e test task", "--description", "created by e2e test")
-	bdCreate.Dir = dir
-	if out, err := bdCreate.CombinedOutput(); err != nil {
-		t.Fatalf("bd create: %v\n%s", err, out)
-	}
-
-	if err := testutil.RunMage(t, dir, "beads:reset"); err != nil {
-		t.Fatalf("mage beads:reset: %v", err)
-	}
-	if n := testutil.CountReadyIssues(t, dir); n != 0 {
-		t.Errorf("expected 0 ready issues after beads:reset, got %d", n)
 	}
 }
 
@@ -206,9 +152,6 @@ func TestRel01_UC001_FullResetClearsState(t *testing.T) {
 	if branch := testutil.GitBranch(t, dir); branch != "main" {
 		t.Errorf("expected main after reset, got %q", branch)
 	}
-	if n := testutil.CountReadyIssues(t, dir); n != 0 {
-		t.Errorf("expected 0 ready issues after reset, got %d", n)
-	}
 }
 
 // --- Edge cases ---
@@ -219,15 +162,6 @@ func TestRel01_UC001_CobblerResetWhenMissing(t *testing.T) {
 	os.RemoveAll(filepath.Join(dir, ".cobbler"))
 	if err := testutil.RunMage(t, dir, "cobbler:reset"); err != nil {
 		t.Fatalf("cobbler:reset with missing .cobbler/: %v", err)
-	}
-}
-
-func TestRel01_UC001_BeadsResetWhenMissing(t *testing.T) {
-	t.Parallel()
-	dir := testutil.SetupRepo(t, snapshotDir)
-	os.RemoveAll(filepath.Join(dir, ".beads"))
-	if err := testutil.RunMage(t, dir, "beads:reset"); err != nil {
-		t.Fatalf("beads:reset with missing .beads/: %v", err)
 	}
 }
 
@@ -298,8 +232,5 @@ func TestRel01_UC001_InitAfterReset(t *testing.T) {
 	}
 	if err := testutil.RunMage(t, dir, "init"); err != nil {
 		t.Fatalf("init after reset: %v", err)
-	}
-	if !testutil.FileExists(dir, ".beads") {
-		t.Error("expected .beads/ to exist after init-reset-init cycle")
 	}
 }

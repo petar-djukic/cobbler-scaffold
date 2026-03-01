@@ -200,12 +200,8 @@ func TestRel01_UC005_ResumeResetsOrphanedIssues(t *testing.T) {
 	genBranch := testutil.GitBranch(t, dir)
 
 	// Create a task and set it to in_progress (simulating an interrupted stitch).
-	issueID := testutil.CreateIssue(t, dir, "orphaned task for resume test")
-	cmd := exec.Command("bd", "update", issueID, "--status", "in_progress")
-	cmd.Dir = dir
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("bd update %s --status in_progress: %v\n%s", issueID, err, out)
-	}
+	issueNumber := testutil.CreateIssue(t, dir, "orphaned task for resume test")
+	testutil.SetIssueInProgress(t, dir, issueNumber)
 
 	// Verify it is in_progress before resume.
 	if n := testutil.CountIssuesByStatus(t, dir, "in_progress"); n == 0 {

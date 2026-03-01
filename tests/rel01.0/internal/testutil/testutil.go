@@ -11,10 +11,12 @@ package testutil
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -202,61 +204,106 @@ func GitListBranchesMatching(t testing.TB, dir, substr string) []string {
 	return branches
 }
 
-// CountReadyIssues calls bd ready in dir and returns the number of available
-// tasks.
+// readIssuesRepo reads cobbler.issues_repo from configuration.yaml in dir.
+// Returns empty string and logs a warning if the file cannot be read.
+func readIssuesRepo(t testing.TB, dir string) string {
+	t.Helper()
+	cfgPath := filepath.Join(dir, "configuration.yaml")
+	data, err := os.ReadFile(cfgPath)
+	if err != nil {
+		t.Logf("readIssuesRepo: read %s: %v", cfgPath, err)
+		return ""
+	}
+	var cfg struct {
+		Cobbler struct {
+			IssuesRepo string `yaml:"issues_repo"`
+		} `yaml:"cobbler"`
+	}
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		t.Logf("readIssuesRepo: unmarshal: %v", err)
+		return ""
+	}
+	return cfg.Cobbler.IssuesRepo
+}
+
+// CountReadyIssues queries GitHub for open issues with the cobbler-ready label
+// and the generation label for the current branch in dir.
 func CountReadyIssues(t testing.TB, dir string) int {
 	t.Helper()
-	cmd := exec.Command("bd", "ready", "--json", "--type", "task")
-	cmd.Dir = dir
+	repo := readIssuesRepo(t, dir)
+	if repo == "" {
+		return 0
+	}
+	generation := GitBranch(t, dir)
+	genLabel := "cobbler-gen-" + generation
+	cmd := exec.Command("gh", "issue", "list",
+		"--repo", repo,
+		"--label", "cobbler-ready",
+		"--label", genLabel,
+		"--json", "number")
 	out, err := cmd.Output()
 	if err != nil {
+		t.Logf("CountReadyIssues: gh issue list: %v", err)
 		return 0
 	}
-	var tasks []json.RawMessage
-	if err := json.Unmarshal(out, &tasks); err != nil {
+	var issues []struct{ Number int `json:"number"` }
+	if err := json.Unmarshal(out, &issues); err != nil {
+		t.Logf("CountReadyIssues: parse: %v (output=%q)", err, string(out))
 		return 0
 	}
-	return len(tasks)
+	return len(issues)
 }
 
-// CreateIssue creates a beads issue via the bd CLI and returns the issue ID.
+// CreateIssue creates a GitHub issue with cobbler labels for the current
+// generation in dir. Returns the issue number as a string.
 func CreateIssue(t testing.TB, dir, title string) string {
 	t.Helper()
-	cmd := exec.Command("bd", "create", "--json", "--type", "task",
-		"--title", title, "--description", "created by e2e test")
-	cmd.Dir = dir
+	repo := readIssuesRepo(t, dir)
+	if repo == "" {
+		t.Fatalf("CreateIssue: no issues_repo in configuration.yaml")
+	}
+	generation := GitBranch(t, dir)
+	body := fmt.Sprintf("---\ncobbler_generation: %s\ncobbler_index: 0\n---\n\ncreated by e2e test",
+		generation)
+	cmd := exec.Command("gh", "issue", "create",
+		"--repo", repo,
+		"--title", title,
+		"--label", "cobbler-gen-"+generation,
+		"--label", "cobbler-ready",
+		"--body", body)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("bd create: %v\n%s", err, out)
+		t.Fatalf("CreateIssue: gh issue create: %v\n%s", err, out)
 	}
-	var issue struct {
-		ID string `json:"id"`
-	}
-	if err := json.Unmarshal(out, &issue); err != nil {
-		t.Fatalf("bd create: JSON parse failed: %v\noutput: %s", err, out)
-	}
-	if issue.ID == "" {
-		t.Fatalf("bd create returned empty ID\noutput: %s", out)
-	}
-	return issue.ID
+	// gh issue create outputs the URL; extract the issue number from the last path segment.
+	url := strings.TrimSpace(string(out))
+	parts := strings.Split(url, "/")
+	return parts[len(parts)-1]
 }
 
-// IssueHasField checks whether any issue listed by "bd list --json" contains
-// the given field name in its JSON output.
-func IssueHasField(t testing.TB, dir, field string) bool {
+// SetIssueInProgress adds the cobbler-in-progress label to the issue and
+// removes cobbler-ready. issueNumber is the string form of the GitHub issue
+// number returned by CreateIssue.
+func SetIssueInProgress(t testing.TB, dir, issueNumber string) {
 	t.Helper()
-	cmd := exec.Command("bd", "list", "--json")
-	cmd.Dir = dir
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("bd list --json: %v\n%s", err, out)
+	repo := readIssuesRepo(t, dir)
+	if repo == "" {
+		t.Fatalf("SetIssueInProgress: no issues_repo in configuration.yaml")
 	}
-	return strings.Contains(string(out), field)
-}
-
-// ContainsField checks whether a JSON string contains the given field value.
-func ContainsField(jsonStr, value string) bool {
-	return strings.Contains(jsonStr, value)
+	n, err := strconv.Atoi(issueNumber)
+	if err != nil {
+		t.Fatalf("SetIssueInProgress: invalid issue number %q: %v", issueNumber, err)
+	}
+	add := exec.Command("gh", "issue", "edit", strconv.Itoa(n),
+		"--repo", repo, "--add-label", "cobbler-in-progress")
+	if out, err := add.CombinedOutput(); err != nil {
+		t.Fatalf("SetIssueInProgress: add label: %v\n%s", err, out)
+	}
+	rm := exec.Command("gh", "issue", "edit", strconv.Itoa(n),
+		"--repo", repo, "--remove-label", "cobbler-ready")
+	if out, err := rm.CombinedOutput(); err != nil {
+		t.Logf("SetIssueInProgress: remove cobbler-ready (non-fatal): %v\n%s", err, out)
+	}
 }
 
 // SetupClaude extracts Claude credentials into the test repo and configures
@@ -325,22 +372,33 @@ func ReadFileContains(path, substr string) bool {
 	return strings.Contains(string(data), substr)
 }
 
-// CountIssuesByStatus calls bd list with the given status and returns the count.
+// CountIssuesByStatus queries GitHub for open cobbler issues with the given
+// status label ("ready" or "in_progress") for the current generation in dir.
 func CountIssuesByStatus(t testing.TB, dir, status string) int {
 	t.Helper()
-	cmd := exec.Command("bd", "list", "--json", "--status", status, "--type", "task")
-	cmd.Dir = dir
+	repo := readIssuesRepo(t, dir)
+	if repo == "" {
+		return 0
+	}
+	generation := GitBranch(t, dir)
+	statusLabel := "cobbler-" + strings.ReplaceAll(status, "_", "-")
+	genLabel := "cobbler-gen-" + generation
+	cmd := exec.Command("gh", "issue", "list",
+		"--repo", repo,
+		"--label", statusLabel,
+		"--label", genLabel,
+		"--json", "number")
 	out, err := cmd.Output()
 	if err != nil {
-		t.Logf("CountIssuesByStatus: bd list --status %s: %v (stdout=%d bytes)", status, err, len(out))
+		t.Logf("CountIssuesByStatus: gh issue list --label %s: %v", statusLabel, err)
 		return 0
 	}
-	var tasks []json.RawMessage
-	if err := json.Unmarshal(out, &tasks); err != nil {
-		t.Logf("CountIssuesByStatus: JSON unmarshal: %v (output=%q)", err, string(out))
+	var issues []struct{ Number int `json:"number"` }
+	if err := json.Unmarshal(out, &issues); err != nil {
+		t.Logf("CountIssuesByStatus: parse: %v (output=%q)", err, string(out))
 		return 0
 	}
-	return len(tasks)
+	return len(issues)
 }
 
 // CopyDir copies src to dst recursively.

@@ -77,7 +77,8 @@ func (o *Orchestrator) GeneratorResume() error {
 	}
 
 	logf("resume: recovering stale tasks")
-	if err := o.recoverStaleTasks(branch, wtBase); err != nil {
+	ghRepo, _ := detectGitHubRepo(wtBase, o.cfg)
+	if err := o.recoverStaleTasks(branch, wtBase, ghRepo, branch); err != nil {
 		logf("resume: recoverStaleTasks warning: %v", err)
 	}
 
@@ -200,14 +201,6 @@ func (o *Orchestrator) GeneratorStart() error {
 		return fmt.Errorf("recording base branch: %w", err)
 	}
 
-	// Reset beads database and reinitialize with generation prefix.
-	if err := o.beadsResetDB(); err != nil {
-		return fmt.Errorf("resetting beads: %w", err)
-	}
-	if err := o.beadsInitWith(genName); err != nil {
-		return fmt.Errorf("initializing beads: %w", err)
-	}
-
 	// Reset Go sources and reinitialize module.
 	logf("generator:start: resetting Go sources")
 	if err := o.resetGoSources(genName); err != nil {
@@ -220,7 +213,7 @@ func (o *Orchestrator) GeneratorStart() error {
 		return fmt.Errorf("squashing start commits: %w", err)
 	}
 	_ = gitStageAll() // best-effort; commit below will catch nothing-to-commit
-	msg := fmt.Sprintf("Start generation: %s\n\nBase branch: %s. Delete Go files, reinitialize module, initialize beads.\nTagged previous state as %s.", genName, baseBranch, genName)
+	msg := fmt.Sprintf("Start generation: %s\n\nBase branch: %s. Delete Go files, reinitialize module.\nTagged previous state as %s.", genName, baseBranch, genName)
 	if err := gitCommit(msg); err != nil {
 		return fmt.Errorf("committing clean state: %w", err)
 	}
@@ -738,11 +731,12 @@ func (o *Orchestrator) GeneratorReset() error {
 	}
 
 	wtBase := worktreeBasePath()
+	ghRepo, _ := detectGitHubRepo(wtBase, o.cfg)
 	genBranches := o.listGenerationBranches()
 	if len(genBranches) > 0 {
 		logf("generator:reset: removing task branches and worktrees")
 		for _, gb := range genBranches {
-			recoverStaleBranches(gb, wtBase)
+			recoverStaleBranches(gb, wtBase, ghRepo)
 		}
 	}
 
@@ -920,18 +914,15 @@ func GeneratorInit() error {
 	return nil
 }
 
-// Init initializes the project (beads).
+// Init is a no-op placeholder kept for mage target compatibility.
 func (o *Orchestrator) Init() error {
-	return o.BeadsInit()
+	return nil
 }
 
-// FullReset performs a full reset: cobbler, generator, beads.
+// FullReset performs a full reset: cobbler and generator.
 func (o *Orchestrator) FullReset() error {
 	if err := o.CobblerReset(); err != nil {
 		return err
 	}
-	if err := o.GeneratorReset(); err != nil {
-		return err
-	}
-	return o.BeadsReset()
+	return o.GeneratorReset()
 }

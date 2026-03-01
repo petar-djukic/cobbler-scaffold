@@ -8,7 +8,6 @@ package uc003_test
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator"
@@ -36,15 +35,6 @@ func TestMain(m *testing.M) {
 	exitCode := m.Run()
 	cleanup()
 	os.Exit(exitCode)
-}
-
-func TestRel01_UC003_MeasureFailsWithoutBeads(t *testing.T) {
-	t.Parallel()
-	dir := testutil.SetupRepo(t, snapshotDir)
-	os.RemoveAll(filepath.Join(dir, ".beads"))
-	if err := testutil.RunMage(t, dir, "cobbler:measure"); err == nil {
-		t.Fatal("expected cobbler:measure to fail without .beads")
-	}
 }
 
 func TestRel01_UC003_MeasureFailsWithoutGeneration(t *testing.T) {

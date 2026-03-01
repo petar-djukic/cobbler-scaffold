@@ -108,6 +108,13 @@ type CobblerConfig struct {
 	// BeadsDir is the beads database directory (default ".beads/").
 	BeadsDir string `yaml:"beads_dir"`
 
+	// IssuesRepo is the GitHub repository (owner/repo) where orchestrator
+	// issues are created. If empty, detectGitHubRepo derives it from the
+	// target project's git remote or go.mod module path. Set this in
+	// configuration.yaml to override (e.g., to direct test issues to
+	// a different repo than the target project).
+	IssuesRepo string `yaml:"issues_repo"`
+
 	// MaxStitchIssues is the total maximum number of stitch iterations for
 	// an entire run (default 0, meaning unlimited).
 	MaxStitchIssues int `yaml:"max_stitch_issues"`

@@ -5,10 +5,8 @@ package orchestrator
 
 import (
 	_ "embed"
-	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -45,8 +43,9 @@ func (o *Orchestrator) MeasurePrompt() error {
 }
 
 // RunMeasure runs the measure workflow using Config settings.
+// repo is the GitHub owner/repo where issues are created.
 // It uses an iterative strategy: Claude is called once per issue with limit=1,
-// and the issue is recorded in beads between calls. Each subsequent call sees
+// and the issue is recorded on GitHub between calls. Each subsequent call sees
 // the updated issue list, enabling Claude to reason about dependencies and
 // avoid duplicates. This avoids the super-linear thinking-time scaling observed
 // when requesting multiple issues in a single call (see eng04-measure-scaling).
@@ -73,11 +72,6 @@ func (o *Orchestrator) RunMeasure() error {
 		return err
 	}
 
-	if err := o.requireBeads(); err != nil {
-		logf("beads not initialized: %v", err)
-		return err
-	}
-
 	branch, err := o.resolveBranch(o.cfg.Generation.Branch)
 	if err != nil {
 		logf("resolveBranch failed: %v", err)
@@ -88,6 +82,7 @@ func (o *Orchestrator) RunMeasure() error {
 		setGeneration(branch)
 		defer clearGeneration()
 	}
+	generation := branch
 
 	if err := ensureOnBranch(branch); err != nil {
 		logf("ensureOnBranch failed: %v", err)
@@ -95,6 +90,24 @@ func (o *Orchestrator) RunMeasure() error {
 	}
 
 	_ = os.MkdirAll(o.cfg.Cobbler.Dir, 0o755) // best-effort; dir may already exist
+
+	// Resolve the GitHub repo for issue management.
+	repoRoot, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("getting working directory: %w", err)
+	}
+	repo, err := detectGitHubRepo(repoRoot, o.cfg)
+	if err != nil {
+		logf("detectGitHubRepo failed: %v", err)
+		return fmt.Errorf("detecting GitHub repo: %w", err)
+	}
+	logf("using GitHub repo %s for issues", repo)
+
+	// Ensure the cobbler labels and generation label exist on the repo.
+	if err := ensureCobblerLabels(repo); err != nil {
+		logf("ensureCobblerLabels warning: %v", err)
+	}
+	ensureCobblerGenLabel(repo, generation) // nolint: best-effort
 
 	// Run pre-cycle analysis so the measure prompt sees current project state.
 	o.RunPreCycleAnalysis()
@@ -108,16 +121,12 @@ func (o *Orchestrator) RunMeasure() error {
 		os.Remove(f) // nolint: best-effort temp file cleanup
 	}
 
-	// Get initial state.
-	existingIssues := getExistingIssues()
-	issueCount := countJSONArray(existingIssues)
+	// Get initial state: open GitHub issues for this generation.
+	existingIssues, _ := listActiveIssuesContext(repo, generation)
 	commitSHA, _ := gitRevParseHEAD() // empty string on error is acceptable for logging
 
-	logf("found %d existing issue(s), maxMeasureIssues=%d, commit=%s",
-		issueCount, o.cfg.Cobbler.MaxMeasureIssues, commitSHA)
-
-	// Create a beads tracking issue for this measure invocation.
-	trackingID := o.createMeasureTrackingIssue(branch, commitSHA, issueCount)
+	logf("existing issues context len=%d, maxMeasureIssues=%d, commit=%s",
+		len(existingIssues), o.cfg.Cobbler.MaxMeasureIssues, commitSHA)
 
 	// Snapshot LOC before Claude.
 	locBefore := o.captureLOC()
@@ -129,17 +138,15 @@ func (o *Orchestrator) RunMeasure() error {
 	totalIssues := o.cfg.Cobbler.MaxMeasureIssues
 	var allCreatedIDs []string
 	var totalTokens ClaudeResult
-	claudeStart := time.Now() // overall Claude start for tracking
-
 	maxRetries := o.cfg.Cobbler.MaxMeasureRetries
 
 	for i := 0; i < totalIssues; i++ {
 		logf("--- iteration %d/%d ---", i+1, totalIssues)
 
-		// Refresh existing issues from beads before each call (except the first,
+		// Refresh existing issues from GitHub before each call (except the first,
 		// where we already have them).
 		if i > 0 {
-			existingIssues = getExistingIssues()
+			existingIssues, _ = listActiveIssuesContext(repo, generation)
 		}
 
 		var createdIDs []string
@@ -193,8 +200,6 @@ func (o *Orchestrator) RunMeasure() error {
 					LOCBefore: locBefore,
 					LOCAfter:  o.captureLOC(),
 				})
-				o.closeMeasureTrackingIssue(trackingID, claudeStart, measureStart,
-					totalTokens, locBefore, o.captureLOC(), len(allCreatedIDs), err)
 				return fmt.Errorf("running Claude (iteration %d/%d): %w", i+1, totalIssues, err)
 			}
 			logf("iteration %d Claude completed in %s", i+1, iterDuration.Round(time.Second))
@@ -231,7 +236,7 @@ func (o *Orchestrator) RunMeasure() error {
 			logf("iteration %d extracted YAML, size=%d bytes", i+1, len(yamlContent))
 
 			var importErr error
-			createdIDs, importErr = o.importIssues(outputFile)
+			createdIDs, importErr = o.importIssues(outputFile, repo, generation)
 			if importErr != nil {
 				logf("iteration %d import failed: %v", i+1, importErr)
 				if attempt < maxRetries {
@@ -241,7 +246,7 @@ func (o *Orchestrator) RunMeasure() error {
 				// Retries exhausted: accept with warning (R5).
 				logf("iteration %d retries exhausted, accepting last result with warnings", i+1)
 				var forceErr error
-				createdIDs, forceErr = o.importIssuesForce(outputFile)
+				createdIDs, forceErr = o.importIssuesForce(outputFile, repo, generation)
 				if forceErr != nil {
 					logf("iteration %d force import failed: %v", i+1, forceErr)
 				}
@@ -262,62 +267,9 @@ func (o *Orchestrator) RunMeasure() error {
 		}
 	}
 
-	// Close tracking issue with aggregate metrics.
-	locAfter := o.captureLOC()
-	o.closeMeasureTrackingIssue(trackingID, claudeStart, measureStart,
-		totalTokens, locBefore, locAfter, len(allCreatedIDs), nil)
-
 	logf("completed %d iteration(s), %d issue(s) created in %s",
 		totalIssues, len(allCreatedIDs), time.Since(measureStart).Round(time.Second))
 	return nil
-}
-
-// createMeasureTrackingIssue creates a beads issue to track the measure
-// invocation. The description includes the branch, commit SHA, and number
-// of existing issues being analyzed. Returns the issue ID or "" on failure.
-func (o *Orchestrator) createMeasureTrackingIssue(branch, commitSHA string, existingIssueCount int) string {
-	title := fmt.Sprintf("measure: plan on %s at %s", branch, truncateSHA(commitSHA))
-	description := fmt.Sprintf(
-		"Measure invocation.\n\nBranch: %s\nCommit: %s\nExisting issues: %d\nMax new issues: %d",
-		branch, commitSHA, existingIssueCount, o.cfg.Cobbler.MaxMeasureIssues,
-	)
-
-	out, err := bdCreateTask(title, description)
-	if err != nil {
-		logf("createMeasureTrackingIssue: bd create failed: %v", err)
-		return ""
-	}
-
-	var created struct {
-		ID string `json:"id"`
-	}
-	if err := json.Unmarshal(out, &created); err != nil || created.ID == "" {
-		logf("createMeasureTrackingIssue: parse failed: %v", err)
-		return ""
-	}
-
-	logf("tracking issue created: %s", created.ID)
-
-	// Claim the issue immediately.
-	if err := bdUpdateStatus(created.ID, "in_progress"); err != nil {
-		logf("createMeasureTrackingIssue: status update warning: %v", err)
-	}
-	o.beadsCommit(fmt.Sprintf("Open measure tracking issue %s", created.ID))
-
-	return created.ID
-}
-
-// closeMeasureTrackingIssue records invocation metrics and closes the
-// tracking issue. If trackingID is empty, this is a no-op.
-func (o *Orchestrator) closeMeasureTrackingIssue(trackingID string, claudeStart, measureStart time.Time, tokens ClaudeResult, locBefore, locAfter LocSnapshot, issuesCreated int, claudeErr error) {
-	if trackingID == "" {
-		return
-	}
-
-	if err := bdClose(trackingID); err != nil {
-		logf("closeMeasureTrackingIssue: bd close warning: %v", err)
-	}
-	o.beadsCommit(fmt.Sprintf("Close measure tracking issue %s", trackingID))
 }
 
 // truncateSHA returns the first 8 characters of a SHA, or the full
@@ -327,61 +279,6 @@ func truncateSHA(sha string) string {
 		return sha[:8]
 	}
 	return sha
-}
-
-func getExistingIssues() string {
-	if _, err := exec.LookPath(binBd); err != nil {
-		logf("getExistingIssues: bd not on PATH: %v", err)
-		return "[]"
-	}
-	out, err := bdListJSON()
-	if err != nil {
-		logf("getExistingIssues: bd list failed: %v", err)
-		return "[]"
-	}
-	logf("getExistingIssues: %d bytes", len(out))
-	return string(out)
-}
-
-// getCompletedWork returns a list of human-readable summaries of closed
-// tasks. Each entry has the form "COMPLETED: <id> — <title>". This is
-// injected into the measure prompt as an unambiguous signal that the work
-// was already done.
-func getCompletedWork() []string {
-	if _, err := exec.LookPath(binBd); err != nil {
-		return nil
-	}
-	out, err := bdListClosedTasks()
-	if err != nil {
-		logf("getCompletedWork: bd list closed failed: %v", err)
-		return nil
-	}
-	summaries := parseCompletedWork(out)
-	logf("getCompletedWork: %d closed task(s)", len(summaries))
-	return summaries
-}
-
-// parseCompletedWork converts JSON-encoded closed tasks into human-readable
-// summary strings. Each entry has the form "COMPLETED: <id> — <title>".
-func parseCompletedWork(jsonData []byte) []string {
-	var issues []ContextIssue
-	if err := json.Unmarshal(jsonData, &issues); err != nil {
-		logf("parseCompletedWork: parse error: %v", err)
-		return nil
-	}
-	summaries := make([]string, 0, len(issues))
-	for _, ci := range issues {
-		summaries = append(summaries, fmt.Sprintf("COMPLETED: %s — %s", ci.ID, ci.Title))
-	}
-	return summaries
-}
-
-func countJSONArray(jsonStr string) int {
-	var arr []json.RawMessage
-	if err := json.Unmarshal([]byte(jsonStr), &arr); err != nil {
-		return 0
-	}
-	return len(arr)
 }
 
 func (o *Orchestrator) buildMeasurePrompt(userInput, existingIssues string, limit int) (string, error) {
@@ -409,10 +306,6 @@ func (o *Orchestrator) buildMeasurePrompt(userInput, existingIssues string, limi
 		logf("buildMeasurePrompt: buildProjectContext error: %v", ctxErr)
 		projectCtx = &ProjectContext{}
 	}
-
-	// Add completed-work summary so the measure agent sees what was already
-	// done and does not re-propose it.
-	projectCtx.CompletedWork = getCompletedWork()
 
 	placeholders := map[string]string{
 		"limit":            fmt.Sprintf("%d", limit),
@@ -474,17 +367,17 @@ type proposedIssue struct {
 	Dependency  int    `yaml:"dependency"`
 }
 
-func (o *Orchestrator) importIssues(yamlFile string) ([]string, error) {
-	return o.importIssuesImpl(yamlFile, false)
+func (o *Orchestrator) importIssues(yamlFile, repo, generation string) ([]string, error) {
+	return o.importIssuesImpl(yamlFile, repo, generation, false)
 }
 
 // importIssuesForce imports issues bypassing enforcing validation. Used when
 // retries are exhausted to accept the last result with warnings (R5).
-func (o *Orchestrator) importIssuesForce(yamlFile string) ([]string, error) {
-	return o.importIssuesImpl(yamlFile, true)
+func (o *Orchestrator) importIssuesForce(yamlFile, repo, generation string) ([]string, error) {
+	return o.importIssuesImpl(yamlFile, repo, generation, true)
 }
 
-func (o *Orchestrator) importIssuesImpl(yamlFile string, skipEnforcement bool) ([]string, error) {
+func (o *Orchestrator) importIssuesImpl(yamlFile, repo, generation string, skipEnforcement bool) ([]string, error) {
 	logf("importIssues: reading %s", yamlFile)
 	data, err := os.ReadFile(yamlFile)
 	if err != nil {
@@ -513,53 +406,23 @@ func (o *Orchestrator) importIssuesImpl(yamlFile string, skipEnforcement bool) (
 			len(vr.Errors), strings.Join(vr.Errors, "; "))
 	}
 
-	// Pass 1: create all issues and collect their beads IDs.
-	indexToID := make(map[int]string)
-	for _, issue := range issues {
-		logf("importIssues: creating task %d: %s", issue.Index, issue.Title)
-		out, err := bdCreateTask(issue.Title, issue.Description)
-		if err != nil {
-			logf("importIssues: bd create failed for %q: %v", issue.Title, err)
-			continue
-		}
-		var created struct {
-			ID string `json:"id"`
-		}
-		if err := json.Unmarshal(out, &created); err == nil && created.ID != "" {
-			indexToID[issue.Index] = created.ID
-			logf("importIssues: created task %d -> beads id=%s", issue.Index, created.ID)
-		} else {
-			logf("importIssues: bd create returned unparseable output for %q: %s", issue.Title, string(out))
-		}
-	}
-
-	// Pass 2: wire up dependencies.
-	for _, issue := range issues {
-		if issue.Dependency < 0 {
-			continue
-		}
-		childID, hasChild := indexToID[issue.Index]
-		parentID, hasParent := indexToID[issue.Dependency]
-		if !hasChild || !hasParent {
-			logf("importIssues: skipping dependency %d->%d (child=%v parent=%v)", issue.Index, issue.Dependency, hasChild, hasParent)
-			continue
-		}
-		logf("importIssues: linking %s (task %d) depends on %s (task %d)", childID, issue.Index, parentID, issue.Dependency)
-		if err := bdAddDep(childID, parentID); err != nil {
-			logf("importIssues: bd dep add failed: %s -> %s: %v", childID, parentID, err)
-		}
-	}
-
-	// Collect created IDs in stable order.
+	// Create all issues on GitHub. Dependencies are encoded in the front-matter;
+	// promoteReadyIssues (called by pickReadyIssue) resolves the DAG at pick time.
 	var ids []string
 	for _, issue := range issues {
-		if id, ok := indexToID[issue.Index]; ok {
-			ids = append(ids, id)
+		logf("importIssues: creating task %d: %s (dep=%d)", issue.Index, issue.Title, issue.Dependency)
+		ghNum, err := createCobblerIssue(repo, generation, issue)
+		if err != nil {
+			logf("importIssues: createCobblerIssue failed for %q: %v", issue.Title, err)
+			continue
 		}
+		ids = append(ids, fmt.Sprintf("%d", ghNum))
 	}
 
 	if len(ids) > 0 {
-		o.beadsCommit("Add issues from measure")
+		if err := promoteReadyIssues(repo, generation); err != nil {
+			logf("importIssues: promoteReadyIssues warning: %v", err)
+		}
 	}
 	logf("importIssues: %d of %d issue(s) imported", len(ids), len(issues))
 

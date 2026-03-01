@@ -670,17 +670,28 @@ func worktreeBasePath() string {
 	return filepath.Join(os.TempDir(), filepath.Base(repoRoot)+"-worktrees")
 }
 
-// hasOpenIssues returns true if there are tasks available for work in beads.
+// hasOpenIssues returns true if there are open orchestrator issues for the
+// current generation on GitHub.
 func (o *Orchestrator) hasOpenIssues() bool {
-	out, err := bdListReadyTasks()
+	repoRoot, err := os.Getwd()
 	if err != nil {
 		return false
 	}
-	var tasks []json.RawMessage
-	if err := json.Unmarshal(out, &tasks); err != nil {
+	ghRepo, err := detectGitHubRepo(repoRoot, o.cfg)
+	if err != nil {
+		logf("hasOpenIssues: detectGitHubRepo: %v", err)
 		return false
 	}
-	return len(tasks) > 0
+	branch, err := gitCurrentBranch()
+	if err != nil {
+		return false
+	}
+	issues, err := listOpenCobblerIssues(ghRepo, branch)
+	if err != nil {
+		logf("hasOpenIssues: listOpenCobblerIssues: %v", err)
+		return false
+	}
+	return len(issues) > 0
 }
 
 // CobblerReset removes the cobbler scratch directory.
@@ -691,19 +702,4 @@ func (o *Orchestrator) CobblerReset() error {
 	}
 	logf("cobblerReset: done")
 	return nil
-}
-
-// beadsCommit syncs beads state and commits the beads directory.
-func (o *Orchestrator) beadsCommit(msg string) {
-	logf("beadsCommit: %s", msg)
-	if err := bdSync(); err != nil {
-		logf("beadsCommit: bdSync warning: %v", err)
-	}
-	if err := gitStageDir(o.cfg.Cobbler.BeadsDir); err != nil {
-		logf("beadsCommit: gitStageDir warning: %v", err)
-	}
-	if err := gitCommitAllowEmpty(msg); err != nil {
-		logf("beadsCommit: gitCommit warning: %v", err)
-	}
-	logf("beadsCommit: done")
 }

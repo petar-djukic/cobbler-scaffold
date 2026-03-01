@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator"
+	"gopkg.in/yaml.v3"
 )
 
 // ScaffoldModule is the Go module used as the E2E test target.
@@ -66,8 +67,36 @@ func PrepareSnapshot(orchRoot string) (string, func(), error) {
 	}
 	os.RemoveAll(workDir)
 
+	// Set cobbler.issues_repo so test repos use petar-djukic/cobbler-scaffold
+	// for GitHub issue tracking. Issues created during usecase tests land here.
+	if err := overrideSnapshotIssuesRepo(snap, "petar-djukic/cobbler-scaffold"); err != nil {
+		os.RemoveAll(snap)
+		return "", nil, fmt.Errorf("setting issues_repo in snapshot config: %w", err)
+	}
+
 	cleanup := func() { os.RemoveAll(snap) }
 	return snap, cleanup, nil
+}
+
+// overrideSnapshotIssuesRepo writes cobbler.issues_repo into the snapshot's
+// configuration.yaml so that all test repos created from it point to the
+// correct GitHub repo for issue tracking.
+func overrideSnapshotIssuesRepo(snapDir, issuesRepo string) error {
+	cfgPath := filepath.Join(snapDir, orchestrator.DefaultConfigFile)
+	data, err := os.ReadFile(cfgPath)
+	if err != nil {
+		return err
+	}
+	var cfg orchestrator.Config
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return err
+	}
+	cfg.Cobbler.IssuesRepo = issuesRepo
+	newData, err := yaml.Marshal(&cfg)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(cfgPath, newData, 0o644)
 }
 
 // latestModuleVersion resolves the latest tagged version of a Go module
