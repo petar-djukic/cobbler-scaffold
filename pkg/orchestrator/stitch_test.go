@@ -432,3 +432,331 @@ func TestBuildStitchPrompt_RequiredReadingFilter(t *testing.T) {
 		t.Errorf("buildStitchPrompt() output missing 'execution_constitution:'")
 	}
 }
+
+// gitRun executes a git command in the current working directory and
+// fails the test on error. Tests that call initTestGitRepo (which
+// changes cwd to the temp git repo) use this to run git commands.
+func gitRun(t *testing.T, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git %v: %v\n%s", args, err, out)
+	}
+}
+
+// --- mergeBranch ---
+
+func TestMergeBranch_Success(t *testing.T) {
+	dir := initTestGitRepo(t)
+
+	// Add a file on main.
+	if err := os.WriteFile(filepath.Join(dir, "main.txt"), []byte("main content\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitRun(t, "add", "-A")
+	gitRun(t, "commit", "--no-verify", "-m", "add main file")
+
+	// Create feature branch with a new file.
+	gitRun(t, "checkout", "-b", "feature/test-merge")
+	if err := os.WriteFile(filepath.Join(dir, "feature.txt"), []byte("feature content\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitRun(t, "add", "-A")
+	gitRun(t, "commit", "--no-verify", "-m", "add feature file")
+
+	// Switch back to main before merge.
+	gitRun(t, "checkout", "main")
+
+	if err := mergeBranch("feature/test-merge", "main", dir); err != nil {
+		t.Fatalf("mergeBranch() error = %v", err)
+	}
+
+	// Verify the feature file is present on main after merge.
+	if _, err := os.Stat(filepath.Join(dir, "feature.txt")); os.IsNotExist(err) {
+		t.Error("feature.txt should exist on main after merge")
+	}
+}
+
+func TestMergeBranch_NonExistentBranch(t *testing.T) {
+	_ = initTestGitRepo(t)
+
+	err := mergeBranch("nonexistent-branch-xyz", "main", t.TempDir())
+	if err == nil {
+		t.Error("expected error merging non-existent branch")
+	}
+}
+
+func TestMergeBranch_MergeConflict(t *testing.T) {
+	dir := initTestGitRepo(t)
+
+	// Create a shared file on main.
+	if err := os.WriteFile(filepath.Join(dir, "shared.txt"), []byte("original\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitRun(t, "add", "-A")
+	gitRun(t, "commit", "--no-verify", "-m", "add shared file")
+
+	// Create feature branch with conflicting change.
+	gitRun(t, "checkout", "-b", "feature/conflict")
+	if err := os.WriteFile(filepath.Join(dir, "shared.txt"), []byte("feature version\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitRun(t, "add", "-A")
+	gitRun(t, "commit", "--no-verify", "-m", "modify shared on feature")
+
+	// Back to main with a different change to the same file.
+	gitRun(t, "checkout", "main")
+	if err := os.WriteFile(filepath.Join(dir, "shared.txt"), []byte("main version 2\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitRun(t, "add", "-A")
+	gitRun(t, "commit", "--no-verify", "-m", "modify shared on main")
+
+	err := mergeBranch("feature/conflict", "main", dir)
+	if err == nil {
+		t.Error("expected error for merge conflict")
+	}
+
+	// Abort the merge to leave the repo in a clean state.
+	exec.Command("git", "merge", "--abort").Run()
+}
+
+// --- recoverStaleBranches ---
+
+func TestRecoverStaleBranches_NoBranches(t *testing.T) {
+	_ = initTestGitRepo(t)
+
+	got := recoverStaleBranches("main", t.TempDir(), "fake/repo")
+	if got {
+		t.Error("expected false when no stale branches exist")
+	}
+}
+
+func TestRecoverStaleBranches_WithStaleBranch(t *testing.T) {
+	_ = initTestGitRepo(t)
+
+	// Create a task branch that looks stale.
+	branchName := "task/main-99999"
+	gitRun(t, "branch", branchName)
+
+	if !gitBranchExists(branchName) {
+		t.Fatal("setup: branch should exist")
+	}
+
+	// Use a fake repo so removeInProgressLabel fails harmlessly.
+	got := recoverStaleBranches("main", t.TempDir(), "fake/repo")
+	if !got {
+		t.Error("expected true when stale branches were recovered")
+	}
+
+	// The stale branch should have been force-deleted.
+	if gitBranchExists(branchName) {
+		t.Error("stale branch should have been deleted after recovery")
+	}
+}
+
+func TestRecoverStaleBranches_WithWorktree(t *testing.T) {
+	dir := initTestGitRepo(t)
+
+	// Create a task branch and worktree to simulate a stale state.
+	branchName := "task/main-88888"
+	gitRun(t, "branch", branchName)
+
+	worktreeBase := filepath.Join(dir, "worktrees")
+	worktreeDir := filepath.Join(worktreeBase, "88888")
+	os.MkdirAll(filepath.Dir(worktreeDir), 0o755)
+	gitRun(t, "worktree", "add", worktreeDir, branchName)
+
+	got := recoverStaleBranches("main", worktreeBase, "fake/repo")
+	if !got {
+		t.Error("expected true when stale branches with worktrees were recovered")
+	}
+
+	// Worktree and branch should be cleaned up.
+	if gitBranchExists(branchName) {
+		t.Error("stale branch should have been deleted")
+	}
+	if _, err := os.Stat(worktreeDir); !os.IsNotExist(err) {
+		t.Error("worktree directory should have been removed")
+	}
+}
+
+// --- resetOrphanedIssues ---
+
+func TestResetOrphanedIssues_ListFails(t *testing.T) {
+	t.Parallel()
+	// With a fake repo, listOpenCobblerIssues fails and the function
+	// returns false without modifying anything.
+	got := resetOrphanedIssues("main", "fake/repo", "test-gen")
+	if got {
+		t.Error("expected false when listing issues fails")
+	}
+}
+
+// --- recoverStaleTasks ---
+
+func TestRecoverStaleTasks_NoStaleState(t *testing.T) {
+	_ = initTestGitRepo(t)
+
+	o := New(Config{})
+	err := o.recoverStaleTasks("main", t.TempDir(), "fake/repo", "test-gen")
+	if err != nil {
+		t.Errorf("recoverStaleTasks() error = %v", err)
+	}
+}
+
+func TestRecoverStaleTasks_WithStaleBranch(t *testing.T) {
+	_ = initTestGitRepo(t)
+
+	branchName := "task/main-77777"
+	gitRun(t, "branch", branchName)
+
+	o := New(Config{})
+	err := o.recoverStaleTasks("main", t.TempDir(), "fake/repo", "test-gen")
+	if err != nil {
+		t.Errorf("recoverStaleTasks() error = %v", err)
+	}
+
+	// Branch should have been cleaned up.
+	if gitBranchExists(branchName) {
+		t.Error("stale branch should have been recovered")
+	}
+}
+
+// --- resetTask ---
+
+func TestResetTask_NonExistentWorktree(t *testing.T) {
+	t.Parallel()
+	// resetTask must not panic when the worktree and branch don't exist.
+	o := New(Config{})
+	task := stitchTask{
+		id:          "99999",
+		ghNumber:    99999,
+		branchName:  "task/main-99999",
+		worktreeDir: "/nonexistent/worktree/path",
+		repo:        "fake/repo",
+	}
+
+	o.resetTask(task, "test reason") // must not panic
+}
+
+func TestResetTask_WithRealWorktree(t *testing.T) {
+	dir := initTestGitRepo(t)
+
+	branchName := "task/main-66666"
+	gitRun(t, "branch", branchName)
+	worktreeDir := filepath.Join(dir+"-worktrees", "66666")
+	os.MkdirAll(filepath.Dir(worktreeDir), 0o755)
+	gitRun(t, "worktree", "add", worktreeDir, branchName)
+
+	o := New(Config{})
+	task := stitchTask{
+		id:          "66666",
+		ghNumber:    66666,
+		branchName:  branchName,
+		worktreeDir: worktreeDir,
+		repo:        "fake/repo",
+	}
+
+	o.resetTask(task, "test cleanup")
+
+	// Worktree and branch should be removed.
+	if _, err := os.Stat(worktreeDir); !os.IsNotExist(err) {
+		t.Error("worktree directory should have been removed")
+	}
+	if gitBranchExists(branchName) {
+		t.Error("branch should have been force-deleted")
+	}
+}
+
+// --- closeStitchTask ---
+
+func TestCloseStitchTask_GHFailureNoOp(t *testing.T) {
+	t.Parallel()
+	// closeStitchTask must not panic when closeCobblerIssue fails
+	// (e.g., fake repo, no network).
+	o := New(Config{})
+	task := stitchTask{
+		id:         "99999",
+		ghNumber:   99999,
+		title:      "test task",
+		repo:       "fake/repo",
+		generation: "test-gen",
+	}
+	rec := InvocationRecord{}
+
+	o.closeStitchTask(task, rec) // must not panic
+}
+
+// --- createWorktree (existing branch) ---
+
+func TestCreateWorktree_ExistingBranch(t *testing.T) {
+	dir := initTestGitRepo(t)
+
+	branchName := "task/main-existing"
+	gitRun(t, "branch", branchName)
+
+	task := stitchTask{
+		id:          "existing",
+		branchName:  branchName,
+		worktreeDir: filepath.Join(dir+"-worktrees", "existing"),
+	}
+
+	if err := createWorktree(task); err != nil {
+		t.Fatalf("createWorktree() with existing branch error = %v", err)
+	}
+	t.Cleanup(func() {
+		gitWorktreeRemove(task.worktreeDir)
+		gitDeleteBranch(task.branchName)
+	})
+
+	if _, err := os.Stat(task.worktreeDir); os.IsNotExist(err) {
+		t.Error("worktree directory should exist")
+	}
+}
+
+// --- cleanupWorktree (real worktree) ---
+
+func TestCleanupWorktree_RealWorktree(t *testing.T) {
+	dir := initTestGitRepo(t)
+
+	branchName := "task/main-cleanup"
+	gitRun(t, "branch", branchName)
+
+	worktreeDir := filepath.Join(dir+"-worktrees", "cleanup")
+	os.MkdirAll(filepath.Dir(worktreeDir), 0o755)
+	gitRun(t, "worktree", "add", worktreeDir, branchName)
+
+	task := stitchTask{
+		id:          "cleanup",
+		branchName:  branchName,
+		worktreeDir: worktreeDir,
+	}
+
+	cleanupWorktree(task)
+
+	// Worktree directory should be removed.
+	if _, err := os.Stat(worktreeDir); !os.IsNotExist(err) {
+		t.Error("worktree directory should have been removed")
+	}
+	// Branch should be deleted.
+	if gitBranchExists(branchName) {
+		t.Errorf("branch %q should have been deleted", branchName)
+	}
+}
+
+// --- commitWorktreeChanges (error path) ---
+
+func TestCommitWorktreeChanges_InvalidDir(t *testing.T) {
+	t.Parallel()
+	task := stitchTask{
+		id:          "invalid",
+		title:       "invalid dir test",
+		worktreeDir: "/nonexistent/dir/xyz",
+	}
+
+	err := commitWorktreeChanges(task)
+	if err == nil {
+		t.Error("expected error for non-existent directory")
+	}
+}
