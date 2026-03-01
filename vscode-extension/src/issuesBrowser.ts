@@ -5,7 +5,7 @@
 // uc: rel02.0-uc004-issue-tracker-view
 
 import * as vscode from "vscode";
-import { BeadsStore, BeadsIssue, IssueStatus } from "./beadsModel";
+import { IssuesStore, GitHubIssue, IssueStatus } from "./issuesModel";
 
 // ---- Tree item types ----
 
@@ -21,7 +21,7 @@ interface StatusGroupItem {
 
 interface IssueItem {
   kind: "issue";
-  issue: BeadsIssue;
+  issue: GitHubIssue;
 }
 
 // ---- Status group configuration ----
@@ -50,7 +50,7 @@ export function priorityIcon(priority: number): string {
 
 /**
  * TreeDataProvider for the mageOrchestrator.issues view. Displays
- * beads issues grouped by status, sorted by priority within each group.
+ * GitHub issues grouped by status, sorted by priority within each group.
  */
 export class IssueBrowserProvider
   implements vscode.TreeDataProvider<IssueTreeItem>
@@ -60,15 +60,14 @@ export class IssueBrowserProvider
   >();
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
-  private store: BeadsStore;
+  private store: IssuesStore;
 
-  constructor(store: BeadsStore) {
+  constructor(store: IssuesStore) {
     this.store = store;
   }
 
-  /** Invalidates the BeadsStore cache and fires a tree refresh. */
+  /** Fires a tree refresh. Data is updated by the IssuesStore polling cycle. */
   refresh(): void {
-    this.store.invalidate();
     this._onDidChangeTreeData.fire();
   }
 
@@ -82,8 +81,6 @@ export class IssueBrowserProvider
   }
 
   getChildren(element?: IssueTreeItem): IssueTreeItem[] {
-    this.store.ensureBuilt();
-
     if (!element) {
       return this.rootChildren();
     }
@@ -133,39 +130,35 @@ export class IssueBrowserProvider
   private issueTreeItem(item: IssueItem): vscode.TreeItem {
     const issue = item.issue;
     const ti = new vscode.TreeItem(
-      `${issue.id}: ${issue.title}`,
+      `#${issue.number}: ${issue.title}`,
       vscode.TreeItemCollapsibleState.None
     );
     ti.description = this.issueDescription(issue);
     ti.tooltip = this.issueTooltip(issue);
-    ti.contextValue = "beadsIssue";
+    ti.contextValue = "githubIssue";
     ti.iconPath = new vscode.ThemeIcon(priorityIcon(issue.priority));
     return ti;
   }
 
-  private issueDescription(issue: BeadsIssue): string {
+  private issueDescription(issue: GitHubIssue): string {
     const parts: string[] = [];
     parts.push(`P${issue.priority}`);
-    parts.push(issue.issue_type);
+    parts.push(issue.issueType);
     if (issue.labels.length > 0) {
       parts.push(issue.labels.join(", "));
     }
     return parts.join(" | ");
   }
 
-  private issueTooltip(issue: BeadsIssue): string {
+  private issueTooltip(issue: GitHubIssue): string {
     const lines: string[] = [
-      `${issue.id}: ${issue.title}`,
+      `#${issue.number}: ${issue.title}`,
       `Status: ${issue.status}`,
       `Priority: ${issue.priority}`,
-      `Type: ${issue.issue_type}`,
+      `Type: ${issue.issueType}`,
     ];
     if (issue.labels.length > 0) {
       lines.push(`Labels: ${issue.labels.join(", ")}`);
-    }
-    if (issue.dependencies.length > 0) {
-      const deps = issue.dependencies.map((d) => d.depends_on_id).join(", ");
-      lines.push(`Depends on: ${deps}`);
     }
     return lines.join("\n");
   }
