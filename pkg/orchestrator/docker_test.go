@@ -78,3 +78,24 @@ func TestImageBaseName_Empty(t *testing.T) {
 		t.Errorf("imageBaseName(empty) = %q, want empty", got)
 	}
 }
+
+// --- latestVersionTag (git-dependent, no t.Parallel) ---
+
+func TestLatestVersionTag_NoTags(t *testing.T) {
+	initTestGitRepo(t)
+	got := latestVersionTag()
+	if got != "" {
+		t.Errorf("latestVersionTag() = %q, want empty in repo with no v* tags", got)
+	}
+}
+
+func TestLatestVersionTag_WithTags(t *testing.T) {
+	initTestGitRepo(t)
+	gitRun(t, "tag", "v0.1")
+	gitRun(t, "tag", "v0.2")
+	gitRun(t, "tag", "v0.3")
+	got := latestVersionTag()
+	if got != "v0.3" {
+		t.Errorf("latestVersionTag() = %q, want v0.3", got)
+	}
+}

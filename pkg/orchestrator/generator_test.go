@@ -1101,3 +1101,96 @@ func TestInit_NoOp(t *testing.T) {
 		t.Errorf("Init() error = %v", err)
 	}
 }
+
+// --- GeneratorList (git-dependent, no t.Parallel) ---
+
+func TestGeneratorList_NoGenerations(t *testing.T) {
+	initTestGitRepo(t)
+	o := &Orchestrator{cfg: Config{
+		Generation: GenerationConfig{Prefix: "generation-"},
+	}}
+	if err := o.GeneratorList(); err != nil {
+		t.Fatalf("GeneratorList() error = %v", err)
+	}
+}
+
+func TestGeneratorList_WithBranchAndTags(t *testing.T) {
+	initTestGitRepo(t)
+	gitRun(t, "checkout", "-b", "generation-2026-01-01")
+	gitRun(t, "checkout", "main")
+	gitRun(t, "tag", "generation-2026-01-01-start")
+
+	o := &Orchestrator{cfg: Config{
+		Generation: GenerationConfig{Prefix: "generation-"},
+	}}
+	if err := o.GeneratorList(); err != nil {
+		t.Fatalf("GeneratorList() error = %v", err)
+	}
+}
+
+// --- restoreFromStartTag (git-dependent, no t.Parallel) ---
+
+func TestRestoreFromStartTag_RestoresMissingGoFiles(t *testing.T) {
+	initTestGitRepo(t)
+
+	// Commit a .go file and tag that commit as the generation start.
+	if err := os.WriteFile("foo.go", []byte("package foo\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitRun(t, "add", "-A")
+	gitRun(t, "commit", "--no-verify", "-m", "add foo.go")
+	gitRun(t, "tag", "gen-start")
+
+	// Delete the file and commit the deletion to simulate a generation run
+	// that removed Go source files. restoreFromStartTag restores files that
+	// are absent from both the working tree and the index.
+	gitRun(t, "rm", "foo.go")
+	gitRun(t, "commit", "--no-verify", "-m", "delete foo.go")
+
+	o := &Orchestrator{cfg: Config{
+		Project: ProjectConfig{MagefilesDir: "magefiles"},
+	}}
+	if err := o.restoreFromStartTag("gen-start"); err != nil {
+		t.Fatalf("restoreFromStartTag: %v", err)
+	}
+
+	got, err := os.ReadFile("foo.go")
+	if err != nil {
+		t.Fatalf("foo.go was not restored: %v", err)
+	}
+	if string(got) != "package foo\n" {
+		t.Errorf("restored content = %q, want %q", string(got), "package foo\n")
+	}
+}
+
+func TestRestoreFromStartTag_SkipsMagefiles(t *testing.T) {
+	initTestGitRepo(t)
+
+	// Commit a magefiles .go file and tag that commit as the generation start.
+	if err := os.MkdirAll("magefiles", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join("magefiles", "build.go"), []byte("package magefiles\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitRun(t, "add", "-A")
+	gitRun(t, "commit", "--no-verify", "-m", "add magefiles/build.go")
+	gitRun(t, "tag", "gen-start-mf")
+
+	// Delete the file so restoreFromStartTag would try to restore it if not skipped.
+	if err := os.Remove(filepath.Join("magefiles", "build.go")); err != nil {
+		t.Fatal(err)
+	}
+
+	o := &Orchestrator{cfg: Config{
+		Project: ProjectConfig{MagefilesDir: "magefiles"},
+	}}
+	if err := o.restoreFromStartTag("gen-start-mf"); err != nil {
+		t.Fatalf("restoreFromStartTag: %v", err)
+	}
+
+	// magefiles/build.go must NOT have been restored.
+	if _, err := os.Stat(filepath.Join("magefiles", "build.go")); err == nil {
+		t.Error("magefiles/build.go was restored, but should have been skipped")
+	}
+}

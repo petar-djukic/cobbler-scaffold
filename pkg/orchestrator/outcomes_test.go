@@ -4,6 +4,9 @@
 package orchestrator
 
 import (
+	"bytes"
+	"os"
+	"strings"
 	"testing"
 )
 
@@ -130,5 +133,56 @@ func TestFormatDuration(t *testing.T) {
 		if got != tc.want {
 			t.Errorf("formatDuration(%d) = %q, want %q", tc.seconds, got, tc.want)
 		}
+	}
+}
+
+// --- Outcomes (git-dependent, no t.Parallel) ---
+
+func TestOutcomes_NoRecords(t *testing.T) {
+	initTestGitRepo(t)
+	o := &Orchestrator{}
+	if err := o.Outcomes(); err != nil {
+		t.Fatalf("Outcomes() error = %v", err)
+	}
+}
+
+func TestOutcomes_WithRecords(t *testing.T) {
+	initTestGitRepo(t)
+
+	// Create a commit with outcome trailers so Outcomes can parse them.
+	msg := "Implement feature X\n\n" +
+		"Tokens-Input: 1000\n" +
+		"Tokens-Output: 200\n" +
+		"Tokens-Cache-Creation: 0\n" +
+		"Tokens-Cache-Read: 0\n" +
+		"Tokens-Cost-USD: 0.0500\n" +
+		"Loc-Prod-Before: 100\n" +
+		"Loc-Prod-After: 110\n" +
+		"Loc-Test-Before: 0\n" +
+		"Loc-Test-After: 0\n" +
+		"Duration-Seconds: 60"
+	gitRun(t, "commit", "--allow-empty", "--no-verify", "-m", msg)
+
+	// Capture stdout to verify tabular output.
+	oldStdout := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stdout = w
+
+	o := &Orchestrator{}
+	oErr := o.Outcomes()
+
+	w.Close()
+	var buf bytes.Buffer
+	buf.ReadFrom(r)
+	os.Stdout = oldStdout
+
+	if oErr != nil {
+		t.Fatalf("Outcomes() error = %v", oErr)
+	}
+	if !strings.Contains(buf.String(), "main") {
+		t.Errorf("Outcomes output %q does not include branch 'main'", buf.String())
 	}
 }
