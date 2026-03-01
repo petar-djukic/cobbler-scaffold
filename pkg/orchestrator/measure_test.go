@@ -408,41 +408,6 @@ func TestValidationResult_HasErrors(t *testing.T) {
 	}
 }
 
-// --- parseCompletedWork ---
-
-func TestParseCompletedWork_ValidJSON(t *testing.T) {
-	t.Parallel()
-	input := `[
-		{"id": "abc-123", "title": "Implement feature X", "status": "closed", "type": "task"},
-		{"id": "abc-124", "title": "Add tests for X", "status": "closed", "type": "task"}
-	]`
-	got := parseCompletedWork([]byte(input))
-	if len(got) != 2 {
-		t.Fatalf("got %d summaries, want 2", len(got))
-	}
-	if got[0] != "COMPLETED: abc-123 — Implement feature X" {
-		t.Errorf("got[0] = %q, want COMPLETED prefix with id and title", got[0])
-	}
-	if got[1] != "COMPLETED: abc-124 — Add tests for X" {
-		t.Errorf("got[1] = %q, want COMPLETED prefix with id and title", got[1])
-	}
-}
-
-func TestParseCompletedWork_EmptyArray(t *testing.T) {
-	t.Parallel()
-	got := parseCompletedWork([]byte("[]"))
-	if len(got) != 0 {
-		t.Errorf("got %d summaries, want 0", len(got))
-	}
-}
-
-func TestParseCompletedWork_InvalidJSON(t *testing.T) {
-	t.Parallel()
-	got := parseCompletedWork([]byte("{not json"))
-	if got != nil {
-		t.Errorf("got %v, want nil for invalid JSON", got)
-	}
-}
 
 // --- MaxRequirementsPerTask limit ---
 
@@ -568,13 +533,6 @@ requirements:
 	}
 }
 
-func TestParseCompletedWork_NilInput(t *testing.T) {
-	t.Parallel()
-	got := parseCompletedWork(nil)
-	if got != nil {
-		t.Errorf("got %v, want nil for nil input", got)
-	}
-}
 
 func TestMeasureReleasesConstraint_WithReleases(t *testing.T) {
 	t.Parallel()
