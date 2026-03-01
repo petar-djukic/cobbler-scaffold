@@ -14,7 +14,6 @@ import (
 // Binary names.
 const (
 	binGit      = "git"
-	binBd       = "bd"
 	binClaude   = "claude"
 	binGh       = "gh"
 	binGo       = "go"
@@ -235,72 +234,6 @@ func gitLsTreeFiles(ref string) ([]string, error) {
 // gitShowFileContent returns the raw content of a file at the given ref.
 func gitShowFileContent(ref, path string) ([]byte, error) {
 	return exec.Command(binGit, "show", ref+":"+path).Output()
-}
-
-// Beads helpers.
-
-func bdSync() error {
-	return exec.Command(binBd, "sync").Run()
-}
-
-func (o *Orchestrator) bdAdminReset() error {
-	if _, err := os.Stat(o.cfg.Cobbler.BeadsDir); os.IsNotExist(err) {
-		return nil // nothing to reset
-	}
-	// Stop the daemon before destroying the database; otherwise the
-	// stale daemon blocks subsequent bd commands.
-	_ = exec.Command(binBd, "daemon", "stop", ".").Run() // best-effort; daemon may not be running
-	if err := exec.Command(binBd, "admin", "reset", "--force").Run(); err != nil {
-		// Fallback: remove the directory directly. This handles legacy
-		// databases or bd version mismatches where the CLI command fails.
-		logf("bdAdminReset: bd admin reset failed (%v), falling back to rm -rf %s", err, o.cfg.Cobbler.BeadsDir)
-		return os.RemoveAll(o.cfg.Cobbler.BeadsDir)
-	}
-	return nil
-}
-
-func bdInit(prefix string) error {
-	return exec.Command(binBd, "init", "--prefix", prefix, "--force").Run()
-}
-
-func bdClose(id string) error {
-	return exec.Command(binBd, "close", id).Run()
-}
-
-func bdUpdateStatus(id, status string) error {
-	return exec.Command(binBd, "update", id, "--status", status).Run()
-}
-
-func bdListJSON() ([]byte, error) {
-	return exec.Command(binBd, "list", "--json").Output()
-}
-
-func bdListInProgressTasks() ([]byte, error) {
-	return exec.Command(binBd, "list", "--json", "--status", "in_progress", "--type", "task").Output()
-}
-
-func bdNextReadyTask() ([]byte, error) {
-	return exec.Command(binBd, "ready", "-n", "1", "--json", "--type", "task").Output()
-}
-
-func bdAddDep(childID, parentID string) error {
-	return exec.Command(binBd, "dep", "add", childID, parentID).Run()
-}
-
-func bdCreateTask(title, description string) ([]byte, error) {
-	return exec.Command(binBd, "create", "--type", "task", "--json", title, "--description", description).Output()
-}
-
-func bdListClosedTasks() ([]byte, error) {
-	return exec.Command(binBd, "list", "--json", "--status", "closed", "--type", "task").Output()
-}
-
-func bdListReadyTasks() ([]byte, error) {
-	return exec.Command(binBd, "ready", "--json", "--type", "task").Output()
-}
-
-func bdShowJSON(id string) ([]byte, error) {
-	return exec.Command(binBd, "show", "--json", id).Output()
 }
 
 // FileChange holds per-file diff information from git diff --name-status

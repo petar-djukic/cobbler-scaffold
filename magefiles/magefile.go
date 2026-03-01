@@ -28,9 +28,6 @@ type Generator mg.Namespace
 // Scaffold groups the scaffold install/uninstall targets.
 type Scaffold mg.Namespace
 
-// Beads groups issue-tracker lifecycle targets.
-type Beads mg.Namespace
-
 // Podman groups container image and container lifecycle targets.
 type Podman mg.Namespace
 
@@ -268,14 +265,6 @@ func (Generator) Switch() error { return newOrch().GeneratorSwitch() }
 
 // Reset destroys generation branches, worktrees, and Go source directories.
 func (Generator) Reset() error { return newOrch().GeneratorReset() }
-
-// --- Beads targets ---
-
-// Init initializes the beads issue tracker.
-func (Beads) Init() error { return newOrch().BeadsInit() }
-
-// Reset clears beads issue history.
-func (Beads) Reset() error { return newOrch().BeadsReset() }
 
 // --- Stats targets ---
 
