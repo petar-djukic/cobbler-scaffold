@@ -100,31 +100,13 @@ func TestSelectiveContext_BudgetEnforcementConcept(t *testing.T) {
 // TestSelectiveContext_PromptSavedBeforeClaude validates that stitch
 // saves the prompt to HistoryDir before invoking Claude. When Claude
 // credentials are missing, the prompt file should still exist on disk.
-// This test requires git and bd to be available.
+// This test requires git to be available.
 func TestSelectiveContext_PromptSavedBeforeClaude(t *testing.T) {
 	t.Parallel()
-	requireBD(t)
 
 	dir := setupMinimalRepo(t)
 	historyDir := filepath.Join(dir, "history")
 	os.MkdirAll(historyDir, 0o755)
-
-	// Create a task with required_reading.
-	desc := "deliverable_type: code\n" +
-		"required_reading:\n" +
-		"  - pkg/core/core.go (Hello function)\n" +
-		"  - docs/VISION.yaml\n" +
-		"files:\n" +
-		"  - path: pkg/core/core.go\n" +
-		"    action: modify\n" +
-		"requirements:\n" +
-		"  - id: R1\n" +
-		"    text: Add a Greet function\n" +
-		"acceptance_criteria:\n" +
-		"  - id: AC1\n" +
-		"    text: Greet function exists\n"
-
-	createBDTask(t, dir, "Add Greet function", desc)
 
 	// Configure the orchestrator with impossible Claude credentials
 	// so it fails fast, but still saves the prompt.
@@ -194,27 +176,14 @@ func TestSelectiveContext_FullPipeline(t *testing.T) {
 	if _, err := exec.LookPath("podman"); err != nil {
 		t.Skip("podman not found on PATH")
 	}
-	requireBD(t)
+
+	// Task creation previously used beads, which has been removed.
+	// This test needs a GitHub-backed task source to exercise the full
+	// stitch pipeline; skip until rewritten to create tasks via GitHub Issues.
+	t.Skip("local task creation removed; test needs rewrite to use GitHub Issues")
 
 	dir := setupMinimalRepo(t)
 	historyDir := t.TempDir()
-
-	// Create a task with required_reading limited to pkg/core/core.go.
-	// pkg/core/types.go and pkg/util/util.go are present in the repo but
-	// must be absent from the filtered prompt.
-	desc := "deliverable_type: code\n" +
-		"required_reading:\n" +
-		"  - pkg/core/core.go (Hello function)\n" +
-		"files:\n" +
-		"  - path: pkg/core/core.go\n" +
-		"    action: modify\n" +
-		"requirements:\n" +
-		"  - id: R1\n" +
-		"    text: Add a Greet function\n" +
-		"acceptance_criteria:\n" +
-		"  - id: AC1\n" +
-		"    text: Greet function exists\n"
-	createBDTask(t, dir, "Add Greet function (pipeline test)", desc)
 
 	origDir, err := os.Getwd()
 	if err != nil {
@@ -346,13 +315,6 @@ func makeSourceFiles(n, linesEach int) []orchestrator.SourceFile {
 	return files
 }
 
-func requireBD(t *testing.T) {
-	t.Helper()
-	if _, err := exec.LookPath("bd"); err != nil {
-		t.Skip("bd CLI not found, skipping")
-	}
-}
-
 func setupMinimalRepo(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -388,36 +350,7 @@ func setupMinimalRepo(t *testing.T) string {
 		}
 	}
 
-	// Beads init.
-	cmd := exec.Command("bd", "init")
-	cmd.Dir = dir
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("bd init: %v\n%s", err, out)
-	}
-
-	// Commit beads.
-	for _, args := range [][]string{
-		{"git", "add", "-A"},
-		{"git", "commit", "-m", "beads init"},
-	} {
-		cmd := exec.Command(args[0], args[1:]...)
-		cmd.Dir = dir
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v\n%s", args[1:], err, out)
-		}
-	}
-
 	return dir
-}
-
-func createBDTask(t *testing.T, dir, title, description string) {
-	t.Helper()
-	cmd := exec.Command("bd", "create", "--type", "task",
-		"--title", title, "--description", description)
-	cmd.Dir = dir
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("bd create: %v\n%s", err, out)
-	}
 }
 
 func writeTestFile(t *testing.T, dir, rel, content string) {
