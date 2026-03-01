@@ -12,7 +12,7 @@ releases:
       through isolated execution to merge.
     use_cases:
       - id: rel01.0-uc001-orchestrator-initialization
-        summary: Config struct, constructor with defaults, beads initialization
+        summary: Config struct, constructor with defaults, GitHub Issues initialization
         status: done
       - id: rel01.0-uc002-generation-lifecycle
         summary: Generation start, run, stop, reset, list, switch

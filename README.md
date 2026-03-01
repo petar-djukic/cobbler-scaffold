@@ -26,14 +26,14 @@ graph TD
         Orchestrator["Orchestrator\n<i>main struct</i>"]
         Generator["Generator\n<i>lifecycle</i>"]
         Cobbler["Cobbler\n<i>measure + stitch</i>"]
-        Commands["Commands\n<i>git, beads, go wrappers</i>"]
+        Commands["Commands\n<i>git, gh, go wrappers</i>"]
         Stats["Stats\n<i>metrics</i>"]
     end
 
     subgraph EXT["External Tools"]
         Git
         ClaudeCode["Claude Code"]
-        Beads["Beads (bd)"]
+        GitHubIssues["GitHub Issues"]
         GoToolchain["Go Toolchain"]
     end
 
@@ -45,7 +45,7 @@ graph TD
     Cobbler --> Commands
     Cobbler --> ClaudeCode
     Commands --> Git
-    Commands --> Beads
+    Commands --> GitHubIssues
     Commands --> GoToolchain
 ```
 
@@ -66,9 +66,9 @@ A generation is the primary unit of work. It begins from a tagged main state, cr
 generator:start  →  cobbler:measure  →  cobbler:stitch  →  (repeat)  →  generator:stop
 ```
 
-**Measure** reads `docs/VISION.yaml`, `docs/ARCHITECTURE.yaml`, and the open issue list, then invokes Claude with a prompt template. Claude returns a YAML task list with titles, descriptions, estimated LOC, and dependency indices. The orchestrator imports these into beads with wired dependencies.
+**Measure** reads `docs/VISION.yaml`, `docs/ARCHITECTURE.yaml`, and the open issue list, then invokes Claude with a prompt template. Claude returns a YAML task list with titles, descriptions, estimated LOC, and dependency indices. The orchestrator creates GitHub Issues for each proposed task, labelled by generation.
 
-**Stitch** picks the next ready task from beads, creates a git worktree on a task branch (`task/{baseBranch}-{issueID}`), invokes Claude with the task description and execution constitution, merges the result, records metrics, and closes the issue. The worktree is deleted after merge. Each task runs in isolation; the generation branch receives only merged output.
+**Stitch** picks the next ready GitHub Issue, creates a git worktree on a task branch (`task/{baseBranch}-{issueID}`), invokes Claude with the task description and execution constitution, merges the result, records metrics, and closes the issue. The worktree is deleted after merge. Each task runs in isolation; the generation branch receives only merged output.
 
 **Constitutions** are YAML documents that govern Claude's behavior per phase. The design constitution (`docs/constitutions/design.yaml`) rules specification authoring. The planning constitution controls task sizing, issue structure, and dependency ordering during measure. The execution constitution enforces traceability, Go coding standards, and session-completion discipline during stitch. All three are scaffolded into consuming projects and referenced from `configuration.yaml`.
 
@@ -130,18 +130,18 @@ docs/                  — VISION, ARCHITECTURE, PRDs, use cases, test suites, c
 docs/constitutions/    — design/planning/execution/go-style/testing constitutions (scaffolded into consuming projects)
 docs/prompts/          — measure and stitch prompt templates (scaffolded into consuming projects)
 tests/rel01.0/         — release 01 E2E tests; one package per use case (uc001/ through uc007/)
-tests/rel01.0/internal/testutil/ — shared test helpers (snapshot preparation, git/mage/beads wrappers)
+tests/rel01.0/internal/testutil/ — shared test helpers (snapshot preparation, git/mage/gh wrappers)
 configuration.yaml     — orchestrator config (auto-created with defaults if missing)
 .claude/               — Claude Code skills and project rules
 ```
 
 ## Technology Choices
 
-**Go** — the library embeds prompt templates and constitutions as `embed.FS` assets, which requires a compiled language; Go's `os/exec` wrappers around git, beads, and podman are straightforward and testable.
+**Go** — the library embeds prompt templates and constitutions as `embed.FS` assets, which requires a compiled language; Go's `os/exec` wrappers around git, gh, and podman are straightforward and testable.
 
 **Mage** — consuming projects already use Mage for their own build logic; exposing orchestrator operations as Mage targets avoids introducing a second build system.
 
-**Beads (bd)** — git-backed, JSONL issue tracker that commits state changes to the repository. This makes the issue list part of the generation branch's history and recoverable after any interruption without a running service.
+**GitHub Issues** — issue state is stored in GitHub, making the backlog visible and manageable without a local service. The `gh` CLI handles all issue CRUD operations; recovery after interruption simply re-queries open issues.
 
 **Podman** — rootless container runtime. Claude runs inside a container to prevent it from modifying host files outside the mounted working directory. The container also provides a reproducible environment for credential injection.
 
@@ -178,7 +178,7 @@ go test -tags=usecase -v -count=1 -timeout 1800s ./tests/rel01.0/...
 go test -tags=usecase -v -count=1 ./tests/rel01.0/uc001/
 
 # Single test by name
-go test -tags=usecase -v -run TestRel01_UC001_InitCreatesBD ./tests/rel01.0/uc001/
+go test -tags=usecase -v -run TestRel01_UC001_Init ./tests/rel01.0/uc001/
 ```
 
 ### Use Case Index
