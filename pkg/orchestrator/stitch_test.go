@@ -25,8 +25,8 @@ func TestErrTaskReset_MentionsOpen(t *testing.T) {
 // than re-execute the task. This is the mechanism that prevents infinite
 // retry loops when a task repeatedly fails (e.g., Podman timeout).
 //
-// The full RunStitchN stack requires beads, git, and a Claude container, so
-// this test exercises the tracking logic directly using the same map
+// The full RunStitchN stack requires GitHub Issues, git, and a Claude container,
+// so this test exercises the tracking logic directly using the same map
 // operations that RunStitchN uses internally.
 func TestRunStitchN_SkipsAlreadyFailedTask(t *testing.T) {
 	t.Parallel()

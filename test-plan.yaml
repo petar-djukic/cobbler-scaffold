@@ -12,7 +12,7 @@ target_repositories:
 
 preconditions:
   - On main branch with clean working tree
-  - bd CLI available on PATH
+  - gh CLI available on PATH and authenticated
   - mage available (go/bin/mage or PATH)
   - configuration.yaml present at repository root
   - "Sections 5, 7, 8 require: Claude CLI on PATH or podman with configured image"
@@ -25,40 +25,12 @@ test_cases:
     inputs:
       setup:
         - mkdir -p .cobbler && echo test > .cobbler/dummy.json
-        - mage beads:init
       command: mage cobbler:reset
     expected:
       exit_code: 0
       state:
         cobbler_dir_exists: false
-        beads_dir_exists: true
         generation_branches: unchanged
-
-  - name: beads:reset only touches .beads/
-    inputs:
-      setup:
-        - mage beads:init
-        - mkdir -p .cobbler && echo test > .cobbler/dummy.json
-      command: mage beads:reset
-    expected:
-      exit_code: 0
-      state:
-        beads_dir_exists: true
-        beads_issues_empty: true
-        cobbler_file_exists: true
-
-  - name: beads:reset does not resurrect issues
-    inputs:
-      setup:
-        - mage beads:init
-        - bd create --type task --json "Dummy task" --description "Should not survive reset"
-        - bd list --json
-      command: mage beads:reset
-    expected:
-      exit_code: 0
-      state:
-        beads_issues_empty: true
-      stdout_not_contains: "Dummy task"
 
   - name: generator:reset only touches branches and Go sources
     inputs:
@@ -78,24 +50,16 @@ test_cases:
 
   - name: init is idempotent
     inputs:
-      setup:
-        - rm -rf .beads/
       command: mage init && mage init
     expected:
       exit_code: 0
-      state:
-        beads_dir_exists: true
       stdout_contains: "already initialized"
 
-  - name: init creates beads from scratch
+  - name: init creates project structure from scratch
     inputs:
-      setup:
-        - rm -rf .beads/
       command: mage init
     expected:
       exit_code: 0
-      state:
-        beads_dir_exists: true
 
   - name: reset wipes all artifact types
     inputs:
@@ -110,23 +74,6 @@ test_cases:
         current_branch: main
         generation_branches: none
         go_sources_seeded: true
-        beads_dir_exists: true
-        beads_issues_empty: true
-
-  - name: reset calls cobbler, generator, beads in order
-    description: >
-      FullReset calls CobblerReset, GeneratorReset, and BeadsReset
-      sequentially. Verify the git log shows the generator commit
-      before the beads commit.
-    inputs:
-      setup:
-        - mage generator:start
-      command: mage reset
-    expected:
-      exit_code: 0
-      git_log_order:
-        - "Reset beads"
-        - "Generator reset"
 
   # ── 3. Edge cases ──
 
@@ -135,14 +82,6 @@ test_cases:
       setup:
         - rm -rf .cobbler/
       command: mage cobbler:reset
-    expected:
-      exit_code: 0
-
-  - name: beads:reset when .beads/ does not exist
-    inputs:
-      setup:
-        - rm -rf .beads/
-      command: mage beads:reset
     expected:
       exit_code: 0
 
@@ -159,7 +98,7 @@ test_cases:
   - name: reset from fully clean state
     inputs:
       setup:
-        - rm -rf .cobbler/ .beads/
+        - rm -rf .cobbler/
       command: mage reset
     expected:
       exit_code: 0
@@ -237,51 +176,34 @@ test_cases:
 
   # ── 5. Cobbler integration (requires Claude) ──
 
-  - name: cobbler:measure creates issues
+  - name: cobbler:measure creates GitHub Issues
     description: >
       Measure proposes issues (max_measure_issues from config),
-      verify they exist in beads. Set max_measure_issues=1 in
+      verify they exist in GitHub Issues. Set max_measure_issues=1 in
       configuration.yaml before running.
     inputs:
       setup:
-        - mage beads:init
         - "Set max_measure_issues: 1 in configuration.yaml"
       command: mage cobbler:measure
     expected:
       exit_code: 0
       state:
-        bd_list_json_length: ">= 1"
+        gh_issues_open: ">= 1"
 
-  - name: beads:reset clears issues created by measure
+  - name: measure creates a tracking issue in GitHub
     description: >
-      After measure has created issues, reset beads and verify
-      they are gone.
-    inputs:
-      setup:
-        - mage beads:init
-        - "Set max_measure_issues: 1 in configuration.yaml"
-        - mage cobbler:measure
-      command: mage beads:reset
-    expected:
-      exit_code: 0
-      state:
-        beads_issues_empty: true
-
-  - name: measure creates a tracking issue in beads
-    description: >
-      Measure creates a beads tracking issue before invoking Claude
+      Measure creates a GitHub tracking issue before invoking Claude
       and closes it afterward with invocation metrics. After measure
       completes, the tracking issue should be closed with a summary
       comment containing issues_created and status.
     inputs:
       setup:
-        - mage beads:init
         - "Set max_measure_issues: 1 in configuration.yaml"
       command: mage cobbler:measure
     expected:
       exit_code: 0
       state:
-        bd_closed_issues_contain_title: "measure: plan on"
+        gh_closed_issues_contain_title: "measure: plan on"
 
   - name: test:uc003MeasureWorkflow runs UC003 E2E tests
     description: >
@@ -358,14 +280,14 @@ test_cases:
       With 5 ready issues and max_stitch_issues_per_cycle=2,
       RunCycles should stitch 2, call measure, stitch 2 more,
       call measure, stitch the last 1. Verify measure is called
-      between stitch batches by checking beads for measure tracking
+      between stitch batches by checking GitHub Issues for measure tracking
       issues.
     inputs:
       setup:
         - mage reset
         - mage generator:start
         - "Set max_stitch_issues_per_cycle: 2, max_measure_issues: 0 in configuration.yaml"
-        - "Create 5 ready issues via bd create"
+        - "Create 5 ready GitHub Issues via gh issue create"
       command: mage generator:run
     expected:
       exit_code: 0

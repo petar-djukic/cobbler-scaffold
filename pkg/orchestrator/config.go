@@ -254,7 +254,7 @@ type ClaudeConfig struct {
 
 	// MaxTimeSec is the maximum duration in seconds for a single Claude
 	// invocation (default 300, i.e. 5 minutes). If the time expires, the
-	// process is killed and the task is returned to beads.
+	// process is killed and the task is reset to ready in the issue tracker.
 	MaxTimeSec int `yaml:"max_time_sec"`
 
 	// ContainerCredentialsPath is the absolute path inside the container
