@@ -2,16 +2,7 @@
 
 # Agent Instructions
 
-This project uses **bd** (beads) for issue tracking. Run `bd onboard` to get started.
-
-## Core Workflow
-
-See [rules/beads-workflow.md](rules/beads-workflow.md) for the complete workflow including:
-
-- Issue tracking with bd CLI
-- Token usage tracking
-- Session completion checklist
-- Git commit requirements
+Issue tracking uses GitHub Issues via the `gh` CLI. The `/do-work` and `/git-issue-pop` commands handle the full workflow: fetching issues, assigning tasks, tracking sub-issues, and opening pull requests.
 
 ## Pre-Commit Quality Gate
 
