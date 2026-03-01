@@ -123,7 +123,7 @@ func (o *Orchestrator) RunMeasure() error {
 
 	// Get initial state: open GitHub issues for this generation.
 	existingIssues, _ := listActiveIssuesContext(repo, generation)
-	commitSHA, _ := gitRevParseHEAD() // empty string on error is acceptable for logging
+	commitSHA, _ := gitRevParseHEAD(".") // empty string on error is acceptable for logging
 
 	logf("existing issues context len=%d, maxMeasureIssues=%d, commit=%s",
 		len(existingIssues), o.cfg.Cobbler.MaxMeasureIssues, commitSHA)

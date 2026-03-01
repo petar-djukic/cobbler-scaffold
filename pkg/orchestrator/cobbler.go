@@ -682,7 +682,7 @@ func (o *Orchestrator) hasOpenIssues() bool {
 		logf("hasOpenIssues: detectGitHubRepo: %v", err)
 		return false
 	}
-	branch, err := gitCurrentBranch()
+	branch, err := gitCurrentBranch(".")
 	if err != nil {
 		return false
 	}

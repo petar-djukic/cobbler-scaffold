@@ -19,7 +19,7 @@ import (
 // If cycles > 0 it overrides configuration.yaml's generation.cycles for this run only.
 // cycles == 0 means use the configured value (or unlimited if that is also 0).
 func (o *Orchestrator) GeneratorRun(cycles int) error {
-	currentBranch, err := gitCurrentBranch()
+	currentBranch, err := gitCurrentBranch(".")
 	if err != nil {
 		return fmt.Errorf("getting current branch: %w", err)
 	}
@@ -48,7 +48,7 @@ func (o *Orchestrator) GeneratorResume() error {
 	if !strings.HasPrefix(branch, o.cfg.Generation.Prefix) {
 		return fmt.Errorf("not a generation branch: %s\nSet generation.branch in configuration.yaml", branch)
 	}
-	if !gitBranchExists(branch) {
+	if !gitBranchExists(branch, ".") {
 		return fmt.Errorf("branch does not exist: %s", branch)
 	}
 
@@ -67,7 +67,7 @@ func (o *Orchestrator) GeneratorResume() error {
 	wtBase := worktreeBasePath()
 
 	logf("resume: pruning worktrees")
-	if err := gitWorktreePrune(); err != nil {
+	if err := gitWorktreePrune("."); err != nil {
 		logf("resume: warning: worktree prune: %v", err)
 	}
 
@@ -162,13 +162,13 @@ func (o *Orchestrator) RunCycles(label string) error {
 // branch, deletes Go files, reinitializes the Go module, and commits the clean
 // state. Any clean branch is a valid starting point (prd002 R2.1).
 func (o *Orchestrator) GeneratorStart() error {
-	baseBranch, err := gitCurrentBranch()
+	baseBranch, err := gitCurrentBranch(".")
 	if err != nil {
 		return fmt.Errorf("getting current branch: %w", err)
 	}
 
 	// Reject dirty worktrees — a generation must start from a clean state.
-	if gitHasChanges() {
+	if gitHasChanges(".") {
 		return fmt.Errorf("worktree has uncommitted changes on %s; commit or stash before starting a generation", baseBranch)
 	}
 
@@ -182,18 +182,18 @@ func (o *Orchestrator) GeneratorStart() error {
 
 	// Tag the current base branch state before the generation begins.
 	logf("generator:start: tagging current state as %s", startTag)
-	if err := gitTag(startTag); err != nil {
+	if err := gitTag(startTag, "."); err != nil {
 		return fmt.Errorf("tagging base branch: %w", err)
 	}
 
 	// Create and switch to generation branch.
 	logf("generator:start: creating branch")
-	if err := gitCheckoutNew(genName); err != nil {
+	if err := gitCheckoutNew(genName, "."); err != nil {
 		return fmt.Errorf("creating branch: %w", err)
 	}
 
 	// Record branch point so intermediate commits can be squashed.
-	branchSHA, err := gitRevParseHEAD()
+	branchSHA, err := gitRevParseHEAD(".")
 	if err != nil {
 		return fmt.Errorf("getting branch HEAD: %w", err)
 	}
@@ -218,17 +218,17 @@ func (o *Orchestrator) GeneratorStart() error {
 
 	// Squash intermediate commits into one clean commit.
 	logf("generator:start: squashing into single commit")
-	if err := gitResetSoft(branchSHA); err != nil {
+	if err := gitResetSoft(branchSHA, "."); err != nil {
 		return fmt.Errorf("squashing start commits: %w", err)
 	}
-	_ = gitStageAll() // best-effort; commit below will catch nothing-to-commit
+	_ = gitStageAll(".") // best-effort; commit below will catch nothing-to-commit
 	var msg string
 	if o.cfg.Generation.PreserveSources {
 		msg = fmt.Sprintf("Start generation: %s\n\nBase branch: %s. Sources preserved (preserve_sources=true).\nTagged previous state as %s.", genName, baseBranch, genName)
 	} else {
 		msg = fmt.Sprintf("Start generation: %s\n\nBase branch: %s. Delete Go files, reinitialize module.\nTagged previous state as %s.", genName, baseBranch, genName)
 	}
-	if err := gitCommit(msg); err != nil {
+	if err := gitCommit(msg, "."); err != nil {
 		return fmt.Errorf("committing clean state: %w", err)
 	}
 
@@ -270,11 +270,11 @@ func (o *Orchestrator) readBaseBranch() string {
 func (o *Orchestrator) GeneratorStop() error {
 	branch := o.cfg.Generation.Branch
 	if branch != "" {
-		if !gitBranchExists(branch) {
+		if !gitBranchExists(branch, ".") {
 			return fmt.Errorf("branch does not exist: %s", branch)
 		}
 	} else {
-		current, err := gitCurrentBranch()
+		current, err := gitCurrentBranch(".")
 		if err != nil {
 			return fmt.Errorf("getting current branch: %w", err)
 		}
@@ -310,13 +310,13 @@ func (o *Orchestrator) GeneratorStop() error {
 	baseBranch := o.readBaseBranch()
 
 	logf("generator:stop: tagging as %s", finishedTag)
-	if err := gitTag(finishedTag); err != nil {
+	if err := gitTag(finishedTag, "."); err != nil {
 		return fmt.Errorf("tagging generation: %w", err)
 	}
 
 	// Switch to the base branch.
 	logf("generator:stop: switching to %s", baseBranch)
-	if err := gitCheckout(baseBranch); err != nil {
+	if err := gitCheckout(baseBranch, "."); err != nil {
 		return fmt.Errorf("checking out %s: %w", baseBranch, err)
 	}
 
@@ -343,19 +343,19 @@ func (o *Orchestrator) mergeGeneration(branch, baseBranch string) error {
 		_ = o.resetGoSources(branch) // best-effort; merge will overwrite these files
 	}
 
-	_ = gitStageAll() // best-effort; commit below handles empty index
+	_ = gitStageAll(".") // best-effort; commit below handles empty index
 	var prepareMsg string
 	if o.cfg.Generation.PreserveSources {
 		prepareMsg = fmt.Sprintf("Prepare %s for generation merge (preserve_sources)\n\nSources preserved. Merging %s.", baseBranch, branch)
 	} else {
 		prepareMsg = fmt.Sprintf("Prepare %s for generation merge: delete Go code\n\nDocumentation preserved for merge. Code will be replaced by %s.", baseBranch, branch)
 	}
-	if err := gitCommitAllowEmpty(prepareMsg); err != nil {
+	if err := gitCommitAllowEmpty(prepareMsg, "."); err != nil {
 		return fmt.Errorf("committing prepare step: %w", err)
 	}
 
 	logf("generator:stop: merging into %s", baseBranch)
-	cmd := gitMergeCmd(branch)
+	cmd := gitMergeCmd(branch, ".")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
@@ -371,7 +371,7 @@ func (o *Orchestrator) mergeGeneration(branch, baseBranch string) error {
 
 	mergedTag := branch + "-merged"
 	logf("generator:stop: tagging %s as %s", baseBranch, mergedTag)
-	if err := gitTag(mergedTag); err != nil {
+	if err := gitTag(mergedTag, "."); err != nil {
 		return fmt.Errorf("tagging merge: %w", err)
 	}
 
@@ -382,7 +382,7 @@ func (o *Orchestrator) mergeGeneration(branch, baseBranch string) error {
 		reqTag := fmt.Sprintf("v1.%s.%d-requirements", date, revision)
 
 		logf("generator:stop: tagging code as %s", codeTag)
-		if err := gitTag(codeTag); err != nil {
+		if err := gitTag(codeTag, "."); err != nil {
 			logf("generator:stop: code tag warning: %v", err)
 		}
 
@@ -392,13 +392,13 @@ func (o *Orchestrator) mergeGeneration(branch, baseBranch string) error {
 			if err := writeVersionConst(o.cfg.Project.VersionFile, codeTag); err != nil {
 				logf("generator:stop: version file warning: %v", err)
 			} else {
-				_ = gitStageAll()                                        // best-effort; commit below handles empty index
-				_ = gitCommit(fmt.Sprintf("Set version to %s", codeTag)) // best-effort; version update is non-critical
+				_ = gitStageAll(".")                                        // best-effort; commit below handles empty index
+				_ = gitCommit(fmt.Sprintf("Set version to %s", codeTag), ".") // best-effort; version update is non-critical
 			}
 		}
 
 		logf("generator:stop: tagging requirements as %s (at %s)", reqTag, startTag)
-		if err := gitTagAt(reqTag, startTag); err != nil {
+		if err := gitTagAt(reqTag, startTag, "."); err != nil {
 			logf("generator:stop: requirements tag warning: %v", err)
 		}
 	}
@@ -417,12 +417,12 @@ func (o *Orchestrator) mergeGeneration(branch, baseBranch string) error {
 			logf("generator:stop: warning removing history dir: %v", err)
 		}
 	}
-	_ = gitStageAll()
+	_ = gitStageAll(".")
 	cleanupMsg := fmt.Sprintf("Reset %s to specs-only after v1 tag\n\nGenerated code preserved at version tags. Branch restored to documentation-only state.", baseBranch)
-	_ = gitCommit(cleanupMsg) // best-effort; may be empty if nothing changed
+	_ = gitCommit(cleanupMsg, ".") // best-effort; may be empty if nothing changed
 
 	logf("generator:stop: deleting branch")
-	_ = gitDeleteBranch(branch) // best-effort; branch may already be deleted
+	_ = gitDeleteBranch(branch, ".") // best-effort; branch may already be deleted
 	return nil
 }
 
@@ -431,7 +431,7 @@ func (o *Orchestrator) mergeGeneration(branch, baseBranch string) error {
 // earlier generations that would otherwise be lost during the reset+merge
 // cycle. See prd002-generation-lifecycle R5.8.
 func (o *Orchestrator) restoreFromStartTag(startTag string) error {
-	startFiles, err := gitLsTreeFiles(startTag)
+	startFiles, err := gitLsTreeFiles(startTag, ".")
 	if err != nil {
 		return fmt.Errorf("listing files at %s: %w", startTag, err)
 	}
@@ -451,7 +451,7 @@ func (o *Orchestrator) restoreFromStartTag(startTag string) error {
 			continue
 		}
 
-		content, err := gitShowFileContent(startTag, path)
+		content, err := gitShowFileContent(startTag, path, ".")
 		if err != nil {
 			logf("generator:stop: could not read %s from %s: %v", path, startTag, err)
 			continue
@@ -475,10 +475,10 @@ func (o *Orchestrator) restoreFromStartTag(startTag string) error {
 	}
 
 	logf("generator:stop: restored %d file(s) from earlier generations", len(restored))
-	_ = gitStageAll()
+	_ = gitStageAll(".")
 	msg := fmt.Sprintf("Restore %d file(s) from earlier generations\n\nFiles restored from %s:\n%s",
 		len(restored), startTag, strings.Join(restored, "\n"))
-	if err := gitCommit(msg); err != nil {
+	if err := gitCommit(msg, "."); err != nil {
 		return fmt.Errorf("committing restored files: %w", err)
 	}
 	return nil
@@ -486,7 +486,7 @@ func (o *Orchestrator) restoreFromStartTag(startTag string) error {
 
 // listGenerationBranches returns all generation-* branch names.
 func (o *Orchestrator) listGenerationBranches() []string {
-	return gitListBranches(o.cfg.Generation.Prefix + "*")
+	return gitListBranches(o.cfg.Generation.Prefix + "*", ".")
 }
 
 // tagSuffixes lists the lifecycle tag suffixes in order.
@@ -525,10 +525,10 @@ func (o *Orchestrator) generationRevision(branch string) int {
 	}
 
 	nameSet := make(map[string]bool)
-	for _, t := range gitListTags(o.cfg.Generation.Prefix + date + "-*") {
+	for _, t := range gitListTags(o.cfg.Generation.Prefix + date + "-*", ".") {
 		nameSet[generationName(t)] = true
 	}
-	for _, b := range gitListBranches(o.cfg.Generation.Prefix + date + "-*") {
+	for _, b := range gitListBranches(o.cfg.Generation.Prefix + date + "-*", ".") {
 		nameSet[b] = true
 	}
 
@@ -560,7 +560,7 @@ func generationName(tag string) string {
 // cleanupUnmergedTags renames tags for generations that were never
 // merged into a single -abandoned tag.
 func (o *Orchestrator) cleanupUnmergedTags() {
-	tags := gitListTags(o.cfg.Generation.Prefix + "*")
+	tags := gitListTags(o.cfg.Generation.Prefix + "*", ".")
 	if len(tags) == 0 {
 		return
 	}
@@ -583,11 +583,11 @@ func (o *Orchestrator) cleanupUnmergedTags() {
 			abTag := name + "-abandoned"
 			if t != abTag {
 				logf("generator:reset: marking abandoned: %s -> %s", t, abTag)
-				_ = gitRenameTag(t, abTag) // best-effort; tag may not exist
+				_ = gitRenameTag(t, abTag, ".") // best-effort; tag may not exist
 			}
 		} else {
 			logf("generator:reset: removing tag %s", t)
-			_ = gitDeleteTag(t) // best-effort cleanup
+			_ = gitDeleteTag(t, ".") // best-effort cleanup
 		}
 	}
 }
@@ -595,7 +595,7 @@ func (o *Orchestrator) cleanupUnmergedTags() {
 // resolveBranch determines which branch to work on.
 func (o *Orchestrator) resolveBranch(explicit string) (string, error) {
 	if explicit != "" {
-		if !gitBranchExists(explicit) {
+		if !gitBranchExists(explicit, ".") {
 			return "", fmt.Errorf("branch does not exist: %s", explicit)
 		}
 		return explicit, nil
@@ -604,7 +604,7 @@ func (o *Orchestrator) resolveBranch(explicit string) (string, error) {
 	branches := o.listGenerationBranches()
 	switch len(branches) {
 	case 0:
-		return gitCurrentBranch()
+		return gitCurrentBranch(".")
 	case 1:
 		return branches[0], nil
 	default:
@@ -618,7 +618,7 @@ func (o *Orchestrator) resolveBranch(explicit string) (string, error) {
 // commit first; if that fails and the tree is still dirty, it stashes
 // changes so the checkout can succeed.
 func saveAndSwitchBranch(target string) error {
-	current, err := gitCurrentBranch()
+	current, err := gitCurrentBranch(".")
 	if err != nil {
 		return err
 	}
@@ -626,28 +626,28 @@ func saveAndSwitchBranch(target string) error {
 		return nil
 	}
 
-	if err := gitStageAll(); err != nil {
+	if err := gitStageAll("."); err != nil {
 		return fmt.Errorf("staging changes: %w", err)
 	}
 
 	msg := fmt.Sprintf("WIP: save state before switching to %s", target)
-	if err := gitCommit(msg); err != nil {
+	if err := gitCommit(msg, "."); err != nil {
 		// Commit failed (e.g. nothing to commit). Unstage and fall
 		// back to stash if the tree is still dirty.
-		_ = gitUnstageAll() // best-effort; unstage before stash fallback
-		if gitHasChanges() {
+		_ = gitUnstageAll(".") // best-effort; unstage before stash fallback
+		if gitHasChanges(".") {
 			logf("saveAndSwitchBranch: commit failed, stashing dirty tree")
-			_ = gitStash(msg) // best-effort; switching branch is the priority
+			_ = gitStash(msg, ".") // best-effort; switching branch is the priority
 		}
 	}
 
 	logf("saveAndSwitchBranch: %s -> %s", current, target)
-	return gitCheckout(target)
+	return gitCheckout(target, ".")
 }
 
 // ensureOnBranch switches to the given branch if not already on it.
 func ensureOnBranch(branch string) error {
-	current, err := gitCurrentBranch()
+	current, err := gitCurrentBranch(".")
 	if err != nil {
 		return err
 	}
@@ -655,14 +655,14 @@ func ensureOnBranch(branch string) error {
 		return nil
 	}
 	logf("ensureOnBranch: switching from %s to %s", current, branch)
-	return gitCheckout(branch)
+	return gitCheckout(branch, ".")
 }
 
 // GeneratorList shows active branches and past generations.
 func (o *Orchestrator) GeneratorList() error {
 	branches := o.listGenerationBranches()
-	tags := gitListTags(o.cfg.Generation.Prefix + "*")
-	current, _ := gitCurrentBranch()
+	tags := gitListTags(o.cfg.Generation.Prefix + "*", ".")
+	current, _ := gitCurrentBranch(".")
 
 	nameSet := make(map[string]bool)
 	branchSet := make(map[string]bool)
@@ -724,18 +724,19 @@ func (o *Orchestrator) GeneratorList() error {
 // Uses Config.GenerationBranch as the target.
 func (o *Orchestrator) GeneratorSwitch() error {
 	target := o.cfg.Generation.Branch
+	baseBranch := o.cfg.Cobbler.BaseBranch
 	if target == "" {
-		return fmt.Errorf("set generation.branch in configuration.yaml\nAvailable branches: %s, main", strings.Join(o.listGenerationBranches(), ", "))
+		return fmt.Errorf("set generation.branch in configuration.yaml\nAvailable branches: %s, %s", strings.Join(o.listGenerationBranches(), ", "), baseBranch)
 	}
 
-	if target != "main" && !strings.HasPrefix(target, o.cfg.Generation.Prefix) {
-		return fmt.Errorf("not a generation branch or main: %s", target)
+	if target != baseBranch && !strings.HasPrefix(target, o.cfg.Generation.Prefix) {
+		return fmt.Errorf("not a generation branch or %s: %s", baseBranch, target)
 	}
-	if !gitBranchExists(target) {
+	if !gitBranchExists(target, ".") {
 		return fmt.Errorf("branch does not exist: %s", target)
 	}
 
-	current, err := gitCurrentBranch()
+	current, err := gitCurrentBranch(".")
 	if err != nil {
 		return fmt.Errorf("getting current branch: %w", err)
 	}
@@ -756,8 +757,9 @@ func (o *Orchestrator) GeneratorSwitch() error {
 func (o *Orchestrator) GeneratorReset() error {
 	logf("generator:reset: beginning")
 
-	if err := ensureOnBranch("main"); err != nil {
-		return fmt.Errorf("switching to main: %w", err)
+	baseBranch := o.cfg.Cobbler.BaseBranch
+	if err := ensureOnBranch(baseBranch); err != nil {
+		return fmt.Errorf("switching to %s: %w", baseBranch, err)
 	}
 
 	wtBase := worktreeBasePath()
@@ -777,14 +779,14 @@ func (o *Orchestrator) GeneratorReset() error {
 				logf("generator:reset: close issues warning for %s: %v", gb, err)
 			}
 		}
-		// Close issues created on main (handles repos where measure ran on main,
-		// such as test repos that run cobbler:measure without a generation branch).
-		if err := closeGenerationIssues(ghRepo, "main"); err != nil {
-			logf("generator:reset: close issues warning for main: %v", err)
+		// Close issues created on the base branch (handles repos where measure ran on the
+		// base branch, such as test repos that run cobbler:measure without a generation branch).
+		if err := closeGenerationIssues(ghRepo, baseBranch); err != nil {
+			logf("generator:reset: close issues warning for %s: %v", baseBranch, err)
 		}
 	}
 
-	if err := gitWorktreePrune(); err != nil {
+	if err := gitWorktreePrune("."); err != nil {
 		logf("generator:reset: warning: worktree prune: %v", err)
 	}
 
@@ -799,7 +801,7 @@ func (o *Orchestrator) GeneratorReset() error {
 		logf("generator:reset: removing %d generation branch(es)", len(genBranches))
 		for _, gb := range genBranches {
 			logf("generator:reset: deleting branch %s", gb)
-			_ = gitForceDeleteBranch(gb) // best-effort; branch may be already removed
+			_ = gitForceDeleteBranch(gb, ".") // best-effort; branch may be already removed
 		}
 	}
 
@@ -814,7 +816,7 @@ func (o *Orchestrator) GeneratorReset() error {
 	o.cleanupDirs()
 
 	logf("generator:reset: seeding Go sources and reinitializing go.mod")
-	if err := o.seedFiles("main"); err != nil {
+	if err := o.seedFiles(baseBranch); err != nil {
 		return fmt.Errorf("seeding files: %w", err)
 	}
 	if err := o.reinitGoModule(); err != nil {
@@ -822,10 +824,10 @@ func (o *Orchestrator) GeneratorReset() error {
 	}
 
 	logf("generator:reset: committing clean state")
-	_ = gitStageAll()                                                  // best-effort; commit below handles empty index
-	_ = gitCommitAllowEmpty("Generator reset: return to clean state") // best-effort; reset is complete regardless
+	_ = gitStageAll(".")                                                  // best-effort; commit below handles empty index
+	_ = gitCommitAllowEmpty("Generator reset: return to clean state", ".") // best-effort; reset is complete regardless
 
-	logf("generator:reset: done, only main branch remains")
+	logf("generator:reset: done, only %s branch remains", baseBranch)
 	return nil
 }
 

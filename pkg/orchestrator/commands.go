@@ -62,61 +62,75 @@ func init() {
 	}
 }
 
+// cmdGit returns an exec.Cmd for git with cmd.Dir set to dir when dir is non-empty.
+// Pass an empty string to use the process working directory (backward-compatible default).
+func cmdGit(dir string, arg ...string) *exec.Cmd {
+	cmd := exec.Command(binGit, arg...)
+	if dir != "" {
+		cmd.Dir = dir
+	}
+	return cmd
+}
+
 // Git helpers.
+// Each function accepts a dir string parameter; when dir is non-empty it is
+// forwarded to exec.Cmd.Dir so the command runs in that directory rather than
+// the process-wide working directory. Pass "" to use the existing CWD (the
+// original behaviour, preserved for callers that rely on os.Chdir).
 
-func gitCheckout(branch string) error {
-	return exec.Command(binGit, "checkout", branch).Run()
+func gitCheckout(branch, dir string) error {
+	return cmdGit(dir, "checkout", branch).Run()
 }
 
-func gitCheckoutNew(branch string) error {
-	return exec.Command(binGit, "checkout", "-b", branch).Run()
+func gitCheckoutNew(branch, dir string) error {
+	return cmdGit(dir, "checkout", "-b", branch).Run()
 }
 
-func gitCreateBranch(name string) error {
-	return exec.Command(binGit, "branch", name).Run()
+func gitCreateBranch(name, dir string) error {
+	return cmdGit(dir, "branch", name).Run()
 }
 
-func gitDeleteBranch(name string) error {
-	return exec.Command(binGit, "branch", "-d", name).Run()
+func gitDeleteBranch(name, dir string) error {
+	return cmdGit(dir, "branch", "-d", name).Run()
 }
 
-func gitForceDeleteBranch(name string) error {
-	return exec.Command(binGit, "branch", "-D", name).Run()
+func gitForceDeleteBranch(name, dir string) error {
+	return cmdGit(dir, "branch", "-D", name).Run()
 }
 
-func gitBranchExists(name string) bool {
-	return exec.Command(binGit, "show-ref", "--verify", "--quiet", "refs/heads/"+name).Run() == nil
+func gitBranchExists(name, dir string) bool {
+	return cmdGit(dir, "show-ref", "--verify", "--quiet", "refs/heads/"+name).Run() == nil
 }
 
-func gitListBranches(pattern string) []string {
-	out, _ := exec.Command(binGit, "branch", "--list", pattern).Output() // empty output on error is acceptable
+func gitListBranches(pattern, dir string) []string {
+	out, _ := cmdGit(dir, "branch", "--list", pattern).Output() // empty output on error is acceptable
 	return parseBranchList(string(out))
 }
 
-func gitTag(name string) error {
-	return exec.Command(binGit, "tag", name).Run()
+func gitTag(name, dir string) error {
+	return cmdGit(dir, "tag", name).Run()
 }
 
-func gitDeleteTag(name string) error {
-	return exec.Command(binGit, "tag", "-d", name).Run()
+func gitDeleteTag(name, dir string) error {
+	return cmdGit(dir, "tag", "-d", name).Run()
 }
 
 // gitTagAt creates a tag pointing at the given ref (commit, tag, or branch).
-func gitTagAt(name, ref string) error {
-	return exec.Command(binGit, "tag", name, ref).Run()
+func gitTagAt(name, ref, dir string) error {
+	return cmdGit(dir, "tag", name, ref).Run()
 }
 
 // gitRenameTag creates newName at the same commit as oldName, then
 // deletes oldName. Returns an error if the new tag cannot be created.
-func gitRenameTag(oldName, newName string) error {
-	if err := exec.Command(binGit, "tag", newName, oldName).Run(); err != nil {
+func gitRenameTag(oldName, newName, dir string) error {
+	if err := cmdGit(dir, "tag", newName, oldName).Run(); err != nil {
 		return err
 	}
-	return gitDeleteTag(oldName)
+	return gitDeleteTag(oldName, dir)
 }
 
-func gitListTags(pattern string) []string {
-	out, _ := exec.Command(binGit, "tag", "--list", pattern).Output() // empty output on error is acceptable
+func gitListTags(pattern, dir string) []string {
+	out, _ := cmdGit(dir, "tag", "--list", pattern).Output() // empty output on error is acceptable
 	return parseBranchList(string(out))
 }
 
@@ -126,76 +140,80 @@ func gitLsFiles(dir string) []string {
 	if dir == "" {
 		return nil
 	}
-	cmd := exec.Command(binGit, "ls-files")
-	cmd.Dir = dir
-	out, err := cmd.Output()
+	out, err := cmdGit(dir, "ls-files").Output()
 	if err != nil || len(out) == 0 {
 		return nil
 	}
 	return parseBranchList(string(out))
 }
 
-func gitStageAll() error {
-	return exec.Command(binGit, "add", "-A").Run()
+func gitStageAll(dir string) error {
+	return cmdGit(dir, "add", "-A").Run()
 }
 
-func gitUnstageAll() error {
-	return exec.Command(binGit, "reset", "HEAD").Run()
+func gitUnstageAll(dir string) error {
+	return cmdGit(dir, "reset", "HEAD").Run()
 }
 
 // gitHasChanges returns true if the working tree has staged or unstaged
 // changes (tracked files only).
-func gitHasChanges() bool {
+func gitHasChanges(dir string) bool {
 	// --quiet exits 1 when there are changes.
-	return exec.Command(binGit, "diff", "--quiet", "HEAD").Run() != nil
+	return cmdGit(dir, "diff", "--quiet", "HEAD").Run() != nil
 }
 
-func gitStash(msg string) error {
-	return exec.Command(binGit, "stash", "push", "-m", msg).Run()
+func gitStash(msg, dir string) error {
+	return cmdGit(dir, "stash", "push", "-m", msg).Run()
 }
 
-func gitStageDir(dir string) error {
-	return exec.Command(binGit, "add", dir).Run()
+// gitStageDir stages a specific path. path is the argument passed to git add;
+// dir is the repository root used as cmd.Dir (empty means process CWD).
+func gitStageDir(path, dir string) error {
+	return cmdGit(dir, "add", path).Run()
 }
 
-func gitCommit(msg string) error {
-	return exec.Command(binGit, "commit", "--no-verify", "-m", msg).Run()
+func gitCommit(msg, dir string) error {
+	return cmdGit(dir, "commit", "--no-verify", "-m", msg).Run()
 }
 
-func gitCommitAllowEmpty(msg string) error {
-	return exec.Command(binGit, "commit", "--no-verify", "-m", msg, "--allow-empty").Run()
+func gitCommitAllowEmpty(msg, dir string) error {
+	return cmdGit(dir, "commit", "--no-verify", "-m", msg, "--allow-empty").Run()
 }
 
-func gitRevParseHEAD() (string, error) {
-	out, err := exec.Command(binGit, "rev-parse", "HEAD").Output()
+func gitRevParseHEAD(dir string) (string, error) {
+	out, err := cmdGit(dir, "rev-parse", "HEAD").Output()
 	if err != nil {
 		return "", err
 	}
 	return strings.TrimSpace(string(out)), nil
 }
 
-func gitResetSoft(ref string) error {
-	return exec.Command(binGit, "reset", "--soft", ref).Run()
+func gitResetSoft(ref, dir string) error {
+	return cmdGit(dir, "reset", "--soft", ref).Run()
 }
 
-func gitMergeCmd(branch string) *exec.Cmd {
-	return exec.Command(binGit, "merge", branch, "--no-edit")
+func gitMergeCmd(branch, dir string) *exec.Cmd {
+	return cmdGit(dir, "merge", branch, "--no-edit")
 }
 
-func gitWorktreePrune() error {
-	return exec.Command(binGit, "worktree", "prune").Run()
+func gitWorktreePrune(dir string) error {
+	return cmdGit(dir, "worktree", "prune").Run()
 }
 
-func gitWorktreeAdd(dir, branch string) *exec.Cmd {
-	return exec.Command(binGit, "worktree", "add", dir, branch)
+// gitWorktreeAdd returns a Cmd that adds a worktree at worktreeDir on branch.
+// dir is the repository root used as cmd.Dir (empty means process CWD).
+func gitWorktreeAdd(worktreeDir, branch, dir string) *exec.Cmd {
+	return cmdGit(dir, "worktree", "add", worktreeDir, branch)
 }
 
-func gitWorktreeRemove(dir string) error {
-	return exec.Command(binGit, "worktree", "remove", dir, "--force").Run()
+// gitWorktreeRemove removes the worktree at worktreeDir.
+// dir is the repository root used as cmd.Dir (empty means process CWD).
+func gitWorktreeRemove(worktreeDir, dir string) error {
+	return cmdGit(dir, "worktree", "remove", worktreeDir, "--force").Run()
 }
 
-func gitCurrentBranch() (string, error) {
-	out, err := exec.Command(binGit, "rev-parse", "--abbrev-ref", "HEAD").Output()
+func gitCurrentBranch(dir string) (string, error) {
+	out, err := cmdGit(dir, "rev-parse", "--abbrev-ref", "HEAD").Output()
 	if err != nil {
 		return "", err
 	}
@@ -216,8 +234,8 @@ func parseBranchList(output string) []string {
 }
 
 // gitLsTreeFiles returns the list of file paths tracked at the given ref.
-func gitLsTreeFiles(ref string) ([]string, error) {
-	out, err := exec.Command(binGit, "ls-tree", "-r", "--name-only", ref).Output()
+func gitLsTreeFiles(ref, dir string) ([]string, error) {
+	out, err := cmdGit(dir, "ls-tree", "-r", "--name-only", ref).Output()
 	if err != nil {
 		return nil, err
 	}
@@ -231,8 +249,8 @@ func gitLsTreeFiles(ref string) ([]string, error) {
 }
 
 // gitShowFileContent returns the raw content of a file at the given ref.
-func gitShowFileContent(ref, path string) ([]byte, error) {
-	return exec.Command(binGit, "show", ref+":"+path).Output()
+func gitShowFileContent(ref, path, dir string) ([]byte, error) {
+	return cmdGit(dir, "show", ref+":"+path).Output()
 }
 
 // FileChange holds per-file diff information from git diff --name-status
@@ -253,8 +271,8 @@ type diffStat struct {
 
 // gitDiffShortstat runs git diff --shortstat against the given ref and
 // parses the output (e.g. "5 files changed, 100 insertions(+), 20 deletions(-)").
-func gitDiffShortstat(ref string) (diffStat, error) {
-	out, err := exec.Command(binGit, "diff", "--shortstat", ref).Output()
+func gitDiffShortstat(ref, dir string) (diffStat, error) {
+	out, err := cmdGit(dir, "diff", "--shortstat", ref).Output()
 	if err != nil {
 		return diffStat{}, err
 	}
@@ -283,13 +301,13 @@ func parseDiffShortstat(s string) diffStat {
 // given ref and returns per-file entries with path, status, insertions, and
 // deletions. The two commands are combined to produce complete file-level
 // change records.
-func gitDiffNameStatus(ref string) ([]FileChange, error) {
-	nsOut, err := exec.Command(binGit, "diff", "--name-status", ref).Output()
+func gitDiffNameStatus(ref, dir string) ([]FileChange, error) {
+	nsOut, err := cmdGit(dir, "diff", "--name-status", ref).Output()
 	if err != nil {
 		return nil, err
 	}
 
-	numOut, _ := exec.Command(binGit, "diff", "--numstat", ref).Output()
+	numOut, _ := cmdGit(dir, "diff", "--numstat", ref).Output()
 	numMap := parseNumstat(string(numOut))
 
 	return parseNameStatus(string(nsOut), numMap), nil

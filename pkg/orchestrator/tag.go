@@ -22,7 +22,7 @@ import (
 // Exposed as a mage target (e.g., mage tag).
 func (o *Orchestrator) Tag() error {
 	// Ensure we're on the configured base branch for doc tags.
-	current, err := gitCurrentBranch()
+	current, err := gitCurrentBranch(".")
 	if err != nil {
 		return fmt.Errorf("getting current branch: %w", err)
 	}
@@ -42,7 +42,7 @@ func (o *Orchestrator) Tag() error {
 	logf("tag: creating documentation release %s", tag)
 
 	// Create the git tag.
-	if err := gitTag(tag); err != nil {
+	if err := gitTag(tag, "."); err != nil {
 		return fmt.Errorf("creating tag %s: %w", tag, err)
 	}
 
@@ -52,8 +52,8 @@ func (o *Orchestrator) Tag() error {
 		if err := writeVersionConst(o.cfg.Project.VersionFile, tag); err != nil {
 			logf("tag: version file warning: %v", err)
 		} else {
-			_ = gitStageAll() // best-effort; commit below handles empty index
-			if err := gitCommit(fmt.Sprintf("Set version to %s", tag)); err != nil {
+			_ = gitStageAll(".") // best-effort; commit below handles empty index
+			if err := gitCommit(fmt.Sprintf("Set version to %s", tag), "."); err != nil {
 				logf("tag: version commit warning: %v", err)
 			}
 		}
@@ -74,7 +74,7 @@ func (o *Orchestrator) Tag() error {
 // highest existing revision + 1.
 func nextDocRevision(prefix, date string) int {
 	pattern := fmt.Sprintf("%s%s.*", prefix, date)
-	tags := gitListTags(pattern)
+	tags := gitListTags(pattern, ".")
 	if len(tags) == 0 {
 		return 0
 	}

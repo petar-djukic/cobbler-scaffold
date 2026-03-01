@@ -106,7 +106,7 @@ func (o *Orchestrator) RunStitchN(limit int) (int, error) {
 	worktreeBase := worktreeBasePath()
 	logf("worktreeBase=%s", worktreeBase)
 
-	baseBranch, err := gitCurrentBranch()
+	baseBranch, err := gitCurrentBranch(".")
 	if err != nil {
 		return 0, fmt.Errorf("getting current branch: %w", err)
 	}
@@ -197,7 +197,7 @@ func (o *Orchestrator) recoverStaleTasks(baseBranch, worktreeBase, repo, generat
 	orphanedIssues := resetOrphanedIssues(baseBranch, repo, generation)
 
 	logf("recoverStaleTasks: pruning worktrees")
-	if err := gitWorktreePrune(); err != nil {
+	if err := gitWorktreePrune("."); err != nil {
 		logf("recoverStaleTasks: worktree prune warning: %v", err)
 	}
 
@@ -213,7 +213,7 @@ func (o *Orchestrator) recoverStaleTasks(baseBranch, worktreeBase, repo, generat
 // recoverStaleBranches removes leftover task branches and worktrees,
 // removing the in-progress label from their issues. Returns true if any were recovered.
 func recoverStaleBranches(baseBranch, worktreeBase, repo string) bool {
-	branches := gitListBranches(taskBranchPattern(baseBranch))
+	branches := gitListBranches(taskBranchPattern(baseBranch), ".")
 	if len(branches) == 0 {
 		logf("recoverStaleBranches: no stale branches found")
 		return false
@@ -228,7 +228,7 @@ func recoverStaleBranches(baseBranch, worktreeBase, repo string) bool {
 
 		if _, err := os.Stat(worktreeDir); err == nil {
 			logf("recoverStaleBranches: removing worktree %s", worktreeDir)
-			if err := gitWorktreeRemove(worktreeDir); err != nil {
+			if err := gitWorktreeRemove(worktreeDir, "."); err != nil {
 				logf("recoverStaleBranches: worktree remove warning: %v", err)
 			}
 		} else {
@@ -236,7 +236,7 @@ func recoverStaleBranches(baseBranch, worktreeBase, repo string) bool {
 		}
 
 		logf("recoverStaleBranches: deleting branch %s", branch)
-		if err := gitForceDeleteBranch(branch); err != nil {
+		if err := gitForceDeleteBranch(branch, "."); err != nil {
 			logf("recoverStaleBranches: branch delete warning: %v", err)
 		}
 
@@ -269,7 +269,7 @@ func resetOrphanedIssues(baseBranch, repo, generation string) bool {
 		}
 		id := fmt.Sprintf("%d", iss.Number)
 		taskBranch := taskBranchName(baseBranch, id)
-		if !gitBranchExists(taskBranch) {
+		if !gitBranchExists(taskBranch, ".") {
 			recovered = true
 			logf("resetOrphanedIssues: orphaned issue #%d (no branch %s), removing in-progress label", iss.Number, taskBranch)
 			if err := removeInProgressLabel(repo, iss.Number); err != nil {
@@ -459,7 +459,7 @@ func (o *Orchestrator) doOneTask(task stitchTask, baseBranch, repoRoot string) e
 	}
 
 	// Capture pre-merge HEAD for diffstat.
-	preMergeRef, err := gitRevParseHEAD()
+	preMergeRef, err := gitRevParseHEAD(".")
 	if err != nil {
 		logf("doOneTask: warning getting pre-merge ref: %v", err)
 	}
@@ -488,12 +488,12 @@ func (o *Orchestrator) doOneTask(task stitchTask, baseBranch, repoRoot string) e
 	logf("doOneTask: merge completed in %s", time.Since(mergeStart).Round(time.Second))
 
 	// Capture LOC diff, per-file diff, and post-merge LOC.
-	diff, diffErr := gitDiffShortstat(preMergeRef)
+	diff, diffErr := gitDiffShortstat(preMergeRef, ".")
 	if diffErr != nil {
 		logf("doOneTask: warning getting diff shortstat: %v", diffErr)
 	}
 	logf("doOneTask: diff files=%d ins=%d del=%d", diff.FilesChanged, diff.Insertions, diff.Deletions)
-	fileChanges, fcErr := gitDiffNameStatus(preMergeRef)
+	fileChanges, fcErr := gitDiffNameStatus(preMergeRef, ".")
 	if fcErr != nil {
 		logf("doOneTask: warning getting file changes: %v", fcErr)
 	}
@@ -558,9 +558,9 @@ func createWorktree(task stitchTask) error {
 		return fmt.Errorf("creating worktree parent directory: %w", err)
 	}
 
-	if !gitBranchExists(task.branchName) {
+	if !gitBranchExists(task.branchName, ".") {
 		logf("createWorktree: branch %s does not exist, creating", task.branchName)
-		if err := gitCreateBranch(task.branchName); err != nil {
+		if err := gitCreateBranch(task.branchName, "."); err != nil {
 			logf("createWorktree: gitCreateBranch failed: %v", err)
 			return fmt.Errorf("creating branch %s: %w", task.branchName, err)
 		}
@@ -570,7 +570,7 @@ func createWorktree(task stitchTask) error {
 	}
 
 	logf("createWorktree: adding worktree")
-	cmd := gitWorktreeAdd(task.worktreeDir, task.branchName)
+	cmd := gitWorktreeAdd(task.worktreeDir, task.branchName, ".")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
@@ -683,14 +683,14 @@ func mergeBranch(branchName, baseBranch, repoRoot string) error {
 	logf("mergeBranch: %s into %s (repoRoot=%s)", branchName, baseBranch, repoRoot)
 
 	logf("mergeBranch: checking out %s", baseBranch)
-	if err := gitCheckout(baseBranch); err != nil {
+	if err := gitCheckout(baseBranch, "."); err != nil {
 		logf("mergeBranch: checkout failed: %v", err)
 		return fmt.Errorf("checking out %s: %w", baseBranch, err)
 	}
 	logf("mergeBranch: checked out %s", baseBranch)
 
 	logf("mergeBranch: merging %s", branchName)
-	cmd := gitMergeCmd(branchName)
+	cmd := gitMergeCmd(branchName, ".")
 	cmd.Dir = repoRoot
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -743,20 +743,20 @@ func (o *Orchestrator) resetTask(task stitchTask, reason string) {
 		logf("resetTask: WARNING removeInProgressLabel failed for #%d: %v", task.ghNumber, err)
 	}
 	cleanupWorktree(task)
-	if err := gitForceDeleteBranch(task.branchName); err != nil {
+	if err := gitForceDeleteBranch(task.branchName, "."); err != nil {
 		logf("resetTask: WARNING force branch delete failed for %s: %v", task.branchName, err)
 	}
 }
 
 func cleanupWorktree(task stitchTask) {
 	logf("cleanupWorktree: removing worktree %s", task.worktreeDir)
-	if err := gitWorktreeRemove(task.worktreeDir); err != nil {
+	if err := gitWorktreeRemove(task.worktreeDir, "."); err != nil {
 		logf("cleanupWorktree: worktree remove failed, skipping branch delete: %v", err)
 		return
 	}
 
 	logf("cleanupWorktree: deleting branch %s", task.branchName)
-	if err := gitDeleteBranch(task.branchName); err != nil {
+	if err := gitDeleteBranch(task.branchName, "."); err != nil {
 		logf("cleanupWorktree: branch delete warning: %v", err)
 	}
 

@@ -200,7 +200,7 @@ func imageBaseName(image string) string {
 
 // latestVersionTag returns the most recent v* git tag, or "" if none exist.
 func latestVersionTag() string {
-	tags := gitListTags("v*")
+	tags := gitListTags("v*", ".")
 	if len(tags) == 0 {
 		return ""
 	}
