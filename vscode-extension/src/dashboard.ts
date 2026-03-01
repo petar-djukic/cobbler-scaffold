@@ -5,7 +5,7 @@
 // prd: prd005-metrics-collection R1
 
 import * as vscode from "vscode";
-import { BeadsStore, InvocationRecord } from "./beadsModel";
+import { IssuesStore, InvocationRecord } from "./issuesModel";
 
 /** Aggregated metrics computed from all InvocationRecords. */
 export interface AggregateMetrics {
@@ -114,8 +114,8 @@ export function renderDashboardHtml(metrics: AggregateMetrics): string {
       const caller = rec.caller ?? "—";
       const date = rec.startedAt
         ? new Date(rec.startedAt).toLocaleString()
-        : rec.comment.created_at
-          ? new Date(rec.comment.created_at).toLocaleString()
+        : rec.createdAt
+          ? new Date(rec.createdAt).toLocaleString()
           : "—";
       const duration =
         rec.durationS !== undefined ? formatDuration(rec.durationS) : "—";
@@ -135,7 +135,7 @@ export function renderDashboardHtml(metrics: AggregateMetrics): string {
       const diff = rec.diff
         ? `${rec.diff.files}F +${rec.diff.insertions} -${rec.diff.deletions}`
         : "—";
-      const issue = rec.comment.issue_id;
+      const issue = String(rec.issueNumber);
 
       return `<tr>
         <td>${escapeHtml(caller)}</td>
@@ -244,9 +244,9 @@ function escapeHtml(text: string): string {
  */
 export class MetricsDashboard {
   private panel: vscode.WebviewPanel | undefined;
-  private store: BeadsStore;
+  private store: IssuesStore;
 
-  constructor(store: BeadsStore) {
+  constructor(store: IssuesStore) {
     this.store = store;
   }
 
@@ -272,13 +272,11 @@ export class MetricsDashboard {
     this.refresh();
   }
 
-  /** Refreshes the dashboard content from the current BeadsStore data. */
+  /** Refreshes the dashboard content from the current IssuesStore data. */
   refresh(): void {
     if (!this.panel) {
       return;
     }
-    this.store.invalidate();
-    this.store.ensureBuilt();
     const records = this.store.listInvocationRecords();
     const metrics = aggregateMetrics(records);
     this.panel.webview.html = renderDashboardHtml(metrics);

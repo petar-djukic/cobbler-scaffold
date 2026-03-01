@@ -11,8 +11,8 @@ import { SpecBrowserProvider } from "./specBrowser";
 import { SpecGraph } from "./specModel";
 import { TraceabilityProvider, viewRequirement } from "./traceability";
 import { GenerationBrowserProvider } from "./generationBrowser";
-import { BeadsStore } from "./beadsModel";
 import { IssueBrowserProvider } from "./issuesBrowser";
+import { IssuesStore } from "./issuesModel";
 import { MetricsDashboard } from "./dashboard";
 import {
   ComparisonBrowserProvider,
@@ -75,9 +75,6 @@ export function activate(context: vscode.ExtensionContext): void {
   // FileSystemWatchers for reactive view refresh.
   const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
   if (root) {
-    const beadsWatcher = vscode.workspace.createFileSystemWatcher(
-      new vscode.RelativePattern(root, ".beads/**")
-    );
     const gitRefsWatcher = vscode.workspace.createFileSystemWatcher(
       new vscode.RelativePattern(root, ".git/refs/**")
     );
@@ -85,13 +82,10 @@ export function activate(context: vscode.ExtensionContext): void {
       new vscode.RelativePattern(root, "configuration.yaml")
     );
 
-    context.subscriptions.push(beadsWatcher, gitRefsWatcher, configWatcher);
+    context.subscriptions.push(gitRefsWatcher, configWatcher);
 
     // Log watcher events to the output channel.
     context.subscriptions.push(
-      beadsWatcher.onDidChange(() =>
-        outputChannel.appendLine("beads data changed")
-      ),
       gitRefsWatcher.onDidChange(() =>
         outputChannel.appendLine("git refs changed")
       ),
@@ -194,31 +188,38 @@ export function activate(context: vscode.ExtensionContext): void {
     );
 
     // Issue tracker tree view (prd006 R4).
-    const beadsStore = new BeadsStore(root);
-    const issueBrowser = new IssueBrowserProvider(beadsStore);
+    const issuesStore = new IssuesStore(root);
+    const issueBrowser = new IssueBrowserProvider(issuesStore);
     context.subscriptions.push(
       vscode.window.registerTreeDataProvider(
         "mageOrchestrator.issues",
         issueBrowser
       )
     );
-    context.subscriptions.push(
-      beadsWatcher.onDidChange(safeCallback("issueBrowser.refresh", () => issueBrowser.refresh())),
-      beadsWatcher.onDidCreate(safeCallback("issueBrowser.refresh", () => issueBrowser.refresh())),
-      beadsWatcher.onDidDelete(safeCallback("issueBrowser.refresh", () => issueBrowser.refresh()))
-    );
 
     // Metrics dashboard webview (prd006 R5).
-    const dashboard = new MetricsDashboard(beadsStore);
+    const dashboard = new MetricsDashboard(issuesStore);
     context.subscriptions.push(
       vscode.commands.registerCommand("mageOrchestrator.showDashboard", () =>
         dashboard.show()
       )
     );
+
+    // Poll GitHub Issues every 30 seconds to refresh issue browser and dashboard.
+    const refreshIssues = async (): Promise<void> => {
+      try {
+        await issuesStore.refresh();
+        issueBrowser.refresh();
+        dashboard.refresh();
+      } catch (err) {
+        outputChannel.appendLine(`issues poll: ${err}`);
+      }
+    };
+    void refreshIssues();
+    const pollInterval = setInterval(() => void refreshIssues(), 30_000);
+    context.subscriptions.push({ dispose: () => clearInterval(pollInterval) });
     context.subscriptions.push(
-      beadsWatcher.onDidChange(safeCallback("dashboard.refresh", () => dashboard.refresh())),
-      beadsWatcher.onDidCreate(safeCallback("dashboard.refresh", () => dashboard.refresh())),
-      beadsWatcher.onDidDelete(safeCallback("dashboard.refresh", () => dashboard.refresh()))
+      configWatcher.onDidChange(safeCallback("issues.refresh", () => void refreshIssues()))
     );
 
     // Constitution YAML preview panel.

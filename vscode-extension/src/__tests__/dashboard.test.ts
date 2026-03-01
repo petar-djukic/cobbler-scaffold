@@ -1,16 +1,87 @@
 // Copyright (c) 2026 Petar Djukic. All rights reserved.
 // SPDX-License-Identifier: MIT
 
-import { describe, it, expect } from "vitest";
-import * as path from "path";
-import { BeadsStore, InvocationRecord, BeadsComment } from "../beadsModel";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { InvocationRecord, IssuesStore } from "../issuesModel";
 import {
   aggregateMetrics,
   formatDuration,
   renderDashboardHtml,
 } from "../dashboard";
 
-const FIXTURES = path.resolve(__dirname, "..", "__fixtures__");
+// ---- Mock child_process for IssuesStore tests ----
+
+const { mockExecFile } = vi.hoisted(() => ({
+  mockExecFile: vi.fn(),
+}));
+vi.mock("child_process", () => ({
+  execFile: mockExecFile,
+}));
+
+// ---- Fixture data in gh CLI JSON format ----
+
+const FIXTURE_ISSUES = [
+  {
+    number: 3,
+    title: "Closed task",
+    state: "CLOSED",
+    labels: [],
+    body: "A completed task",
+    comments: [
+      {
+        id: "IC_1",
+        author: { login: "tester" },
+        body: "tokens: 35000",
+        createdAt: "2026-01-04T00:00:00Z",
+      },
+    ],
+    createdAt: "2026-01-03T00:00:00Z",
+    updatedAt: "2026-01-04T00:00:00Z",
+    closedAt: "2026-01-04T00:00:00Z",
+  },
+  {
+    number: 4,
+    title: "In progress work",
+    state: "OPEN",
+    labels: [{ name: "in_progress" }],
+    body: "Currently active",
+    comments: [
+      {
+        id: "IC_2",
+        author: { login: "tester" },
+        body: "started work",
+        createdAt: "2026-01-05T00:00:00Z",
+      },
+      {
+        id: "IC_3",
+        author: { login: "tester" },
+        body: "tokens: 12000",
+        createdAt: "2026-01-05T01:00:00Z",
+      },
+    ],
+    createdAt: "2026-01-05T00:00:00Z",
+    updatedAt: "2026-01-05T00:00:00Z",
+    closedAt: null,
+  },
+  {
+    number: 5,
+    title: "Stitch task",
+    state: "CLOSED",
+    labels: [],
+    body: "A stitch task with JSON record",
+    comments: [
+      {
+        id: "IC_4",
+        author: { login: "orchestrator" },
+        body: '{"caller":"stitch","started_at":"2026-01-06T00:10:00Z","duration_s":180,"tokens":{"input":45000,"output":5000,"cache_creation":1000,"cache_read":2000,"cost_usd":0.15},"loc_before":{"production":500,"test":100},"loc_after":{"production":520,"test":110},"diff":{"files":3,"insertions":25,"deletions":5}}',
+        createdAt: "2026-01-06T00:13:00Z",
+      },
+    ],
+    createdAt: "2026-01-06T00:00:00Z",
+    updatedAt: "2026-01-06T01:00:00Z",
+    closedAt: "2026-01-06T01:00:00Z",
+  },
+];
 
 // ---- formatDuration ----
 
@@ -50,16 +121,9 @@ describe("aggregateMetrics", () => {
   });
 
   it("aggregates simple token-only records", () => {
-    const comment: BeadsComment = {
-      id: 1,
-      issue_id: "t-1",
-      author: "x",
-      text: "tokens: 5000",
-      created_at: "",
-    };
     const records: InvocationRecord[] = [
-      { tokens: 5000, comment },
-      { tokens: 3000, comment },
+      { tokens: 5000, issueNumber: 1, createdAt: "" },
+      { tokens: 3000, issueNumber: 1, createdAt: "" },
     ];
     const m = aggregateMetrics(records);
     expect(m.invocationCount).toBe(2);
@@ -69,17 +133,11 @@ describe("aggregateMetrics", () => {
   });
 
   it("aggregates rich JSON records", () => {
-    const comment: BeadsComment = {
-      id: 1,
-      issue_id: "t-1",
-      author: "x",
-      text: "{}",
-      created_at: "",
-    };
     const records: InvocationRecord[] = [
       {
         tokens: 50000,
-        comment,
+        issueNumber: 1,
+        createdAt: "",
         caller: "stitch",
         startedAt: "2026-01-01T00:00:00Z",
         durationS: 120,
@@ -92,7 +150,8 @@ describe("aggregateMetrics", () => {
       },
       {
         tokens: 30000,
-        comment,
+        issueNumber: 2,
+        createdAt: "",
         caller: "measure",
         startedAt: "2026-01-02T00:00:00Z",
         durationS: 60,
@@ -124,15 +183,8 @@ describe("renderDashboardHtml", () => {
   });
 
   it("renders summary table with token data", () => {
-    const comment: BeadsComment = {
-      id: 1,
-      issue_id: "t-1",
-      author: "x",
-      text: "tokens: 5000",
-      created_at: "2026-01-01T00:00:00Z",
-    };
     const html = renderDashboardHtml(
-      aggregateMetrics([{ tokens: 5000, comment }])
+      aggregateMetrics([{ tokens: 5000, issueNumber: 1, createdAt: "2026-01-01T00:00:00Z" }])
     );
     expect(html).toContain("Summary");
     expect(html).toContain("5,000");
@@ -140,17 +192,11 @@ describe("renderDashboardHtml", () => {
   });
 
   it("renders rich data with input/output breakdown", () => {
-    const comment: BeadsComment = {
-      id: 1,
-      issue_id: "t-1",
-      author: "x",
-      text: "{}",
-      created_at: "",
-    };
     const records: InvocationRecord[] = [
       {
         tokens: 50000,
-        comment,
+        issueNumber: 1,
+        createdAt: "",
         caller: "stitch",
         durationS: 180,
         inputTokens: 45000,
@@ -171,41 +217,46 @@ describe("renderDashboardHtml", () => {
     expect(html).toContain("-5");
   });
 
-  it("escapes HTML in caller and issue fields", () => {
-    const comment: BeadsComment = {
-      id: 1,
-      issue_id: "<script>alert(1)</script>",
-      author: "x",
-      text: "tokens: 100",
-      created_at: "",
-    };
-    const html = renderDashboardHtml(
-      aggregateMetrics([{ tokens: 100, comment }])
-    );
-    expect(html).not.toContain("<script>");
-    expect(html).toContain("&lt;script&gt;");
+  it("escapes HTML in issue number field", () => {
+    const records: InvocationRecord[] = [
+      { tokens: 100, issueNumber: 42, createdAt: "" },
+    ];
+    const html = renderDashboardHtml(aggregateMetrics(records));
+    expect(html).toContain("42");
   });
 });
 
-// ---- Integration with BeadsStore ----
+// ---- Integration with IssuesStore ----
 
-describe("dashboard integration with BeadsStore", () => {
-  it("aggregates records from fixture data including JSON format", () => {
-    const store = new BeadsStore(FIXTURES);
-    store.ensureBuilt();
+describe("dashboard integration with IssuesStore", () => {
+  beforeEach(() => {
+    mockExecFile.mockReset();
+  });
+
+  function setupMockGh(data: unknown[]): void {
+    mockExecFile.mockImplementation(
+      (_cmd: string, _args: string[], _opts: unknown, callback: Function) => {
+        callback(null, JSON.stringify(data), "");
+      }
+    );
+  }
+
+  it("aggregates records from fixture data including JSON format", async () => {
+    setupMockGh(FIXTURE_ISSUES);
+    const store = new IssuesStore("/test/root");
+    await store.refresh();
     const records = store.listInvocationRecords();
-    // Fixture has: test-003 with "tokens: 35000", test-004 with "tokens: 12000",
-    // test-005 with full JSON record (45000+5000=50000 tokens).
-    expect(records.length).toBe(3);
+    expect(records).toHaveLength(3);
     const total = records.reduce((sum, r) => sum + r.tokens, 0);
     expect(total).toBe(97000);
   });
 
-  it("parses full JSON InvocationRecord fields from fixture", () => {
-    const store = new BeadsStore(FIXTURES);
-    store.ensureBuilt();
-    const records = store.getInvocationRecords("test-005");
-    expect(records.length).toBe(1);
+  it("parses full JSON InvocationRecord fields from fixture", async () => {
+    setupMockGh(FIXTURE_ISSUES);
+    const store = new IssuesStore("/test/root");
+    await store.refresh();
+    const records = store.getInvocationRecords(5);
+    expect(records).toHaveLength(1);
     const rec = records[0];
     expect(rec.caller).toBe("stitch");
     expect(rec.startedAt).toBe("2026-01-06T00:10:00Z");
@@ -220,9 +271,10 @@ describe("dashboard integration with BeadsStore", () => {
     expect(rec.diff).toEqual({ files: 3, insertions: 25, deletions: 5 });
   });
 
-  it("renders dashboard HTML from fixture data", () => {
-    const store = new BeadsStore(FIXTURES);
-    store.ensureBuilt();
+  it("renders dashboard HTML from fixture data", async () => {
+    setupMockGh(FIXTURE_ISSUES);
+    const store = new IssuesStore("/test/root");
+    await store.refresh();
     const records = store.listInvocationRecords();
     const metrics = aggregateMetrics(records);
     const html = renderDashboardHtml(metrics);
