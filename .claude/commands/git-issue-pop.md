@@ -2,6 +2,8 @@
 
 Pop a GitHub issue from the current repository, decompose it into GitHub sub-issues on a feature branch, and open a PR when all sub-issues are closed.
 
+If the decomposition yields only one sub-issue, skip sub-issue creation entirely: work directly on the parent issue, add a comment describing what was done, and close it via the PR.
+
 Sub-issue progress is visible directly on the parent issue page.
 
 ## Input
@@ -48,6 +50,8 @@ Using the GitHub issue as the epic, propose sub-issues that decompose it into ac
 
 Present the proposed breakdown to the user for approval. Do not create anything until the user agrees.
 
+**Single-sub-issue rule:** If the natural breakdown is exactly one sub-issue, tell the user: "This fits in a single task — I'll work directly on the parent issue without creating a sub-issue." Proceed to Phase 4 (single-issue path) after approval.
+
 ## Phase 4 -- Create Branch and Sub-Issues
 
 After user approval:
@@ -64,7 +68,9 @@ After user approval:
    ```
    Where `<slug>` is a short kebab-case summary of the issue title (e.g. `gh-42-add-scaffold-validation`).
 
-3. Create each sub-issue on GitHub:
+### If there are 2 or more sub-issues
+
+1. Create each sub-issue on GitHub:
    ```bash
    gh issue create --repo <owner>/<repo> \
      --title "<sub-issue title>" \
@@ -72,7 +78,7 @@ After user approval:
    ```
    Capture the issue number returned for each sub-issue.
 
-4. Link each sub-issue to the parent using the GitHub sub-issues API:
+2. Link each sub-issue to the parent using the GitHub sub-issues API:
    ```bash
    gh api repos/<owner>/<repo>/issues/<parent-number>/sub_issues \
      --method POST \
@@ -81,19 +87,38 @@ After user approval:
    Get the database ID with: `gh api repos/<owner>/<repo>/issues/<sub-number> --jq '.id'`
    Repeat for each sub-issue. The parent issue will show a progress checklist.
 
-5. Commit the feature branch (no beads state to commit — just record the branch creation):
+3. Commit the feature branch:
    ```bash
    git commit --allow-empty -m "Pop GH-<number>: <title> into feature branch
 
    Sub-issues: <comma-separated list of #N>"
    ```
 
-6. Push the branch:
+4. Push the branch:
    ```bash
    git push -u origin gh-<number>-<slug>
    ```
 
-7. Report the parent issue URL and the list of sub-issue URLs to the user.
+5. Report the parent issue URL and the list of sub-issue URLs to the user.
+
+### If there is exactly 1 sub-issue (single-issue path)
+
+1. Assign yourself to the parent issue to claim it:
+   ```bash
+   gh issue edit <number> --repo <owner>/<repo> --add-assignee @me
+   ```
+
+2. Commit the feature branch:
+   ```bash
+   git commit --allow-empty -m "Pop GH-<number>: <title> into feature branch"
+   ```
+
+3. Push the branch:
+   ```bash
+   git push -u origin gh-<number>-<slug>
+   ```
+
+4. Report the parent issue URL to the user. Work proceeds directly on the parent issue — no sub-issue tracking needed.
 
 All subsequent `/do-work` happens on this branch. Before starting work, verify you are on the correct branch:
 ```
@@ -102,23 +127,29 @@ git branch --show-current  # should show gh-<number>-<slug>
 
 ## Phase 5 -- Open a Pull Request
 
-When ALL sub-issues on the parent are closed:
+For the **single-issue path**, trigger Phase 5 when the work is complete (no sub-issue count to check).
+For the **multi-sub-issue path**, trigger Phase 5 when ALL sub-issues on the parent are closed.
 
 1. If the issue is recurring (see Phase 6), execute Phase 6 now — before merging — so the next instance exists before this one closes.
 
-2. Verify all sub-issues are closed:
+2. For the multi-sub-issue path only — verify all sub-issues are closed:
    ```bash
    gh api repos/<owner>/<repo>/issues/<number>/sub_issues \
      --jq '[.[] | select(.state=="open")] | length'
    ```
    If the count is not 0, do not proceed — report which sub-issues are still open.
 
-3. Push the final state of the feature branch:
+3. For the single-issue path — add a comment to the parent issue summarizing what was done:
+   ```bash
+   gh issue comment <number> --repo <owner>/<repo> --body "<summary of work: what changed, files touched, tokens used>"
+   ```
+
+4. Push the final state of the feature branch:
    ```bash
    git push
    ```
 
-4. Open a pull request against `main`:
+5. Open a pull request against `main`:
    ```bash
    gh pr create --repo <owner>/<repo> \
      --base main \
@@ -127,15 +158,15 @@ When ALL sub-issues on the parent are closed:
      --body "$(cat <<'EOF'
    ## Summary
 
-   <2-3 sentence summary of what this epic delivered>
+   <2-3 sentence summary of what this delivered>
 
    ## Changes
 
-   <bulleted list of sub-issues completed and what each produced, with #N references>
+   <bulleted list of what was produced>
 
    ## Stats
 
-   <output of mage stats with deltas from start of epic>
+   <output of mage stats with deltas from start of work>
 
    ## Test plan
 
@@ -150,23 +181,23 @@ When ALL sub-issues on the parent are closed:
 
    The `Closes #<number>` line auto-closes the parent GitHub issue when the PR merges.
 
-5. Merge the pull request and delete the remote feature branch:
+6. Merge the pull request and delete the remote feature branch:
    ```bash
    gh pr merge --repo <owner>/<repo> --merge --delete-branch
    ```
 
-6. Return to main and pull the merged changes:
+7. Return to main and pull the merged changes:
    ```bash
    git checkout main
    git pull origin main
    ```
 
-7. Delete the local feature branch (now merged):
+8. Delete the local feature branch (now merged):
    ```bash
    git branch -d gh-<number>-<slug>
    ```
 
-8. Verify the parent GitHub issue was closed by the merge:
+9. Verify the parent GitHub issue was closed by the merge:
    ```bash
    gh issue view <number> --repo <owner>/<repo> --json state -q .state
    ```
@@ -175,7 +206,7 @@ When ALL sub-issues on the parent are closed:
    gh issue close <number> --repo <owner>/<repo> --comment "Completed via PR #<pr-number>"
    ```
 
-9. Report the PR URL and confirm the issue is closed.
+10. Report the PR URL and confirm the issue is closed.
 
 **Note:** Phase 5 may happen in a later session. When running `/do-work` and closing the last sub-issue, check the open sub-issue count and execute Phase 5 automatically if it reaches 0.
 
