@@ -254,6 +254,17 @@ func CountReadyIssues(t testing.TB, dir string) int {
 	return len(issues)
 }
 
+// ensureGitHubLabel creates label on repo if it does not already exist.
+// A 422 response (label exists) is silently ignored.
+func ensureGitHubLabel(repo, name, color, description string) {
+	exec.Command("gh", "api", "repos/"+repo+"/labels", //nolint:errcheck
+		"--method", "POST",
+		"--field", "name="+name,
+		"--field", "color="+color,
+		"--field", "description="+description,
+	).Run()
+}
+
 // CreateIssue creates a GitHub issue with cobbler labels for the current
 // generation in dir. Returns the issue number as a string.
 func CreateIssue(t testing.TB, dir, title string) string {
@@ -263,6 +274,12 @@ func CreateIssue(t testing.TB, dir, title string) string {
 		t.Fatalf("CreateIssue: no issues_repo in configuration.yaml")
 	}
 	generation := GitBranch(t, dir)
+
+	// Ensure all required labels exist before creating the issue.
+	ensureGitHubLabel(repo, "cobbler-ready", "0075ca", "Cobbler task ready to be picked by stitch")
+	ensureGitHubLabel(repo, "cobbler-in-progress", "e4e669", "Cobbler task currently being worked on")
+	ensureGitHubLabel(repo, "cobbler-gen-"+generation, "ededed", "Cobbler generation "+generation)
+
 	body := fmt.Sprintf("---\ncobbler_generation: %s\ncobbler_index: 0\n---\n\ncreated by e2e test",
 		generation)
 	cmd := exec.Command("gh", "issue", "create",
@@ -275,10 +292,22 @@ func CreateIssue(t testing.TB, dir, title string) string {
 	if err != nil {
 		t.Fatalf("CreateIssue: gh issue create: %v\n%s", err, out)
 	}
-	// gh issue create outputs the URL; extract the issue number from the last path segment.
+	// Output is a URL like https://github.com/owner/repo/issues/123
 	url := strings.TrimSpace(string(out))
 	parts := strings.Split(url, "/")
-	return parts[len(parts)-1]
+	if len(parts) == 0 {
+		t.Fatalf("CreateIssue: unexpected output %q", url)
+	}
+	num := parts[len(parts)-1]
+	if _, err := strconv.Atoi(num); err != nil {
+		t.Fatalf("CreateIssue: could not parse issue number from %q: %v", url, err)
+	}
+	// Close the issue when the test ends so it does not leak into other test
+	// runs that happen to share the same generation label (same second).
+	t.Cleanup(func() {
+		exec.Command("gh", "issue", "close", num, "--repo", repo).Run() //nolint:errcheck
+	})
+	return num
 }
 
 // SetIssueInProgress adds the cobbler-in-progress label to the issue and
@@ -304,6 +333,41 @@ func SetIssueInProgress(t testing.TB, dir, issueNumber string) {
 	if out, err := rm.CombinedOutput(); err != nil {
 		t.Logf("SetIssueInProgress: remove cobbler-ready (non-fatal): %v\n%s", err, out)
 	}
+}
+
+// IssueHasLabel returns true if the GitHub issue identified by issueNumber
+// currently has the given label. It fetches the issue directly via
+// gh issue view (REST endpoint) which is strongly consistent, avoiding the
+// eventual-consistency lag of gh issue list.
+func IssueHasLabel(t testing.TB, dir, issueNumber, label string) bool {
+	t.Helper()
+	repo := readIssuesRepo(t, dir)
+	if repo == "" {
+		t.Logf("IssueHasLabel: no issues_repo in configuration.yaml")
+		return false
+	}
+	cmd := exec.Command("gh", "issue", "view", issueNumber,
+		"--repo", repo, "--json", "labels")
+	out, err := cmd.Output()
+	if err != nil {
+		t.Logf("IssueHasLabel: gh issue view %s: %v", issueNumber, err)
+		return false
+	}
+	var resp struct {
+		Labels []struct {
+			Name string `json:"name"`
+		} `json:"labels"`
+	}
+	if err := json.Unmarshal(out, &resp); err != nil {
+		t.Logf("IssueHasLabel: parse: %v (output=%q)", err, string(out))
+		return false
+	}
+	for _, l := range resp.Labels {
+		if l.Name == label {
+			return true
+		}
+	}
+	return false
 }
 
 // SetupClaude extracts Claude credentials into the test repo and configures

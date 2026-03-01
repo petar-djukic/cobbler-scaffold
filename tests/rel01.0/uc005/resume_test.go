@@ -209,9 +209,9 @@ func TestRel01_UC005_ResumeResetsOrphanedIssues(t *testing.T) {
 	}
 
 	// Switch back to main so resume switches to the generation branch.
-	cmd = exec.Command("git", "checkout", "main")
-	cmd.Dir = dir
-	if out, err := cmd.CombinedOutput(); err != nil {
+	checkout := exec.Command("git", "checkout", "main")
+	checkout.Dir = dir
+	if out, err := checkout.CombinedOutput(); err != nil {
 		t.Fatalf("git checkout main: %v\n%s", err, out)
 	}
 
@@ -225,8 +225,10 @@ func TestRel01_UC005_ResumeResetsOrphanedIssues(t *testing.T) {
 		t.Logf("generator:resume (expected credential error): %v", err)
 	}
 
-	// The orphaned in_progress issue should be reset to ready.
-	if n := testutil.CountIssuesByStatus(t, dir, "in_progress"); n != 0 {
-		t.Errorf("expected 0 in_progress issues after resume, got %d", n)
+	// The orphaned in_progress issue should have its in-progress label removed.
+	// Use IssueHasLabel (fetches issue directly) rather than CountIssuesByStatus
+	// (uses gh issue list which has eventual-consistency lag for label filters).
+	if testutil.IssueHasLabel(t, dir, issueNumber, "cobbler-in-progress") {
+		t.Errorf("expected cobbler-in-progress label to be removed from issue %s after resume", issueNumber)
 	}
 }
