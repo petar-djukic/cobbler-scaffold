@@ -11,7 +11,7 @@ overview:
     The system operates as build tooling, not a standalone application. An Orchestrator struct
     holds a Config and provides methods that Mage calls as targets. These methods coordinate
     five subsystems: git branch management, Claude invocation (containerized via podman),
-    issue tracking (beads), metrics collection, and project scaffolding.
+    issue tracking (GitHub Issues via gh CLI), metrics collection, and project scaffolding.
 
   lifecycle: |
     Generations are the primary unit of work. A generation starts from a tagged main state,
@@ -135,20 +135,20 @@ components:
   - name: Cobbler - Measure
     responsibility: |
       Builds the measure prompt from existing issues and project state, invokes Claude,
-      parses the YAML output, and imports proposed issues into beads with dependency wiring.
+      parses the YAML output, and creates GitHub Issues with dependency labels via the gh CLI.
       Records invocation metrics. Saves history artifacts (prompt, log, issues, stats) per
       iteration to the configured history directory.
     capabilities:
       - Build measure prompt from MeasurePromptData with full ProjectContext
       - Parse Claude YAML output into task list
-      - Import tasks into beads with dependency wiring
+      - Create GitHub Issues for proposed tasks with dependency labels
       - Save history artifacts per iteration
     references:
       - prd003-cobbler-workflows
 
   - name: Cobbler - Stitch
     responsibility: |
-      Picks ready tasks from beads, creates worktrees, invokes Claude, commits Claude's
+      Picks ready GitHub Issues, creates worktrees, invokes Claude, commits Claude's
       changes (the orchestrator manages all git operations — Claude is forbidden from running
       git commands), merges branches, records metrics, and closes tasks. Saves history
       artifacts (prompt, log, stats) per task. Handles recovery of stale tasks from
@@ -387,13 +387,13 @@ components:
       Ten source modules implement six use cases: lifecycle commands, generation browser,
       branch comparison, issue tracker, metrics dashboard, and specification browser. The
       extension activates when configuration.yaml exists in the workspace and monitors
-      .beads/, .git/refs/, and docs/specs/ for changes. Build and install are managed by
+      .git/refs/ and docs/specs/ for changes. Build and install are managed by
       mage vscode:push; uninstall by mage vscode:pop.
     capabilities:
       - Execute lifecycle commands (start, run, resume, stop, reset, switch) via integrated terminal (commands.ts)
       - Display generation tree with lifecycle state from git tags (generationBrowser.ts)
       - Compare version tags and generation branches with file-level diff view (comparisonBrowser.ts)
-      - Parse .beads/issues.jsonl and display issues grouped by status (issuesBrowser.ts, beadsModel.ts)
+      - Fetch GitHub Issues via gh CLI and display issues grouped by status (issuesBrowser.ts, issuesModel.ts)
       - Aggregate and display metrics dashboard as webview panel (dashboard.ts)
       - Browse specifications with touchpoint expansion and CodeLens traceability (specBrowser.ts, specModel.ts, traceability.ts)
       - Register extension entry point and wire all providers (extension.ts)
@@ -464,7 +464,7 @@ design_decisions:
       - Issue history and comments are preserved in GitHub's audit trail
       - Parent issues can track sub-issues via GitHub's native sub-issue API
     alternatives_rejected:
-      - "Beads (bd CLI): external binary not available on all machines; SQLite state is local and not visible on GitHub"
+      - "Local SQLite issue tracker: state is not visible on GitHub and requires an external binary dependency"
       - "File-based issue directories: no UI, harder to review during code review"
 
   - id: 6
@@ -585,9 +585,7 @@ project_structure:
   - path: pkg/orchestrator/generator.go
     role: Generation lifecycle — start/run/resume/stop/reset
   - path: pkg/orchestrator/commands.go
-    role: Git, beads, Go command wrappers
-  - path: pkg/orchestrator/beads.go
-    role: Beads initialization and reset
+    role: Git, gh, Go command wrappers
   - path: pkg/orchestrator/stats.go
     role: LOC and documentation metrics
   - path: pkg/orchestrator/analyze.go
