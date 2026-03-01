@@ -19,6 +19,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator"
 	"gopkg.in/yaml.v3"
@@ -277,6 +278,26 @@ func CountReadyIssues(t testing.TB, dir string) int {
 		}
 	}
 	return count
+}
+
+// WaitForReadyIssues polls CountReadyIssues until at least min issues are
+// ready or timeout elapses. Returns the final count. This absorbs the
+// eventual-consistency lag in GitHub's label-filtered issue listing that
+// can cause promoteReadyIssues to miss newly created issues.
+func WaitForReadyIssues(t testing.TB, dir string, min int, timeout time.Duration) int {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for {
+		n := CountReadyIssues(t, dir)
+		if n >= min {
+			return n
+		}
+		if time.Now().After(deadline) {
+			t.Logf("WaitForReadyIssues: timed out after %v with %d/%d ready", timeout, n, min)
+			return n
+		}
+		time.Sleep(2 * time.Second)
+	}
 }
 
 // ensureGitHubLabel creates label on repo if it does not already exist.

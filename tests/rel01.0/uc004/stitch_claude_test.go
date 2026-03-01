@@ -11,6 +11,7 @@ package uc004_test
 
 import (
 	"testing"
+	"time"
 
 	"github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator"
 	"github.com/mesh-intelligence/cobbler-scaffold/tests/rel01.0/internal/testutil"
@@ -41,7 +42,7 @@ func TestRel01_UC004_StitchExecutesTask(t *testing.T) {
 	if err := testutil.RunMage(t, dir, "cobbler:measure"); err != nil {
 		t.Fatalf("cobbler:measure: %v", err)
 	}
-	if n := testutil.CountReadyIssues(t, dir); n == 0 {
+	if n := testutil.WaitForReadyIssues(t, dir, 1, 30*time.Second); n == 0 {
 		t.Fatal("expected at least 1 ready issue after measure, got 0")
 	}
 

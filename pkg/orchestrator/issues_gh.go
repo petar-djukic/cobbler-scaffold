@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 )
 
 // cobblerIssue holds the parsed representation of a GitHub issue created by
@@ -270,6 +271,25 @@ func listOpenCobblerIssues(repo, generation string) ([]cobblerIssue, error) {
 		})
 	}
 	return issues, nil
+}
+
+// waitForIssuesVisible polls listOpenCobblerIssues until at least
+// expected issues appear or the timeout expires. The REST API label
+// index may lag briefly after issue creation, so this function
+// ensures all issues are visible before promotion or DAG resolution.
+func waitForIssuesVisible(repo, generation string, expected int) {
+	const maxWait = 15 * time.Second
+	const interval = time.Second
+	deadline := time.Now().Add(maxWait)
+	for time.Now().Before(deadline) {
+		issues, err := listOpenCobblerIssues(repo, generation)
+		if err == nil && len(issues) >= expected {
+			return
+		}
+		logf("waitForIssuesVisible: %d/%d visible, retrying...", len(issues), expected)
+		time.Sleep(interval)
+	}
+	logf("waitForIssuesVisible: timed out waiting for %d issues (generation=%s)", expected, generation)
 }
 
 // hasLabel returns true if the issue has the given label.

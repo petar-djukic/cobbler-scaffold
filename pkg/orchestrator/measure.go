@@ -438,6 +438,7 @@ func (o *Orchestrator) importIssuesImpl(yamlFile, repo, generation string, skipE
 	}
 
 	if len(ids) > 0 {
+		waitForIssuesVisible(repo, generation, len(ids))
 		if err := promoteReadyIssues(repo, generation); err != nil {
 			logf("importIssues: promoteReadyIssues warning: %v", err)
 		}

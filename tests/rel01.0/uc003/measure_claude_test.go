@@ -11,6 +11,7 @@ package uc003_test
 
 import (
 	"testing"
+	"time"
 
 	"github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator"
 	"github.com/mesh-intelligence/cobbler-scaffold/tests/rel01.0/internal/testutil"
@@ -38,7 +39,7 @@ func TestRel01_UC003_MeasureCreatesIssues(t *testing.T) {
 		t.Fatalf("cobbler:measure: %v", err)
 	}
 
-	n := testutil.CountReadyIssues(t, dir)
+	n := testutil.WaitForReadyIssues(t, dir, 1, 30*time.Second)
 	if n == 0 {
 		t.Error("expected at least 1 ready issue after cobbler:measure, got 0")
 	}
