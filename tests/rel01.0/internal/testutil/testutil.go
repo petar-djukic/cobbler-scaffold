@@ -237,8 +237,14 @@ func readIssuesRepo(t testing.TB, dir string) string {
 	return cfg.Cobbler.IssuesRepo
 }
 
-// CountReadyIssues queries GitHub for open issues with the cobbler-ready label
-// and the generation label for the current branch in dir.
+// CountReadyIssues returns the number of open cobbler issues that have the
+// cobbler-ready label and the generation label for the current branch in dir.
+//
+// Implementation: list issues by generation label first (search, but gen label
+// was applied at creation so it is likely indexed), then check cobbler-ready
+// on each issue via gh issue view (direct REST endpoint, strongly consistent).
+// This avoids search-index lag on the cobbler-ready label, which is applied by
+// promoteReadyIssues immediately before the test assertion runs.
 func CountReadyIssues(t testing.TB, dir string) int {
 	t.Helper()
 	repo := readIssuesRepo(t, dir)
@@ -249,9 +255,11 @@ func CountReadyIssues(t testing.TB, dir string) int {
 	genLabel := "cobbler-gen-" + generation
 	cmd := exec.Command("gh", "issue", "list",
 		"--repo", repo,
-		"--label", "cobbler-ready",
 		"--label", genLabel,
-		"--json", "number")
+		"--state", "open",
+		"--json", "number",
+		"--limit", "200",
+	)
 	out, err := cmd.Output()
 	if err != nil {
 		t.Logf("CountReadyIssues: gh issue list: %v", err)
@@ -262,7 +270,13 @@ func CountReadyIssues(t testing.TB, dir string) int {
 		t.Logf("CountReadyIssues: parse: %v (output=%q)", err, string(out))
 		return 0
 	}
-	return len(issues)
+	count := 0
+	for _, iss := range issues {
+		if IssueHasLabel(t, dir, strconv.Itoa(iss.Number), "cobbler-ready") {
+			count++
+		}
+	}
+	return count
 }
 
 // ensureGitHubLabel creates label on repo if it does not already exist.

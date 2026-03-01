@@ -180,16 +180,19 @@ func ensureCobblerGenLabel(repo, generation string) error {
 	cmd := exec.Command(binGh, "api", "repos/"+repo+"/labels",
 		"--method", "POST",
 		"--field", "name="+label,
-		"--field", "color=", // empty = default GitHub color
+		"--field", "color=ededed", // light grey; GitHub API requires a valid 6-char hex color
 		"--field", "description=Cobbler generation "+generation,
 	)
 	// Ignore error — label may already exist (422 Unprocessable Entity).
-	cmd.Run() // nolint: best-effort
+	cmd.Run() //nolint:errcheck // best-effort
 	return nil
 }
 
 // createCobblerIssue creates a GitHub issue on repo for the given generation
 // and proposedIssue. Returns the GitHub issue number.
+//
+// Note: gh issue create (v2.87.3) does not support --json; it outputs the
+// issue URL (https://github.com/owner/repo/issues/123) on success.
 func createCobblerIssue(repo, generation string, issue proposedIssue) (int, error) {
 	body := formatIssueFrontMatter(generation, issue.Index, issue.Dependency) + issue.Description
 
@@ -199,21 +202,24 @@ func createCobblerIssue(repo, generation string, issue proposedIssue) (int, erro
 		"--title", issue.Title,
 		"--body", body,
 		"--label", genLabel,
-		"--json", "number",
 	).Output()
 	if err != nil {
 		return 0, fmt.Errorf("gh issue create: %w", err)
 	}
 
-	var created struct {
-		Number int `json:"number"`
+	// Parse the issue number from the URL output (e.g. "https://github.com/owner/repo/issues/123\n").
+	url := strings.TrimSpace(string(out))
+	parts := strings.Split(url, "/")
+	if len(parts) == 0 {
+		return 0, fmt.Errorf("parsing gh issue create output: empty URL (raw: %s)", string(out))
 	}
-	if err := json.Unmarshal(out, &created); err != nil || created.Number == 0 {
-		return 0, fmt.Errorf("parsing gh issue create output: %w (raw: %s)", err, string(out))
+	var number int
+	if _, err := fmt.Sscanf(parts[len(parts)-1], "%d", &number); err != nil || number == 0 {
+		return 0, fmt.Errorf("parsing gh issue create output: could not extract number from %q", url)
 	}
 	logf("createCobblerIssue: created #%d %q gen=%s index=%d dep=%d",
-		created.Number, issue.Title, generation, issue.Index, issue.Dependency)
-	return created.Number, nil
+		number, issue.Title, generation, issue.Index, issue.Dependency)
+	return number, nil
 }
 
 // listOpenCobblerIssues returns all open GitHub issues for a generation.
