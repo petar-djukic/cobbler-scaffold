@@ -27,7 +27,7 @@ requirements:
       - R2.1: GeneratorStart must record the current branch as the base branch; any clean branch is a valid starting point
       - R2.2: GeneratorStart must tag the current base branch state as {generationName}-start
       - R2.3: GeneratorStart must create and switch to the generation branch
-      - R2.4: GeneratorStart must reset the beads database and reinitialize with the generation prefix
+      - R2.4: GeneratorStart must record the base branch and prepare the generation branch; issue tracking uses GitHub Issues and requires no local database reset
       - R2.5: GeneratorStart must delete all Go source files (except magefiles) and re-seed from templates
       - R2.6: GeneratorStart must reinitialize go.mod with a fresh module and local replace directive
       - R2.7: GeneratorStart must squash intermediate commits into a single clean commit

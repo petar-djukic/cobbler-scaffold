@@ -28,7 +28,7 @@ requirements:
       - R1.5: ProjectConfig must include GoSourceDirs ([]string) listing directories with Go source
       - R1.6: ProjectConfig must include VersionFile (string) for the version.go path
       - R1.7: GenerationConfig must include Prefix (string, default "generation-") for generation branch names
-      - R1.8: CobblerConfig must include BeadsDir (string, default ".beads/") for the issue tracker directory
+      - R1.8: CobblerConfig must include IssuesRepo (string) for the GitHub repository (owner/repo) used as the issue tracker; auto-detected from module_path when empty
       - R1.9: CobblerConfig must include Dir (string, default ".cobbler/") for the scratch directory
       - R1.10: ProjectConfig must include MagefilesDir (string, default "magefiles") for the directory skipped during Go file deletion
       - R1.11: ClaudeConfig must include SecretsDir (string, default ".secrets") for token files
@@ -74,7 +74,7 @@ requirements:
       - R2.1: New(Config) must return an *Orchestrator with defaults applied to zero-value fields
       - R2.2: applyDefaults must set Project.BinaryDir to "bin" when empty
       - R2.3: applyDefaults must set Generation.Prefix to "generation-" when empty
-      - R2.4: applyDefaults must set Cobbler.BeadsDir to ".beads/" when empty
+      - R2.4: applyDefaults must leave Cobbler.IssuesRepo empty when not set; detectGitHubRepo derives it from module_path at runtime
       - R2.5: applyDefaults must set Cobbler.Dir to ".cobbler/" when empty
       - R2.6: applyDefaults must set Project.MagefilesDir to "magefiles" when empty
       - R2.7: applyDefaults must set Claude.SecretsDir to ".secrets" when empty
@@ -114,10 +114,10 @@ requirements:
   R5:
     title: Initialization and Reset
     items:
-      - R5.1: Init must initialize the beads issue tracker
-      - R5.2: FullReset must reset cobbler, generator, and beads in sequence
-      - R5.3: BeadsInit must create the beads database directory
-      - R5.4: BeadsReset must remove and reinitialize the beads database
+      - R5.1: Init is a no-op placeholder kept for mage target compatibility; issue tracking uses GitHub Issues
+      - R5.2: FullReset must reset cobbler and generator in sequence
+      - R5.3: Reserved (local issue database removed; issue tracking uses GitHub Issues)
+      - R5.4: Reserved (local issue database removed; issue tracking uses GitHub Issues)
 
   R6:
     title: Seed Files

@@ -13,7 +13,7 @@ goals:
   - G2: Define the stitch workflow that executes tasks in isolated worktrees
   - G3: Support configurable Claude invocation parameters
   - G4: Record invocation metrics for every Claude session
-  - G5: Handle task dependencies and lifecycle through beads integration
+  - G5: Handle task dependencies and lifecycle through GitHub Issues integration
 
 requirements:
   R1:
@@ -26,25 +26,25 @@ requirements:
   R2:
     title: Measure Workflow
     items:
-      - R2.1: Measure must verify beads is initialized before proceeding
+      - R2.1: Measure must verify the GitHub Issues repo is reachable before proceeding
       - R2.2: Measure must resolve and switch to the target branch
-      - R2.3: Measure must query existing issues from beads via bd list
+      - R2.3: Measure must query existing GitHub Issues from the configured issues repo via gh issue list
       - R2.4: Measure must clean up old proposed-issues files from the cobbler directory
       - R2.5: Measure must build the prompt from the template with existing issues, limit, output path, and user input
       - R2.6: Measure must invoke Claude with the built prompt
       - R2.7: Measure must parse the YAML output file written by Claude
-      - R2.8: Measure must import proposed issues into beads with title and description
+      - R2.8: Measure must create proposed issues as GitHub Issues with title, description, and generation label via gh issue create
       - R2.9: Measure must wire dependencies between imported issues based on the dependency index
       - R2.10: Measure must record an InvocationRecord on each created issue
-      - R2.11: Measure must commit beads changes after import
+      - R2.11: Reserved (GitHub Issues are created remotely; no local commit required)
 
   R3:
     title: Stitch Workflow
     items:
-      - R3.1: Stitch must verify beads is initialized before proceeding
+      - R3.1: Stitch must verify the GitHub Issues repo is reachable before proceeding
       - R3.2: Stitch must resolve and switch to the target branch
       - R3.3: Stitch must recover stale tasks from interrupted runs before processing
-      - R3.4: Stitch must pick ready tasks one at a time from beads (bd ready -n 1 --type task)
+      - R3.4: Stitch must pick ready tasks one at a time from GitHub Issues (open issues with the generation label and without the cobbler-in-progress label)
       - R3.5: Stitch must stop when no ready tasks remain or MaxIssues is reached
       - R3.6: For each task, stitch must claim the task by setting status to in_progress
       - R3.7: For each task, stitch must create a git worktree on a task branch
@@ -67,7 +67,7 @@ requirements:
       - R4.3: recoverStaleTasks must reset affected issues to ready status
       - R4.4: resetOrphanedIssues must find in_progress issues without corresponding task branches
       - R4.5: resetOrphanedIssues must reset orphaned issues to ready status
-      - R4.6: Recovery must commit beads changes if any state was recovered
+      - R4.6: Recovery must remove the cobbler-in-progress label from affected GitHub Issues if any state was recovered
       - R4.7: recoverStaleTasks and GeneratorResume must find stale task worktrees regardless of whether they are invoked from the main repo root or from a git worktree of the same repository
 
   R5:
@@ -103,9 +103,9 @@ requirements:
     title: Issue Import and Validation
     items:
       - R7.1: proposedIssue must include index (int), title (string), description (string), and dependency (int)
-      - R7.2: importIssues must create tasks in beads for each proposed issue
-      - R7.3: importIssues must wire dependencies using bd dep add for issues with dependency >= 0
-      - R7.4: importIssues must commit beads changes after successful import
+      - R7.2: importIssues must create a GitHub Issue for each proposed issue via gh issue create with the generation label
+      - R7.3: importIssues must order issues by dependency index so dependent issues are created after their prerequisites
+      - R7.4: Reserved (GitHub Issues are created remotely; no local commit required)
       - R7.5: When Config.Cobbler.MaxRequirementsPerTask is greater than zero, measure must count the number of requirement items in each proposed issue's description and reject issues that exceed the limit; rejected issues must trigger a re-prompt (up to Config.Cobbler.MaxMeasureRetries attempts) instructing Claude to split them into smaller tasks
 
   R8:
@@ -160,7 +160,7 @@ non_goals:
   - This PRD does not define concurrent task execution (tasks run sequentially)
 
 acceptance_criteria:
-  - Measure proposes tasks from project state and imports them into beads
+  - Measure proposes tasks from project state and creates them as GitHub Issues
   - Stitch executes ready tasks in isolated worktrees and merges results
   - Recovery resets stale tasks and orphaned issues to ready
   - Invocation records are stored on every task with token and LOC data
