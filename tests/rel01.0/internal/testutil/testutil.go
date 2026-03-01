@@ -32,14 +32,19 @@ const ClaudeImage = "localhost/cobbler-scaffold:latest"
 // Each test gets an isolated, fully-scaffolded repo in a few seconds.
 func SetupRepo(t testing.TB, snapshotDir string) string {
 	t.Helper()
-	workDir, err := os.MkdirTemp("", "e2e-test-*")
+	// Use workDir directly as testDir so filepath.Base(testDir) is unique
+	// per test (e.g. "e2e-test-123456"). All tests previously nested the
+	// repo at workDir/repo, making filepath.Base always "repo" and causing
+	// every test to share /tmp/repo-worktrees/ as the worktree base directory.
+	// Parallel tests racing on that shared directory caused stale worktree
+	// registrations that made git checkout main fail in generator:stop.
+	testDir, err := os.MkdirTemp("", "e2e-test-*")
 	if err != nil {
 		t.Fatalf("SetupRepo: MkdirTemp: %v", err)
 	}
-	testDir := filepath.Join(workDir, "repo")
 
 	if err := CopyDir(snapshotDir, testDir); err != nil {
-		os.RemoveAll(workDir)
+		os.RemoveAll(testDir)
 		t.Fatalf("SetupRepo: copy snapshot: %v", err)
 	}
 
@@ -56,12 +61,18 @@ func SetupRepo(t testing.TB, snapshotDir string) string {
 		cmd := exec.Command(args[0], args[1:]...)
 		cmd.Dir = testDir
 		if out, err := cmd.CombinedOutput(); err != nil {
-			os.RemoveAll(workDir)
+			os.RemoveAll(testDir)
 			t.Fatalf("SetupRepo: git %v: %v\n%s", args[1:], err, out)
 		}
 	}
 
-	t.Cleanup(func() { os.RemoveAll(workDir) })
+	// Also clean up the worktree base directory that the orchestrator creates
+	// alongside the repo (e.g. /tmp/e2e-test-123456-worktrees/).
+	worktreeBase := filepath.Join(os.TempDir(), filepath.Base(testDir)+"-worktrees")
+	t.Cleanup(func() {
+		os.RemoveAll(testDir)
+		os.RemoveAll(worktreeBase)
+	})
 	return testDir
 }
 
