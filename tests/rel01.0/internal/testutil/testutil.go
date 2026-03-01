@@ -240,11 +240,11 @@ func readIssuesRepo(t testing.TB, dir string) string {
 // CountReadyIssues returns the number of open cobbler issues that have the
 // cobbler-ready label and the generation label for the current branch in dir.
 //
-// Implementation: list issues by generation label first (search, but gen label
-// was applied at creation so it is likely indexed), then check cobbler-ready
-// on each issue via gh issue view (direct REST endpoint, strongly consistent).
-// This avoids search-index lag on the cobbler-ready label, which is applied by
-// promoteReadyIssues immediately before the test assertion runs.
+// Implementation: list issues by generation label via the REST API
+// (gh api repos/.../issues, strongly consistent), then check cobbler-ready
+// on each issue via gh issue view (also REST, strongly consistent).
+// Both steps avoid GitHub's search API, which is eventually consistent and
+// can return stale results immediately after label changes.
 func CountReadyIssues(t testing.TB, dir string) int {
 	t.Helper()
 	repo := readIssuesRepo(t, dir)
@@ -253,16 +253,15 @@ func CountReadyIssues(t testing.TB, dir string) int {
 	}
 	generation := GitBranch(t, dir)
 	genLabel := "cobbler-gen-" + generation
-	cmd := exec.Command("gh", "issue", "list",
-		"--repo", repo,
-		"--label", genLabel,
-		"--state", "open",
-		"--json", "number",
-		"--limit", "200",
+	cmd := exec.Command("gh", "api",
+		fmt.Sprintf("repos/%s/issues", repo),
+		"-f", "state=open",
+		"-f", "labels="+genLabel,
+		"-f", "per_page=200",
 	)
 	out, err := cmd.Output()
 	if err != nil {
-		t.Logf("CountReadyIssues: gh issue list: %v", err)
+		t.Logf("CountReadyIssues: gh api repos issues: %v", err)
 		return 0
 	}
 	var issues []struct{ Number int `json:"number"` }
@@ -513,6 +512,12 @@ func ReadFileContains(path, substr string) bool {
 
 // CountIssuesByStatus queries GitHub for open cobbler issues with the given
 // status label ("ready" or "in_progress") for the current generation in dir.
+//
+// Implementation: list issues by generation label via the REST API
+// (gh api repos/.../issues, strongly consistent), then check the status
+// label on each issue via gh issue view (also REST, strongly consistent).
+// This avoids GitHub's search API, which is eventually consistent and would
+// miss recently-applied labels (e.g. cobbler-in-progress added by gh issue edit).
 func CountIssuesByStatus(t testing.TB, dir, status string) int {
 	t.Helper()
 	repo := readIssuesRepo(t, dir)
@@ -522,14 +527,15 @@ func CountIssuesByStatus(t testing.TB, dir, status string) int {
 	generation := GitBranch(t, dir)
 	statusLabel := "cobbler-" + strings.ReplaceAll(status, "_", "-")
 	genLabel := "cobbler-gen-" + generation
-	cmd := exec.Command("gh", "issue", "list",
-		"--repo", repo,
-		"--label", statusLabel,
-		"--label", genLabel,
-		"--json", "number")
+	cmd := exec.Command("gh", "api",
+		fmt.Sprintf("repos/%s/issues", repo),
+		"-f", "state=open",
+		"-f", "labels="+genLabel,
+		"-f", "per_page=200",
+	)
 	out, err := cmd.Output()
 	if err != nil {
-		t.Logf("CountIssuesByStatus: gh issue list --label %s: %v", statusLabel, err)
+		t.Logf("CountIssuesByStatus: gh api repos issues --label %s: %v", statusLabel, err)
 		return 0
 	}
 	var issues []struct{ Number int `json:"number"` }
@@ -537,7 +543,13 @@ func CountIssuesByStatus(t testing.TB, dir, status string) int {
 		t.Logf("CountIssuesByStatus: parse: %v (output=%q)", err, string(out))
 		return 0
 	}
-	return len(issues)
+	count := 0
+	for _, iss := range issues {
+		if IssueHasLabel(t, dir, strconv.Itoa(iss.Number), statusLabel) {
+			count++
+		}
+	}
+	return count
 }
 
 // CopyDir copies src to dst recursively.
