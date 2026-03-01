@@ -241,8 +241,8 @@ func readIssuesRepo(t testing.TB, dir string) string {
 // cobbler-ready label and the generation label for the current branch in dir.
 //
 // Implementation: list issues by generation label via the REST API
-// (gh api repos/.../issues, strongly consistent), then check cobbler-ready
-// on each issue via gh issue view (also REST, strongly consistent).
+// (gh api repos/.../issues --method GET, strongly consistent), then check
+// cobbler-ready on each issue via gh issue view (also REST, strongly consistent).
 // Both steps avoid GitHub's search API, which is eventually consistent and
 // can return stale results immediately after label changes.
 func CountReadyIssues(t testing.TB, dir string) int {
@@ -254,10 +254,11 @@ func CountReadyIssues(t testing.TB, dir string) int {
 	generation := GitBranch(t, dir)
 	genLabel := "cobbler-gen-" + generation
 	cmd := exec.Command("gh", "api",
+		"--method", "GET",
 		fmt.Sprintf("repos/%s/issues", repo),
 		"-f", "state=open",
 		"-f", "labels="+genLabel,
-		"-f", "per_page=200",
+		"-f", "per_page=100",
 	)
 	out, err := cmd.Output()
 	if err != nil {
@@ -514,8 +515,8 @@ func ReadFileContains(path, substr string) bool {
 // status label ("ready" or "in_progress") for the current generation in dir.
 //
 // Implementation: list issues by generation label via the REST API
-// (gh api repos/.../issues, strongly consistent), then check the status
-// label on each issue via gh issue view (also REST, strongly consistent).
+// (gh api repos/.../issues --method GET, strongly consistent), then check the
+// status label on each issue via gh issue view (also REST, strongly consistent).
 // This avoids GitHub's search API, which is eventually consistent and would
 // miss recently-applied labels (e.g. cobbler-in-progress added by gh issue edit).
 func CountIssuesByStatus(t testing.TB, dir, status string) int {
@@ -528,10 +529,11 @@ func CountIssuesByStatus(t testing.TB, dir, status string) int {
 	statusLabel := "cobbler-" + strings.ReplaceAll(status, "_", "-")
 	genLabel := "cobbler-gen-" + generation
 	cmd := exec.Command("gh", "api",
+		"--method", "GET",
 		fmt.Sprintf("repos/%s/issues", repo),
 		"-f", "state=open",
 		"-f", "labels="+genLabel,
-		"-f", "per_page=200",
+		"-f", "per_page=100",
 	)
 	out, err := cmd.Output()
 	if err != nil {

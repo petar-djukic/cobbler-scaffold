@@ -230,6 +230,7 @@ func createCobblerIssue(repo, generation string, issue proposedIssue) (int, erro
 func listOpenCobblerIssues(repo, generation string) ([]cobblerIssue, error) {
 	label := cobblerGenLabel(generation)
 	out, err := exec.Command(binGh, "api",
+		"--method", "GET",
 		fmt.Sprintf("repos/%s/issues", repo),
 		"-f", "state=open",
 		"-f", "labels="+label,
