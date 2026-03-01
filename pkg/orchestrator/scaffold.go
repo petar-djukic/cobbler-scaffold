@@ -391,16 +391,13 @@ func scaffoldSeedTemplate(targetDir, modulePath, mainPkg string) (destPath, tmpl
 	destPath = filepath.Join(relDir, "version.go")
 	tmplPath = filepath.Join(dirMagefiles, "version.go.tmpl")
 
-	tmplContent := `package main
+	tmplContent := `// Copyright (c) 2026 Petar Djukic. All rights reserved.
+// SPDX-License-Identifier: MIT
 
-import "fmt"
+package main
 
 // Version is set during the generation process.
 const Version = "{{.Version}}"
-
-func main() {
-	fmt.Printf("%s version %s\n", "` + detectBinaryName(modulePath) + `", Version)
-}
 `
 	absPath := filepath.Join(targetDir, tmplPath)
 	if err := os.MkdirAll(filepath.Dir(absPath), 0o755); err != nil {

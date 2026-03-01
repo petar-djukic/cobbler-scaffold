@@ -338,8 +338,8 @@ func TestScaffoldSeedTemplate_CreatesFile(t *testing.T) {
 	if !strings.Contains(content, "{{.Version}}") {
 		t.Error("template missing Version placeholder")
 	}
-	if !strings.Contains(content, "repo") {
-		t.Error("template missing binary name derived from module")
+	if strings.Contains(content, "func main") {
+		t.Error("template must not contain func main() — version.go is constants-only")
 	}
 }
 
