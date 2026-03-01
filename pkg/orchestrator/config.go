@@ -98,6 +98,13 @@ type GenerationConfig struct {
 	// CleanupDirs lists directories to remove after generation stop or reset.
 	// Empty by default.
 	CleanupDirs []string `yaml:"cleanup_dirs"`
+
+	// PreserveSources disables Go source deletion and go.mod reinitialization
+	// during generator:start and generator:stop. Set to true for library repos
+	// where the Go source is the product rather than the generated output.
+	// Default false; all existing behaviour is unchanged when false.
+	// See prd002 R10.
+	PreserveSources bool `yaml:"preserve_sources"`
 }
 
 // CobblerConfig holds settings for the measure and stitch workflows.

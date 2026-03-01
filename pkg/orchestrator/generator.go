@@ -204,10 +204,16 @@ func (o *Orchestrator) GeneratorStart() error {
 		return fmt.Errorf("recording base branch: %w", err)
 	}
 
-	// Reset Go sources and reinitialize module.
-	logf("generator:start: resetting Go sources")
-	if err := o.resetGoSources(genName); err != nil {
-		return fmt.Errorf("resetting Go sources: %w", err)
+	// Reset Go sources and reinitialize module unless preserve_sources is set.
+	// Library repos (e.g. cobbler-scaffold itself) set preserve_sources: true so
+	// generator:start does not destroy the library code. See prd002 R10.1.
+	if o.cfg.Generation.PreserveSources {
+		logf("generator:start: preserve_sources=true, skipping Go source reset")
+	} else {
+		logf("generator:start: resetting Go sources")
+		if err := o.resetGoSources(genName); err != nil {
+			return fmt.Errorf("resetting Go sources: %w", err)
+		}
 	}
 
 	// Squash intermediate commits into one clean commit.
@@ -216,7 +222,12 @@ func (o *Orchestrator) GeneratorStart() error {
 		return fmt.Errorf("squashing start commits: %w", err)
 	}
 	_ = gitStageAll() // best-effort; commit below will catch nothing-to-commit
-	msg := fmt.Sprintf("Start generation: %s\n\nBase branch: %s. Delete Go files, reinitialize module.\nTagged previous state as %s.", genName, baseBranch, genName)
+	var msg string
+	if o.cfg.Generation.PreserveSources {
+		msg = fmt.Sprintf("Start generation: %s\n\nBase branch: %s. Sources preserved (preserve_sources=true).\nTagged previous state as %s.", genName, baseBranch, genName)
+	} else {
+		msg = fmt.Sprintf("Start generation: %s\n\nBase branch: %s. Delete Go files, reinitialize module.\nTagged previous state as %s.", genName, baseBranch, genName)
+	}
 	if err := gitCommit(msg); err != nil {
 		return fmt.Errorf("committing clean state: %w", err)
 	}
@@ -322,12 +333,23 @@ func (o *Orchestrator) GeneratorStop() error {
 // mergeGeneration resets Go sources, commits the clean state, merges the
 // generation branch into the base branch, tags the result, resets the base
 // branch to specs-only, and deletes the generation branch.
+// When preserve_sources is true the pre-merge source reset and the
+// post-tag cleanGoSources call are both skipped (prd002 R10.2).
 func (o *Orchestrator) mergeGeneration(branch, baseBranch string) error {
-	logf("generator:stop: resetting Go sources on %s", baseBranch)
-	_ = o.resetGoSources(branch) // best-effort; merge will overwrite these files
+	if o.cfg.Generation.PreserveSources {
+		logf("generator:stop: preserve_sources=true, skipping pre-merge Go source reset on %s", baseBranch)
+	} else {
+		logf("generator:stop: resetting Go sources on %s", baseBranch)
+		_ = o.resetGoSources(branch) // best-effort; merge will overwrite these files
+	}
 
 	_ = gitStageAll() // best-effort; commit below handles empty index
-	prepareMsg := fmt.Sprintf("Prepare %s for generation merge: delete Go code\n\nDocumentation preserved for merge. Code will be replaced by %s.", baseBranch, branch)
+	var prepareMsg string
+	if o.cfg.Generation.PreserveSources {
+		prepareMsg = fmt.Sprintf("Prepare %s for generation merge (preserve_sources)\n\nSources preserved. Merging %s.", baseBranch, branch)
+	} else {
+		prepareMsg = fmt.Sprintf("Prepare %s for generation merge: delete Go code\n\nDocumentation preserved for merge. Code will be replaced by %s.", baseBranch, branch)
+	}
 	if err := gitCommitAllowEmpty(prepareMsg); err != nil {
 		return fmt.Errorf("committing prepare step: %w", err)
 	}
@@ -383,8 +405,13 @@ func (o *Orchestrator) mergeGeneration(branch, baseBranch string) error {
 
 	// Reset base branch to specs-only after v1 tag preserves the code (prd002 R5.10, R5.11).
 	// Use cleanGoSources (not resetGoSources) to avoid re-seeding files like version.go.
-	logf("generator:stop: resetting %s to specs-only", baseBranch)
-	o.cleanGoSources()
+	// Skip when preserve_sources is true — library repos keep their Go source (prd002 R10.2).
+	if o.cfg.Generation.PreserveSources {
+		logf("generator:stop: preserve_sources=true, skipping post-tag source reset on %s", baseBranch)
+	} else {
+		logf("generator:stop: resetting %s to specs-only", baseBranch)
+		o.cleanGoSources()
+	}
 	if hdir := o.historyDir(); hdir != "" {
 		if err := os.RemoveAll(hdir); err != nil {
 			logf("generator:stop: warning removing history dir: %v", err)

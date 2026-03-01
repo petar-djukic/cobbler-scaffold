@@ -31,6 +31,7 @@ generation:
     cycles: 0
     branch: ""
     cleanup_dirs: []
+    preserve_sources: true
 cobbler:
     dir: .cobbler/
     issues_repo: petar-djukic/cobbler-scaffold

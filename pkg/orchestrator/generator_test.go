@@ -794,6 +794,48 @@ func TestGeneratorStart_DirtyWorkingTree(t *testing.T) {
 	}
 }
 
+// TestGeneratorStart_PreserveSources verifies that with PreserveSources=true,
+// GeneratorStart does not delete existing .go files (prd002 R10.1).
+// This test MUST NOT call t.Parallel() because it uses initTestGitRepo / os.Chdir.
+func TestGeneratorStart_PreserveSources(t *testing.T) {
+	dir := initTestGitRepo(t)
+
+	// Create a Go source file that must survive GeneratorStart.
+	goFile := filepath.Join(dir, "pkg", "foo.go")
+	if err := os.MkdirAll(filepath.Dir(goFile), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(goFile, []byte("package foo\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Stage and commit so the working tree is clean.
+	for _, args := range [][]string{
+		{"git", "add", "."},
+		{"git", "commit", "-m", "add foo.go"},
+	} {
+		if out, err := exec.Command(args[0], args[1:]...).CombinedOutput(); err != nil {
+			t.Fatalf("%v: %v\n%s", args, err, out)
+		}
+	}
+
+	o := &Orchestrator{cfg: Config{
+		Generation: GenerationConfig{
+			Prefix:          "generation-",
+			PreserveSources: true,
+		},
+		Project: ProjectConfig{MagefilesDir: "magefiles"},
+		Cobbler: CobblerConfig{Dir: ".cobbler/"},
+	}}
+
+	if err := o.GeneratorStart(); err != nil {
+		t.Fatalf("GeneratorStart() error = %v", err)
+	}
+
+	if _, err := os.Stat(goFile); os.IsNotExist(err) {
+		t.Error("GeneratorStart() deleted Go source file; want file preserved when PreserveSources=true")
+	}
+}
+
 // --- GeneratorSwitch validation (git, NOT parallel) ---
 
 func TestGeneratorSwitch_NoBranchConfigured(t *testing.T) {
