@@ -221,14 +221,16 @@ func (o *Orchestrator) GeneratorStart() error {
 	if err := gitResetSoft(branchSHA, "."); err != nil {
 		return fmt.Errorf("squashing start commits: %w", err)
 	}
-	_ = gitStageAll(".") // best-effort; commit below will catch nothing-to-commit
+	_ = gitStageAll(".")
 	var msg string
 	if o.cfg.Generation.PreserveSources {
 		msg = fmt.Sprintf("Start generation: %s\n\nBase branch: %s. Sources preserved (preserve_sources=true).\nTagged previous state as %s.", genName, baseBranch, genName)
 	} else {
 		msg = fmt.Sprintf("Start generation: %s\n\nBase branch: %s. Delete Go files, reinitialize module.\nTagged previous state as %s.", genName, baseBranch, genName)
 	}
-	if err := gitCommit(msg, "."); err != nil {
+	// Use allow-empty because a specs-only repo may have no Go files
+	// to delete, leaving no changes to commit after source reset.
+	if err := gitCommitAllowEmpty(msg, "."); err != nil {
 		return fmt.Errorf("committing clean state: %w", err)
 	}
 

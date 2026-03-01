@@ -158,6 +158,30 @@ func (o *Orchestrator) Scaffold(targetDir, orchestratorRoot string) error {
 		}
 	} else {
 		logf("scaffold: %s already exists, skipping", DefaultConfigFile)
+
+		// When configuration.yaml already exists but was written by a
+		// previous scaffold (or generation), the seed_files entry may
+		// reference a template that does not exist on disk — e.g. a
+		// specs-only tag that deleted magefiles/version.go.tmpl. Read
+		// the existing config (raw YAML, not LoadConfig which would
+		// fail on the missing file) and re-create any absent templates.
+		existData, err := os.ReadFile(cfgPath)
+		if err == nil {
+			var existCfg Config
+			if err := yaml.Unmarshal(existData, &existCfg); err == nil {
+				if existCfg.Project.MainPackage != "" {
+					for _, src := range existCfg.Project.SeedFiles {
+						absFile := filepath.Join(targetDir, src)
+						if _, err := os.Stat(absFile); os.IsNotExist(err) {
+							logf("scaffold: re-creating missing seed template %s", src)
+							if _, _, err := scaffoldSeedTemplate(targetDir, modulePath, existCfg.Project.MainPackage); err != nil {
+								return fmt.Errorf("re-creating seed template: %w", err)
+							}
+						}
+					}
+				}
+			}
+		}
 	}
 
 	// 4. Wire magefiles/go.mod.
@@ -419,6 +443,32 @@ func writeScaffoldConfig(path string, cfg Config) error {
 	return os.WriteFile(path, append([]byte(header), data...), 0o644)
 }
 
+// clearGenerationBranch reads configuration.yaml in repoDir, clears the
+// generation.branch field, and writes the file back. This prevents stale
+// branch references from a module's own generation cycle from interfering
+// with test repos that start from a clean git state.
+func clearGenerationBranch(repoDir string) error {
+	cfgPath := filepath.Join(repoDir, DefaultConfigFile)
+	data, err := os.ReadFile(cfgPath)
+	if err != nil {
+		return err
+	}
+	var cfg Config
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return err
+	}
+	if cfg.Generation.Branch == "" {
+		return nil
+	}
+	logf("prepareTestRepo: clearing stale generation.branch=%s", cfg.Generation.Branch)
+	cfg.Generation.Branch = ""
+	out, err := yaml.Marshal(&cfg)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(cfgPath, out, 0o644)
+}
+
 // scaffoldMageGoMod ensures magefiles/go.mod exists with the orchestrator
 // dependency. If a published version of the orchestrator module is available
 // on the Go module proxy, it is required directly. Otherwise the function
@@ -657,6 +707,14 @@ func (o *Orchestrator) PrepareTestRepo(module, version, orchestratorRoot string)
 			logf("prepareTestRepo: removing artifact %s", artifact)
 			os.RemoveAll(p)
 		}
+	}
+
+	// Clear stale generation branch from configuration.yaml. The
+	// upstream repo may have a generation.branch value left over
+	// from its own generation cycle; that branch does not exist in
+	// the fresh test repo and causes generator:stop to fail.
+	if err := clearGenerationBranch(repoDir); err != nil {
+		logf("prepareTestRepo: warning: could not clear generation branch: %v", err)
 	}
 
 	// Initialize a fresh git repository.
