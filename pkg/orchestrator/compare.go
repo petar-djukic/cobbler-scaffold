@@ -123,11 +123,15 @@ func (r *GitTagResolver) ensureBuild() error {
 
 func (r *GitTagResolver) cleanup() {
 	if r.wtDir != "" {
-		_ = gitWorktreeRemove(r.wtDir)
+		if err := gitWorktreeRemove(r.wtDir); err != nil {
+			logf("compare: warning: removing worktree %s: %v", r.wtDir, err)
+		}
 		r.wtDir = ""
 	}
 	if r.buildDir != "" {
-		os.RemoveAll(r.buildDir)
+		if err := os.RemoveAll(r.buildDir); err != nil {
+			logf("compare: warning: removing build dir %s: %v", r.buildDir, err)
+		}
 		r.buildDir = ""
 	}
 }

@@ -99,27 +99,40 @@ func parseOneOutcomeBlock(block string) *OutcomeRecord {
 			continue
 		}
 		val = strings.TrimSpace(val)
+		parseI := func(dest *int) {
+			n, err := strconv.Atoi(val)
+			if err != nil {
+				logf("outcomes: warning: parsing %s=%q: %v", key, val, err)
+				return
+			}
+			*dest = n
+		}
 		switch key {
 		case "Tokens-Input":
-			rec.TokensInput, _ = strconv.Atoi(val)
+			parseI(&rec.TokensInput)
 		case "Tokens-Output":
-			rec.TokensOutput, _ = strconv.Atoi(val)
+			parseI(&rec.TokensOutput)
 		case "Tokens-Cache-Creation":
-			rec.TokensCacheCreation, _ = strconv.Atoi(val)
+			parseI(&rec.TokensCacheCreation)
 		case "Tokens-Cache-Read":
-			rec.TokensCacheRead, _ = strconv.Atoi(val)
+			parseI(&rec.TokensCacheRead)
 		case "Tokens-Cost-USD":
-			rec.TokensCostUSD, _ = strconv.ParseFloat(val, 64)
+			f, err := strconv.ParseFloat(val, 64)
+			if err != nil {
+				logf("outcomes: warning: parsing %s=%q: %v", key, val, err)
+			} else {
+				rec.TokensCostUSD = f
+			}
 		case "Loc-Prod-Before":
-			rec.LocProdBefore, _ = strconv.Atoi(val)
+			parseI(&rec.LocProdBefore)
 		case "Loc-Prod-After":
-			rec.LocProdAfter, _ = strconv.Atoi(val)
+			parseI(&rec.LocProdAfter)
 		case "Loc-Test-Before":
-			rec.LocTestBefore, _ = strconv.Atoi(val)
+			parseI(&rec.LocTestBefore)
 		case "Loc-Test-After":
-			rec.LocTestAfter, _ = strconv.Atoi(val)
+			parseI(&rec.LocTestAfter)
 		case "Duration-Seconds":
-			rec.DurationSeconds, _ = strconv.Atoi(val)
+			parseI(&rec.DurationSeconds)
 		}
 	}
 	return rec

@@ -223,17 +223,20 @@ func createCobblerIssue(repo, generation string, issue proposedIssue) (int, erro
 }
 
 // listOpenCobblerIssues returns all open GitHub issues for a generation.
+// It uses the REST API endpoint (gh api repos/.../issues) rather than
+// gh issue list, because gh issue list uses GitHub's search API which is
+// eventually consistent and can return stale results immediately after
+// label changes. The REST endpoint reads directly from the database.
 func listOpenCobblerIssues(repo, generation string) ([]cobblerIssue, error) {
 	label := cobblerGenLabel(generation)
-	out, err := exec.Command(binGh, "issue", "list",
-		"--repo", repo,
-		"--label", label,
-		"--state", "open",
-		"--json", "number,title,body,labels",
-		"--limit", "200",
+	out, err := exec.Command(binGh, "api",
+		fmt.Sprintf("repos/%s/issues", repo),
+		"-f", "state=open",
+		"-f", "labels="+label,
+		"-f", "per_page=100",
 	).Output()
 	if err != nil {
-		return nil, fmt.Errorf("gh issue list: %w", err)
+		return nil, fmt.Errorf("gh api repos issues: %w", err)
 	}
 
 	var raw []struct {
@@ -245,7 +248,7 @@ func listOpenCobblerIssues(repo, generation string) ([]cobblerIssue, error) {
 		} `json:"labels"`
 	}
 	if err := json.Unmarshal(out, &raw); err != nil {
-		return nil, fmt.Errorf("parsing gh issue list: %w", err)
+		return nil, fmt.Errorf("parsing gh api repos issues: %w", err)
 	}
 
 	issues := make([]cobblerIssue, 0, len(raw))

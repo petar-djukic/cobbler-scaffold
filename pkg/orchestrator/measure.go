@@ -146,7 +146,12 @@ func (o *Orchestrator) RunMeasure() error {
 		// Refresh existing issues from GitHub before each call (except the first,
 		// where we already have them).
 		if i > 0 {
-			existingIssues, _ = listActiveIssuesContext(repo, generation)
+			refreshed, refreshErr := listActiveIssuesContext(repo, generation)
+			if refreshErr != nil {
+				logf("measure: warning: refreshing issue list: %v", refreshErr)
+			} else {
+				existingIssues = refreshed
+			}
 		}
 
 		var createdIDs []string

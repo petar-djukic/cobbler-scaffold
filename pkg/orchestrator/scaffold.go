@@ -497,7 +497,11 @@ func latestPublishedVersion(module string) string {
 	if err != nil {
 		return ""
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() {
+		if err := os.RemoveAll(tmpDir); err != nil {
+			logf("scaffold: warning: removing temp dir: %v", err)
+		}
+	}()
 
 	initCmd := exec.Command(binGo, "mod", "init", "temp")
 	initCmd.Dir = tmpDir
@@ -565,7 +569,11 @@ func goModDownload(module, version string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("creating temp dir: %w", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() {
+		if err := os.RemoveAll(tmpDir); err != nil {
+			logf("scaffold: warning: removing temp dir: %v", err)
+		}
+	}()
 
 	initCmd := exec.Command(binGo, "mod", "init", "temp")
 	initCmd.Dir = tmpDir

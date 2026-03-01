@@ -67,17 +67,20 @@ func (o *Orchestrator) GeneratorResume() error {
 	wtBase := worktreeBasePath()
 
 	logf("resume: pruning worktrees")
-	_ = gitWorktreePrune() // best-effort cleanup of stale worktree metadata
+	if err := gitWorktreePrune(); err != nil {
+		logf("resume: warning: worktree prune: %v", err)
+	}
 
-	if _, err := os.Stat(wtBase); err == nil {
-		logf("resume: removing worktree directory %s", wtBase)
-		if err := os.RemoveAll(wtBase); err != nil {
-			logf("resume: warning removing worktree directory %s: %v", wtBase, err)
-		}
+	logf("resume: removing worktree directory %s", wtBase)
+	if err := os.RemoveAll(wtBase); err != nil {
+		logf("resume: warning: removing worktree directory %s: %v", wtBase, err)
 	}
 
 	logf("resume: recovering stale tasks")
-	ghRepo, _ := detectGitHubRepo(".", o.cfg)
+	ghRepo, err := detectGitHubRepo(".", o.cfg)
+	if err != nil {
+		logf("resume: warning: detectGitHubRepo: %v", err)
+	}
 	if err := o.recoverStaleTasks(branch, wtBase, ghRepo, branch); err != nil {
 		logf("resume: recoverStaleTasks warning: %v", err)
 	}
@@ -754,11 +757,15 @@ func (o *Orchestrator) GeneratorReset() error {
 		}
 	}
 
-	_ = gitWorktreePrune() // best-effort cleanup of stale worktree metadata
+	if err := gitWorktreePrune(); err != nil {
+		logf("generator:reset: warning: worktree prune: %v", err)
+	}
 
 	if _, err := os.Stat(wtBase); err == nil {
 		logf("generator:reset: removing worktree directory %s", wtBase)
-		os.RemoveAll(wtBase) // nolint: best-effort directory cleanup
+		if err := os.RemoveAll(wtBase); err != nil {
+			logf("generator:reset: warning: removing worktree dir: %v", err)
+		}
 	}
 
 	if len(genBranches) > 0 {

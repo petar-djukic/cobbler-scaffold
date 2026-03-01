@@ -275,6 +275,140 @@ func TestBuildStitchPrompt_RepositoryFiles(t *testing.T) {
 	}
 }
 
+// --- taskBranchName ---
+
+func TestTaskBranchName(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		base    string
+		issueID string
+		want    string
+	}{
+		{"main", "42", "task/main-42"},
+		{"develop", "100", "task/develop-100"},
+		{"generation-2026-02-28", "7", "task/generation-2026-02-28-7"},
+	}
+	for _, tt := range tests {
+		got := taskBranchName(tt.base, tt.issueID)
+		if got != tt.want {
+			t.Errorf("taskBranchName(%q, %q) = %q, want %q", tt.base, tt.issueID, got, tt.want)
+		}
+	}
+}
+
+// --- parseRequiredReading ---
+
+func TestParseRequiredReading_ValidYAML(t *testing.T) {
+	t.Parallel()
+	desc := `required_reading:
+  - pkg/orchestrator/generator.go
+  - pkg/orchestrator/stitch.go
+  - docs/ARCHITECTURE.yaml
+`
+	got := parseRequiredReading(desc)
+	if len(got) != 3 {
+		t.Errorf("parseRequiredReading() returned %d items, want 3: %v", len(got), got)
+	}
+}
+
+// --- commitWorktreeChanges ---
+
+func TestCommitWorktreeChanges_NoChanges(t *testing.T) {
+	dir := t.TempDir()
+	run := func(args ...string) {
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("setup %v: %v\n%s", args, err, out)
+		}
+	}
+	run("git", "init", "-b", "main")
+	run("git", "config", "user.email", "test@test.com")
+	run("git", "config", "user.name", "Test")
+	run("git", "config", "commit.gpgsign", "false")
+	run("git", "commit", "--allow-empty", "-m", "initial")
+
+	task := stitchTask{
+		id:          "123",
+		title:       "test task",
+		worktreeDir: dir,
+	}
+
+	if err := commitWorktreeChanges(task); err != nil {
+		t.Errorf("commitWorktreeChanges() with no changes error = %v", err)
+	}
+}
+
+func TestCommitWorktreeChanges_WithChanges(t *testing.T) {
+	dir := t.TempDir()
+	run := func(args ...string) {
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("setup %v: %v\n%s", args, err, out)
+		}
+	}
+	run("git", "init", "-b", "main")
+	run("git", "config", "user.email", "test@test.com")
+	run("git", "config", "user.name", "Test")
+	run("git", "config", "commit.gpgsign", "false")
+	run("git", "commit", "--allow-empty", "-m", "initial")
+
+	// Create a new file to stage.
+	os.WriteFile(filepath.Join(dir, "newfile.go"), []byte("package main\n"), 0o644)
+
+	task := stitchTask{
+		id:          "456",
+		title:       "add file",
+		worktreeDir: dir,
+	}
+
+	if err := commitWorktreeChanges(task); err != nil {
+		t.Fatalf("commitWorktreeChanges() with changes error = %v", err)
+	}
+
+	// Verify the commit was made by checking the log.
+	cmd := exec.Command("git", "log", "--oneline", "-1")
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("git log failed: %v", err)
+	}
+	if !strings.Contains(string(out), "Task 456: add file") {
+		t.Errorf("commit message = %q, want to contain 'Task 456: add file'", string(out))
+	}
+}
+
+// --- createWorktree ---
+
+func TestCreateWorktree_CreatesWorktreeAndBranch(t *testing.T) {
+	dir := initTestGitRepo(t)
+
+	task := stitchTask{
+		id:          "789",
+		branchName:  "task/main-789",
+		worktreeDir: filepath.Join(dir+"-worktrees", "789"),
+	}
+
+	if err := createWorktree(task); err != nil {
+		t.Fatalf("createWorktree() error = %v", err)
+	}
+	t.Cleanup(func() {
+		gitWorktreeRemove(task.worktreeDir)
+		gitDeleteBranch(task.branchName)
+	})
+
+	// Verify the worktree directory exists.
+	if _, err := os.Stat(task.worktreeDir); os.IsNotExist(err) {
+		t.Error("worktree directory should exist after createWorktree()")
+	}
+
+	// Verify the branch was created.
+	if !gitBranchExists(task.branchName) {
+		t.Errorf("branch %q should exist after createWorktree()", task.branchName)
+	}
+}
+
 func TestBuildStitchPrompt_RequiredReadingFilter(t *testing.T) {
 	// When description contains required_reading with .go paths and a
 	// worktreeDir is set, the source file filter path is exercised.

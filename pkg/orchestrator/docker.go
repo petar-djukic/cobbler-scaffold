@@ -132,7 +132,11 @@ func buildFromEmbeddedDockerfile(tags ...string) error {
 	if err != nil {
 		return fmt.Errorf("creating temp Dockerfile: %w", err)
 	}
-	defer os.Remove(tmp.Name())
+	defer func() {
+		if err := os.Remove(tmp.Name()); err != nil && !os.IsNotExist(err) {
+			logf("docker: warning: removing temp Dockerfile: %v", err)
+		}
+	}()
 
 	if _, err := tmp.WriteString(embeddedDockerfile); err != nil {
 		tmp.Close()
