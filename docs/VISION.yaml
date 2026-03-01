@@ -50,7 +50,7 @@ what_this_does: |
 why_we_build_this: |
   We build this because AI-assisted development at scale requires tooling that understands the
   development lifecycle, not just the editor. The orchestrator sits at the intersection of build
-  automation (Mage), version control (git), issue tracking (beads), and AI execution (Claude),
+  automation (Mage), version control (git), issue tracking (GitHub Issues), and AI execution (Claude),
   connecting them into a repeatable workflow.
 
   We already use this orchestrator to build Crumbs, our work-item storage system. The orchestrator
@@ -95,7 +95,7 @@ implementation_phases:
     deliverables: Start, run, resume, stop, reset, list, switch
   - phase: "03.0"
     focus: Metrics and tracking
-    deliverables: Stats collection, invocation records, LOC snapshots, beads integration
+    deliverables: Stats collection, invocation records, LOC snapshots, GitHub Issues integration
 
 risks:
   - risk: Claude produces invalid code that fails to compile
