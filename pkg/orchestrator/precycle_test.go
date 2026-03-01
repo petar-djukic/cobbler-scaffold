@@ -206,3 +206,62 @@ func TestLoadAnalysisDoc_InvalidYAML(t *testing.T) {
 		t.Errorf("expected nil for invalid YAML, got %+v", loaded)
 	}
 }
+
+// --- RunPreCycleAnalysis ---
+
+func TestRunPreCycleAnalysis_WritesFile(t *testing.T) {
+	// Not parallel: uses os.Chdir.
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	os.Chdir(dir)
+	t.Cleanup(func() { os.Chdir(orig) })
+
+	// Minimal doc set.
+	os.MkdirAll("docs/specs/product-requirements", 0o755)
+	os.MkdirAll("docs/specs/use-cases", 0o755)
+	os.MkdirAll("docs/specs/test-suites", 0o755)
+	os.WriteFile("docs/road-map.yaml", []byte("releases:\n  - id: rel01.0\n    use_cases:\n      - id: rel01.0-uc001-init\n        summary: Init\n        status: done\n"), 0o644)
+	os.WriteFile("docs/specs/use-cases/rel01.0-uc001-init.yaml",
+		[]byte("id: rel01.0-uc001-init\ntitle: Init\ntouchpoints:\n  - T1: prd001-core R1\n"), 0o644)
+	os.WriteFile("docs/specs/product-requirements/prd001-core.yaml",
+		[]byte("id: prd001-core\ntitle: Core\nrequirements:\n  - id: R1\n    title: Req 1\n"), 0o644)
+	os.WriteFile("docs/specs/test-suites/test-rel01.0.yaml",
+		[]byte("id: test-rel01.0\ntitle: Tests\nrelease: rel01.0\ntraces:\n  - rel01.0-uc001-init\n"), 0o644)
+
+	scratchDir := filepath.Join(dir, ".cobbler")
+	o := &Orchestrator{cfg: Config{Cobbler: CobblerConfig{Dir: scratchDir}}}
+	o.RunPreCycleAnalysis()
+
+	outPath := filepath.Join(scratchDir, analysisFileName)
+	if _, err := os.Stat(outPath); os.IsNotExist(err) {
+		t.Fatalf("expected %s to exist after RunPreCycleAnalysis", analysisFileName)
+	}
+	data, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	content := string(data)
+	if !strings.Contains(content, "consistency_errors") {
+		t.Errorf("output missing consistency_errors field, got:\n%s", content)
+	}
+}
+
+func TestRunPreCycleAnalysis_NoRoadmap(t *testing.T) {
+	// Not parallel: uses os.Chdir.
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	os.Chdir(dir)
+	t.Cleanup(func() { os.Chdir(orig) })
+
+	// No docs at all — collectAnalyzeResult will fail but RunPreCycleAnalysis
+	// should not panic.
+	scratchDir := filepath.Join(dir, ".cobbler")
+	o := &Orchestrator{cfg: Config{Cobbler: CobblerConfig{Dir: scratchDir}}}
+	o.RunPreCycleAnalysis()
+
+	// Should still write a file even if analysis had errors.
+	outPath := filepath.Join(scratchDir, analysisFileName)
+	if _, err := os.Stat(outPath); os.IsNotExist(err) {
+		t.Fatalf("expected %s even with empty docs", analysisFileName)
+	}
+}

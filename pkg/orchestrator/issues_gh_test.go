@@ -5,6 +5,7 @@ package orchestrator
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -224,4 +225,34 @@ func TestDAGPromotionDepClosed(t *testing.T) {
 // writeFileForTest is a test helper that writes content to path.
 func writeFileForTest(path, content string) error {
 	return os.WriteFile(path, []byte(content), 0o644)
+}
+
+// --- goModModulePath ---
+
+func TestGoModModulePath_ValidGoMod(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module github.com/org/repo\n\ngo 1.23\n"), 0o644)
+	got := goModModulePath(dir)
+	if got != "github.com/org/repo" {
+		t.Errorf("goModModulePath = %q, want github.com/org/repo", got)
+	}
+}
+
+func TestGoModModulePath_MissingFile(t *testing.T) {
+	t.Parallel()
+	got := goModModulePath(t.TempDir())
+	if got != "" {
+		t.Errorf("goModModulePath = %q, want empty for missing go.mod", got)
+	}
+}
+
+func TestGoModModulePath_NoModuleLine(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "go.mod"), []byte("go 1.23\n"), 0o644)
+	got := goModModulePath(dir)
+	if got != "" {
+		t.Errorf("goModModulePath = %q, want empty for go.mod without module line", got)
+	}
 }

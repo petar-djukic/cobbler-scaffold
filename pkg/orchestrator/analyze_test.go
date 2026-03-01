@@ -1035,3 +1035,54 @@ func TestPrintReport_AllSections(t *testing.T) {
 		t.Error("should not show success message when issues exist")
 	}
 }
+
+// --- Analyze (end-to-end through collectAnalyzeResult + printReport) ---
+
+func TestAnalyze_WithIssues(t *testing.T) {
+	// Not parallel: uses os.Chdir.
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	os.Chdir(dir)
+	t.Cleanup(func() { os.Chdir(orig) })
+
+	// PRD with no use cases referencing it → orphaned.
+	os.MkdirAll("docs/specs/product-requirements", 0o755)
+	os.MkdirAll("docs/specs/use-cases", 0o755)
+	os.MkdirAll("docs/specs/test-suites", 0o755)
+	os.WriteFile("docs/road-map.yaml", []byte("releases: []\n"), 0o644)
+	os.WriteFile("docs/specs/product-requirements/prd001-orphan.yaml",
+		[]byte("id: prd001-orphan\ntitle: Orphan\nrequirements:\n  - id: R1\n    title: Req 1\n"), 0o644)
+
+	o := &Orchestrator{cfg: Config{}}
+
+	out := captureStdout(t, func() {
+		err := o.Analyze()
+		if err == nil {
+			t.Error("expected error for orphaned PRDs")
+		}
+	})
+	if !strings.Contains(out, "Orphaned PRDs") {
+		t.Errorf("expected orphaned PRDs section, got:\n%s", out)
+	}
+}
+
+func TestAnalyze_EmptyDocs(t *testing.T) {
+	// Not parallel: uses os.Chdir.
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	os.Chdir(dir)
+	t.Cleanup(func() { os.Chdir(orig) })
+
+	// No docs at all — should return an error from collectAnalyzeResult
+	// but not panic.
+	os.MkdirAll("docs/specs/product-requirements", 0o755)
+	os.MkdirAll("docs/specs/use-cases", 0o755)
+	os.MkdirAll("docs/specs/test-suites", 0o755)
+
+	o := &Orchestrator{cfg: Config{}}
+	captureStdout(t, func() {
+		// We don't check the error — just verify it runs without panicking.
+		// Without a road-map, it can't find releases.
+		o.Analyze()
+	})
+}

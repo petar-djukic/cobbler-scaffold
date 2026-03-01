@@ -4,8 +4,10 @@
 package orchestrator
 
 import (
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -187,5 +189,80 @@ func TestCountWordsInFile_MissingFile(t *testing.T) {
 	_, err := countWordsInFile("/nonexistent/file.txt")
 	if err == nil {
 		t.Error("countWordsInFile(missing) should return error")
+	}
+}
+
+// --- Stats ---
+
+func TestStats_PrintsYAML(t *testing.T) {
+	// Not parallel: uses os.Chdir.
+	dir := t.TempDir()
+	origDir, _ := os.Getwd()
+	os.Chdir(dir)
+	t.Cleanup(func() { os.Chdir(origDir) })
+
+	// Create minimal Go files.
+	os.MkdirAll("pkg", 0o755)
+	os.WriteFile("pkg/main.go", []byte("package main\n\nfunc main() {}\n"), 0o644)
+	os.WriteFile("pkg/main_test.go", []byte("package main\n\nfunc TestX() {}\n"), 0o644)
+
+	o := &Orchestrator{cfg: Config{}}
+	o.cfg.applyDefaults()
+
+	// Capture stdout.
+	origStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	err := o.Stats()
+
+	w.Close()
+	os.Stdout = origStdout
+	out, _ := io.ReadAll(r)
+
+	if err != nil {
+		t.Fatalf("Stats: %v", err)
+	}
+	output := string(out)
+	if !strings.Contains(output, "go_loc_prod:") {
+		t.Errorf("output missing go_loc_prod, got:\n%s", output)
+	}
+	if !strings.Contains(output, "go_loc_test:") {
+		t.Errorf("output missing go_loc_test, got:\n%s", output)
+	}
+}
+
+func TestCollectStats_CountsSpecWords(t *testing.T) {
+	// Not parallel: uses os.Chdir.
+	dir := t.TempDir()
+	origDir, _ := os.Getwd()
+	os.Chdir(dir)
+	t.Cleanup(func() { os.Chdir(origDir) })
+
+	// Go file.
+	os.WriteFile("main.go", []byte("package main\n"), 0o644)
+	// Spec files with known content.
+	os.MkdirAll("docs/specs/product-requirements", 0o755)
+	os.MkdirAll("docs/specs/use-cases", 0o755)
+	os.WriteFile("docs/specs/product-requirements/prd001-test.yaml",
+		[]byte("id: prd001-test\ntitle: three words here\n"), 0o644)
+	os.WriteFile("docs/specs/use-cases/rel01.0-uc001-init.yaml",
+		[]byte("id: uc001\ntitle: two words\n"), 0o644)
+
+	o := &Orchestrator{cfg: Config{}}
+	o.cfg.applyDefaults()
+
+	rec, err := o.CollectStats()
+	if err != nil {
+		t.Fatalf("CollectStats: %v", err)
+	}
+	if rec.GoProdLOC != 1 {
+		t.Errorf("GoProdLOC = %d, want 1", rec.GoProdLOC)
+	}
+	if rec.SpecWords["prd"] == 0 {
+		t.Error("expected non-zero PRD word count")
+	}
+	if rec.SpecWords["use_case"] == 0 {
+		t.Error("expected non-zero use_case word count")
 	}
 }

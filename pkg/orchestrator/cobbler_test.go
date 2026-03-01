@@ -1151,3 +1151,28 @@ func TestLogConfig_NoUserPrompt(t *testing.T) {
 	// When UserPrompt is empty, the second logf call is skipped.
 	o.logConfig("stitch")
 }
+
+// --- CobblerReset ---
+
+func TestCobblerReset_RemovesDir(t *testing.T) {
+	t.Parallel()
+	dir := filepath.Join(t.TempDir(), ".cobbler")
+	os.MkdirAll(filepath.Join(dir, "sub"), 0o755)
+	os.WriteFile(filepath.Join(dir, "sub", "file.txt"), []byte("data"), 0o644)
+
+	o := &Orchestrator{cfg: Config{Cobbler: CobblerConfig{Dir: dir}}}
+	if err := o.CobblerReset(); err != nil {
+		t.Fatalf("CobblerReset: %v", err)
+	}
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Error("expected cobbler dir to be removed")
+	}
+}
+
+func TestCobblerReset_NonExistentDir(t *testing.T) {
+	t.Parallel()
+	o := &Orchestrator{cfg: Config{Cobbler: CobblerConfig{Dir: filepath.Join(t.TempDir(), "nope")}}}
+	if err := o.CobblerReset(); err != nil {
+		t.Fatalf("CobblerReset on nonexistent dir: %v", err)
+	}
+}

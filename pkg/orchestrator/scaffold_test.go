@@ -6,6 +6,7 @@ package orchestrator
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"gopkg.in/yaml.v3"
@@ -276,5 +277,144 @@ func TestWriteScaffoldConfig_WritesValidYAML(t *testing.T) {
 	}
 	if parsed.Cobbler.StitchPrompt != "docs/prompts/stitch.yaml" {
 		t.Errorf("StitchPrompt round-trip: got %q", parsed.Cobbler.StitchPrompt)
+	}
+}
+
+// --- copyFile ---
+
+func TestCopyFile_Success(t *testing.T) {
+	t.Parallel()
+	src := filepath.Join(t.TempDir(), "src.txt")
+	os.WriteFile(src, []byte("hello"), 0o644)
+
+	dst := filepath.Join(t.TempDir(), "sub", "dir", "dst.txt")
+	if err := copyFile(src, dst); err != nil {
+		t.Fatalf("copyFile: %v", err)
+	}
+
+	got, err := os.ReadFile(dst)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if string(got) != "hello" {
+		t.Errorf("content = %q, want hello", got)
+	}
+}
+
+func TestCopyFile_MissingSrc(t *testing.T) {
+	t.Parallel()
+	dst := filepath.Join(t.TempDir(), "dst.txt")
+	if err := copyFile("/nonexistent/file.txt", dst); err == nil {
+		t.Error("expected error for missing source")
+	}
+}
+
+// --- scaffoldSeedTemplate ---
+
+func TestScaffoldSeedTemplate_CreatesFile(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	destPath, tmplPath, err := scaffoldSeedTemplate(dir, "github.com/org/repo", "github.com/org/repo/cmd/app")
+	if err != nil {
+		t.Fatalf("scaffoldSeedTemplate: %v", err)
+	}
+
+	if destPath != "cmd/app/version.go" {
+		t.Errorf("destPath = %q, want cmd/app/version.go", destPath)
+	}
+	if tmplPath != "magefiles/version.go.tmpl" {
+		t.Errorf("tmplPath = %q, want magefiles/version.go.tmpl", tmplPath)
+	}
+
+	absPath := filepath.Join(dir, tmplPath)
+	data, err := os.ReadFile(absPath)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	content := string(data)
+	if !strings.Contains(content, "package main") {
+		t.Error("template missing 'package main'")
+	}
+	if !strings.Contains(content, "{{.Version}}") {
+		t.Error("template missing Version placeholder")
+	}
+	if !strings.Contains(content, "repo") {
+		t.Error("template missing binary name derived from module")
+	}
+}
+
+func TestScaffoldSeedTemplate_RootMainPkg(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	destPath, _, err := scaffoldSeedTemplate(dir, "github.com/org/tool", "github.com/org/tool")
+	if err != nil {
+		t.Fatalf("scaffoldSeedTemplate: %v", err)
+	}
+	if destPath != "version.go" {
+		t.Errorf("destPath = %q, want version.go for root main pkg", destPath)
+	}
+}
+
+// --- copyDir ---
+
+func TestCopyDir_CopiesRecursively(t *testing.T) {
+	t.Parallel()
+	src := t.TempDir()
+	os.MkdirAll(filepath.Join(src, "a", "b"), 0o755)
+	os.WriteFile(filepath.Join(src, "root.txt"), []byte("root"), 0o644)
+	os.WriteFile(filepath.Join(src, "a", "mid.txt"), []byte("mid"), 0o644)
+	os.WriteFile(filepath.Join(src, "a", "b", "deep.txt"), []byte("deep"), 0o644)
+
+	dst := filepath.Join(t.TempDir(), "out")
+	if err := copyDir(src, dst); err != nil {
+		t.Fatalf("copyDir: %v", err)
+	}
+
+	for _, rel := range []string{"root.txt", "a/mid.txt", "a/b/deep.txt"} {
+		path := filepath.Join(dst, rel)
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			t.Errorf("expected %s to exist", rel)
+		}
+	}
+	got, _ := os.ReadFile(filepath.Join(dst, "a", "b", "deep.txt"))
+	if string(got) != "deep" {
+		t.Errorf("deep.txt content = %q, want deep", got)
+	}
+}
+
+func TestCopyDir_EmptySrc(t *testing.T) {
+	t.Parallel()
+	src := t.TempDir()
+	dst := filepath.Join(t.TempDir(), "out")
+	if err := copyDir(src, dst); err != nil {
+		t.Fatalf("copyDir: %v", err)
+	}
+	entries, _ := os.ReadDir(dst)
+	if len(entries) != 0 {
+		t.Errorf("expected empty dst, got %d entries", len(entries))
+	}
+}
+
+func TestCopyDir_PreservesContent(t *testing.T) {
+	t.Parallel()
+	src := t.TempDir()
+	// Multiple files with varied content.
+	os.WriteFile(filepath.Join(src, "a.txt"), []byte("alpha"), 0o644)
+	os.WriteFile(filepath.Join(src, "b.txt"), []byte("beta"), 0o644)
+
+	dst := filepath.Join(t.TempDir(), "out")
+	if err := copyDir(src, dst); err != nil {
+		t.Fatalf("copyDir: %v", err)
+	}
+	for _, tc := range []struct{ name, want string }{
+		{"a.txt", "alpha"},
+		{"b.txt", "beta"},
+	} {
+		got, err := os.ReadFile(filepath.Join(dst, tc.name))
+		if err != nil {
+			t.Errorf("ReadFile(%s): %v", tc.name, err)
+		} else if string(got) != tc.want {
+			t.Errorf("%s = %q, want %q", tc.name, got, tc.want)
+		}
 	}
 }

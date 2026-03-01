@@ -983,6 +983,52 @@ func TestGeneratorInit_CreatesConfigFile(t *testing.T) {
 	}
 }
 
+// --- cleanGoSources ---
+
+func TestCleanGoSources_RemovesGoFiles(t *testing.T) {
+	// Not parallel: uses os.Chdir.
+	dir := t.TempDir()
+	origDir, _ := os.Getwd()
+	os.Chdir(dir)
+	t.Cleanup(func() { os.Chdir(origDir) })
+
+	// Create Go files and a non-Go file.
+	os.MkdirAll("pkg/sub", 0o755)
+	os.MkdirAll("magefiles", 0o755)
+	os.MkdirAll("bin", 0o755)
+	os.WriteFile("main.go", []byte("package main"), 0o644)
+	os.WriteFile("pkg/sub/lib.go", []byte("package sub"), 0o644)
+	os.WriteFile("pkg/sub/lib_test.go", []byte("package sub"), 0o644)
+	os.WriteFile("pkg/sub/README.md", []byte("# readme"), 0o644)
+	os.WriteFile("magefiles/build.go", []byte("package main"), 0o644) // should be preserved
+	os.WriteFile("bin/binary", []byte("binary"), 0o644)
+
+	o := &Orchestrator{cfg: Config{}}
+	o.cfg.applyDefaults()
+	o.cfg.Project.GoSourceDirs = []string{"pkg"}
+	o.cleanGoSources()
+
+	// Go files outside magefiles/ should be deleted.
+	if _, err := os.Stat("main.go"); !os.IsNotExist(err) {
+		t.Error("main.go should be deleted")
+	}
+	if _, err := os.Stat("pkg/sub/lib.go"); !os.IsNotExist(err) {
+		t.Error("pkg/sub/lib.go should be deleted")
+	}
+	// magefiles/ should be preserved.
+	if _, err := os.Stat("magefiles/build.go"); os.IsNotExist(err) {
+		t.Error("magefiles/build.go should be preserved")
+	}
+	// Non-Go files should remain.
+	if _, err := os.Stat("pkg/sub/README.md"); os.IsNotExist(err) {
+		t.Error("README.md should be preserved")
+	}
+	// Binary dir should be removed.
+	if _, err := os.Stat("bin"); !os.IsNotExist(err) {
+		t.Error("bin/ should be removed")
+	}
+}
+
 // --- Init (pure, parallelizable) ---
 
 func TestInit_NoOp(t *testing.T) {
