@@ -262,6 +262,14 @@ func TestTruncate_Long(t *testing.T) {
 	}
 }
 
+// --- noop ---
+
+func TestNoop(t *testing.T) {
+	t.Parallel()
+	// noop should not panic.
+	noop()
+}
+
 // createTestBinary writes a shell script to a temp file and returns its path.
 func createTestBinary(t *testing.T, script string) string {
 	t.Helper()

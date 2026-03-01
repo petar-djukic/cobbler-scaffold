@@ -4,6 +4,7 @@
 package orchestrator
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -941,4 +943,211 @@ func TestAppendOutcomeTrailers_AmendsLastCommit(t *testing.T) {
 			t.Errorf("trailer output missing key %q\ngot:\n%s", wantKey, trailerStr)
 		}
 	}
+}
+
+// --- newProgressWriter ---
+
+func TestNewProgressWriter(t *testing.T) {
+	t.Parallel()
+	var buf bytes.Buffer
+	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	pw := newProgressWriter(&buf, start)
+	if pw == nil {
+		t.Fatal("newProgressWriter returned nil")
+	}
+	if pw.buf != &buf {
+		t.Error("buf field not set")
+	}
+	if pw.start != start {
+		t.Errorf("start = %v, want %v", pw.start, start)
+	}
+	if pw.turn != 0 {
+		t.Errorf("turn = %d, want 0", pw.turn)
+	}
+	if pw.gotFirst {
+		t.Error("gotFirst should be false initially")
+	}
+}
+
+// --- progressWriter.Write ---
+
+func TestProgressWriter_Write_PassesThrough(t *testing.T) {
+	t.Parallel()
+	var buf bytes.Buffer
+	pw := newProgressWriter(&buf, time.Now())
+	data := []byte(`{"type":"system"}` + "\n")
+	n, err := pw.Write(data)
+	if err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	if n != len(data) {
+		t.Errorf("n = %d, want %d", n, len(data))
+	}
+	if buf.String() != string(data) {
+		t.Errorf("buffer = %q, want %q", buf.String(), string(data))
+	}
+}
+
+func TestProgressWriter_Write_SetsGotFirst(t *testing.T) {
+	t.Parallel()
+	var buf bytes.Buffer
+	pw := newProgressWriter(&buf, time.Now())
+	if pw.gotFirst {
+		t.Fatal("gotFirst should be false before first write")
+	}
+	pw.Write([]byte("x"))
+	if !pw.gotFirst {
+		t.Error("gotFirst should be true after first write")
+	}
+}
+
+func TestProgressWriter_Write_AccumulatesPartial(t *testing.T) {
+	t.Parallel()
+	var buf bytes.Buffer
+	pw := newProgressWriter(&buf, time.Now())
+	// Write without newline — should accumulate in partial.
+	pw.Write([]byte(`{"type":"sys`))
+	if len(pw.partial) == 0 {
+		t.Error("partial should have accumulated data")
+	}
+	// Complete the line.
+	pw.Write([]byte("tem\"}\n"))
+	// After newline, partial for that line should be consumed.
+	if len(pw.partial) != 0 {
+		t.Errorf("partial should be empty after newline, got %q", string(pw.partial))
+	}
+}
+
+// --- progressWriter.logLine ---
+
+func TestProgressWriter_LogLine_EmptyLine(t *testing.T) {
+	t.Parallel()
+	var buf bytes.Buffer
+	pw := newProgressWriter(&buf, time.Now())
+	// Should not panic on empty line.
+	pw.logLine(nil)
+	pw.logLine([]byte{})
+}
+
+func TestProgressWriter_LogLine_InvalidJSON(t *testing.T) {
+	t.Parallel()
+	var buf bytes.Buffer
+	pw := newProgressWriter(&buf, time.Now())
+	// Should not panic on invalid JSON.
+	pw.logLine([]byte("not json"))
+	if pw.turn != 0 {
+		t.Errorf("turn should remain 0 for invalid JSON, got %d", pw.turn)
+	}
+}
+
+func TestProgressWriter_LogLine_AssistantTurn(t *testing.T) {
+	t.Parallel()
+	var buf bytes.Buffer
+	pw := newProgressWriter(&buf, time.Now())
+
+	msg := map[string]any{
+		"type": "assistant",
+		"message": map[string]any{
+			"content": []map[string]any{
+				{"type": "text", "text": "Hello world"},
+			},
+		},
+	}
+	line, _ := json.Marshal(msg)
+	pw.logLine(line)
+	if pw.turn != 1 {
+		t.Errorf("turn = %d, want 1 after assistant message", pw.turn)
+	}
+}
+
+func TestProgressWriter_LogLine_AssistantToolUse(t *testing.T) {
+	t.Parallel()
+	var buf bytes.Buffer
+	pw := newProgressWriter(&buf, time.Now())
+
+	msg := map[string]any{
+		"type": "assistant",
+		"message": map[string]any{
+			"content": []map[string]any{
+				{"type": "tool_use", "name": "Read", "input": map[string]any{"file_path": "/tmp/test.go"}},
+			},
+		},
+	}
+	line, _ := json.Marshal(msg)
+	pw.logLine(line)
+	if pw.turn != 1 {
+		t.Errorf("turn = %d, want 1", pw.turn)
+	}
+}
+
+func TestProgressWriter_LogLine_ResultEvent(t *testing.T) {
+	t.Parallel()
+	var buf bytes.Buffer
+	pw := newProgressWriter(&buf, time.Now())
+	pw.turn = 3
+
+	msg := map[string]any{
+		"type":           "result",
+		"total_cost_usd": 0.1234,
+		"usage": map[string]any{
+			"input_tokens":                100,
+			"output_tokens":               50,
+			"cache_creation_input_tokens": 10,
+			"cache_read_input_tokens":     5,
+		},
+	}
+	line, _ := json.Marshal(msg)
+	pw.logLine(line)
+	// turn should remain unchanged for result events.
+	if pw.turn != 3 {
+		t.Errorf("turn = %d, want 3", pw.turn)
+	}
+}
+
+func TestProgressWriter_LogLine_LongSnippetTruncated(t *testing.T) {
+	t.Parallel()
+	var buf bytes.Buffer
+	pw := newProgressWriter(&buf, time.Now())
+
+	longText := strings.Repeat("a", 200)
+	msg := map[string]any{
+		"type": "assistant",
+		"message": map[string]any{
+			"content": []map[string]any{
+				{"type": "text", "text": longText},
+			},
+		},
+	}
+	line, _ := json.Marshal(msg)
+	pw.logLine(line)
+	if pw.turn != 1 {
+		t.Errorf("turn = %d, want 1", pw.turn)
+	}
+}
+
+// --- logConfig ---
+
+func TestLogConfig(t *testing.T) {
+	t.Parallel()
+	o := &Orchestrator{cfg: Config{
+		Cobbler: CobblerConfig{
+			MaxStitchIssues:         10,
+			MaxStitchIssuesPerCycle: 3,
+			MaxMeasureIssues:        5,
+			UserPrompt:              "test prompt",
+		},
+	}}
+	// logConfig should not panic. It writes to logf (stderr) which we don't capture.
+	o.logConfig("test-target")
+}
+
+func TestLogConfig_NoUserPrompt(t *testing.T) {
+	t.Parallel()
+	o := &Orchestrator{cfg: Config{
+		Cobbler: CobblerConfig{
+			MaxStitchIssues: 5,
+		},
+	}}
+	// When UserPrompt is empty, the second logf call is skipped.
+	o.logConfig("stitch")
 }

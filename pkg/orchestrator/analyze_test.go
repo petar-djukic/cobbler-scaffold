@@ -4,6 +4,7 @@
 package orchestrator
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -898,5 +899,139 @@ releases:
 
 	if len(result.InvalidReleases) != 0 {
 		t.Errorf("expected 0 invalid releases for empty config, got %d", len(result.InvalidReleases))
+	}
+}
+
+// captureStdout redirects os.Stdout to a pipe, runs fn, and returns the
+// captured output. This is used for testing print* functions.
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+	origStdout := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe: %v", err)
+	}
+	os.Stdout = w
+
+	fn()
+
+	w.Close()
+	os.Stdout = origStdout
+
+	out, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatalf("ReadAll: %v", err)
+	}
+	return string(out)
+}
+
+// --- printSection ---
+
+func TestPrintSection_EmptyItems(t *testing.T) {
+	out := captureStdout(t, func() {
+		got := printSection("label", nil)
+		if got {
+			t.Error("printSection returned true for empty items")
+		}
+	})
+	if out != "" {
+		t.Errorf("expected no output for empty items, got %q", out)
+	}
+}
+
+func TestPrintSection_WithItems(t *testing.T) {
+	out := captureStdout(t, func() {
+		got := printSection("Errors", []string{"err1", "err2"})
+		if !got {
+			t.Error("printSection returned false for non-empty items")
+		}
+	})
+	if !strings.Contains(out, "Errors") {
+		t.Errorf("output missing label, got %q", out)
+	}
+	if !strings.Contains(out, "  - err1") {
+		t.Errorf("output missing item err1, got %q", out)
+	}
+	if !strings.Contains(out, "  - err2") {
+		t.Errorf("output missing item err2, got %q", out)
+	}
+}
+
+// --- printReport ---
+
+func TestPrintReport_AllClear(t *testing.T) {
+	r := AnalyzeResult{}
+	out := captureStdout(t, func() {
+		err := r.printReport(5, 10, 3)
+		if err != nil {
+			t.Errorf("expected nil error for clean report, got %v", err)
+		}
+	})
+	if !strings.Contains(out, "All consistency checks passed") {
+		t.Errorf("output missing success message, got %q", out)
+	}
+	if !strings.Contains(out, "5 PRDs") {
+		t.Errorf("output missing PRD count, got %q", out)
+	}
+	if !strings.Contains(out, "10 use cases") {
+		t.Errorf("output missing use case count, got %q", out)
+	}
+	if !strings.Contains(out, "3 test suites") {
+		t.Errorf("output missing test suite count, got %q", out)
+	}
+}
+
+func TestPrintReport_WithIssues(t *testing.T) {
+	r := AnalyzeResult{
+		OrphanedPRDs:    []string{"prd099-unused"},
+		BrokenCitations: []string{"uc001 T1: prd001 R99 not found"},
+	}
+	out := captureStdout(t, func() {
+		err := r.printReport(2, 3, 1)
+		if err == nil {
+			t.Error("expected error for report with issues")
+		}
+		if !strings.Contains(err.Error(), "consistency issues") {
+			t.Errorf("error should mention consistency issues, got %v", err)
+		}
+	})
+	if !strings.Contains(out, "Orphaned PRDs") {
+		t.Errorf("output missing orphaned PRDs section, got %q", out)
+	}
+	if !strings.Contains(out, "prd099-unused") {
+		t.Errorf("output missing orphaned PRD item, got %q", out)
+	}
+	if !strings.Contains(out, "Broken citations") {
+		t.Errorf("output missing broken citations section, got %q", out)
+	}
+}
+
+func TestPrintReport_AllSections(t *testing.T) {
+	r := AnalyzeResult{
+		OrphanedPRDs:                 []string{"a"},
+		ReleasesWithoutTestSuites:    []string{"b"},
+		OrphanedTestSuites:           []string{"c"},
+		BrokenTouchpoints:            []string{"d"},
+		UseCasesNotInRoadmap:         []string{"e"},
+		SchemaErrors:                 []string{"f"},
+		ConstitutionDrift:            []string{"g"},
+		BrokenCitations:              []string{"h"},
+		InvalidReleases:              []string{"i"},
+		PRDsSpanningMultipleReleases: []string{"j"},
+	}
+	out := captureStdout(t, func() {
+		err := r.printReport(1, 1, 1)
+		if err == nil {
+			t.Error("expected error when all sections have issues")
+		}
+	})
+	// Each section should appear in output.
+	for _, want := range []string{"a", "b", "c", "d", "e", "f", "g", "h", "i", "j"} {
+		if !strings.Contains(out, "  - "+want) {
+			t.Errorf("output missing item %q", want)
+		}
+	}
+	if strings.Contains(out, "All consistency checks passed") {
+		t.Error("should not show success message when issues exist")
 	}
 }
