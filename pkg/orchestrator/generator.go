@@ -172,6 +172,12 @@ func (o *Orchestrator) GeneratorStart() error {
 		return fmt.Errorf("worktree has uncommitted changes on %s; commit or stash before starting a generation", baseBranch)
 	}
 
+	// Garbage-collect issues from generations whose branch no longer exists.
+	// This catches leaks from crashed tests or prior runs without cleanup.
+	if ghRepo, err := detectGitHubRepo(".", o.cfg); err == nil && ghRepo != "" {
+		gcStaleGenerationIssues(ghRepo, o.cfg.Generation.Prefix)
+	}
+
 	genName := o.cfg.Generation.Prefix + time.Now().Format("2006-01-02-15-04-05")
 	startTag := genName + "-start"
 
@@ -324,6 +330,14 @@ func (o *Orchestrator) GeneratorStop() error {
 
 	if err := o.mergeGeneration(branch, baseBranch); err != nil {
 		return err
+	}
+
+	// Close any open cobbler-gen issues for this generation so they do not
+	// accumulate as orphans after the branch is deleted.
+	if ghRepo, err := detectGitHubRepo(".", o.cfg); err == nil && ghRepo != "" {
+		if err := closeGenerationIssues(ghRepo, branch); err != nil {
+			logf("generator:stop: close issues warning: %v", err)
+		}
 	}
 
 	o.cleanupDirs()

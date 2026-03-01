@@ -418,6 +418,49 @@ func closeGenerationIssues(repo, generation string) error {
 	return nil
 }
 
+// gcStaleGenerationIssues closes open issues whose generation branch no
+// longer exists locally. This catches leaked issues from crashed tests,
+// killed processes, or GeneratorStop runs that predated the cleanup fix.
+// It lists all GitHub labels matching cobbler-gen-*, extracts the generation
+// name, checks for a local branch, and closes issues for missing branches.
+func gcStaleGenerationIssues(repo, generationPrefix string) {
+	// List all labels in the repo that match the cobbler-gen- prefix.
+	out, err := exec.Command(binGh, "api",
+		fmt.Sprintf("repos/%s/labels", repo),
+		"--method", "GET",
+		"-f", "per_page=100",
+		"--jq", `[.[].name | select(startswith("`+cobblerGenLabelPrefix+`"))]`,
+	).Output()
+	if err != nil {
+		logf("gcStaleGenerationIssues: list labels: %v", err)
+		return
+	}
+	var labels []string
+	if err := json.Unmarshal(out, &labels); err != nil {
+		logf("gcStaleGenerationIssues: parse labels: %v", err)
+		return
+	}
+
+	for _, label := range labels {
+		generation := strings.TrimPrefix(label, cobblerGenLabelPrefix)
+		if generation == "" {
+			continue
+		}
+		// Only GC generations that match the configured prefix (e.g. "generation-").
+		// This avoids closing issues for non-generation branches like "main".
+		if !strings.HasPrefix(generation, generationPrefix) {
+			continue
+		}
+		if gitBranchExists(generation, ".") {
+			continue
+		}
+		logf("gcStaleGenerationIssues: branch %s gone, closing its issues", generation)
+		if err := closeGenerationIssues(repo, generation); err != nil {
+			logf("gcStaleGenerationIssues: %v", err)
+		}
+	}
+}
+
 // listActiveIssuesContext returns a human-readable summary of all open
 // issues for the generation, suitable for injection into the measure prompt.
 func listActiveIssuesContext(repo, generation string) (string, error) {
