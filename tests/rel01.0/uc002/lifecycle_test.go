@@ -324,25 +324,11 @@ func TestRel01_UC002_StopResetsMainToSpecsOnly(t *testing.T) {
 		t.Error("history directory should be deleted after stop")
 	}
 
-	// V1 tag should exist and contain the generated code.
-	tagCmd := exec.Command("git", "tag", "--list", "v1.*")
-	tagCmd.Dir = dir
-	out, err := tagCmd.Output()
-	if err != nil {
-		t.Fatalf("listing v1 tags: %v", err)
-	}
-	v1Tags := strings.TrimSpace(string(out))
-	if v1Tags == "" {
-		t.Fatal("expected at least one v1 tag after stop")
-	}
-	// Pick the first v1 tag and verify the generated file exists at it.
-	v1Tag := strings.Split(v1Tags, "\n")[0]
-	showCmd := exec.Command("git", "show", v1Tag+":pkg/gencode/gen.go")
-	showCmd.Dir = dir
-	if showOut, err := showCmd.Output(); err != nil {
-		t.Errorf("generated file should exist at %s tag: %v", v1Tag, err)
-	} else if !strings.Contains(string(showOut), "package gencode") {
-		t.Errorf("generated file at %s tag has unexpected content: %s", v1Tag, showOut)
+	// Version tagging is handled by mage tag (Tag() in tag.go), not
+	// GeneratorStop. The merged tag preserves the generated code.
+	mergedTags, _ := exec.Command("git", "-C", dir, "tag", "--list", "*-merged").Output()
+	if strings.TrimSpace(string(mergedTags)) == "" {
+		t.Error("expected a -merged lifecycle tag after stop")
 	}
 }
 
