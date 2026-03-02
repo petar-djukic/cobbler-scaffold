@@ -421,42 +421,63 @@ func closeGenerationIssues(repo, generation string) error {
 // gcStaleGenerationIssues closes open issues whose generation branch no
 // longer exists locally. This catches leaked issues from crashed tests,
 // killed processes, or GeneratorStop runs that predated the cleanup fix.
-// It lists all GitHub labels matching cobbler-gen-*, extracts the generation
-// name, checks for a local branch, and closes issues for missing branches.
+// It fetches all open issues in a single API call, filters locally for
+// cobbler-gen-* labels, groups by generation, and closes issues for
+// missing branches. Cost: 1 API call for discovery + 1 per stale issue.
 func gcStaleGenerationIssues(repo, generationPrefix string) {
-	// List all labels in the repo that match the cobbler-gen- prefix.
+	// Fetch all open issues in a single API call and filter locally for
+	// cobbler-gen-* labels. This replaces the previous O(labels) approach
+	// that listed all labels then queried issues per label.
 	out, err := exec.Command(binGh, "api",
-		fmt.Sprintf("repos/%s/labels", repo),
+		fmt.Sprintf("repos/%s/issues", repo),
 		"--method", "GET",
+		"-f", "state=open",
 		"-f", "per_page=100",
-		"--jq", `[.[].name | select(startswith("`+cobblerGenLabelPrefix+`"))]`,
 	).Output()
 	if err != nil {
-		logf("gcStaleGenerationIssues: list labels: %v", err)
-		return
-	}
-	var labels []string
-	if err := json.Unmarshal(out, &labels); err != nil {
-		logf("gcStaleGenerationIssues: parse labels: %v", err)
+		logf("gcStaleGenerationIssues: list issues: %v", err)
 		return
 	}
 
-	for _, label := range labels {
-		generation := strings.TrimPrefix(label, cobblerGenLabelPrefix)
-		if generation == "" {
-			continue
+	var raw []struct {
+		Number int `json:"number"`
+		Labels []struct {
+			Name string `json:"name"`
+		} `json:"labels"`
+	}
+	if err := json.Unmarshal(out, &raw); err != nil {
+		logf("gcStaleGenerationIssues: parse issues: %v", err)
+		return
+	}
+
+	// Group issue numbers by generation name.
+	byGeneration := make(map[string][]int)
+	for _, issue := range raw {
+		for _, label := range issue.Labels {
+			if !strings.HasPrefix(label.Name, cobblerGenLabelPrefix) {
+				continue
+			}
+			gen := strings.TrimPrefix(label.Name, cobblerGenLabelPrefix)
+			if gen == "" || !strings.HasPrefix(gen, generationPrefix) {
+				continue
+			}
+			byGeneration[gen] = append(byGeneration[gen], issue.Number)
 		}
-		// Only GC generations that match the configured prefix (e.g. "generation-").
-		// This avoids closing issues for non-generation branches like "main".
-		if !strings.HasPrefix(generation, generationPrefix) {
-			continue
-		}
+	}
+
+	// Close issues for generations whose branch no longer exists locally.
+	for generation, numbers := range byGeneration {
 		if gitBranchExists(generation, ".") {
 			continue
 		}
-		logf("gcStaleGenerationIssues: branch %s gone, closing its issues", generation)
-		if err := closeGenerationIssues(repo, generation); err != nil {
-			logf("gcStaleGenerationIssues: %v", err)
+		logf("gcStaleGenerationIssues: branch %s gone, closing %d issue(s)", generation, len(numbers))
+		for _, num := range numbers {
+			if err := exec.Command(binGh, "issue", "close",
+				"--repo", repo,
+				fmt.Sprintf("%d", num),
+			).Run(); err != nil {
+				logf("gcStaleGenerationIssues: close #%d: %v", num, err)
+			}
 		}
 	}
 }
