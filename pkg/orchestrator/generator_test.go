@@ -1163,6 +1163,116 @@ func TestRestoreFromStartTag_RestoresMissingGoFiles(t *testing.T) {
 	}
 }
 
+func TestRestoreFromStartTag_SkipsExistingFiles(t *testing.T) {
+	initTestGitRepo(t)
+
+	// Create a Go file, commit, and tag as start.
+	os.MkdirAll("pkg", 0o755)
+	os.WriteFile(filepath.Join("pkg", "existing.go"), []byte("package pkg\n// original\n"), 0o644)
+	gitRun(t, "add", "-A")
+	gitRun(t, "commit", "--no-verify", "-m", "add existing.go")
+	gitRun(t, "tag", "gen-start-exist")
+
+	// Modify the file (should NOT be overwritten by restore).
+	os.WriteFile(filepath.Join("pkg", "existing.go"), []byte("package pkg\n// modified\n"), 0o644)
+
+	o := &Orchestrator{cfg: Config{
+		Project: ProjectConfig{MagefilesDir: "magefiles"},
+	}}
+	if err := o.restoreFromStartTag("gen-start-exist"); err != nil {
+		t.Fatalf("restoreFromStartTag: %v", err)
+	}
+
+	// File should keep its modified content (not overwritten).
+	got, err := os.ReadFile(filepath.Join("pkg", "existing.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "package pkg\n// modified\n" {
+		t.Errorf("existing file was overwritten: got %q", string(got))
+	}
+}
+
+func TestRestoreFromStartTag_SkipsNonGoFiles(t *testing.T) {
+	initTestGitRepo(t)
+
+	// Create a non-Go file, commit, and tag.
+	os.WriteFile("readme.md", []byte("# Hello\n"), 0o644)
+	gitRun(t, "add", "-A")
+	gitRun(t, "commit", "--no-verify", "-m", "add readme")
+	gitRun(t, "tag", "gen-start-nongo")
+
+	// Delete it so restore would try to bring it back.
+	os.Remove("readme.md")
+
+	o := &Orchestrator{cfg: Config{
+		Project: ProjectConfig{MagefilesDir: "magefiles"},
+	}}
+	if err := o.restoreFromStartTag("gen-start-nongo"); err != nil {
+		t.Fatalf("restoreFromStartTag: %v", err)
+	}
+
+	// Non-Go file should NOT have been restored.
+	if _, err := os.Stat("readme.md"); err == nil {
+		t.Error("readme.md was restored, but non-Go files should be skipped")
+	}
+}
+
+func TestCleanupUnmergedTags_NoTags(t *testing.T) {
+	initTestGitRepo(t)
+
+	o := &Orchestrator{cfg: Config{
+		Generation: GenerationConfig{Prefix: "generation-"},
+	}}
+	// Must not panic with no tags.
+	o.cleanupUnmergedTags()
+}
+
+func TestCleanupUnmergedTags_AllMerged(t *testing.T) {
+	initTestGitRepo(t)
+
+	// Create tags that look merged (has -merged suffix).
+	gitRun(t, "tag", "generation-2026-01-01-start")
+	gitRun(t, "tag", "generation-2026-01-01-finished")
+	gitRun(t, "tag", "generation-2026-01-01-merged")
+
+	o := &Orchestrator{cfg: Config{
+		Generation: GenerationConfig{Prefix: "generation-"},
+	}}
+	o.cleanupUnmergedTags()
+
+	// All tags should still exist (nothing abandoned).
+	tags := gitListTags("generation-*", ".")
+	if len(tags) != 3 {
+		t.Errorf("expected 3 tags after cleanup of all-merged, got %d: %v", len(tags), tags)
+	}
+}
+
+func TestListGenerationBranches_CustomPrefix(t *testing.T) {
+	initTestGitRepo(t)
+
+	gitRun(t, "branch", "myprefix-2026-01-01")
+	gitRun(t, "branch", "myprefix-2026-01-02")
+	gitRun(t, "branch", "other-branch")
+
+	o := &Orchestrator{cfg: Config{
+		Generation: GenerationConfig{Prefix: "myprefix-"},
+	}}
+	branches := o.listGenerationBranches()
+
+	if len(branches) != 2 {
+		t.Errorf("expected 2 branches with prefix myprefix-, got %d: %v", len(branches), branches)
+	}
+}
+
+func TestGenerationName_NoSuffix(t *testing.T) {
+	t.Parallel()
+	got := generationName("generation-2026-01-01")
+	if got != "generation-2026-01-01" {
+		t.Errorf("generationName without suffix = %q, want unchanged", got)
+	}
+}
+
 func TestRestoreFromStartTag_SkipsMagefiles(t *testing.T) {
 	initTestGitRepo(t)
 

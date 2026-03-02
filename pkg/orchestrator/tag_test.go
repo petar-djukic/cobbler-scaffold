@@ -130,3 +130,67 @@ func TestTag_WrongBranch(t *testing.T) {
 		t.Errorf("Tag() error = %q, want it to mention the expected branch name", err.Error())
 	}
 }
+
+func TestTag_CreatesGitTag(t *testing.T) {
+	// Not parallel: uses os.Chdir via setupTagRepo.
+	setupTagRepo(t, nil)
+
+	cfg := Config{}
+	cfg.applyDefaults()
+	// Set BaseBranch to whatever our test repo branch is.
+	current, err := gitCurrentBranch(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Cobbler.BaseBranch = current
+	cfg.Cobbler.DocTagPrefix = "v0."
+	// No version file, no podman image → Tag will fail at BuildImage.
+	o := &Orchestrator{cfg: cfg}
+
+	err = o.Tag()
+	// Tag will fail at BuildImage (podman not available), but the tag
+	// should already have been created before that step.
+	if err == nil || !strings.Contains(err.Error(), "building image") {
+		// If err is nil, tag succeeded fully (unlikely in test).
+		// If err doesn't mention "building image", something else failed.
+		if err != nil {
+			t.Fatalf("Tag() unexpected error: %v", err)
+		}
+	}
+
+	// Verify the git tag was created.
+	tags := gitListTags("v0.*", ".")
+	if len(tags) == 0 {
+		t.Error("expected at least one v0.* tag after Tag()")
+	}
+}
+
+func TestTag_VersionFileWriteError(t *testing.T) {
+	// Not parallel: uses os.Chdir via setupTagRepo.
+	setupTagRepo(t, nil)
+
+	current, err := gitCurrentBranch(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := Config{}
+	cfg.applyDefaults()
+	cfg.Cobbler.BaseBranch = current
+	cfg.Cobbler.DocTagPrefix = "v0."
+	cfg.Project.VersionFile = "/dev/null/impossible/version.go" // will fail
+
+	o := &Orchestrator{cfg: cfg}
+	err = o.Tag()
+
+	// Should fail with a version file error that mentions the tag was created.
+	if err == nil {
+		t.Fatal("expected error for invalid version file path")
+	}
+	if !strings.Contains(err.Error(), "version file") {
+		t.Errorf("error = %q, want it to mention version file", err.Error())
+	}
+	if !strings.Contains(err.Error(), "tag") {
+		t.Errorf("error = %q, want it to mention the tag was created", err.Error())
+	}
+}
