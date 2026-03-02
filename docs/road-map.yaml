@@ -62,7 +62,7 @@ releases:
         summary: Tag-to-tag and generation-to-generation diff views
         status: done
       - id: rel02.0-uc004-issue-tracker-view
-        summary: Beads issue tree with status grouping and InvocationRecord display
+        summary: GitHub Issues tree with status grouping and InvocationRecord display
         status: done
       - id: rel02.0-uc005-metrics-dashboard
         summary: Webview panel aggregating token usage, LOC progression, and diff stats

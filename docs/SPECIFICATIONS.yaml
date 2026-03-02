@@ -14,14 +14,20 @@ overview: |
 roadmap_summary:
   - version: "01.0"
     name: Core Orchestrator and Workflows
-    use_cases_done: 9
-    use_cases_total: 9
+    use_cases_done: 10
+    use_cases_total: 10
     status: done
 
   - version: "02.0"
     name: VS Code Extension
     use_cases_done: 6
     use_cases_total: 6
+    status: done
+
+  - version: "03.0"
+    name: Cross-Generation Comparison
+    use_cases_done: 1
+    use_cases_total: 1
     status: done
 
   - version: "99.0"
@@ -45,6 +51,11 @@ prd_index:
     title: Cobbler Measure and Stitch Workflows
     summary: Defines the measure and stitch phases, prompt templates, Claude invocation, recovery, and phase-specific context files
     path: specs/product-requirements/prd003-cobbler-workflows.yaml
+
+  - id: prd004-differential-comparison
+    title: Cross-Generation Differential Comparison
+    summary: Defines BinaryResolver interface, git tag and GNU resolution, test case loading, and comparison execution
+    path: specs/product-requirements/prd004-differential-comparison.yaml
 
   - id: prd005-metrics-collection
     title: Metrics Collection and Reporting
@@ -91,13 +102,13 @@ use_case_index:
     title: Scaffold Operations
     release: "01.0"
     status: done
-    path: specs/test-suites/test-rel01.0.yaml
+    path: specs/use-cases/rel01.0-uc006-scaffold-operations.yaml
 
   - id: rel01.0-uc007-build-tooling
     title: Build Tooling
     release: "01.0"
     status: done
-    path: specs/test-suites/test-rel01.0.yaml
+    path: specs/use-cases/rel01.0-uc007-build-tooling.yaml
 
   - id: rel01.0-uc008-performance-benchmarks
     title: Performance Benchmarks
@@ -110,6 +121,12 @@ use_case_index:
     release: "01.0"
     status: done
     path: specs/use-cases/rel01.0-uc009-phase-context-files.yaml
+
+  - id: rel01.0-uc010-worktree-based-invocation
+    title: Worktree-Based Invocation
+    release: "01.0"
+    status: done
+    path: specs/use-cases/rel01.0-uc010-worktree-based-invocation.yaml
 
   - id: rel02.0-uc001-lifecycle-commands
     title: VS Code Lifecycle Commands
@@ -147,6 +164,12 @@ use_case_index:
     status: done
     path: specs/use-cases/rel02.0-uc006-specification-browser.yaml
 
+  - id: rel03.0-uc001-cross-generation-comparison
+    title: Cross-Generation Differential Comparison
+    release: "03.0"
+    status: done
+    path: specs/use-cases/rel03.0-uc001-cross-generation-comparison.yaml
+
 test_suite_index:
   - id: test-rel01.0
     title: Release 01.0 test suite
@@ -161,6 +184,7 @@ test_suite_index:
       - rel01.0-uc007-build-tooling
       - rel01.0-uc008-performance-benchmarks
       - rel01.0-uc009-phase-context-files
+      - rel01.0-uc010-worktree-based-invocation
     test_case_count: 75
     path: specs/test-suites/test-rel01.0.yaml
 
@@ -176,6 +200,14 @@ test_suite_index:
       - rel02.0-uc006-specification-browser
     test_case_count: 30
     path: specs/test-suites/test-rel02.0.yaml
+
+  - id: test-rel03.0
+    title: Release 03.0 test suite
+    release: rel03.0
+    traces:
+      - rel03.0-uc001-cross-generation-comparison
+    test_case_count: 11
+    path: specs/test-suites/test-rel03.0.yaml
 
 prd_to_use_case_mapping:
   - use_case: rel01.0-uc001-orchestrator-initialization
@@ -228,10 +260,35 @@ prd_to_use_case_mapping:
     why_required: Exercises stale task recovery and orphaned issue reset
     coverage: R4
 
+  - use_case: rel01.0-uc006-scaffold-operations
+    prd: prd001-orchestrator-core
+    why_required: Validates scaffold detection using Config fields, SeedFiles, and YAML loading
+    coverage: R1, R2, R4, R6
+
+  - use_case: rel01.0-uc007-build-tooling
+    prd: prd001-orchestrator-core
+    why_required: Validates BinaryDir, BinaryName, and MainPackage Config fields through build targets
+    coverage: R1 (partial)
+
+  - use_case: rel01.0-uc008-performance-benchmarks
+    prd: prd003-cobbler-workflows
+    why_required: Benchmarks measure and stitch workflow wall-clock time
+    coverage: R1, R3 (partial)
+
   - use_case: rel01.0-uc009-phase-context-files
     prd: prd003-cobbler-workflows
     why_required: Validates PhaseContext loading, override logic, and fallback behavior
     coverage: R9
+
+  - use_case: rel01.0-uc010-worktree-based-invocation
+    prd: prd003-cobbler-workflows
+    why_required: Validates stable worktree base path and recovery when invoked from a worktree
+    coverage: R3 (partial), R4 (partial)
+
+  - use_case: rel03.0-uc001-cross-generation-comparison
+    prd: prd004-differential-comparison
+    why_required: Validates BinaryResolver, test case loading, comparison execution, and mage integration
+    coverage: R1, R2, R3, R3b, R4, R5, R6
 
   - use_case: rel02.0-uc001-lifecycle-commands
     prd: prd006-vscode-extension
@@ -269,6 +326,7 @@ traceability_diagram: |
           prd1["prd001\norchestrator-core"]
           prd2["prd002\ngeneration-lifecycle"]
           prd3["prd003\ncobbler-workflows"]
+          prd4["prd004\ndifferential-comparison"]
           prd5["prd005\nmetrics-collection"]
           prd6["prd006\nvscode-extension"]
       end
@@ -279,6 +337,8 @@ traceability_diagram: |
           uc3["uc003\nmeasure-workflow"]
           uc4["uc004\nstitch-workflow"]
           uc5["uc005\nresume-recovery"]
+          uc6["uc006\nscaffold-operations"]
+          uc7["uc007\nbuild-tooling"]
           uc8["uc008\nbenchmarks"]
           uc9["uc009\nphase-context"]
       end
@@ -292,9 +352,14 @@ traceability_diagram: |
           vuc6["uc006\nspec-browser"]
       end
 
+      subgraph UseCases03["Release 03.0 Use Cases"]
+          cuc1["uc001\ncross-gen-comparison"]
+      end
+
       subgraph TestSuites["Test Suites"]
           ts1["test-rel01.0\n75 cases"]
           ts2["test-rel02.0\n30 cases"]
+          ts3["test-rel03.0\n11 cases"]
       end
 
       uc1 --> prd1
@@ -307,7 +372,11 @@ traceability_diagram: |
       uc4 --> prd5
       uc5 --> prd2
       uc5 --> prd3
+      uc6 --> prd1
+      uc7 --> prd1
+      uc8 --> prd3
       uc9 --> prd3
+      cuc1 --> prd4
 
       vuc1 --> prd6
       vuc2 --> prd6
@@ -321,6 +390,8 @@ traceability_diagram: |
       ts1 --> uc3
       ts1 --> uc4
       ts1 --> uc5
+      ts1 --> uc6
+      ts1 --> uc7
       ts1 --> uc8
       ts1 --> uc9
 
@@ -331,6 +402,8 @@ traceability_diagram: |
       ts2 --> vuc5
       ts2 --> vuc6
 
+      ts3 --> cuc1
+
 coverage_gaps: |
   We identify the following gaps in specification coverage:
 
@@ -340,8 +413,6 @@ coverage_gaps: |
     would provide more thorough validation.
 
   Implemented features with no PRD:
-  - Scaffold (scaffold.go): Scaffold(), Uninstall(), PrepareTestRepo() — wires
-    the orchestrator into consuming repos. Covered by eng03 but has no PRD.
   - Context assembly (context.go): ~30 struct types and buildProjectContext() —
     assembles all docs, specs, source code, and issues into a YAML blob for
     prompt injection. No PRD.
@@ -352,23 +423,11 @@ coverage_gaps: |
   - Docker/image management (docker.go): BuildImage(), ensureImage(), embedded
     Dockerfile. Design decision 4 describes the rationale but no PRD specifies
     the build/ensure behavior.
-  - Build utilities (build.go): Build(), Lint(), TestUnit(), TestE2E(),
-    TestE2EByUseCase(), TestAll(), Install(), Clean(), ExtractCredentials(). No PRD.
   - Phase-aware logging (orchestrator.go): setPhase/clearPhase, logf with
     [phase +elapsed]. No PRD.
 
-  Use cases without dedicated YAML files (traced in test suites only):
-  - rel01.0-uc006-scaffold-operations: traced in test-rel01.0.yaml but has no
-    standalone use case YAML file. Test cases serve as the specification.
-  - rel01.0-uc007-build-tooling: traced in test-rel01.0.yaml but has no
-    standalone use case YAML file. Test cases serve as the specification.
-
   Stale specifications:
-  - prd003 R2.7 says "parse the JSON output file" but Claude writes YAML.
   - Planning constitution P2 says 300-700 lines; config defaults are 250-350.
-
-  Numbering gaps:
-  - No prd004 exists. The PRD numbering skips from prd003 to prd005.
 
 references:
   - VISION.yaml
