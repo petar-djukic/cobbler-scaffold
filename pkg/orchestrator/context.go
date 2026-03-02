@@ -176,6 +176,7 @@ type ArchInterface struct {
 
 type ArchComponent struct {
 	Name           string   `yaml:"name"`
+	ProvidedBy     string   `yaml:"provided_by,omitempty"`
 	Responsibility string   `yaml:"responsibility"`
 	Capabilities   []string `yaml:"capabilities"`
 	References     []string `yaml:"references,omitempty"`

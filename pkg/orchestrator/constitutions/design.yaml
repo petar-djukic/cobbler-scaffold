@@ -107,7 +107,7 @@ document_types:
       - title
       - overview (summary, lifecycle, coordination_pattern)
       - interfaces (data_structures, operations, announcements)
-      - components (name, responsibility, capabilities, references)
+      - components (name, provided_by, responsibility, capabilities, references)
       - design_decisions (id, title, decision, benefits, alternatives_rejected)
       - technology_choices
       - project_structure
