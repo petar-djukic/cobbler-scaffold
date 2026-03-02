@@ -314,6 +314,145 @@ func TestParseRequiredReading_ValidYAML(t *testing.T) {
 	}
 }
 
+// --- cleanGoBinaries ---
+
+func TestCleanGoBinaries_RemovesExecutableNoExtension(t *testing.T) {
+	dir := t.TempDir()
+	run := func(args ...string) {
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("setup %v: %v\n%s", args, err, out)
+		}
+	}
+	run("git", "init", "-b", "main")
+	run("git", "config", "user.email", "test@test.com")
+	run("git", "config", "user.name", "Test")
+	run("git", "config", "commit.gpgsign", "false")
+	run("git", "commit", "--allow-empty", "-m", "initial")
+
+	// Create a fake Go binary (untracked, executable, no extension).
+	binaryPath := filepath.Join(dir, "myapp")
+	if err := os.WriteFile(binaryPath, []byte("ELF"), 0o755); err != nil {
+		t.Fatalf("creating fake binary: %v", err)
+	}
+	// Create a Go source file that should survive.
+	srcPath := filepath.Join(dir, "main.go")
+	if err := os.WriteFile(srcPath, []byte("package main\n"), 0o644); err != nil {
+		t.Fatalf("creating source file: %v", err)
+	}
+
+	cleanGoBinaries(dir)
+
+	if _, err := os.Stat(binaryPath); !os.IsNotExist(err) {
+		t.Errorf("fake binary still exists after cleanGoBinaries")
+	}
+	if _, err := os.Stat(srcPath); err != nil {
+		t.Errorf("source file was removed by cleanGoBinaries: %v", err)
+	}
+}
+
+func TestCleanGoBinaries_KeepsFilesWithExtensions(t *testing.T) {
+	dir := t.TempDir()
+	run := func(args ...string) {
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("setup %v: %v\n%s", args, err, out)
+		}
+	}
+	run("git", "init", "-b", "main")
+	run("git", "config", "user.email", "test@test.com")
+	run("git", "config", "user.name", "Test")
+	run("git", "config", "commit.gpgsign", "false")
+	run("git", "commit", "--allow-empty", "-m", "initial")
+
+	// Files with extensions must never be removed.
+	files := []string{"app.go", "app.sh", "app.exe", "app.yaml"}
+	for _, name := range files {
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, []byte("data"), 0o755); err != nil {
+			t.Fatalf("creating %s: %v", name, err)
+		}
+	}
+
+	cleanGoBinaries(dir)
+
+	for _, name := range files {
+		if _, err := os.Stat(filepath.Join(dir, name)); err != nil {
+			t.Errorf("file %s was incorrectly removed by cleanGoBinaries", name)
+		}
+	}
+}
+
+func TestCleanGoBinaries_KeepsNonExecutableFiles(t *testing.T) {
+	dir := t.TempDir()
+	run := func(args ...string) {
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("setup %v: %v\n%s", args, err, out)
+		}
+	}
+	run("git", "init", "-b", "main")
+	run("git", "config", "user.email", "test@test.com")
+	run("git", "config", "user.name", "Test")
+	run("git", "config", "commit.gpgsign", "false")
+	run("git", "commit", "--allow-empty", "-m", "initial")
+
+	// A non-executable file with no extension (e.g., a data file) must survive.
+	dataPath := filepath.Join(dir, "Makefile")
+	if err := os.WriteFile(dataPath, []byte("all:\n"), 0o644); err != nil {
+		t.Fatalf("creating Makefile: %v", err)
+	}
+
+	cleanGoBinaries(dir)
+
+	if _, err := os.Stat(dataPath); err != nil {
+		t.Errorf("non-executable file was removed by cleanGoBinaries: %v", err)
+	}
+}
+
+func TestCleanGoBinaries_BinaryNotCommittedAfterClean(t *testing.T) {
+	dir := t.TempDir()
+	run := func(args ...string) {
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("setup %v: %v\n%s", args, err, out)
+		}
+	}
+	run("git", "init", "-b", "main")
+	run("git", "config", "user.email", "test@test.com")
+	run("git", "config", "user.name", "Test")
+	run("git", "config", "commit.gpgsign", "false")
+	run("git", "commit", "--allow-empty", "-m", "initial")
+
+	// Simulate Claude leaving a binary and a source file.
+	os.WriteFile(filepath.Join(dir, "wc"), []byte("ELF binary"), 0o755)
+	os.WriteFile(filepath.Join(dir, "wc.go"), []byte("package main\n"), 0o644)
+
+	task := stitchTask{id: "1", title: "wc impl", worktreeDir: dir}
+	if err := commitWorktreeChanges(task); err != nil {
+		t.Fatalf("commitWorktreeChanges() error = %v", err)
+	}
+
+	// Verify that the binary was not committed.
+	cmd := exec.Command("git", "show", "--name-only", "--format=", "HEAD")
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("git show: %v", err)
+	}
+	committed := string(out)
+	if strings.Contains(committed, "\nwc\n") || strings.HasPrefix(committed, "wc\n") {
+		t.Errorf("binary 'wc' was committed: %s", committed)
+	}
+	if !strings.Contains(committed, "wc.go") {
+		t.Errorf("expected wc.go to be committed, got: %s", committed)
+	}
+}
+
 // --- commitWorktreeChanges ---
 
 func TestCommitWorktreeChanges_NoChanges(t *testing.T) {

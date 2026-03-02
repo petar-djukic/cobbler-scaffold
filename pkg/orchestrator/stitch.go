@@ -703,11 +703,49 @@ func mergeBranch(branchName, baseBranch, repoRoot string) error {
 	return nil
 }
 
+// cleanGoBinaries removes untracked executable files with no extension from
+// dir before staging. Go binaries produced by `go build ./cmd/<name>/` land
+// in the working directory as extensionless executables; this prevents them
+// from being committed to the generation branch (GH-456).
+// Errors are logged but never fatal — a missed binary is less harmful than
+// blocking the commit.
+func cleanGoBinaries(dir string) {
+	cmd := exec.Command(binGit, "ls-files", "--others", "--exclude-standard")
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if err != nil {
+		logf("cleanGoBinaries: git ls-files: %v", err)
+		return
+	}
+
+	removed := 0
+	for _, name := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if name == "" || filepath.Ext(name) != "" {
+			continue // skip empty lines and files with extensions
+		}
+		path := filepath.Join(dir, name)
+		info, err := os.Stat(path)
+		if err != nil || info.IsDir() || info.Mode()&0o111 == 0 {
+			continue // skip missing, directories, and non-executables
+		}
+		if err := os.Remove(path); err != nil {
+			logf("cleanGoBinaries: remove %s: %v", name, err)
+		} else {
+			logf("cleanGoBinaries: removed binary %s", name)
+			removed++
+		}
+	}
+	logf("cleanGoBinaries: removed %d binary file(s)", removed)
+}
+
 // commitWorktreeChanges stages and commits all changes Claude made in the
 // worktree. Claude does not run git commands; the orchestrator handles git
 // externally. Returns nil if there are no changes to commit.
 func commitWorktreeChanges(task stitchTask) error {
 	logf("commitWorktreeChanges: staging changes in %s", task.worktreeDir)
+
+	// Remove compiled Go binaries before staging so they are not committed.
+	cleanGoBinaries(task.worktreeDir)
 
 	addCmd := exec.Command(binGit, "add", "-A")
 	addCmd.Dir = task.worktreeDir
