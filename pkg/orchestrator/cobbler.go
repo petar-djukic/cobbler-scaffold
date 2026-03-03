@@ -733,6 +733,24 @@ func (o *Orchestrator) hasOpenIssues() (bool, error) {
 	return len(issues) > 0, nil
 }
 
+// HistoryClean removes the history subdirectory under the cobbler scratch
+// directory. History is created at the first stitch or measure invocation and
+// survives across resume cycles. It is deleted only at generator:stop or via
+// this explicit call. Calling HistoryClean on a non-existent directory is a
+// no-op.
+func (o *Orchestrator) HistoryClean() error {
+	hdir := o.historyDir()
+	if hdir == "" {
+		return nil
+	}
+	logf("historyClean: removing %s", hdir)
+	if err := os.RemoveAll(hdir); err != nil {
+		return fmt.Errorf("removing history dir %s: %w", hdir, err)
+	}
+	logf("historyClean: done")
+	return nil
+}
+
 // CobblerReset removes the cobbler scratch directory.
 func (o *Orchestrator) CobblerReset() error {
 	logf("cobblerReset: removing %s", o.cfg.Cobbler.Dir)

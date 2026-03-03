@@ -1178,6 +1178,45 @@ func TestCobblerReset_NonExistentDir(t *testing.T) {
 	}
 }
 
+// --- HistoryClean ---
+
+func TestHistoryClean_RemovesHistoryDir(t *testing.T) {
+	t.Parallel()
+	cobblerDir := t.TempDir()
+	histDir := filepath.Join(cobblerDir, "history")
+	os.MkdirAll(histDir, 0o755)
+	os.WriteFile(filepath.Join(histDir, "report.yaml"), []byte("data"), 0o644)
+
+	o := &Orchestrator{cfg: Config{Cobbler: CobblerConfig{Dir: cobblerDir, HistoryDir: "history"}}}
+	if err := o.HistoryClean(); err != nil {
+		t.Fatalf("HistoryClean: %v", err)
+	}
+	if _, err := os.Stat(histDir); !os.IsNotExist(err) {
+		t.Error("expected history dir to be removed")
+	}
+	// Cobbler dir itself must survive.
+	if _, err := os.Stat(cobblerDir); err != nil {
+		t.Errorf("cobbler dir removed unexpectedly: %v", err)
+	}
+}
+
+func TestHistoryClean_NonExistentDir(t *testing.T) {
+	t.Parallel()
+	cobblerDir := t.TempDir()
+	o := &Orchestrator{cfg: Config{Cobbler: CobblerConfig{Dir: cobblerDir, HistoryDir: "history"}}}
+	if err := o.HistoryClean(); err != nil {
+		t.Fatalf("HistoryClean on nonexistent dir: %v", err)
+	}
+}
+
+func TestHistoryClean_NoopWhenHistoryDirEmpty(t *testing.T) {
+	t.Parallel()
+	o := &Orchestrator{cfg: Config{Cobbler: CobblerConfig{Dir: t.TempDir(), HistoryDir: ""}}}
+	if err := o.HistoryClean(); err != nil {
+		t.Fatalf("HistoryClean with no HistoryDir: %v", err)
+	}
+}
+
 // --- idleTrackingWriter ---
 
 func TestIdleTrackingWriter_UpdatesLastWrite(t *testing.T) {

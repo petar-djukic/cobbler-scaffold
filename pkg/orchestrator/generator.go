@@ -85,11 +85,6 @@ func (o *Orchestrator) GeneratorResume() error {
 		logf("resume: recoverStaleTasks warning: %v", err)
 	}
 
-	logf("resume: resetting cobbler scratch")
-	if err := o.CobblerReset(); err != nil {
-		return fmt.Errorf("resetting cobbler: %w", err)
-	}
-
 	o.cfg.Generation.Branch = branch
 
 	// Drain existing ready issues before starting measure+stitch cycles.
@@ -418,10 +413,8 @@ func (o *Orchestrator) mergeGeneration(branch, baseBranch string) error {
 		logf("generator:stop: resetting %s to specs-only", baseBranch)
 		o.cleanGoSources()
 	}
-	if hdir := o.historyDir(); hdir != "" {
-		if err := os.RemoveAll(hdir); err != nil {
-			logf("generator:stop: warning removing history dir: %v", err)
-		}
+	if err := o.HistoryClean(); err != nil {
+		logf("generator:stop: warning cleaning history: %v", err)
 	}
 	_ = gitStageAll(".")
 	cleanupMsg := fmt.Sprintf("Reset %s to specs-only after v1 tag\n\nGenerated code preserved at version tags. Branch restored to documentation-only state.", baseBranch)
