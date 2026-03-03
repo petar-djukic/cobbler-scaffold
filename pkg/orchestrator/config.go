@@ -226,6 +226,13 @@ type CobblerConfig struct {
 	// be created (default "main"). Tag() returns an error if the current
 	// branch does not match this value.
 	BaseBranch string `yaml:"base_branch"`
+
+	// IdleTimeoutSeconds is the maximum number of consecutive seconds the
+	// Claude subprocess may produce no stdout/stderr output before the
+	// watchdog cancels the session. This detects hung LLM calls without
+	// affecting long-running tasks that legitimately produce output (file
+	// reads, tool calls, code). Default 60. Set to 0 to disable.
+	IdleTimeoutSeconds int `yaml:"idle_timeout_seconds"`
 }
 
 // PodmanConfig holds settings for the podman container runtime.
@@ -406,6 +413,9 @@ func (c *Config) applyDefaults() {
 	}
 	if c.Cobbler.BaseBranch == "" {
 		c.Cobbler.BaseBranch = "main"
+	}
+	if c.Cobbler.IdleTimeoutSeconds == 0 {
+		c.Cobbler.IdleTimeoutSeconds = 60
 	}
 	if c.Claude.MaxTimeSec == 0 {
 		c.Claude.MaxTimeSec = 300

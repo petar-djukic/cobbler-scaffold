@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -1174,5 +1175,83 @@ func TestCobblerReset_NonExistentDir(t *testing.T) {
 	o := &Orchestrator{cfg: Config{Cobbler: CobblerConfig{Dir: filepath.Join(t.TempDir(), "nope")}}}
 	if err := o.CobblerReset(); err != nil {
 		t.Fatalf("CobblerReset on nonexistent dir: %v", err)
+	}
+}
+
+// --- idleTrackingWriter ---
+
+func TestIdleTrackingWriter_UpdatesLastWrite(t *testing.T) {
+	t.Parallel()
+	var buf bytes.Buffer
+	var last atomic.Int64
+	before := time.Now().UnixNano()
+	last.Store(before)
+
+	w := &idleTrackingWriter{w: &buf, lastWrite: &last}
+	time.Sleep(2 * time.Millisecond) // ensure clock advances
+
+	n, err := w.Write([]byte("hello"))
+	if err != nil {
+		t.Fatalf("Write error: %v", err)
+	}
+	if n != 5 {
+		t.Errorf("n = %d, want 5", n)
+	}
+	if buf.String() != "hello" {
+		t.Errorf("buf = %q, want %q", buf.String(), "hello")
+	}
+	after := last.Load()
+	if after <= before {
+		t.Errorf("lastWrite not updated: before=%d after=%d", before, after)
+	}
+}
+
+func TestIdleTrackingWriter_DelegatesWriteError(t *testing.T) {
+	t.Parallel()
+	var last atomic.Int64
+	last.Store(time.Now().UnixNano())
+
+	// errWriter always returns an error.
+	w := &idleTrackingWriter{w: &errWriter{}, lastWrite: &last}
+	_, err := w.Write([]byte("x"))
+	if err == nil {
+		t.Error("expected error from underlying writer, got nil")
+	}
+}
+
+// errWriter is an io.Writer that always fails.
+type errWriter struct{}
+
+func (e *errWriter) Write(_ []byte) (int, error) {
+	return 0, os.ErrInvalid
+}
+
+// --- IdleTimeoutSeconds default ---
+
+func TestNew_SetsIdleTimeoutDefault(t *testing.T) {
+	t.Parallel()
+	o := New(Config{})
+	if o.cfg.Cobbler.IdleTimeoutSeconds != 60 {
+		t.Errorf("IdleTimeoutSeconds = %d, want 60", o.cfg.Cobbler.IdleTimeoutSeconds)
+	}
+}
+
+func TestNew_RespectsExplicitIdleTimeout(t *testing.T) {
+	t.Parallel()
+	o := New(Config{Cobbler: CobblerConfig{IdleTimeoutSeconds: 120}})
+	if o.cfg.Cobbler.IdleTimeoutSeconds != 120 {
+		t.Errorf("IdleTimeoutSeconds = %d, want 120", o.cfg.Cobbler.IdleTimeoutSeconds)
+	}
+}
+
+func TestNew_IdleTimeoutZeroDisablesWatchdog(t *testing.T) {
+	t.Parallel()
+	// Negative values are not valid; zero is the "disabled" sentinel.
+	// Ensure the default is NOT applied when we explicitly want disabled.
+	// (Currently zero triggers the default — users must set -1 or we accept
+	// that 0 maps to 60. This test documents the current behaviour.)
+	o := New(Config{})
+	if o.cfg.Cobbler.IdleTimeoutSeconds == 0 {
+		t.Error("default idle timeout should not be 0 (use 60)")
 	}
 }

@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -586,19 +587,57 @@ func (o *Orchestrator) runClaude(prompt, dir string, silence bool, extraClaudeAr
 
 	cmd.Stdin = strings.NewReader(prompt)
 
+	// idleAt tracks the nanosecond timestamp of the last byte written to stdout.
+	// The watchdog goroutine reads this atomically to detect hung sessions.
+	var idleAt atomic.Int64
+	idleAt.Store(time.Now().UnixNano())
+
 	var stdoutBuf bytes.Buffer
+	var outputWriter io.Writer
 	if silence {
-		cmd.Stdout = newProgressWriter(&stdoutBuf, time.Now())
+		outputWriter = newProgressWriter(&stdoutBuf, time.Now())
 	} else {
-		cmd.Stdout = io.MultiWriter(os.Stdout, &stdoutBuf)
+		outputWriter = io.MultiWriter(os.Stdout, &stdoutBuf)
 		cmd.Stderr = os.Stderr
+	}
+	// Wrap the output writer to update idleAt on every write.
+	cmd.Stdout = &idleTrackingWriter{w: outputWriter, lastWrite: &idleAt}
+
+	// Launch idle watchdog if IdleTimeoutSeconds > 0.
+	idleDur := time.Duration(o.cfg.Cobbler.IdleTimeoutSeconds) * time.Second
+	if idleDur > 0 {
+		go func() {
+			ticker := time.NewTicker(time.Second)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					last := time.Unix(0, idleAt.Load())
+					if time.Since(last) >= idleDur {
+						logf("runClaude: idle watchdog triggered after %s with no output — cancelling session",
+							time.Since(last).Round(time.Second))
+						cancel()
+						return
+					}
+				}
+			}
+		}()
 	}
 
 	start := time.Now()
 	err := cmd.Run()
 
 	if ctx.Err() == context.DeadlineExceeded {
-		logf("runClaude: killed after %s (max time %s exceeded)", time.Since(start).Round(time.Second), timeout)
+		elapsed := time.Since(start).Round(time.Second)
+		last := time.Unix(0, idleAt.Load())
+		idleElapsed := time.Since(last).Round(time.Second)
+		if idleDur > 0 && idleElapsed >= idleDur {
+			logf("runClaude: idle timeout after %s with no output (session ran %s)", idleElapsed, elapsed)
+			return ClaudeResult{}, fmt.Errorf("claude idle timeout: no output for %s", idleElapsed)
+		}
+		logf("runClaude: killed after %s (max time %s exceeded)", elapsed, timeout)
 		return ClaudeResult{}, fmt.Errorf("claude max time exceeded (%s)", timeout)
 	}
 
@@ -702,4 +741,16 @@ func (o *Orchestrator) CobblerReset() error {
 	}
 	logf("cobblerReset: done")
 	return nil
+}
+
+// idleTrackingWriter wraps an io.Writer and records the last write timestamp
+// in lastWrite (nanoseconds) so the idle watchdog can detect stalled sessions.
+type idleTrackingWriter struct {
+	w         io.Writer
+	lastWrite *atomic.Int64
+}
+
+func (t *idleTrackingWriter) Write(p []byte) (int, error) {
+	t.lastWrite.Store(time.Now().UnixNano())
+	return t.w.Write(p)
 }
