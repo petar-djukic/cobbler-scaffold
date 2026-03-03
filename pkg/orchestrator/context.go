@@ -426,12 +426,19 @@ type GoStyleDoc struct {
 	DesignPatterns          []GoStylePattern      `yaml:"design_patterns"`
 	Interfaces              string                `yaml:"interfaces"`
 	StructAndFunctionDesign string                `yaml:"struct_and_function_design"`
+	ReceiverConventions     string                `yaml:"receiver_conventions"`
 	ErrorHandling           string                `yaml:"error_handling"`
+	PanicVsError            string                `yaml:"panic_vs_error"`
+	InitFunctions           string                `yaml:"init_functions"`
 	NoMagicStrings          string                `yaml:"no_magic_strings"`
+	Constants               string                `yaml:"constants"`
 	ProjectStructure        string                `yaml:"project_structure"`
+	FileOrganization        string                `yaml:"file_organization"`
+	ImportOrganization      string                `yaml:"import_organization"`
 	StandardPackages        []string              `yaml:"standard_packages"`
 	StructEmbedding         string                `yaml:"struct_embedding"`
 	NamingConventions       []string              `yaml:"naming_conventions"`
+	CommentStyle            string                `yaml:"comment_style"`
 	Concurrency             string                `yaml:"concurrency"`
 	Testing                 string                `yaml:"testing"`
 	CodeReviewChecklist     []string              `yaml:"code_review_checklist"`
