@@ -203,9 +203,11 @@ func TestRel01_UC005_ResumeResetsOrphanedIssues(t *testing.T) {
 	issueNumber := testutil.CreateIssue(t, dir, "orphaned task for resume test")
 	testutil.SetIssueInProgress(t, dir, issueNumber)
 
-	// Verify it is in_progress before resume.
-	if n := testutil.CountIssuesByStatus(t, dir, "in_progress"); n == 0 {
-		t.Fatal("expected at least 1 in_progress issue before resume")
+	// Verify it is in_progress before resume. Use IssueHasLabel (direct fetch
+	// by number) rather than CountIssuesByStatus (label-filter list) to avoid
+	// eventual-consistency lag on the label index.
+	if !testutil.IssueHasLabel(t, dir, issueNumber, "cobbler-in-progress") {
+		t.Fatal("expected issue to have cobbler-in-progress label before resume")
 	}
 
 	// Switch back to main so resume switches to the generation branch.
