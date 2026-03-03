@@ -114,7 +114,7 @@ When you close a sub-issue and the open count drops to 0:
    - Identify which use case(s) this epic contributes to
    - If all criteria are met, update road-map.yaml to mark the use case status as "done"
 4. **File follow-up issues** for any gaps via `gh issue create`
-5. **Execute `/git-issue-pop` Phase 5** in full to open and merge the PR
+5. **Execute `/gh-issue-pop` Phase 5** in full to open and merge the PR
 
 ---
 
@@ -199,7 +199,7 @@ If it reaches 0, perform a **thorough code inspection**:
 7. **Evaluate use case completion**:
    - Identify which use case(s) this epic contributes to
    - If all criteria are met, update road-map.yaml to mark the use case status as "done"
-8. **Execute `/git-issue-pop` Phase 5** in full to open and merge the PR
+8. **Execute `/gh-issue-pop` Phase 5** in full to open and merge the PR
 9. **Summarize epic completion**: run `mage stats` and report what was built, total metrics, deviations, follow-up work, use case status
 
 ---
@@ -226,4 +226,4 @@ If it reaches 0, perform a **thorough code inspection**:
 
 2. **All commits go to the worktree branch** (run `git add` and `git commit` from inside the worktree). Push after every commit.
 
-3. **When the open sub-issue count reaches 0**, execute `/git-issue-pop` Phase 5 automatically.
+3. **When the open sub-issue count reaches 0**, execute `/gh-issue-pop` Phase 5 automatically.
