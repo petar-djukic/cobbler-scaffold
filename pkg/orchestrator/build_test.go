@@ -61,6 +61,18 @@ func TestInstall_SkipsWhenNoMainPackage(t *testing.T) {
 	}
 }
 
+func TestInstall_ErrorsWhenGoInstallFails(t *testing.T) {
+	t.Parallel()
+	o := &Orchestrator{cfg: Config{
+		Project: ProjectConfig{
+			MainPackage: "nonexistent/package/that/will/fail",
+		},
+	}}
+	if err := o.Install(); err == nil {
+		t.Error("Install() with nonexistent package should return error")
+	}
+}
+
 // --- BuildAll ---
 
 func TestBuildAll_SkipsWhenNoCmdDir(t *testing.T) {

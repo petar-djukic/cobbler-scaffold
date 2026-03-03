@@ -935,12 +935,13 @@ func TestCreateWorktree_InvalidParentDir(t *testing.T) {
 	}
 }
 
-// --- resetOrphanedIssues (unit logic via branch check) ---
+// --- gitBranchExists (used by resetOrphanedIssues) ---
+//
+// resetOrphanedIssues calls listOpenCobblerIssues (GitHub API), so its
+// success paths cannot be covered by unit tests. The branch-existence
+// check it delegates to is tested here directly.
 
-func TestResetOrphanedIssues_NoBranch(t *testing.T) {
-	// Tests the branch existence check logic that resetOrphanedIssues uses.
-	// The full function calls listOpenCobblerIssues (gh API), so we test
-	// the branch-checking portion via gitBranchExists directly.
+func TestGitBranchExists_ChecksLocalBranches(t *testing.T) {
 	_ = initTestGitRepo(t)
 
 	// Branch does not exist → gitBranchExists returns false.
