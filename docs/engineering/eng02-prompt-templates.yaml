@@ -57,10 +57,10 @@ sections:
 
       | Field | Type | Source |
       |-------|------|--------|
-      | Title | string | Task title from beads |
-      | ID | string | Task ID from beads |
-      | IssueType | string | Task type from beads (default "task") |
-      | Description | string | Task description from beads |
+      | Title | string | Task title from GitHub issue |
+      | ID | string | Task ID from GitHub issue |
+      | IssueType | string | Task type from GitHub issue (default "task") |
+      | Description | string | Task description from GitHub issue |
       | ExecutionConstitution | string | Embedded execution.yaml constitution |
       | ProjectContext | string (YAML) | buildProjectContext — docs + source from worktree |
 
@@ -140,7 +140,7 @@ sections:
 
       | Category | Example | Why |
       |----------|---------|-----|
-      | Tool restrictions | Do NOT use bd commands | Agent should write JSON, not interact with issue tracker |
+      | Tool restrictions | Do NOT use gh commands to create issues | Agent should write JSON output, not interact with issue tracker |
       | Scope boundaries | Do NOT modify files outside the list | Prevents uncontrolled changes |
       | Context isolation | Do NOT assume the stitch agent has access to your analysis | Measure must write self-contained descriptions |
       | Quality gates | Do NOT leave uncommitted changes | Ensures clean state after stitch |

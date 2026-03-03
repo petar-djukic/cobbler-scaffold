@@ -22,7 +22,7 @@ tags:
   - smoke
 
 preconditions:
-  - Clean git repository on main branch with no beads directory
+  - Clean git repository on main branch
   - Go module initialized
   - configuration.yaml present
 
@@ -39,7 +39,7 @@ test_cases:
       state:
         project.binary_dir: "bin"
         generation.prefix: "generation-"
-        cobbler.beads_dir: ".beads/"
+        cobbler.dir: ".cobbler/"
         cobbler.dir: ".cobbler/"
         project.magefiles_dir: "magefiles"
         claude.secrets_dir: ".secrets"
@@ -53,14 +53,14 @@ test_cases:
         cfg := orchestrator.Config{
           Project:    orchestrator.ProjectConfig{ModulePath: "example.com/test", BinaryName: "mybin", BinaryDir: "out"},
           Generation: orchestrator.GenerationConfig{Prefix: "gen-"},
-          Cobbler:    orchestrator.CobblerConfig{BeadsDir: ".issues/"},
+          Cobbler:    orchestrator.CobblerConfig{Dir: ".cobbler/"},
         }
         o := orchestrator.New(cfg)
     expected:
       state:
         project.binary_dir: "out"
         generation.prefix: "gen-"
-        cobbler.beads_dir: ".issues/"
+        cobbler.dir: ".cobbler/"
 
   - use_case: rel01.0-uc001-orchestrator-initialization
     name: New returns non-nil Orchestrator
@@ -75,14 +75,14 @@ test_cases:
         orchestrator_not_nil: true
 
   - use_case: rel01.0-uc001-orchestrator-initialization
-    name: Init creates beads directory
-    go_test: TestRel01_UC001_InitCreatesBD
+    name: Init creates cobbler directory
+    go_test: TestRel01_UC001_InitCreatesCobbler
     inputs:
       command: mage init
     expected:
       exit_code: 0
       state:
-        beads_dir_exists: true
+        cobbler.dir_exists: true
 
   - use_case: rel01.0-uc001-orchestrator-initialization
     name: Init is idempotent
@@ -103,29 +103,6 @@ test_cases:
       exit_code: 0
       state:
         cobbler.dir_exists: false
-        beads_dir_exists: true
-
-  - use_case: rel01.0-uc001-orchestrator-initialization
-    name: BeadsReset preserves beads directory
-    go_test: TestRel01_UC001_BeadsResetKeepsDir
-    inputs:
-      command: mage beads:reset
-    expected:
-      exit_code: 0
-      state:
-        beads_dir_exists: true
-
-  - use_case: rel01.0-uc001-orchestrator-initialization
-    name: BeadsReset clears issues
-    go_test: TestRel01_UC001_BeadsResetClearsIssues
-    inputs:
-      command: |
-        bd create --type task --title "test"
-        mage beads:reset
-    expected:
-      exit_code: 0
-      state:
-        ready_issues: 0
 
   - use_case: rel01.0-uc001-orchestrator-initialization
     name: FullReset clears all orchestrator state
@@ -143,14 +120,6 @@ test_cases:
     go_test: TestRel01_UC001_CobblerResetWhenMissing
     inputs:
       command: mage cobbler:reset
-    expected:
-      exit_code: 0
-
-  - use_case: rel01.0-uc001-orchestrator-initialization
-    name: BeadsReset succeeds when directory missing
-    go_test: TestRel01_UC001_BeadsResetWhenMissing
-    inputs:
-      command: mage beads:reset
     expected:
       exit_code: 0
 
@@ -187,7 +156,7 @@ test_cases:
     expected:
       exit_code: 0
       state:
-        beads_dir_exists: true
+        cobbler.dir_exists: true
 
 # ---- uc002: Generation lifecycle from start to stop ----
 
@@ -390,24 +359,12 @@ test_cases:
       exit_code: 0
 
   - use_case: rel01.0-uc003-measure-workflow
-    name: Measure fails when beads not initialized
-    go_test: TestRel01_UC003_MeasureFailsWithoutBeads
-    inputs:
-      command: |
-        rm -rf .beads
-        mage cobbler:measure
-    expected:
-      exit_code: 1
-      stderr_contains: "beads not initialized"
-
-  - use_case: rel01.0-uc003-measure-workflow
-    name: Measure imports proposed issues into beads
+    name: Measure imports proposed issues into GitHub
     go_test: TestRel01_UC003_MeasureCreatesIssues
     covered_by: TestRel01_UC003_MeasureCreatesIssues
     inputs:
       command: |
         mage cobbler:measure
-        bd list --json
       config_overrides:
         cobbler.max_measure_issues: 3
     expected:
@@ -429,32 +386,16 @@ test_cases:
         issues_count_lte: 2
 
   - use_case: rel01.0-uc003-measure-workflow
-    name: Measure records InvocationRecord on created issues
+    name: Measure records InvocationRecord in history
     go_test: TestRel01_UC003_MeasureRecordsInvocation
     inputs:
-      command: |
-        mage cobbler:measure
-        bd list --json
+      command: mage cobbler:measure
       config_overrides:
         cobbler.max_measure_issues: 1
     expected:
       exit_code: 0
       state:
         invocation_record_present: true
-
-  - use_case: rel01.0-uc003-measure-workflow
-    name: BeadsReset clears issues after measure
-    go_test: TestRel01_UC003_BeadsResetClearsAfterMeasure
-    inputs:
-      command: |
-        mage cobbler:measure
-        mage beads:reset
-      config_overrides:
-        cobbler.max_measure_issues: 1
-    expected:
-      exit_code: 0
-      state:
-        ready_issues: 0
 
   - use_case: rel01.0-uc003-measure-workflow
     name: Measure fails without Claude credentials on main
@@ -481,17 +422,6 @@ test_cases:
         task_closed: true
         task_branch_deleted: true
         worktree_cleaned: true
-
-  - use_case: rel01.0-uc004-stitch-workflow
-    name: Stitch fails when beads not initialized
-    go_test: TestRel01_UC004_StitchFailsWithoutBeads
-    inputs:
-      command: |
-        rm -rf .beads
-        mage cobbler:stitch
-    expected:
-      exit_code: 1
-      stderr_contains: "beads not initialized"
 
   - use_case: rel01.0-uc004-stitch-workflow
     name: Stitch stops when no ready tasks
@@ -560,7 +490,7 @@ test_cases:
     go_test: TestRel01_UC004_StitchWithManualIssue
     inputs:
       command: |
-        bd create --type task --title "e2e stitch test task"
+        gh issue create --repo "$ISSUES_REPO" --title "e2e stitch test task" --label cobbler:ready
         mage cobbler:stitch
       config_overrides:
         claude.secrets_dir: "/dev/null/impossible"
@@ -985,4 +915,4 @@ cleanup:
   - Delete all generation and task branches
   - Remove worktrees
   - Remove cobbler scratch directory
-  - Reset beads
+  - Close any open GitHub test issues

@@ -81,7 +81,7 @@ type measureBenchmarkSummary struct {
 
 // TestRel01_UC008_MeasureTiming runs the iterative single-turn measure at
 // limits 1 through 5 and records wall-clock time, issue count, and per-iteration
-// token breakdown. Each limit gets a fresh repo and beads state.
+// token breakdown. Each limit gets a fresh repo and GitHub Issues state.
 func TestRel01_UC008_MeasureTiming(t *testing.T) {
 	summary := measureBenchmarkSummary{
 		TestName:  "TestRel01_UC008_MeasureTiming",

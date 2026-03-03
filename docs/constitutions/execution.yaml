@@ -163,7 +163,7 @@ technology:
   cli_framework: cobra
   build_system: mage
   yaml_library: gopkg.in/yaml.v3
-  issue_tracker: cupboard (migrating from beads)
+  issue_tracker: cupboard
 
 git_conventions:
   note: Git is managed externally. Do NOT run any git commands.
@@ -198,8 +198,7 @@ sections:
     title: Technology Stack
     content: |
       The project uses Go with mage for build automation, cobra for CLI, viper
-      for configuration, yaml.v3 for YAML parsing, and cupboard (migrating from
-      beads) for issue tracking.
+      for configuration, yaml.v3 for YAML parsing, and cupboard for issue tracking.
   - tag: git_conventions
     title: Git Conventions
     content: |

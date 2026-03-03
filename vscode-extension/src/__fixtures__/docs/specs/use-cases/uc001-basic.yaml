@@ -6,7 +6,7 @@ summary: |
 
 touchpoints:
   - T1: "Config struct: all fields defined in prd001-orchestrator-core R1"
-  - T2: "Init method: initializes beads per prd001-orchestrator-core R5"
+  - T2: "Init method: initializes cobbler workspace per prd001-orchestrator-core R5"
 
 success_criteria:
   - S1: Parser returns a valid UseCase object

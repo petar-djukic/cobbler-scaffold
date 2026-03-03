@@ -60,8 +60,6 @@ why_we_build_this: |
 related_projects:
   - project: Crumbs
     role: Consuming project; provides the Cupboard CLI and storage library
-  - project: Beads
-    role: Issue tracker used by the orchestrator to track tasks
   - project: Mage
     role: Build system; orchestrator methods are exposed as Mage targets
 

@@ -36,7 +36,7 @@ sections:
     content: |
       Test: `TestMeasure_TimingByLimit` against go-unix-utils (v0.20260220.2).
       Single Claude call requesting N issues simultaneously. Each run starts
-      from a clean beads state with zero existing issues.
+      from a clean state with zero existing issues.
       Default `ClaudeMaxTimeSec=300` (5 minutes).
 
       | Limit | Result | Wall Time | Claude Time | Turns | Output Tokens | Issues |
@@ -78,7 +78,7 @@ sections:
 
       1. Build prompt with all existing issues and limit=1
       2. Call Claude to propose exactly one new issue
-      3. Import the issue into beads
+      3. Create the issue in GitHub Issues
       4. Repeat from step 1 until the desired number of issues is reached
 
       ### Advantages
@@ -91,7 +91,7 @@ sections:
         issues, so Claude naturally avoids duplicates and can reason about
         dependencies relative to what already exists
       - **Incremental progress**: If a call fails, previously created issues
-        are preserved in beads
+        are preserved in GitHub Issues
       - **Linear scaling**: Total time scales linearly with issue count
         (N * ~2 min) rather than super-linearly
 
@@ -100,14 +100,14 @@ sections:
       - Input tokens are sent N times (once per call). With prompt caching,
         the cache read ratio is ~58%, so the marginal input cost of repeated
         calls is lower than the raw token count suggests.
-      - Each call requires beads import and prompt rebuild overhead (~2-5s),
+      - Each call requires issue creation and prompt rebuild overhead (~2-5s),
         which is negligible compared to the Claude invocation time.
 
   - title: Iterative Benchmark Results
     content: |
       Test: `TestMeasure_TimingByLimit` against go-unix-utils (v0.20260220.2).
       Iterative strategy: N sequential Claude calls, each requesting 1 issue.
-      Each run starts from a clean beads state. Model: claude-opus-4-6.
+      Each run starts from a clean state. Model: claude-opus-4-6.
       Default `ClaudeMaxTimeSec=300` (5 minutes). Date: 2026-02-21.
 
       ### Summary

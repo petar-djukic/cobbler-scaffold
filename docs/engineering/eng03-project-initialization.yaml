@@ -26,7 +26,7 @@ sections:
       |------|---------|
       | Go 1.25+ | Build and run |
       | Mage (magefile/mage) | Build system; orchestrator methods are Mage targets |
-      | Beads (bd) | Git-backed issue tracking |
+      | GitHub Issues | Issue tracking via GitHub API |
       | Podman | Container runtime for Claude execution |
 
   - title: Scaffold Procedure
@@ -136,7 +136,6 @@ sections:
 
       cobbler:
         dir                        default: .cobbler/ — scratch directory
-        beads_dir                  default: .beads/   — issue tracker directory
         max_stitch_issues          default: 0 (unlimited) — total stitch cap for a run
         max_stitch_issues_per_cycle default: 10 — tasks per cycle before re-measuring
         max_measure_issues         default: 1  — new issues per measure pass
@@ -166,8 +165,8 @@ sections:
     content: |
       | Target | Description |
       |--------|-------------|
-      | init | Initialize the project (beads issue tracker) |
-      | reset | Full reset: cobbler, generator, beads |
+      | init | Initialize the project |
+      | reset | Full reset: cobbler, generator |
       | stats | Print Go LOC and documentation word counts as JSON |
       | build | Compile the project binary |
       | lint | Run golangci-lint |
@@ -185,8 +184,6 @@ sections:
       | generator:list | Show active branches and past generations |
       | generator:switch | Commit work and check out another generation branch |
       | generator:reset | Destroy generation branches and return to clean main |
-      | beads:init | Initialize beads issue tracker |
-      | beads:reset | Clear beads issue history |
 
 references:
   - docs/ARCHITECTURE.yaml

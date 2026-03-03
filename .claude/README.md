@@ -10,9 +10,9 @@ This directory contains custom instructions and rules for the Claude Code agent.
 .claude/
 ├── instructions.md           # Main agent instructions (always applied)
 ├── rules/                    # Rule files for specific contexts
-│   ├── beads-workflow.md
 │   ├── code-prd-architecture-linking.md
 │   ├── documentation-standards.md
+│   ├── git-workflow.md
 │   ├── prd-format.md
 │   ├── use-case-format.md
 │   ├── crumb-format.md
@@ -31,15 +31,14 @@ This directory contains custom instructions and rules for the Claude Code agent.
 
 ### instructions.md
 Main configuration file that Claude Code loads automatically. Contains:
-- Beads (bd) issue tracking workflow
+- GitHub Issues tracking workflow
 - Token tracking requirements
 - Session completion checklist
-- Offline working mode instructions
 
 ### rules/
 Context-specific rules that govern how the agent works:
 
-- **beads-workflow.md**: Issue tracking, token logging, session completion workflow
+- **git-workflow.md**: Issue tracking, worktree discipline, PR workflow
 - **code-prd-architecture-linking.md**: Requirements for linking code to PRDs and architecture docs
 - **documentation-standards.md**: Writing style, formatting, figures, and content quality rules
 - **prd-format.md**: Product Requirements Document structure and guidelines

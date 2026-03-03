@@ -21,7 +21,7 @@ preconditions:
   - VS Code with orchestrator extension installed
   - Workspace contains configuration.yaml
   - Git repository initialized with main branch
-  - Beads initialized
+  - GitHub repository configured in configuration.yaml
 
 # ---- uc001: VS Code lifecycle command execution ----
 
@@ -285,9 +285,9 @@ test_cases:
         - "Diff: 3F +120 -20"
 
   - use_case: rel02.0-uc004-issue-tracker-view
-    name: Tree handles missing beads directory
+    name: Tree handles GitHub API unavailability
     inputs:
-      beads_dir_exists: false
+      github_api_available: false
     expected:
       tree_empty: true
       no_error: true

@@ -42,3 +42,6 @@ vscode-extension/*.vsix
 
 # Auto-generated config when mage runs from magefiles/
 magefiles/configuration.yaml
+
+# Beads daemon runtime artifacts
+.beads/

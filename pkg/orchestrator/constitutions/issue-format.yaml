@@ -202,7 +202,7 @@ sections:
   - tag: schema
     title: Issue Schema
     content: |
-      Each beads issue description is a YAML document with five required fields:
+      Each issue description is a YAML document with five required fields:
       deliverable_type, required_reading, files, requirements, and
       acceptance_criteria. Optional fields include design_decisions and
       format_rule.

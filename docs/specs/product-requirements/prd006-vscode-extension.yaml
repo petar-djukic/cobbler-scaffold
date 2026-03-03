@@ -3,16 +3,16 @@ title: VS Code Extension for Generation Tracking and Lifecycle Management
 
 problem: |
   The orchestrator runs generation cycles from the terminal via mage
-  targets. Developers must switch between terminal, git log, and beads
-  CLI to understand what state a generation is in, what issues exist,
+  targets. Developers must switch between terminal, git log, and the GitHub
+  issues page to understand what state a generation is in, what issues exist,
   how branches compare, and what metrics each invocation produced.
   Without an integrated view inside the editor, situational awareness
-  requires constant context-switching and manual git/beads queries.
+  requires constant context-switching and manual git/GitHub queries.
 
 goals:
   - G1: Provide real-time visibility into generation lifecycle state from within VS Code
   - G2: Enable comparison between version tags and between generation branches
-  - G3: Surface beads issue status, dependencies, and invocation metrics inside the editor
+  - G3: Surface GitHub issue status, dependencies, and invocation metrics inside the editor
   - G4: Allow lifecycle management (start, run, resume, stop, reset, switch) without leaving VS Code
   - G5: Navigate specification artifacts (use cases, PRDs, test suites) and their relationships from a tree view
   - G6: Trace from source code annotations back to the specification YAML they reference
@@ -56,19 +56,19 @@ requirements:
     title: Issue Tracker Tree View
     items:
       - R4.1: The extension must provide a TreeDataProvider for the mageOrchestrator.issues view
-      - R4.2: The tree must parse .beads/issues.jsonl to list all issues
+      - R4.2: The tree must fetch issues from the GitHub Issues API to list all issues
       - R4.3: Issues must be grouped by status (open, in_progress, closed) with each group as a collapsible parent node
       - R4.4: Each issue node must display the issue title, type (task/epic), and ID
       - R4.5: Clicking an issue node must reveal child nodes showing description, dependencies, and comments
       - R4.6: The tree must display InvocationRecord data from issue comments as formatted child nodes (tokens, LOC delta, duration, diff stats)
-      - R4.7: The tree must refresh automatically when .beads/issues.jsonl changes (via FileSystemWatcher)
+      - R4.7: The tree must refresh automatically on a configurable polling interval via the GitHub Issues API
       - R4.8: The tree must include a context menu action to open the issue in a read-only editor panel with full details
 
   R5:
     title: Metrics Dashboard
     items:
       - R5.1: The extension must register a command to show a metrics dashboard as a VS Code webview panel
-      - R5.2: The dashboard must aggregate InvocationRecord data from all issue comments in .beads/issues.jsonl
+      - R5.2: The dashboard must aggregate InvocationRecord data from all GitHub issue comments
       - R5.3: The dashboard must display total and per-invocation token usage (input and output tokens)
       - R5.4: The dashboard must display LOC progression (production and test lines before and after each invocation)
       - R5.5: The dashboard must display diff statistics (files changed, insertions, deletions) per invocation
@@ -87,9 +87,9 @@ requirements:
     title: Extension Infrastructure
     items:
       - R7.1: The extension must activate when the workspace contains a configuration.yaml file (workspaceContains activation event)
-      - R7.2: The extension must use FileSystemWatcher instances to monitor .beads/, .git/refs/, and configuration.yaml for changes
-      - R7.3: The extension must dispose all watchers and terminals on deactivation
-      - R7.4: The extension must handle missing files gracefully (no configuration.yaml, no .beads/ directory, no git tags)
+      - R7.2: The extension must use FileSystemWatcher instances to monitor .git/refs/ and configuration.yaml for changes; GitHub issue data is refreshed via polling
+      - R7.3: The extension must dispose all watchers, polling timers, and terminals on deactivation
+      - R7.4: The extension must handle missing data gracefully (no configuration.yaml, no GitHub issues, no git tags)
       - R7.5: The extension must log errors to a dedicated VS Code output channel named Mage Orchestrator
       - R7.6: The extension must register all commands, tree data providers, and webview panels in the activate function
       - R7.7: The extension must declare all new commands and views in package.json contributes
@@ -138,7 +138,7 @@ acceptance_criteria:
   - Generation browser lists all generations with correct lifecycle state derived from git tags
   - Tag-to-tag comparison opens a file summary with clickable entries that launch VS Code diff editors
   - Generation-to-generation comparison resolves branches and shows the same file summary
-  - Issue tracker parses .beads/issues.jsonl and displays issues grouped by status
+  - Issue tracker fetches GitHub issues and displays them grouped by status
   - InvocationRecord metrics appear as formatted child nodes under each issue
   - Metrics dashboard aggregates and displays token usage, LOC progression, and diff stats
   - All views refresh automatically when underlying data changes

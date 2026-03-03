@@ -15,15 +15,15 @@ graph TD
         Orchestrator["Orchestrator\n<i>main struct</i>"]
         Generator["Generator\n<i>lifecycle</i>"]
         Cobbler["Cobbler\n<i>measure + stitch</i>"]
-        Commands["Commands\n<i>git, beads, go wrappers</i>"]
+        Commands["Commands\n<i>git, go wrappers</i>"]
         Stats["Stats\n<i>metrics</i>"]
     end
 
     subgraph EXT["External Tools"]
         Git
         ClaudeCode["Claude Code"]
-        Beads["Beads (bd)"]
         GoToolchain["Go Toolchain"]
+        GitHub["GitHub Issues API"]
     end
 
     Magefile --> Orchestrator
@@ -34,8 +34,8 @@ graph TD
     Cobbler --> Commands
     Cobbler --> ClaudeCode
     Commands --> Git
-    Commands --> Beads
     Commands --> GoToolchain
+    Commands --> GitHub
 ```
 
 |Figure 1 System context showing orchestrator components and external tools |

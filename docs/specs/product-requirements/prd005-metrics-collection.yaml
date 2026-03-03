@@ -9,7 +9,7 @@ problem: |
   that records per-invocation data and provides aggregate project statistics.
 
 goals:
-  - G1: Collect per-invocation metrics (tokens, LOC, diff stats) and store them on beads issues
+  - G1: Collect per-invocation metrics (tokens, LOC, diff stats) and store them in history
   - G2: Provide aggregate project statistics (Go LOC, documentation word counts)
   - G3: Support LOC snapshots before and after each Claude invocation
   - G4: Enumerate context files by category and estimate prompt token cost
@@ -25,7 +25,7 @@ requirements:
       - R1.5: InvocationRecord must include LOCBefore with Production and Test counts
       - R1.6: InvocationRecord must include LOCAfter with Production and Test counts
       - R1.7: InvocationRecord must include Diff with Files, Insertions, and Deletions counts
-      - R1.8: recordInvocation must serialize InvocationRecord to JSON and add it as a beads comment
+      - R1.8: recordInvocation must serialize InvocationRecord to JSON and write it to the history directory
 
   R2:
     title: LOC Snapshots
@@ -74,7 +74,7 @@ non_goals:
   - This PRD does not define cost estimation from token counts
 
 acceptance_criteria:
-  - Every Claude invocation produces an InvocationRecord stored on the beads issue
+  - Every Claude invocation produces an InvocationRecord written to the history directory
   - LOC snapshots capture production and test counts before and after each invocation
   - Stats prints Go LOC and documentation word counts as YAML
   - Token parsing extracts input and output counts from Claude output

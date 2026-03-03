@@ -206,7 +206,7 @@ If it reaches 0, perform a **thorough code inspection**:
 
 ## Important Notes
 
-- No beads commands — all tracking is via `gh issue` and `gh api`
+- No bd/beads commands — all tracking is via `gh issue` and `gh api`
 - Token usage goes in a GitHub comment: `gh issue comment <number> --body "tokens: <count>"`
 - Follow-up work goes in new GitHub issues: `gh issue create --repo <owner>/<repo>`
 - Always run `mage stats` and include the full Stats block in commit messages
