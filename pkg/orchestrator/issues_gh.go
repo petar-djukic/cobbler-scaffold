@@ -189,6 +189,44 @@ func ensureCobblerGenLabel(repo, generation string) error {
 	return nil
 }
 
+// createMeasuringPlaceholder creates a transient GitHub issue that signals
+// the measure agent is actively calling Claude for iteration i (1-based).
+// The issue carries no cobbler-ready label so stitch won't pick it up.
+// Callers must call closeMeasuringPlaceholder after the iteration completes.
+func createMeasuringPlaceholder(repo, generation string, iteration int) (int, error) {
+	title := fmt.Sprintf("[measuring] %s task %d", generation, iteration)
+	body := fmt.Sprintf("Cobbler measure is calling Claude to propose task %d for generation %s.\n\nThis issue will be closed automatically when measure completes.", iteration, generation)
+	// No cobbler labels: stitch ignores issues without a gen label, and the
+	// placeholder must not appear in the existing-issues context sent to Claude.
+	out, err := exec.Command(binGh, "issue", "create",
+		"--repo", repo,
+		"--title", title,
+		"--body", body,
+	).Output()
+	if err != nil {
+		return 0, fmt.Errorf("gh issue create placeholder: %w", err)
+	}
+	number, err := parseIssueURL(string(out))
+	if err != nil {
+		return 0, err
+	}
+	logf("createMeasuringPlaceholder: created #%d for iteration %d", number, iteration)
+	return number, nil
+}
+
+// closeMeasuringPlaceholder closes the placeholder issue created by
+// createMeasuringPlaceholder. Best-effort: logs and ignores errors.
+func closeMeasuringPlaceholder(repo string, number int) {
+	if err := exec.Command(binGh, "issue", "close",
+		"--repo", repo,
+		fmt.Sprintf("%d", number),
+	).Run(); err != nil {
+		logf("closeMeasuringPlaceholder: close #%d warning: %v", number, err)
+		return
+	}
+	logf("closeMeasuringPlaceholder: closed #%d", number)
+}
+
 // createCobblerIssue creates a GitHub issue on repo for the given generation
 // and proposedIssue. Returns the GitHub issue number.
 //

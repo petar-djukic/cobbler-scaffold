@@ -176,6 +176,15 @@ func (o *Orchestrator) RunMeasure() error {
 			}
 		}
 
+		// Create a placeholder issue so users can see measure is running Claude.
+		// The placeholder has no cobbler labels and is invisible to stitch and to
+		// the measure context prompt. It is closed after the iteration regardless
+		// of outcome (GH-568).
+		placeholderNum, placeholderErr := createMeasuringPlaceholder(repo, generation, i+1)
+		if placeholderErr != nil {
+			logf("measure: warning: createMeasuringPlaceholder: %v", placeholderErr)
+		}
+
 		var createdIDs []string
 		var lastOutputFile string
 		var lastValidationErrors []string // errors from previous attempt, fed back into retry prompt
@@ -285,6 +294,11 @@ func (o *Orchestrator) RunMeasure() error {
 		}
 
 		logf("iteration %d imported %d issue(s)", i+1, len(createdIDs))
+
+		// Close the placeholder now that the iteration is complete (GH-568).
+		if placeholderNum > 0 {
+			closeMeasuringPlaceholder(repo, placeholderNum)
+		}
 
 		// Record invocation metrics on each created issue.
 

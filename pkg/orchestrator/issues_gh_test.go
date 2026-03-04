@@ -617,3 +617,22 @@ func TestCloseCobblerIssue_FakeRepo_NoOp(t *testing.T) {
 		t.Error("closeCobblerIssue with fake repo must return an error")
 	}
 }
+
+// --- measuring placeholder (GH-568) ---
+
+// TestCreateMeasuringPlaceholder_FakeRepo_Error verifies createMeasuringPlaceholder
+// returns an error (not panic) when the GitHub CLI fails on a fake repo (GH-568).
+func TestCreateMeasuringPlaceholder_FakeRepo_Error(t *testing.T) {
+	t.Parallel()
+	_, err := createMeasuringPlaceholder("fake/repo-that-does-not-exist", "gen-test", 1)
+	if err == nil {
+		t.Error("createMeasuringPlaceholder with fake repo must return an error")
+	}
+}
+
+// TestCloseMeasuringPlaceholder_FakeRepo_NoOp verifies closeMeasuringPlaceholder
+// does not panic when the GitHub CLI fails on a fake repo (GH-568).
+func TestCloseMeasuringPlaceholder_FakeRepo_NoOp(t *testing.T) {
+	t.Parallel()
+	closeMeasuringPlaceholder("fake/repo-that-does-not-exist", 99999) // must not panic
+}
