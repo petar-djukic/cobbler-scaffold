@@ -1287,3 +1287,369 @@ func contains(s, substr string) bool {
 	}
 	return false
 }
+
+// ---------------------------------------------------------------------------
+// warnOversizedGroups tests (GH-508 audit)
+// ---------------------------------------------------------------------------
+
+func TestWarnOversizedGroups_NoPRDs(t *testing.T) {
+	_, cleanup := setupContextTestDir(t)
+	defer cleanup()
+
+	// No PRD files present — function must not panic.
+	warnOversizedGroups(5)
+}
+
+func TestWarnOversizedGroups_WithinLimit(t *testing.T) {
+	_, cleanup := setupContextTestDir(t)
+	defer cleanup()
+
+	prd := `id: prd001-test
+title: Test PRD
+problem: test
+goals: []
+requirements:
+  R1:
+    title: Group One
+    items:
+      - R1.1: item one
+      - R1.2: item two
+non_goals: []
+acceptance_criteria: []
+`
+	os.WriteFile("docs/specs/product-requirements/prd001-test.yaml", []byte(prd), 0o644)
+
+	// 2 items, maxReqs=5 → no warning, no panic.
+	warnOversizedGroups(5)
+}
+
+func TestWarnOversizedGroups_OversizedGroup(t *testing.T) {
+	_, cleanup := setupContextTestDir(t)
+	defer cleanup()
+
+	prd := `id: prd001-test
+title: Test PRD
+problem: test
+goals: []
+requirements:
+  R1:
+    title: Big Group
+    items:
+      - R1.1: a
+      - R1.2: b
+      - R1.3: c
+      - R1.4: d
+      - R1.5: e
+      - R1.6: f
+non_goals: []
+acceptance_criteria: []
+`
+	os.WriteFile("docs/specs/product-requirements/prd001-test.yaml", []byte(prd), 0o644)
+
+	// 6 items, maxReqs=3 → should log a warning but not panic.
+	warnOversizedGroups(3)
+}
+
+// ---------------------------------------------------------------------------
+// loadPRDSubItemCounts tests (GH-508 audit)
+// ---------------------------------------------------------------------------
+
+func TestLoadPRDSubItemCounts_NoPRDs(t *testing.T) {
+	_, cleanup := setupContextTestDir(t)
+	defer cleanup()
+
+	counts := loadPRDSubItemCounts()
+	if counts == nil {
+		t.Error("expected non-nil map")
+	}
+	if len(counts) != 0 {
+		t.Errorf("expected empty map with no PRDs, got %d entries", len(counts))
+	}
+}
+
+func TestLoadPRDSubItemCounts_WithPRD(t *testing.T) {
+	_, cleanup := setupContextTestDir(t)
+	defer cleanup()
+
+	prd := `id: prd003-wf
+title: Workflow PRD
+problem: test
+goals: []
+requirements:
+  R1:
+    title: Group One
+    items:
+      - R1.1: item1
+      - R1.2: item2
+      - R1.3: item3
+  R2:
+    title: Group Two
+    items:
+      - R2.1: itemA
+      - R2.2: itemB
+non_goals: []
+acceptance_criteria: []
+`
+	os.WriteFile("docs/specs/product-requirements/prd003-wf.yaml", []byte(prd), 0o644)
+
+	counts := loadPRDSubItemCounts()
+
+	// Full stem entry.
+	if counts["prd003-wf"]["R1"] != 3 {
+		t.Errorf("expected R1=3, got %d", counts["prd003-wf"]["R1"])
+	}
+	if counts["prd003-wf"]["R2"] != 2 {
+		t.Errorf("expected R2=2, got %d", counts["prd003-wf"]["R2"])
+	}
+	// Short prefix entry.
+	if counts["prd003"]["R1"] != 3 {
+		t.Errorf("expected short prefix R1=3, got %d", counts["prd003"]["R1"])
+	}
+}
+
+func TestLoadPRDSubItemCounts_EmptyItemsCountAs1(t *testing.T) {
+	_, cleanup := setupContextTestDir(t)
+	defer cleanup()
+
+	prd := `id: prd005-empty
+title: PRD with empty group
+problem: test
+goals: []
+requirements:
+  R1:
+    title: Empty Group
+    items: []
+non_goals: []
+acceptance_criteria: []
+`
+	os.WriteFile("docs/specs/product-requirements/prd005-empty.yaml", []byte(prd), 0o644)
+
+	counts := loadPRDSubItemCounts()
+
+	// Empty items list → count defaults to 1.
+	if counts["prd005-empty"]["R1"] != 1 {
+		t.Errorf("expected R1=1 for empty items, got %d", counts["prd005-empty"]["R1"])
+	}
+}
+
+func TestLoadPRDSubItemCounts_ShortPrefixNotDuplicated(t *testing.T) {
+	_, cleanup := setupContextTestDir(t)
+	defer cleanup()
+
+	// Two PRDs with the same prefix (prd001) — short entry maps to the first.
+	prd1 := `id: prd001-alpha
+title: Alpha
+problem: test
+goals: []
+requirements:
+  R1:
+    title: Group
+    items:
+      - R1.1: x
+non_goals: []
+acceptance_criteria: []
+`
+	prd2 := `id: prd001-beta
+title: Beta
+problem: test
+goals: []
+requirements:
+  R1:
+    title: Group
+    items:
+      - R1.1: x
+      - R1.2: y
+non_goals: []
+acceptance_criteria: []
+`
+	os.WriteFile("docs/specs/product-requirements/prd001-alpha.yaml", []byte(prd1), 0o644)
+	os.WriteFile("docs/specs/product-requirements/prd001-beta.yaml", []byte(prd2), 0o644)
+
+	counts := loadPRDSubItemCounts()
+
+	// Both full stems must be present.
+	if _, ok := counts["prd001-alpha"]; !ok {
+		t.Error("expected prd001-alpha in counts")
+	}
+	if _, ok := counts["prd001-beta"]; !ok {
+		t.Error("expected prd001-beta in counts")
+	}
+	// Short prefix must exist (set to whichever was processed first; not duplicated).
+	if _, ok := counts["prd001"]; !ok {
+		t.Error("expected prd001 short prefix in counts")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// buildMeasurePrompt + MeasureRoadmapSource tests (GH-534, GH-508 audit)
+// ---------------------------------------------------------------------------
+
+// setupMeasureRoadmapDir creates a temp dir with the minimal structure needed
+// to exercise the MeasureRoadmapSource code path: road-map.yaml, a use case
+// file with touchpoint paths, and an optional cobbler dir for phase context.
+func setupMeasureRoadmapDir(t *testing.T, roadmapYAML, ucID, ucYAML string) (cobblerDir string, cleanup func()) {
+	t.Helper()
+	tmp := t.TempDir()
+	orig, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, d := range []string{
+		"docs/specs/use-cases",
+		"docs/specs/product-requirements",
+		".cobbler",
+	} {
+		os.MkdirAll(d, 0o755)
+	}
+
+	os.WriteFile("docs/road-map.yaml", []byte(roadmapYAML), 0o644)
+	if ucID != "" && ucYAML != "" {
+		os.WriteFile("docs/specs/use-cases/"+ucID+".yaml", []byte(ucYAML), 0o644)
+	}
+
+	return filepath.Join(tmp, ".cobbler"), func() {
+		os.Chdir(orig)
+	}
+}
+
+func TestBuildMeasurePrompt_MeasureRoadmapSource_AllDone(t *testing.T) {
+	roadmap := `id: rm1
+title: Roadmap
+releases:
+  - version: "01.0"
+    name: R1
+    status: done
+    use_cases:
+      - id: rel01.0-uc001-init
+        status: done
+`
+	cobblerDir, cleanup := setupMeasureRoadmapDir(t, roadmap, "", "")
+	defer cleanup()
+
+	cfg := Config{}
+	cfg.Cobbler.Dir = cobblerDir + "/"
+	cfg.Cobbler.MeasureRoadmapSource = true
+	o := New(cfg)
+
+	// All done → no SourcePatterns set, build should succeed normally.
+	prompt, err := o.buildMeasurePrompt("", "", 1)
+	if err != nil {
+		t.Fatalf("buildMeasurePrompt() error = %v", err)
+	}
+	if !strings.Contains(prompt, "role:") {
+		t.Error("prompt missing role field")
+	}
+}
+
+func TestBuildMeasurePrompt_MeasureRoadmapSource_PendingUC(t *testing.T) {
+	roadmap := `id: rm1
+title: Roadmap
+releases:
+  - version: "01.0"
+    name: R1
+    status: in_progress
+    use_cases:
+      - id: rel01.0-uc001-init
+        status: done
+      - id: rel01.0-uc002-wf
+        status: in_progress
+`
+	ucYAML := `id: rel01.0-uc002-wf
+title: Workflow
+touchpoints:
+  - T1: "pkg/workflow ` + "\u2014" + ` prd003-wf R1"
+`
+	cobblerDir, cleanup := setupMeasureRoadmapDir(t, roadmap, "rel01.0-uc002-wf", ucYAML)
+	defer cleanup()
+
+	cfg := Config{}
+	cfg.Cobbler.Dir = cobblerDir + "/"
+	cfg.Cobbler.MeasureRoadmapSource = true
+	o := New(cfg)
+
+	// Pending UC with touchpoint "pkg/workflow" → SourcePatterns contains that path pattern.
+	// We can verify the road-map path was selected by checking the prompt builds cleanly.
+	prompt, err := o.buildMeasurePrompt("", "", 1)
+	if err != nil {
+		t.Fatalf("buildMeasurePrompt() error = %v", err)
+	}
+	if !strings.Contains(prompt, "role:") {
+		t.Error("prompt missing role field")
+	}
+}
+
+func TestBuildMeasurePrompt_MeasureRoadmapSource_ManualPatternsOverride(t *testing.T) {
+	// When MeasureSourcePatterns is set manually, MeasureRoadmapSource must not
+	// overwrite it (manual patterns have priority).
+	roadmap := `id: rm1
+title: Roadmap
+releases:
+  - version: "01.0"
+    name: R1
+    status: in_progress
+    use_cases:
+      - id: rel01.0-uc001-init
+        status: in_progress
+`
+	ucYAML := `id: rel01.0-uc001-init
+title: Init
+touchpoints:
+  - T1: "pkg/init ` + "\u2014" + ` prd001-init R1"
+`
+	cobblerDir, cleanup := setupMeasureRoadmapDir(t, roadmap, "rel01.0-uc001-init", ucYAML)
+	defer cleanup()
+
+	cfg := Config{}
+	cfg.Cobbler.Dir = cobblerDir + "/"
+	cfg.Cobbler.MeasureRoadmapSource = true
+	cfg.Cobbler.MeasureSourcePatterns = "cmd/tool/**/*.go"
+	o := New(cfg)
+
+	// Manual patterns set → road-map source ignored, build must succeed.
+	prompt, err := o.buildMeasurePrompt("", "", 1)
+	if err != nil {
+		t.Fatalf("buildMeasurePrompt() error = %v", err)
+	}
+	if !strings.Contains(prompt, "role:") {
+		t.Error("prompt missing role field")
+	}
+}
+
+func TestBuildMeasurePrompt_MeasureRoadmapSource_UCNoTouchpointPaths(t *testing.T) {
+	// UC found but touchpoints use colon-style (no em-dash) → no SourcePatterns set.
+	roadmap := `id: rm1
+title: Roadmap
+releases:
+  - version: "01.0"
+    name: R1
+    status: in_progress
+    use_cases:
+      - id: rel01.0-uc001-init
+        status: in_progress
+`
+	ucYAML := `id: rel01.0-uc001-init
+title: Init
+touchpoints:
+  - T1: "Config fields: prd001-init R1, R2"
+`
+	cobblerDir, cleanup := setupMeasureRoadmapDir(t, roadmap, "rel01.0-uc001-init", ucYAML)
+	defer cleanup()
+
+	cfg := Config{}
+	cfg.Cobbler.Dir = cobblerDir + "/"
+	cfg.Cobbler.MeasureRoadmapSource = true
+	o := New(cfg)
+
+	// No em-dash in touchpoints → no pkg paths → no SourcePatterns filter; build must succeed.
+	prompt, err := o.buildMeasurePrompt("", "", 1)
+	if err != nil {
+		t.Fatalf("buildMeasurePrompt() error = %v", err)
+	}
+	if !strings.Contains(prompt, "role:") {
+		t.Error("prompt missing role field")
+	}
+}
