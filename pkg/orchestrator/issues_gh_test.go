@@ -636,3 +636,20 @@ func TestCloseMeasuringPlaceholder_FakeRepo_NoOp(t *testing.T) {
 	t.Parallel()
 	closeMeasuringPlaceholder("fake/repo-that-does-not-exist", 99999) // must not panic
 }
+
+// --- progress comments (GH-567) ---
+
+// TestCommentCobblerIssue_FakeRepo_NoOp verifies commentCobblerIssue does not
+// panic when the GitHub CLI fails on a fake repo (GH-567).
+func TestCommentCobblerIssue_FakeRepo_NoOp(t *testing.T) {
+	t.Parallel()
+	commentCobblerIssue("fake/repo-that-does-not-exist", 99999, "test body") // must not panic
+}
+
+// TestCommentCobblerIssue_ZeroNumber_NoOp verifies commentCobblerIssue is a
+// no-op for invalid inputs (GH-567).
+func TestCommentCobblerIssue_ZeroNumber_NoOp(t *testing.T) {
+	t.Parallel()
+	commentCobblerIssue("petar-djukic/cobbler-scaffold", 0, "test body")  // must not panic
+	commentCobblerIssue("", 1, "test body")                                // must not panic
+}

@@ -380,10 +380,14 @@ func (o *Orchestrator) doOneTask(task stitchTask, baseBranch, repoRoot string) e
 	// Build and run prompt.
 	prompt, promptErr := o.buildStitchPrompt(task)
 	if promptErr != nil {
-		o.resetTask(task, "prompt build failure")
+		o.failTask(task, "prompt build failure", taskStart)
 		return promptErr
 	}
 	logf("doOneTask: prompt built, length=%d bytes", len(prompt))
+
+	// Post "started" comment so the issue reflects pickup immediately.
+	commentCobblerIssue(task.repo, task.ghNumber, fmt.Sprintf(
+		"Stitch started. Branch: `%s`, prompt: %d bytes.", task.branchName, len(prompt)))
 
 	// Save prompt BEFORE calling Claude so it's on disk even if Claude times out.
 	historyTS := time.Now().Format("2006-01-02-15-04-05")
@@ -411,7 +415,7 @@ func (o *Orchestrator) doOneTask(task stitchTask, baseBranch, repoRoot string) e
 			CostUSD:   tokens.CostUSD,
 			LOCBefore: locBefore,
 		})
-		o.resetTask(task, "Claude failure")
+		o.failTask(task, "Claude failure", taskStart)
 		return errTaskReset
 	}
 	logf("doOneTask: Claude completed for %s in %s", task.id, time.Since(claudeStart).Round(time.Second))
@@ -433,7 +437,7 @@ func (o *Orchestrator) doOneTask(task stitchTask, baseBranch, repoRoot string) e
 			CostUSD:   tokens.CostUSD,
 			LOCBefore: locBefore,
 		})
-		o.resetTask(task, "worktree commit failure")
+		o.failTask(task, "worktree commit failure", taskStart)
 		return errTaskReset
 	}
 
@@ -482,7 +486,7 @@ func (o *Orchestrator) doOneTask(task stitchTask, baseBranch, repoRoot string) e
 			CostUSD:   tokens.CostUSD,
 			LOCBefore: locBefore,
 		})
-		o.resetTask(task, "merge failure")
+		o.failTask(task, "merge failure", taskStart)
 		return errTaskReset
 	}
 	logf("doOneTask: merge completed in %s", time.Since(mergeStart).Round(time.Second))
@@ -810,8 +814,28 @@ func cleanupWorktree(task stitchTask) bool {
 
 func (o *Orchestrator) closeStitchTask(task stitchTask, rec InvocationRecord) {
 	logf("closeStitchTask: closing #%d %q", task.ghNumber, task.title)
+	locDeltaProd := rec.LOCAfter.Production - rec.LOCBefore.Production
+	locDeltaTest := rec.LOCAfter.Test - rec.LOCBefore.Test
+	comment := fmt.Sprintf(
+		"Stitch completed in %dm %ds. LOC delta: %+d prod, %+d test. Cost: $%.2f.",
+		rec.DurationS/60, rec.DurationS%60,
+		locDeltaProd, locDeltaTest,
+		rec.Tokens.CostUSD,
+	)
+	commentCobblerIssue(task.repo, task.ghNumber, comment)
 	if err := closeCobblerIssue(task.repo, task.ghNumber, task.generation); err != nil {
 		logf("closeStitchTask: closeCobblerIssue warning for #%d: %v", task.ghNumber, err)
 	}
 	logf("closeStitchTask: #%d closed", task.ghNumber)
+}
+
+// failTask posts a failure comment on the task issue, then resets it.
+func (o *Orchestrator) failTask(task stitchTask, reason string, startedAt time.Time) {
+	durationS := int(time.Since(startedAt).Seconds())
+	comment := fmt.Sprintf(
+		"Stitch failed after %dm %ds. Error: %s.",
+		durationS/60, durationS%60, reason,
+	)
+	commentCobblerIssue(task.repo, task.ghNumber, comment)
+	o.resetTask(task, reason)
 }

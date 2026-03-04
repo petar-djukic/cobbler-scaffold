@@ -638,6 +638,24 @@ func resolveTargetRepo(cfg Config) string {
 	return ""
 }
 
+// commentCobblerIssue posts a comment on a GitHub issue. Errors are logged
+// but do not fail the caller — commenting is best-effort.
+func commentCobblerIssue(repo string, number int, body string) {
+	if repo == "" || number <= 0 {
+		return
+	}
+	out, err := exec.Command(binGh, "issue", "comment",
+		fmt.Sprintf("%d", number),
+		"--repo", repo,
+		"--body", body,
+	).CombinedOutput()
+	if err != nil {
+		logf("commentCobblerIssue: gh issue comment failed for #%d: %v (output: %s)", number, err, strings.TrimSpace(string(out)))
+		return
+	}
+	logf("commentCobblerIssue: posted comment on #%d", number)
+}
+
 // fileTargetRepoDefects files each defect as a GitHub bug issue in repo.
 // Errors are logged but do not fail the caller — filing is best-effort
 // (prd003 R11.5, R11.6). If repo is empty the call is a no-op with a
