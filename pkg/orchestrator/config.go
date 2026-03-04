@@ -233,6 +233,19 @@ type CobblerConfig struct {
 	// affecting long-running tasks that legitimately produce output (file
 	// reads, tool calls, code). Default 60. Set to 0 to disable.
 	IdleTimeoutSeconds int `yaml:"idle_timeout_seconds"`
+
+	// MeasureExcludeSource excludes all Go source files from the measure
+	// prompt context when true. Specs (PRDs, use cases, constitutions,
+	// road-map) are always included. Default false; existing behaviour
+	// is preserved.
+	MeasureExcludeSource bool `yaml:"measure_exclude_source"`
+
+	// MeasureSourcePatterns is a newline-delimited list of glob patterns.
+	// When non-empty, only source files whose paths match at least one
+	// pattern are included in the measure prompt context. Ignored when
+	// MeasureExcludeSource is true. When empty, all GoSourceDirs files
+	// are included.
+	MeasureSourcePatterns string `yaml:"measure_source_patterns"`
 }
 
 // PodmanConfig holds settings for the podman container runtime.

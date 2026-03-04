@@ -59,6 +59,26 @@ release: "01.0"
 	}
 }
 
+func TestLoadPhaseContext_ExcludeSourceFields(t *testing.T) {
+	t.Parallel()
+	tmp := t.TempDir()
+	path := filepath.Join(tmp, "measure_context.yaml")
+	content := "exclude_source: true\nsource_patterns: \"pkg/foo/*.go\"\n"
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	pc, err := loadPhaseContext(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !pc.ExcludeSource {
+		t.Error("ExcludeSource should be true")
+	}
+	if pc.SourcePatterns != "pkg/foo/*.go" {
+		t.Errorf("SourcePatterns: got %q, want %q", pc.SourcePatterns, "pkg/foo/*.go")
+	}
+}
+
 func TestLoadPhaseContext_MalformedFile(t *testing.T) {
 	tmp := t.TempDir()
 	path := filepath.Join(tmp, "bad.yaml")
@@ -1398,5 +1418,73 @@ func TestContextExcludeEverything(t *testing.T) {
 	}
 	if len(ctx.Extra) > 0 {
 		t.Errorf("Extra should be empty with context_exclude='.', got %d", len(ctx.Extra))
+	}
+}
+
+// --- measure source filter (GH-565) ---
+
+// TestBuildProjectContext_ExcludeSource verifies that PhaseContext.ExcludeSource
+// removes all source files from the context while keeping specs (GH-565).
+func TestBuildProjectContext_ExcludeSource(t *testing.T) {
+	_, cleanup := setupContextTestDir(t)
+	defer cleanup()
+
+	project := ProjectConfig{GoSourceDirs: []string{"pkg/"}}
+	phaseCtx := &PhaseContext{ExcludeSource: true}
+
+	ctx, err := buildProjectContext("", project, phaseCtx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(ctx.SourceCode) != 0 {
+		t.Errorf("SourceCode should be empty when ExcludeSource=true, got %d files", len(ctx.SourceCode))
+	}
+	// Specs must still be loaded.
+	if ctx.Vision == nil {
+		t.Error("Vision should still be loaded when ExcludeSource=true")
+	}
+}
+
+// TestBuildProjectContext_SourcePatterns verifies that PhaseContext.SourcePatterns
+// filters source files to only those matching the patterns (GH-565).
+func TestBuildProjectContext_SourcePatterns(t *testing.T) {
+	_, cleanup := setupContextTestDir(t)
+	defer cleanup()
+
+	project := ProjectConfig{GoSourceDirs: []string{"pkg/"}}
+	// Only include main.go, not util.go.
+	phaseCtx := &PhaseContext{SourcePatterns: "pkg/app/main.go"}
+
+	ctx, err := buildProjectContext("", project, phaseCtx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(ctx.SourceCode) != 1 {
+		t.Fatalf("expected 1 source file, got %d", len(ctx.SourceCode))
+	}
+	if ctx.SourceCode[0].File != "pkg/app/main.go" {
+		t.Errorf("expected pkg/app/main.go, got %s", ctx.SourceCode[0].File)
+	}
+}
+
+// TestBuildProjectContext_SourcePatternsEmpty verifies that empty SourcePatterns
+// includes all source files (no filter applied) (GH-565).
+func TestBuildProjectContext_SourcePatternsEmpty(t *testing.T) {
+	_, cleanup := setupContextTestDir(t)
+	defer cleanup()
+
+	project := ProjectConfig{GoSourceDirs: []string{"pkg/"}}
+	phaseCtx := &PhaseContext{SourcePatterns: ""}
+
+	ctx, err := buildProjectContext("", project, phaseCtx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Both pkg/app/main.go and pkg/app/util.go should be present.
+	if len(ctx.SourceCode) < 2 {
+		t.Errorf("expected >=2 source files with empty SourcePatterns, got %d", len(ctx.SourceCode))
 	}
 }
