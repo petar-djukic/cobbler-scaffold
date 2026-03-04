@@ -28,6 +28,12 @@ type PhaseContext struct {
 	Exclude string `yaml:"exclude"`
 	Sources string `yaml:"sources"`
 	Release string `yaml:"release"`
+	// ExcludeSource excludes all Go source code from the prompt context
+	// when true. Specs are always included (GH-565).
+	ExcludeSource bool `yaml:"exclude_source"`
+	// SourcePatterns is a newline-delimited list of glob patterns.
+	// When non-empty, only matching source files are included (GH-565).
+	SourcePatterns string `yaml:"source_patterns"`
 }
 
 // loadPhaseContext reads a phase context YAML file. Returns (nil, nil)
@@ -1413,16 +1419,36 @@ func buildProjectContext(existingIssuesJSON string, project ProjectConfig, phase
 		ctx.Specs = nil
 	}
 
-	// Load source code and filter through exclude set.
-	ctx.SourceCode = loadSourceFiles(project.GoSourceDirs)
-	if excludeSet != nil {
-		var filtered []SourceFile
-		for _, sf := range ctx.SourceCode {
-			if !excludeSet[sf.File] {
-				filtered = append(filtered, sf)
+	// Load source code — skipped entirely when ExcludeSource is set (GH-565).
+	excludeSource := phaseCtx != nil && phaseCtx.ExcludeSource
+	if excludeSource {
+		logf("buildProjectContext: source excluded (exclude_source=true)")
+	} else {
+		ctx.SourceCode = loadSourceFiles(project.GoSourceDirs)
+
+		// Apply glob-pattern source filter when SourcePatterns is set (GH-565).
+		if phaseCtx != nil && phaseCtx.SourcePatterns != "" {
+			allowSet := resolveFileSet(phaseCtx.SourcePatterns)
+			logf("buildProjectContext: source_patterns allow set has %d file(s)", len(allowSet))
+			var filtered []SourceFile
+			for _, sf := range ctx.SourceCode {
+				if allowSet[sf.File] {
+					filtered = append(filtered, sf)
+				}
 			}
+			ctx.SourceCode = filtered
 		}
-		ctx.SourceCode = filtered
+
+		// Filter through the context exclude set.
+		if excludeSet != nil {
+			var filtered []SourceFile
+			for _, sf := range ctx.SourceCode {
+				if !excludeSet[sf.File] {
+					filtered = append(filtered, sf)
+				}
+			}
+			ctx.SourceCode = filtered
+		}
 	}
 
 	ctx.Issues = parseIssuesJSON(existingIssuesJSON)

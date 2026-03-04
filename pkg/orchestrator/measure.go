@@ -345,6 +345,21 @@ func (o *Orchestrator) buildMeasurePrompt(userInput, existingIssues string, limi
 		logf("buildMeasurePrompt: no phase context file, using config defaults")
 	}
 
+	// Apply CobblerConfig measure source settings to phaseCtx (GH-565).
+	// Config values are overridden only when the phaseCtx file has not
+	// already set the field (file-level wins over config-level).
+	if phaseCtx == nil {
+		phaseCtx = &PhaseContext{}
+	}
+	if o.cfg.Cobbler.MeasureExcludeSource && !phaseCtx.ExcludeSource {
+		phaseCtx.ExcludeSource = true
+		logf("buildMeasurePrompt: measure_exclude_source=true from config")
+	}
+	if o.cfg.Cobbler.MeasureSourcePatterns != "" && phaseCtx.SourcePatterns == "" {
+		phaseCtx.SourcePatterns = o.cfg.Cobbler.MeasureSourcePatterns
+		logf("buildMeasurePrompt: measure_source_patterns set from config")
+	}
+
 	projectCtx, ctxErr := buildProjectContext(existingIssues, o.cfg.Project, phaseCtx)
 	if ctxErr != nil {
 		logf("buildMeasurePrompt: buildProjectContext error: %v", ctxErr)
