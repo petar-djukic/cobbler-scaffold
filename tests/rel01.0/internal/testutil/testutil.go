@@ -427,6 +427,9 @@ func SetupClaude(t testing.TB, dir string) {
 	}
 	WriteConfigOverride(t, dir, func(cfg *orchestrator.Config) {
 		cfg.Podman.Image = ClaudeImage
+		// Use a 120s idle timeout so back-to-back Claude sessions are not killed
+		// by rate limiting that causes the API to delay responding for >60s.
+		cfg.Cobbler.IdleTimeoutSeconds = 120
 	})
 	t.Cleanup(func() {
 		closeTestGenerationIssues(t, dir)

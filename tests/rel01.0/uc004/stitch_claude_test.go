@@ -21,7 +21,6 @@ import (
 // (MaxStitchIssuesPerCycle=1) and verifies the task was processed.
 // Requires Claude: invokes cobbler:measure and cobbler:stitch which call Claude via podman.
 func TestRel01_UC004_StitchExecutesTask(t *testing.T) {
-	t.Parallel()
 	dir := testutil.SetupRepo(t, snapshotDir)
 	testutil.SetupClaude(t, dir)
 
@@ -60,7 +59,6 @@ func TestRel01_UC004_StitchExecutesTask(t *testing.T) {
 // history contains an InvocationRecord with diff stats and LOC data.
 // Requires Claude: invokes cobbler:measure and cobbler:stitch which call Claude via podman.
 func TestRel01_UC004_StitchRecordsInvocation(t *testing.T) {
-	t.Parallel()
 	dir := testutil.SetupRepo(t, snapshotDir)
 	testutil.SetupClaude(t, dir)
 

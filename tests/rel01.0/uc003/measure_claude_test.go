@@ -21,7 +21,6 @@ import (
 // MaxMeasureIssues=1 and verifies at least one issue is created.
 // Requires Claude: invokes cobbler:measure which calls Claude via podman.
 func TestRel01_UC003_MeasureCreatesIssues(t *testing.T) {
-	t.Parallel()
 	dir := testutil.SetupRepo(t, snapshotDir)
 	testutil.SetupClaude(t, dir)
 
@@ -50,7 +49,6 @@ func TestRel01_UC003_MeasureCreatesIssues(t *testing.T) {
 // is saved in the history stats file with token data.
 // Requires Claude: invokes cobbler:measure which calls Claude via podman.
 func TestRel01_UC003_MeasureRecordsInvocation(t *testing.T) {
-	t.Parallel()
 	dir := testutil.SetupRepo(t, snapshotDir)
 	testutil.SetupClaude(t, dir)
 
