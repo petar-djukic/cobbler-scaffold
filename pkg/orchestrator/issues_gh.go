@@ -6,6 +6,7 @@ package orchestrator
 import (
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -46,8 +47,25 @@ const (
 const cobblerGenLabelPrefix = "cobbler-gen-"
 
 // cobblerGenLabel returns the generation label for a given generation name.
+// GitHub enforces a 50-character maximum on label names. When the full label
+// would exceed 50 chars, we keep the prefix (12 chars) plus the first 29 chars
+// of the generation name, a hyphen, and an 8-char FNV-32 hex digest of the
+// full generation name — yielding exactly 50 chars and remaining deterministic.
 func cobblerGenLabel(generation string) string {
-	return cobblerGenLabelPrefix + generation
+	const maxLen = 50
+	label := cobblerGenLabelPrefix + generation
+	if len(label) <= maxLen {
+		return label
+	}
+	// Available space after the prefix: 50 - 12 (prefix) - 1 (hyphen) - 8 (hash) = 29.
+	const bodyLen = 29
+	h := fnv.New32a()
+	h.Write([]byte(generation))
+	truncated := generation
+	if len(truncated) > bodyLen {
+		truncated = truncated[:bodyLen]
+	}
+	return fmt.Sprintf("%s%s-%08x", cobblerGenLabelPrefix, truncated, h.Sum32())
 }
 
 // formatIssueFrontMatter formats the YAML front-matter block for an issue body.
@@ -635,6 +653,7 @@ func gcStaleGenerationIssues(repo, generationPrefix string) {
 
 	var raw []struct {
 		Number int `json:"number"`
+		Body   string `json:"body"`
 		Labels []struct {
 			Name string `json:"name"`
 		} `json:"labels"`
@@ -645,18 +664,28 @@ func gcStaleGenerationIssues(repo, generationPrefix string) {
 	}
 
 	// Group issue numbers by generation name.
+	// We read the generation from the YAML front-matter (cobbler_generation) in
+	// the issue body. This is the source of truth; the label name may be a
+	// truncated/hashed form when the full generation name exceeds 50 chars.
 	byGeneration := make(map[string][]int)
 	for _, issue := range raw {
+		// Only consider issues that carry a cobbler-gen-* label.
+		hasGenLabel := false
 		for _, label := range issue.Labels {
-			if !strings.HasPrefix(label.Name, cobblerGenLabelPrefix) {
-				continue
+			if strings.HasPrefix(label.Name, cobblerGenLabelPrefix) {
+				hasGenLabel = true
+				break
 			}
-			gen := strings.TrimPrefix(label.Name, cobblerGenLabelPrefix)
-			if gen == "" || !strings.HasPrefix(gen, generationPrefix) {
-				continue
-			}
-			byGeneration[gen] = append(byGeneration[gen], issue.Number)
 		}
+		if !hasGenLabel {
+			continue
+		}
+		fm, _ := parseIssueFrontMatter(issue.Body)
+		gen := fm.Generation
+		if gen == "" || !strings.HasPrefix(gen, generationPrefix) {
+			continue
+		}
+		byGeneration[gen] = append(byGeneration[gen], issue.Number)
 	}
 
 	// Close issues for generations whose branch no longer exists locally.

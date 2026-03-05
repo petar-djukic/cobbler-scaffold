@@ -117,13 +117,44 @@ func TestFormatIssueFrontMatter(t *testing.T) {
 	}
 }
 
-// TestCobblerGenLabel verifies label name construction.
+// TestCobblerGenLabel verifies label name construction and the 50-char cap
+// enforced by GitHub's label name limit.
 func TestCobblerGenLabel(t *testing.T) {
 	t.Parallel()
-	got := cobblerGenLabel("gen-2026-02-28-001")
-	want := "cobbler-gen-gen-2026-02-28-001"
-	if got != want {
-		t.Errorf("got %q want %q", got, want)
+
+	const maxLen = 50
+
+	t.Run("short name unchanged", func(t *testing.T) {
+		t.Parallel()
+		got := cobblerGenLabel("gen-2026-02-28-001")
+		want := "cobbler-gen-gen-2026-02-28-001"
+		if got != want {
+			t.Errorf("got %q want %q", got, want)
+		}
+	})
+
+	longCases := []string{
+		// Observed failure: generation-gh-262-generate-code-from-specs → 54 chars
+		"generation-gh-262-generate-code-from-specs",
+		strings.Repeat("x", 100),
+		strings.Repeat("a", maxLen-len(cobblerGenLabelPrefix)+1),
+	}
+	for _, gen := range longCases {
+		gen := gen
+		t.Run("long/"+gen[:min(len(gen), 20)], func(t *testing.T) {
+			t.Parallel()
+			label := cobblerGenLabel(gen)
+			if len(label) > maxLen {
+				t.Errorf("label len %d > %d: %q", len(label), maxLen, label)
+			}
+			if !strings.HasPrefix(label, cobblerGenLabelPrefix) {
+				t.Errorf("missing prefix: %q", label)
+			}
+			// Deterministic across calls.
+			if cobblerGenLabel(gen) != label {
+				t.Errorf("not deterministic for %q", gen)
+			}
+		})
 	}
 }
 
