@@ -779,6 +779,63 @@ func TestEffectiveMode_UnknownFallsToPodman(t *testing.T) {
 	}
 }
 
+func TestEffectiveMode_SDKMode(t *testing.T) {
+	t.Parallel()
+	cfg := CobblerConfig{Mode: ExecutionModeSDK}
+	if got := cfg.effectiveMode(); got != ExecutionModeSDK {
+		t.Errorf("effectiveMode() = %q; want %q", got, ExecutionModeSDK)
+	}
+}
+
+// --- intFromUsage ---
+
+func TestIntFromUsage_NilMap(t *testing.T) {
+	t.Parallel()
+	if got := intFromUsage(nil, "input_tokens"); got != 0 {
+		t.Errorf("intFromUsage(nil) = %d; want 0", got)
+	}
+}
+
+func TestIntFromUsage_MissingKey(t *testing.T) {
+	t.Parallel()
+	m := map[string]interface{}{"output_tokens": float64(100)}
+	if got := intFromUsage(m, "input_tokens"); got != 0 {
+		t.Errorf("intFromUsage missing key = %d; want 0", got)
+	}
+}
+
+func TestIntFromUsage_Float64(t *testing.T) {
+	t.Parallel()
+	m := map[string]interface{}{"input_tokens": float64(512)}
+	if got := intFromUsage(m, "input_tokens"); got != 512 {
+		t.Errorf("intFromUsage float64 = %d; want 512", got)
+	}
+}
+
+func TestIntFromUsage_Int(t *testing.T) {
+	t.Parallel()
+	m := map[string]interface{}{"input_tokens": int(256)}
+	if got := intFromUsage(m, "input_tokens"); got != 256 {
+		t.Errorf("intFromUsage int = %d; want 256", got)
+	}
+}
+
+func TestIntFromUsage_Int64(t *testing.T) {
+	t.Parallel()
+	m := map[string]interface{}{"input_tokens": int64(1024)}
+	if got := intFromUsage(m, "input_tokens"); got != 1024 {
+		t.Errorf("intFromUsage int64 = %d; want 1024", got)
+	}
+}
+
+func TestIntFromUsage_UnknownType(t *testing.T) {
+	t.Parallel()
+	m := map[string]interface{}{"input_tokens": "not-a-number"}
+	if got := intFromUsage(m, "input_tokens"); got != 0 {
+		t.Errorf("intFromUsage unknown type = %d; want 0", got)
+	}
+}
+
 // --- saveHistory* best-effort behavior ---
 
 func TestSaveHistoryReport_EmptyHistoryDir_NoOp(t *testing.T) {

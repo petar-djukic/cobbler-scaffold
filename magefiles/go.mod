@@ -7,6 +7,9 @@ require (
 	github.com/mesh-intelligence/cobbler-scaffold v0.20260222.1
 )
 
-require gopkg.in/yaml.v3 v3.0.1 // indirect
+require (
+	github.com/schlunsen/claude-agent-sdk-go v0.5.1 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
+)
 
 replace github.com/mesh-intelligence/cobbler-scaffold => ../

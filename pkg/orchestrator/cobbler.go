@@ -12,10 +12,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
 
+	claudesdk "github.com/schlunsen/claude-agent-sdk-go"
+	claudetypes "github.com/schlunsen/claude-agent-sdk-go/types"
 	"gopkg.in/yaml.v3"
 )
 
@@ -452,10 +455,12 @@ func parseClaudeTokens(output []byte) ClaudeResult {
 }
 
 // checkClaude verifies that Claude can be invoked. In podman mode it
-// confirms podman is available and the container image exists. In CLI mode
-// it confirms the claude binary is on PATH. Both modes verify credentials.
+// confirms podman is available and the container image exists. In CLI and
+// SDK modes it confirms the claude binary is on PATH. All modes verify
+// credentials.
 func (o *Orchestrator) checkClaude() error {
-	if o.cfg.Cobbler.effectiveMode() == ExecutionModeCLI {
+	switch o.cfg.Cobbler.effectiveMode() {
+	case ExecutionModeCLI, ExecutionModeSDK:
 		if _, err := exec.LookPath(binClaude); err != nil {
 			return fmt.Errorf("claude not found on PATH; install the Claude CLI or set mode: podman")
 		}
@@ -590,6 +595,10 @@ func (o *Orchestrator) runClaude(prompt, dir string, silence bool, extraClaudeAr
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
+	if o.cfg.Cobbler.effectiveMode() == ExecutionModeSDK {
+		return o.runClaudeSDK(ctx, prompt, workDir, silence, extraClaudeArgs...)
+	}
+
 	var cmd *exec.Cmd
 	if o.cfg.Cobbler.effectiveMode() == ExecutionModeCLI {
 		cmd = o.buildDirectCmd(ctx, workDir, extraClaudeArgs...)
@@ -716,6 +725,103 @@ func (o *Orchestrator) buildDirectCmd(ctx context.Context, workDir string, extra
 	}
 	cmd.Env = filtered
 	return cmd
+}
+
+// runClaudeSDK executes Claude via the Go Agent SDK and returns token usage.
+// It is called by runClaude when the execution mode is ExecutionModeSDK.
+//
+// The SDK communicates with the claude binary via the --stdio JSONL protocol,
+// returning typed message events (AssistantMessage, ResultMessage, etc.).
+// This provides structured streaming and native token reporting without the
+// need for raw stream-json parsing.
+//
+// CLAUDECODE is zeroed in the SDK environment so the claude subprocess can
+// start even when the caller is inside a Claude Code session.
+func (o *Orchestrator) runClaudeSDK(ctx context.Context, prompt, workDir string, silence bool, extraClaudeArgs ...string) (ClaudeResult, error) {
+	opts := claudetypes.NewClaudeAgentOptions()
+	opts.CWD = &workDir
+	opts.DangerouslySkipPermissions = true
+	opts.AllowDangerouslySkipPermissions = true
+
+	// Zero CLAUDECODE so the SDK's claude subprocess starts even when the
+	// caller is running inside a Claude Code session (nested-session guard).
+	opts.Env["CLAUDECODE"] = ""
+
+	// Map --max-turns from extraClaudeArgs into the options struct.
+	for i := 0; i+1 < len(extraClaudeArgs); i++ {
+		if extraClaudeArgs[i] == "--max-turns" {
+			if n, err := strconv.Atoi(extraClaudeArgs[i+1]); err == nil {
+				opts = opts.WithMaxTurns(n)
+			}
+			i++ // skip the value token
+		}
+	}
+
+	logf("runClaude: SDK query workDir=%q (timeout=%s)", workDir, o.cfg.ClaudeTimeout())
+
+	start := time.Now()
+	msgChan, err := claudesdk.Query(ctx, prompt, opts)
+	if err != nil {
+		return ClaudeResult{}, fmt.Errorf("claude SDK query: %w", err)
+	}
+
+	var result ClaudeResult
+	var textBuf strings.Builder
+
+	for msg := range msgChan {
+		switch m := msg.(type) {
+		case *claudetypes.AssistantMessage:
+			for _, block := range m.Content {
+				if tb, ok := block.(*claudetypes.TextBlock); ok {
+					if !silence {
+						fmt.Print(tb.Text)
+					}
+					textBuf.WriteString(tb.Text)
+				}
+			}
+		case *claudetypes.ResultMessage:
+			if m.TotalCostUSD != nil {
+				result.CostUSD = *m.TotalCostUSD
+			}
+			result.InputTokens = intFromUsage(m.Usage, "input_tokens")
+			result.OutputTokens = intFromUsage(m.Usage, "output_tokens")
+			result.CacheCreationTokens = intFromUsage(m.Usage, "cache_creation_input_tokens")
+			result.CacheReadTokens = intFromUsage(m.Usage, "cache_read_input_tokens")
+			if m.IsError {
+				return result, fmt.Errorf("claude SDK session returned error result")
+			}
+		}
+	}
+
+	// Store the collected text as RawOutput for history compatibility.
+	result.RawOutput = []byte(textBuf.String())
+	logf("runClaude: SDK finished in %s in=%d (cache_create=%d cache_read=%d) out=%d cost=$%.4f",
+		time.Since(start).Round(time.Second),
+		result.InputTokens, result.CacheCreationTokens, result.CacheReadTokens,
+		result.OutputTokens, result.CostUSD)
+	return result, nil
+}
+
+// intFromUsage extracts an integer from the ResultMessage usage map,
+// which uses map[string]interface{} because Anthropic API usage fields
+// are JSON numbers (float64 after decode).
+func intFromUsage(usage map[string]interface{}, key string) int {
+	if usage == nil {
+		return 0
+	}
+	v, ok := usage[key]
+	if !ok {
+		return 0
+	}
+	switch n := v.(type) {
+	case float64:
+		return int(n)
+	case int:
+		return n
+	case int64:
+		return int(n)
+	}
+	return 0
 }
 
 // logConfig prints the resolved configuration for debugging.

@@ -280,11 +280,11 @@ type CobblerConfig struct {
 	MeasureSummarizeCommand string `yaml:"measure_summarize_command"`
 
 	// Mode selects the Claude execution backend. Valid values are
-	// ExecutionModePodman (default, run Claude inside a podman container)
-	// and ExecutionModeCLI (run the claude binary directly on the host,
-	// bypassing podman). Use ExecutionModeCLI in environments where podman
-	// is unavailable or when the host already provides an isolated claude
-	// installation. See prd001 R11.
+	// ExecutionModePodman (default, run Claude inside a podman container),
+	// ExecutionModeCLI (run the claude binary directly on the host), and
+	// ExecutionModeSDK (use the Go Agent SDK for structured streaming).
+	// Use ExecutionModeCLI or ExecutionModeSDK in environments where podman
+	// is unavailable. See prd001 R11.
 	Mode string `yaml:"mode"`
 }
 
@@ -296,15 +296,26 @@ const (
 	// ExecutionModeCLI runs the claude binary directly on the host,
 	// bypassing podman volume mounts and image management.
 	ExecutionModeCLI = "cli"
+
+	// ExecutionModeSDK uses the Go Agent SDK (github.com/schlunsen/claude-agent-sdk-go)
+	// to run Claude programmatically. The SDK communicates with the claude binary
+	// via the --stdio JSONL protocol and returns typed message events, providing
+	// native streaming, structured token reporting, and cwd isolation without
+	// the need for podman volume mounts.
+	ExecutionModeSDK = "sdk"
 )
 
 // effectiveMode returns the execution mode, defaulting to ExecutionModePodman
 // when Mode is empty or unrecognised.
 func (c *CobblerConfig) effectiveMode() string {
-	if c.Mode == ExecutionModeCLI {
+	switch c.Mode {
+	case ExecutionModeCLI:
 		return ExecutionModeCLI
+	case ExecutionModeSDK:
+		return ExecutionModeSDK
+	default:
+		return ExecutionModePodman
 	}
-	return ExecutionModePodman
 }
 
 // PodmanConfig holds settings for the podman container runtime.
