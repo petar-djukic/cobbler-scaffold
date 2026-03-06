@@ -58,6 +58,26 @@ func (o *Orchestrator) captureLOC() LocSnapshot {
 	return LocSnapshot{Production: rec.GoProdLOC, Test: rec.GoTestLOC}
 }
 
+// captureLOCAt returns Go LOC counts measured in dir. It temporarily changes
+// the working directory so CollectStats walks the correct tree. Errors are
+// swallowed because stats collection is best-effort.
+func (o *Orchestrator) captureLOCAt(dir string) LocSnapshot {
+	if dir == "" {
+		return o.captureLOC()
+	}
+	orig, err := os.Getwd()
+	if err != nil {
+		logf("captureLOCAt: getwd: %v", err)
+		return LocSnapshot{}
+	}
+	if err := os.Chdir(dir); err != nil {
+		logf("captureLOCAt: chdir to %s: %v", dir, err)
+		return LocSnapshot{}
+	}
+	defer func() { os.Chdir(orig) }() //nolint:errcheck
+	return o.captureLOC()
+}
+
 // InvocationRecord is the JSON blob recorded as a GitHub issue comment after
 // every Claude invocation.
 type InvocationRecord struct {

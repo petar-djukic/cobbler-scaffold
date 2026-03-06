@@ -946,6 +946,61 @@ func TestCaptureLOC_EmptyDir_ReturnsZero(t *testing.T) {
 	}
 }
 
+// --- captureLOCAt ---
+
+func TestCaptureLOCAt_CountsInTargetDir(t *testing.T) {
+	// Not parallel: uses os.Chdir to verify cwd is restored.
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "prod.go"), []byte("line 1\nline 2\nline 3\n"), 0644)
+	os.WriteFile(filepath.Join(dir, "suite_test.go"), []byte("test 1\ntest 2\n"), 0644)
+
+	origDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chdir(origDir) })
+
+	o := New(Config{})
+	snap := o.captureLOCAt(dir)
+
+	if snap.Production != 3 {
+		t.Errorf("Production = %d, want 3", snap.Production)
+	}
+	if snap.Test != 2 {
+		t.Errorf("Test = %d, want 2", snap.Test)
+	}
+
+	// cwd must be restored after the call.
+	after, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after != origDir {
+		t.Errorf("cwd after captureLOCAt = %q, want %q", after, origDir)
+	}
+}
+
+func TestCaptureLOCAt_EmptyDirString_FallsBackToCwd(t *testing.T) {
+	// Not parallel: uses os.Chdir.
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "x.go"), []byte("a\nb\n"), 0644)
+
+	origDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chdir(origDir) })
+
+	o := New(Config{})
+	snap := o.captureLOCAt("") // empty dir → fallback to captureLOC (cwd)
+	if snap.Production != 2 {
+		t.Errorf("Production = %d, want 2", snap.Production)
+	}
+}
+
 // --- InvocationRecord JSON serialization (covers recordInvocation marshaling) ---
 
 func TestInvocationRecord_JSONShape(t *testing.T) {

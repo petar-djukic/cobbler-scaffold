@@ -441,10 +441,15 @@ func (o *Orchestrator) doOneTask(task stitchTask, baseBranch, repoRoot string) e
 		return errTaskReset
 	}
 
+	// Capture locAfter from the worktree before merging. The worktree starts
+	// from the current generation branch state and includes Claude's additions,
+	// so this gives the correct post-task LOC without waiting for the merge.
+	locAfter := o.captureLOCAt(task.worktreeDir)
+	logf("doOneTask: locAfter prod=%d test=%d", locAfter.Production, locAfter.Test)
+
 	// Append outcome trailers to the worktree commit before merging.
 	// Trailers must be on the pre-merge commit so they travel into the
-	// generation branch history. LOCAfter and Diff are not yet available
-	// at this point; the full record is saved in HistoryStats YAML files.
+	// generation branch history.
 	trailerRec := InvocationRecord{
 		Caller:    "stitch",
 		StartedAt: claudeStart.UTC().Format(time.RFC3339),
@@ -457,6 +462,7 @@ func (o *Orchestrator) doOneTask(task stitchTask, baseBranch, repoRoot string) e
 			CostUSD:       tokens.CostUSD,
 		},
 		LOCBefore: locBefore,
+		LOCAfter:  locAfter,
 	}
 	if err := appendOutcomeTrailers(task.worktreeDir, trailerRec); err != nil {
 		logf("doOneTask: outcome trailer warning for %s: %v", task.id, err)
@@ -491,7 +497,7 @@ func (o *Orchestrator) doOneTask(task stitchTask, baseBranch, repoRoot string) e
 	}
 	logf("doOneTask: merge completed in %s", time.Since(mergeStart).Round(time.Second))
 
-	// Capture LOC diff, per-file diff, and post-merge LOC.
+	// Capture per-file diff stats.
 	diff, diffErr := gitDiffShortstat(preMergeRef, ".")
 	if diffErr != nil {
 		logf("doOneTask: warning getting diff shortstat: %v", diffErr)
@@ -502,8 +508,6 @@ func (o *Orchestrator) doOneTask(task stitchTask, baseBranch, repoRoot string) e
 		logf("doOneTask: warning getting file changes: %v", fcErr)
 	}
 	logf("doOneTask: fileChanges=%d entries", len(fileChanges))
-	locAfter := o.captureLOC()
-	logf("doOneTask: locAfter prod=%d test=%d", locAfter.Production, locAfter.Test)
 
 	// Cleanup worktree.
 	logf("doOneTask: cleaning up worktree for %s", task.id)
