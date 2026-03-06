@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -40,6 +41,12 @@ type LocSnapshot struct {
 	Production int `json:"production"`
 	Test       int `json:"test"`
 }
+
+// sdkEnvMu serialises temporary process-env mutations in runClaudeSDK.
+// The SDK inherits os.Environ() when spawning its subprocess, so we must
+// unset CLAUDECODE at the process level before calling Query. The mutex
+// prevents concurrent calls from interleaving the unset/restore sequence.
+var sdkEnvMu sync.Mutex
 
 // captureLOC returns the current Go LOC counts. Errors are swallowed
 // because stats collection is best-effort.
@@ -735,17 +742,13 @@ func (o *Orchestrator) buildDirectCmd(ctx context.Context, workDir string, extra
 // This provides structured streaming and native token reporting without the
 // need for raw stream-json parsing.
 //
-// CLAUDECODE is zeroed in the SDK environment so the claude subprocess can
-// start even when the caller is inside a Claude Code session.
+// CLAUDECODE is temporarily unset from the process environment via sdkEnvMu
+// so the claude subprocess can start even inside a Claude Code session.
 func (o *Orchestrator) runClaudeSDK(ctx context.Context, prompt, workDir string, silence bool, extraClaudeArgs ...string) (ClaudeResult, error) {
 	opts := claudetypes.NewClaudeAgentOptions()
 	opts.CWD = &workDir
 	opts.DangerouslySkipPermissions = true
 	opts.AllowDangerouslySkipPermissions = true
-
-	// Zero CLAUDECODE so the SDK's claude subprocess starts even when the
-	// caller is running inside a Claude Code session (nested-session guard).
-	opts.Env["CLAUDECODE"] = ""
 
 	// Map --max-turns from extraClaudeArgs into the options struct.
 	for i := 0; i+1 < len(extraClaudeArgs); i++ {
@@ -760,13 +763,33 @@ func (o *Orchestrator) runClaudeSDK(ctx context.Context, prompt, workDir string,
 	logf("runClaude: SDK query workDir=%q (timeout=%s)", workDir, o.cfg.ClaudeTimeout())
 
 	start := time.Now()
+
+	// The SDK calls os.Environ() when constructing the subprocess env, so
+	// opts.Env["CLAUDECODE"]="" would merely append after CLAUDECODE=1 already
+	// in the slice — and getenv() returns the first match, not the last.
+	// Instead, temporarily remove CLAUDECODE from the process environment so
+	// the subprocess inherits a clean env. The mutex serialises concurrent
+	// runClaudeSDK callers to prevent interleaving of the unset/restore.
+	sdkEnvMu.Lock()
+	oldVal, hadVal := os.LookupEnv("CLAUDECODE")
+	_ = os.Unsetenv("CLAUDECODE")
+
 	msgChan, err := claudesdk.Query(ctx, prompt, opts)
+
+	// Restore CLAUDECODE as soon as the subprocess is launched (Query is
+	// synchronous up to subprocess start; channel reads happen after unlock).
+	if hadVal {
+		_ = os.Setenv("CLAUDECODE", oldVal)
+	}
+	sdkEnvMu.Unlock()
+
 	if err != nil {
 		return ClaudeResult{}, fmt.Errorf("claude SDK query: %w", err)
 	}
 
 	var result ClaudeResult
 	var textBuf strings.Builder
+	var gotResult bool
 
 	for msg := range msgChan {
 		switch m := msg.(type) {
@@ -780,6 +803,7 @@ func (o *Orchestrator) runClaudeSDK(ctx context.Context, prompt, workDir string,
 				}
 			}
 		case *claudetypes.ResultMessage:
+			gotResult = true
 			if m.TotalCostUSD != nil {
 				result.CostUSD = *m.TotalCostUSD
 			}
@@ -791,6 +815,10 @@ func (o *Orchestrator) runClaudeSDK(ctx context.Context, prompt, workDir string,
 				return result, fmt.Errorf("claude SDK session returned error result")
 			}
 		}
+	}
+
+	if !gotResult {
+		return ClaudeResult{}, fmt.Errorf("claude SDK session produced no result (subprocess may have exited early)")
 	}
 
 	// Store the collected text as RawOutput for history compatibility.

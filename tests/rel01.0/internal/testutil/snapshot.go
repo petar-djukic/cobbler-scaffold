@@ -92,7 +92,7 @@ func overrideSnapshotIssuesRepo(snapDir, issuesRepo string) error {
 		return err
 	}
 	cfg.Cobbler.IssuesRepo = issuesRepo
-	cfg.Cobbler.Mode = orchestrator.ExecutionModeCLI
+	cfg.Cobbler.Mode = orchestrator.ExecutionModeSDK
 	newData, err := yaml.Marshal(&cfg)
 	if err != nil {
 		return err
