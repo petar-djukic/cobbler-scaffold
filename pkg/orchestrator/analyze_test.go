@@ -1009,7 +1009,7 @@ func TestPrintSection_WithItems(t *testing.T) {
 func TestPrintReport_AllClear(t *testing.T) {
 	r := AnalyzeResult{}
 	out := captureStdout(t, func() {
-		err := r.printReport(5, 10, 3)
+		err := r.printReport(5, 10, 3, 0)
 		if err != nil {
 			t.Errorf("expected nil error for clean report, got %v", err)
 		}
@@ -1026,6 +1026,9 @@ func TestPrintReport_AllClear(t *testing.T) {
 	if !strings.Contains(out, "3 test suites") {
 		t.Errorf("output missing test suite count, got %q", out)
 	}
+	if !strings.Contains(out, "0 semantic models") {
+		t.Errorf("output missing semantic model count, got %q", out)
+	}
 }
 
 func TestPrintReport_WithIssues(t *testing.T) {
@@ -1034,7 +1037,7 @@ func TestPrintReport_WithIssues(t *testing.T) {
 		BrokenCitations: []string{"uc001 T1: prd001 R99 not found"},
 	}
 	out := captureStdout(t, func() {
-		err := r.printReport(2, 3, 1)
+		err := r.printReport(2, 3, 1, 0)
 		if err == nil {
 			t.Error("expected error for report with issues")
 		}
@@ -1067,7 +1070,7 @@ func TestPrintReport_AllSections(t *testing.T) {
 		PRDsSpanningMultipleReleases: []string{"j"},
 	}
 	out := captureStdout(t, func() {
-		err := r.printReport(1, 1, 1)
+		err := r.printReport(1, 1, 1, 0)
 		if err == nil {
 			t.Error("expected error when all sections have issues")
 		}
@@ -1505,5 +1508,394 @@ overview:
 	}
 	if len(result.ComponentDepViolations) != 0 {
 		t.Errorf("expected no violations when no component_dependencies, got %v", result.ComponentDepViolations)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Semantic model validation tests (R1–R6, SM1, SM3, SM7)
+// ---------------------------------------------------------------------------
+
+func TestSmValidateSections_AllPresent(t *testing.T) {
+	t.Parallel()
+	sm := map[string]interface{}{
+		"data_sources": []interface{}{},
+		"features":     []interface{}{},
+		"algorithm":    map[string]interface{}{"type": "gap"},
+		"output_format": map[string]interface{}{"type": "list"},
+	}
+	errs := smValidateSections("test", sm)
+	if len(errs) != 0 {
+		t.Errorf("expected no errors for full model, got %v", errs)
+	}
+}
+
+func TestSmValidateSections_MissingSection(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		missing string
+	}{
+		{"data_sources"},
+		{"features"},
+		{"algorithm"},
+		{"output_format"},
+	}
+	for _, tt := range tests {
+		sm := map[string]interface{}{
+			"data_sources":  []interface{}{},
+			"features":      []interface{}{},
+			"algorithm":     map[string]interface{}{},
+			"output_format": map[string]interface{}{},
+		}
+		delete(sm, tt.missing)
+		errs := smValidateSections("prefix", sm)
+		if len(errs) != 1 {
+			t.Errorf("missing %q: expected 1 error, got %d: %v", tt.missing, len(errs), errs)
+			continue
+		}
+		if !strings.Contains(errs[0], tt.missing) {
+			t.Errorf("missing %q: error should mention section name, got %q", tt.missing, errs[0])
+		}
+		if !strings.Contains(errs[0], "SM1") {
+			t.Errorf("missing %q: error should mention SM1, got %q", tt.missing, errs[0])
+		}
+	}
+}
+
+func TestSmValidateSM7_ValidNameAndVersion(t *testing.T) {
+	t.Parallel()
+	sm := map[string]interface{}{
+		"name":    "cobbler-measure",
+		"version": "1.0.0",
+	}
+	errs := smValidateSM7("test", sm)
+	if len(errs) != 0 {
+		t.Errorf("expected no errors for valid name/version, got %v", errs)
+	}
+}
+
+func TestSmValidateSM7_InvalidName(t *testing.T) {
+	t.Parallel()
+	for _, name := range []string{"cobbler", "Cobbler-Measure", "cobbler_measure", ""} {
+		sm := map[string]interface{}{"name": name, "version": "1.0.0"}
+		errs := smValidateSM7("test", sm)
+		if name == "" {
+			// empty name: no validation triggered
+			if len(errs) != 0 {
+				t.Errorf("empty name: expected no error, got %v", errs)
+			}
+			continue
+		}
+		if len(errs) != 1 {
+			t.Errorf("name %q: expected 1 error, got %d: %v", name, len(errs), errs)
+			continue
+		}
+		if !strings.Contains(errs[0], "SM7") {
+			t.Errorf("name %q: error should mention SM7, got %q", name, errs[0])
+		}
+	}
+}
+
+func TestSmValidateSM7_InvalidVersion(t *testing.T) {
+	t.Parallel()
+	for _, ver := range []string{"1.0", "v1.0.0", "1.0.0.0", "latest"} {
+		sm := map[string]interface{}{"name": "edge-compute", "version": ver}
+		errs := smValidateSM7("test", sm)
+		if len(errs) != 1 {
+			t.Errorf("version %q: expected 1 error, got %d: %v", ver, len(errs), errs)
+			continue
+		}
+		if !strings.Contains(errs[0], "SM7") {
+			t.Errorf("version %q: error should mention SM7, got %q", ver, errs[0])
+		}
+	}
+}
+
+func TestSmSourceRefs(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		source string
+		want   []string
+	}{
+		{"specification_tree.all_use_cases - project_state.implemented", []string{"specification_tree", "project_state"}},
+		{"implementation_gap", []string{"implementation_gap"}},
+		{"codebase.specifications + codebase.existing_code", []string{"codebase"}},
+		{"task.issue_description.acceptance_criteria", []string{"task"}},
+		{"", nil},
+	}
+	for _, tt := range tests {
+		got := smSourceRefs(tt.source)
+		if len(got) != len(tt.want) {
+			t.Errorf("source %q: got %v, want %v", tt.source, got, tt.want)
+			continue
+		}
+		for i, w := range tt.want {
+			if got[i] != w {
+				t.Errorf("source %q: got[%d]=%q, want %q", tt.source, i, got[i], w)
+			}
+		}
+	}
+}
+
+func TestSmValidateSM3_ValidTraceability(t *testing.T) {
+	t.Parallel()
+	sm := map[string]interface{}{
+		"data_sources": []interface{}{
+			map[string]interface{}{"id": "network_state"},
+		},
+		"features": []interface{}{
+			map[string]interface{}{"name": "gap", "source": "network_state.capacity"},
+			map[string]interface{}{"name": "derived", "source": "gap"},
+		},
+	}
+	errs := smValidateSM3("test", sm)
+	if len(errs) != 0 {
+		t.Errorf("expected no errors for valid traceability, got %v", errs)
+	}
+}
+
+func TestSmValidateSM3_UntetheredFeature(t *testing.T) {
+	t.Parallel()
+	sm := map[string]interface{}{
+		"data_sources": []interface{}{
+			map[string]interface{}{"id": "network_state"},
+		},
+		"features": []interface{}{
+			map[string]interface{}{"name": "bad_feature", "source": "unknown_source.capacity"},
+		},
+	}
+	errs := smValidateSM3("test", sm)
+	if len(errs) != 1 {
+		t.Errorf("expected 1 error for untethered feature, got %d: %v", len(errs), errs)
+	}
+	if len(errs) > 0 && !strings.Contains(errs[0], "SM3") {
+		t.Errorf("error should mention SM3, got %q", errs[0])
+	}
+}
+
+func TestValidateStandaloneSemanticModel_ValidFile(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := dir + "/model.yaml"
+	os.WriteFile(path, []byte(`measure:
+  semantic_model:
+    name: cobbler-measure
+    version: 1.0.0
+    data_sources:
+      - id: specification_tree
+        connector: filesystem
+    features:
+      - name: implementation_gap
+        source: specification_tree.all_use_cases
+        extraction: set difference
+    algorithm:
+      type: gap_ordered_task_generation
+    output_format:
+      type: list
+`), 0o644)
+	errs := validateStandaloneSemanticModel(path)
+	if len(errs) != 0 {
+		t.Errorf("expected no errors for valid standalone model, got %v", errs)
+	}
+}
+
+func TestValidateStandaloneSemanticModel_MissingAlgorithm(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := dir + "/model.yaml"
+	os.WriteFile(path, []byte(`analyze:
+  semantic_model:
+    name: cobbler-analyze
+    version: 1.0.0
+    data_sources:
+      - id: repo
+        connector: filesystem
+    features:
+      - name: counts
+        source: repo.files
+    output_format:
+      type: report
+`), 0o644)
+	errs := validateStandaloneSemanticModel(path)
+	if len(errs) != 1 {
+		t.Errorf("expected 1 error for missing algorithm, got %d: %v", len(errs), errs)
+	}
+	if len(errs) > 0 && !strings.Contains(errs[0], "algorithm") {
+		t.Errorf("error should mention missing section, got %q", errs[0])
+	}
+}
+
+func TestValidatePRDSemanticModel_NoSemanticModel(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := dir + "/prd001.yaml"
+	os.WriteFile(path, []byte(`id: prd001
+title: Test PRD
+problem: test
+`), 0o644)
+	errs := validatePRDSemanticModel(path)
+	if len(errs) != 0 {
+		t.Errorf("expected no errors for PRD without semantic_model, got %v", errs)
+	}
+}
+
+func TestValidatePRDSemanticModel_ValidShorthand(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := dir + "/prd001.yaml"
+	os.WriteFile(path, []byte(`id: prd001
+title: Test PRD
+problem: test
+semantic_model:
+  observe: input data
+  reason: apply logic
+  produce: output result
+`), 0o644)
+	errs := validatePRDSemanticModel(path)
+	if len(errs) != 0 {
+		t.Errorf("expected no errors for valid shorthand model, got %v", errs)
+	}
+}
+
+func TestValidatePRDSemanticModel_MissingShorthandKey(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := dir + "/prd001.yaml"
+	// Missing "produce" key.
+	os.WriteFile(path, []byte(`id: prd001
+title: Test PRD
+semantic_model:
+  observe: input data
+  reason: apply logic
+`), 0o644)
+	errs := validatePRDSemanticModel(path)
+	if len(errs) != 1 {
+		t.Errorf("expected 1 error for missing produce key, got %d: %v", len(errs), errs)
+	}
+	if len(errs) > 0 && !strings.Contains(errs[0], "produce") {
+		t.Errorf("error should mention missing key, got %q", errs[0])
+	}
+}
+
+func TestValidatePromptSemanticModel_NoSemanticModel(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := dir + "/measure.yaml"
+	os.WriteFile(path, []byte(`role: analyst
+task: analyze
+`), 0o644)
+	errs := validatePromptSemanticModel(path)
+	if len(errs) != 0 {
+		t.Errorf("expected no errors for prompt without semantic_model, got %v", errs)
+	}
+}
+
+func TestValidatePromptSemanticModel_MissingSection(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := dir + "/measure.yaml"
+	// Full format but missing output_format.
+	os.WriteFile(path, []byte(`role: analyst
+semantic_model:
+  data_sources:
+    - id: repo
+  features:
+    - name: gap
+  algorithm:
+    type: gap_ordered
+`), 0o644)
+	errs := validatePromptSemanticModel(path)
+	if len(errs) != 1 {
+		t.Errorf("expected 1 error for missing output_format, got %d: %v", len(errs), errs)
+	}
+	if len(errs) > 0 && !strings.Contains(errs[0], "output_format") {
+		t.Errorf("error should mention missing section, got %q", errs[0])
+	}
+}
+
+func TestValidateSemanticModels_Count(t *testing.T) {
+	// Not parallel: uses os.Chdir.
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(orig)
+
+	os.MkdirAll("docs/specs/semantic-models", 0o755)
+	os.MkdirAll("docs/specs/product-requirements", 0o755)
+	os.MkdirAll("docs/prompts", 0o755)
+
+	// Write two valid standalone semantic model files.
+	writeValidSMFile := func(name, behavior string) {
+		os.WriteFile("docs/specs/semantic-models/"+name, []byte(behavior+`:
+  semantic_model:
+    name: test-`+behavior+`
+    version: 1.0.0
+    data_sources:
+      - id: src
+        connector: filesystem
+    features:
+      - name: feat
+        source: src.query
+    algorithm:
+      type: simple
+    output_format:
+      type: list
+`), 0o644)
+	}
+	writeValidSMFile("model-a.yaml", "behave")
+	writeValidSMFile("model-b.yaml", "analyze")
+
+	errs, count := validateSemanticModels(nil)
+	if count != 2 {
+		t.Errorf("expected count=2, got %d", count)
+	}
+	if len(errs) != 0 {
+		t.Errorf("expected no errors for valid files, got %v", errs)
+	}
+}
+
+func TestCollectAnalyzeResult_SemanticModelErrors(t *testing.T) {
+	// Not parallel: uses os.Chdir.
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(orig)
+	setupMinimalOODDir(t)
+	os.MkdirAll("docs/specs/semantic-models", 0o755)
+	os.MkdirAll("docs/prompts", 0o755)
+
+	// Write a standalone file missing the algorithm section.
+	os.WriteFile("docs/specs/semantic-models/bad.yaml", []byte(`analyze:
+  semantic_model:
+    name: cobbler-analyze
+    version: 1.0.0
+    data_sources:
+      - id: repo
+    features:
+      - name: counts
+        source: repo.files
+    output_format:
+      type: report
+`), 0o644)
+
+	o := &Orchestrator{cfg: Config{}}
+	result, counts, err := o.collectAnalyzeResult()
+	if err != nil {
+		t.Fatalf("collectAnalyzeResult: %v", err)
+	}
+	if counts.SemanticModels != 1 {
+		t.Errorf("expected SemanticModels=1, got %d", counts.SemanticModels)
+	}
+	if len(result.SemanticModelErrors) == 0 {
+		t.Error("expected at least one semantic model error for missing algorithm")
+	}
+	found := false
+	for _, e := range result.SemanticModelErrors {
+		if strings.Contains(e, "algorithm") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected error mentioning algorithm, got %v", result.SemanticModelErrors)
 	}
 }

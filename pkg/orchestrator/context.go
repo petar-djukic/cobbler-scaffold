@@ -384,6 +384,7 @@ type PRDDoc struct {
 	PackageContract    *PRDPackageContract            `yaml:"package_contract,omitempty"`
 	DependsOn          []PRDDependsOn                 `yaml:"depends_on,omitempty"`
 	StructRefs         []PRDStructRef                 `yaml:"struct_refs,omitempty"`
+	SemanticModel      *yaml.Node                     `yaml:"semantic_model,omitempty"`
 }
 
 // PRDRequirementGroup is a requirement section within a PRD.
@@ -773,6 +774,17 @@ type PlanningCodeIssues struct {
 
 // TestingDoc corresponds to docs/constitutions/testing.yaml.
 type TestingDoc struct {
+	Articles []ConstitutionArticle `yaml:"articles"`
+	Sections []ConstitutionSection `yaml:"sections,omitempty"`
+}
+
+// ---------------------------------------------------------------------------
+// Semantic model constitution (docs/constitutions/semantic-model.yaml)
+// ---------------------------------------------------------------------------
+
+// SemanticModelDoc corresponds to docs/constitutions/semantic-model.yaml.
+// The constitution only defines articles and sections — no additional sections.
+type SemanticModelDoc struct {
 	Articles []ConstitutionArticle `yaml:"articles"`
 	Sections []ConstitutionSection `yaml:"sections,omitempty"`
 }

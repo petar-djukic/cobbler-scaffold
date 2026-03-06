@@ -1,0 +1,171 @@
+# Cobbler Semantic Model (Proposed)
+#
+# This file sketches what a semantic model layer for cobbler-scaffold
+# (https://github.com/petar-djukic/cobbler-scaffold) would look like.
+#
+# Cobbler currently has three YAML constitutions (design, planning, execution)
+# that constrain Claude's behavior per phase. These belong in the Architectural
+# Guidelines layer—they are prohibitive rules ("don't do X", "you must follow Y").
+#
+# What cobbler lacks is a declarative behavioral specification: what does the
+# agent observe, how does it reason, what does it produce? This file makes that
+# explicit for the two core phases: measure and stitch.
+
+measure:
+  semantic_model:
+    name: "cobbler-measure"
+    version: "1.0.0"
+
+    data_sources:
+      - id: specification_tree
+        connector: filesystem
+        queries:
+          - name: all_use_cases
+            source: "docs/specs/use-cases/rel*-uc*-*.yaml"
+            returns: list[UseCase]
+          - name: road_map
+            source: "docs/road-map.yaml"
+            returns: list[{release, use_cases, status}]
+      - id: project_state
+        connector: git + github
+        queries:
+          - name: implemented_use_cases
+            source: "road_map entries where status in [implemented, done]"
+            returns: list[use_case_id]
+          - name: open_issues
+            source: "gh issue list"
+            returns: list[Issue]
+
+    features:
+      - name: implementation_gap
+        source: specification_tree.all_use_cases - project_state.implemented_use_cases
+        extraction: "set difference of specified vs implemented"
+      - name: next_release
+        source: specification_tree.road_map
+        extraction: "earliest release with unimplemented use cases"
+      - name: dependency_order
+        source: implementation_gap
+        extraction: "topological sort by use case dependencies"
+
+    algorithm:
+      type: gap_ordered_task_generation
+      parameters:
+        task_size_lines: [250, 350]
+        max_files_per_task: 7
+        max_tasks_per_batch: 10
+      logic: |
+        Filter implementation_gap to next_release use cases
+        Sort by dependency_order
+        Decompose each use case into tasks:
+          1. Types and interfaces
+          2. Implementation
+          3. Tests
+        Each task targets task_size_lines of production code
+        Skip use cases with existing open_issues
+
+    output_format:
+      type: list[GitHubIssue]
+      fields: [title, body, labels, milestone]
+      body_schema: {deliverable_type, required_reading, files,
+                    requirements, acceptance_criteria}
+
+stitch:
+  semantic_model:
+    name: "cobbler-stitch"
+    version: "1.0.0"
+
+    data_sources:
+      - id: task
+        connector: github
+        queries:
+          - name: issue_description
+            source: "gh issue view {issue_id}"
+            returns: {deliverable_type, required_reading, files,
+                      requirements, design_decisions, acceptance_criteria}
+      - id: codebase
+        connector: filesystem
+        queries:
+          - name: existing_code
+            source: "files referenced in task.required_reading + task.files"
+            returns: list[SourceFile]
+          - name: specifications
+            source: "PRDs, architecture, use cases referenced in required_reading"
+            returns: list[SpecificationDocument]
+
+    features:
+      - name: context_assembly
+        source: codebase.specifications + codebase.existing_code
+        extraction: "token-budgeted context: 30% task spec, 40% code, 20% guidelines, 10% examples"
+      - name: interface_contracts
+        source: codebase.specifications
+        extraction: "exported types, function signatures, and patterns from referenced PRDs"
+      - name: test_expectations
+        source: task.issue_description.acceptance_criteria
+        extraction: "checkable outcomes mapped to test assertions"
+
+    algorithm:
+      type: specification_driven_generation
+      parameters:
+        max_agent_turns: 20
+        timeout_minutes: 10
+      logic: |
+        Read required_reading to understand contracts and context
+        For each file in task.files:
+          If action == create: generate from specifications
+          If action == modify: read existing, apply changes per requirements
+        Run quality gates (build, lint, test)
+        If tests fail: analyze failure, regenerate affected code
+        Iterate until acceptance_criteria satisfied or max_agent_turns reached
+
+    output_format:
+      type: list[ModifiedFile]
+      fields: [path, action, content]
+      postconditions:
+        - "all acceptance_criteria verified"
+        - "build passes"
+        - "lint passes"
+        - "tests pass"
+
+recovery:
+  semantic_model:
+    name: "cobbler-recovery"
+    version: "1.0.0"
+
+    data_sources:
+      - id: generation_state
+        connector: git + github
+        queries:
+          - name: generation_branch
+            source: "git branch --list 'gen-*'"
+            returns: {branch_name, last_commit, lifecycle_tags}
+          - name: stale_worktrees
+            source: "git worktree list"
+            returns: list[{path, branch, commit}]
+          - name: open_task_issues
+            source: "gh issue list --label generation"
+            returns: list[Issue]
+
+    features:
+      - name: interrupted_generation
+        source: generation_state.generation_branch
+        extraction: "branch with -start tag but no -finished tag"
+      - name: orphaned_worktrees
+        source: generation_state.stale_worktrees
+        extraction: "worktrees whose task branch has no open issue"
+      - name: resumable_backlog
+        source: generation_state.open_task_issues
+        extraction: "issues still open, ordered by dependency"
+
+    algorithm:
+      type: state_recovery
+      logic: |
+        If interrupted_generation exists:
+          Clean orphaned_worktrees
+          Resume from resumable_backlog
+        Else:
+          Start new generation from measure
+
+    output_format:
+      type: GenerationState
+      fields: [action, branch, next_issue]
+      actions: [resume, start_new, abort]

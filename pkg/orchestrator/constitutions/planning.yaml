@@ -13,6 +13,12 @@ articles:
       99.0 (unscheduled). Early preview of later use cases is allowed when they
       share functionality with the current release.
 
+      Use cases in road-map.yaml carry a status field. Use cases with
+      status "implemented" or "done" have existing code and are complete.
+      Do not propose any new tasks for them. Propose tasks only for use
+      cases with status "spec_complete", "pending", or any other value
+      that is not "implemented" or "done".
+
   - id: P2
     title: Task sizing
     rule: |

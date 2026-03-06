@@ -31,13 +31,15 @@ type AnalyzeResult struct {
 	DependencyRuleViolations       []string // component_dependencies violating an allowed=false dependency_rule
 	BrokenStructRefs               []string // struct_refs pointing to non-existent PRD or requirement group
 	ComponentDepViolations         []string // depends_on entries not reflected in component_dependencies
+	SemanticModelErrors            []string // semantic model validation errors (SM1, SM3, SM7)
 }
 
 // analyzeCounts holds the artifact counts discovered during analysis.
 type analyzeCounts struct {
-	PRDs       int
-	UseCases   int
-	TestSuites int
+	PRDs           int
+	UseCases       int
+	TestSuites     int
+	SemanticModels int
 }
 
 // collectAnalyzeResult performs all cross-artifact consistency checks and
@@ -362,10 +364,17 @@ func (o *Orchestrator) collectAnalyzeResult() (AnalyzeResult, analyzeCounts, err
 	result.ConstitutionDrift = detectConstitutionDrift()
 	logf("analyze: constitution drift found %d file(s)", len(result.ConstitutionDrift))
 
+	// Check 14: Semantic model validation — validate standalone files,
+	// PRD shorthand models, and prompt-embedded full models.
+	smErrs, smCount := validateSemanticModels(prdFiles)
+	result.SemanticModelErrors = smErrs
+	logf("analyze: semantic model validation found %d error(s), %d standalone file(s)", len(smErrs), smCount)
+
 	counts := analyzeCounts{
-		PRDs:       len(prdIDs),
-		UseCases:   len(ucIDs),
-		TestSuites: len(testSuiteIDs),
+		PRDs:           len(prdIDs),
+		UseCases:       len(ucIDs),
+		TestSuites:     len(testSuiteIDs),
+		SemanticModels: smCount,
 	}
 	return result, counts, nil
 }
@@ -377,7 +386,7 @@ func (o *Orchestrator) Analyze() error {
 	if err != nil {
 		return err
 	}
-	return result.printReport(counts.PRDs, counts.UseCases, counts.TestSuites)
+	return result.printReport(counts.PRDs, counts.UseCases, counts.TestSuites, counts.SemanticModels)
 }
 
 // printSection prints a labeled list if items is non-empty, returning true.
@@ -394,7 +403,7 @@ func printSection(label string, items []string) bool {
 
 // printReport formats the analysis results to stdout. Returns nil when
 // all checks pass, or an error summarising that issues were found.
-func (r AnalyzeResult) printReport(prdCount, ucCount, tsCount int) error {
+func (r AnalyzeResult) printReport(prdCount, ucCount, tsCount, smCount int) error {
 	hasIssues := false
 	hasIssues = printSection("Orphaned PRDs (no use case references them)", r.OrphanedPRDs) || hasIssues
 	hasIssues = printSection("Releases without test suites (no docs/specs/test-suites/test-<release>.yaml)", r.ReleasesWithoutTestSuites) || hasIssues
@@ -410,12 +419,14 @@ func (r AnalyzeResult) printReport(prdCount, ucCount, tsCount int) error {
 	hasIssues = printSection("Dependency rule violations (component_dependency violates allowed=false rule)", r.DependencyRuleViolations) || hasIssues
 	hasIssues = printSection("Broken struct_refs (prd_id or requirement group not found)", r.BrokenStructRefs) || hasIssues
 	hasIssues = printSection("component_dependencies gaps (depends_on entries missing from component_dependencies)", r.ComponentDepViolations) || hasIssues
+	hasIssues = printSection("Semantic model errors (SM1 sections, SM3 traceability, SM7 naming)", r.SemanticModelErrors) || hasIssues
 
 	if !hasIssues {
 		fmt.Printf("\n✅ All consistency checks passed\n")
 		fmt.Printf("   - %d PRDs\n", prdCount)
 		fmt.Printf("   - %d use cases\n", ucCount)
 		fmt.Printf("   - %d test suites\n", tsCount)
+		fmt.Printf("   - %d semantic models\n", smCount)
 		return nil
 	}
 	return fmt.Errorf("found consistency issues (see above)")
@@ -614,6 +625,7 @@ func (o *Orchestrator) validateDocSchemas() []string {
 	errs = append(errs, validateYAMLStrict[ExecutionDoc]("docs/constitutions/execution.yaml")...)
 	errs = append(errs, validateYAMLStrict[GoStyleDoc]("docs/constitutions/go-style.yaml")...)
 	errs = append(errs, validateYAMLStrict[PlanningDoc]("docs/constitutions/planning.yaml")...)
+	errs = append(errs, validateYAMLStrict[SemanticModelDoc]("docs/constitutions/semantic-model.yaml")...)
 	errs = append(errs, validateYAMLStrict[TestingDoc]("docs/constitutions/testing.yaml")...)
 
 	// Embedded constitutions in pkg/orchestrator/constitutions/.
@@ -702,4 +714,213 @@ func detectConstitutionDrift() []string {
 		}
 	}
 	return drifted
+}
+
+// ---------------------------------------------------------------------------
+// Semantic model validation (R1–R7, SM1, SM3, SM7)
+// ---------------------------------------------------------------------------
+
+// smNameRe matches a valid semantic model name: lowercase words separated by hyphens, ≥2 parts.
+var smNameRe = regexp.MustCompile(`^[a-z][a-z0-9]*(-[a-z][a-z0-9]*)+$`)
+
+// smSemverRe matches a valid semver version string: MAJOR.MINOR.PATCH.
+var smSemverRe = regexp.MustCompile(`^\d+\.\d+\.\d+$`)
+
+// smIdentRe extracts dot-separated identifier chains from a source expression.
+var smIdentRe = regexp.MustCompile(`[a-z_][a-z0-9_]*(?:\.[a-z_][a-z0-9_]*)*`)
+
+// validateSemanticModels runs all semantic model checks (R1–R6).
+// prdFiles is the already-globbed list of PRD paths. Returns errors and
+// the count of standalone semantic model files found.
+func validateSemanticModels(prdFiles []string) ([]string, int) {
+	var errs []string
+
+	// R1: Count standalone files in docs/specs/semantic-models/.
+	smFiles, _ := filepath.Glob("docs/specs/semantic-models/*.yaml")
+
+	// R4 + R5 + R6: Validate each standalone file.
+	for _, path := range smFiles {
+		errs = append(errs, validateStandaloneSemanticModel(path)...)
+	}
+
+	// R2: Scan PRDs for inline shorthand semantic_model:.
+	for _, path := range prdFiles {
+		errs = append(errs, validatePRDSemanticModel(path)...)
+	}
+
+	// R3: Scan docs/prompts/*.yaml for inline full semantic_model:.
+	promptFiles, _ := filepath.Glob("docs/prompts/*.yaml")
+	for _, path := range promptFiles {
+		errs = append(errs, validatePromptSemanticModel(path)...)
+	}
+
+	return errs, len(smFiles)
+}
+
+// validateStandaloneSemanticModel validates a standalone semantic model file
+// (docs/specs/semantic-models/*.yaml). Each top-level key names a behavior;
+// its value must have a semantic_model sub-key with all four sections.
+func validateStandaloneSemanticModel(path string) []string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	var raw map[string]struct {
+		SemanticModel map[string]interface{} `yaml:"semantic_model"`
+	}
+	if err := yaml.Unmarshal(data, &raw); err != nil {
+		return []string{fmt.Sprintf("%s: invalid YAML: %v", path, err)}
+	}
+	var errs []string
+	for behavior, entry := range raw {
+		prefix := fmt.Sprintf("%s [%s].semantic_model", path, behavior)
+		sm := entry.SemanticModel
+		if sm == nil {
+			errs = append(errs, fmt.Sprintf("%s: behavior %q missing semantic_model sub-key", path, behavior))
+			continue
+		}
+		errs = append(errs, smValidateSections(prefix, sm)...)
+		errs = append(errs, smValidateSM7(prefix, sm)...)
+		errs = append(errs, smValidateSM3(prefix, sm)...)
+	}
+	return errs
+}
+
+// validatePRDSemanticModel checks a PRD file for an optional semantic_model:
+// field. When present, it must use the shorthand format (observe, reason, produce).
+func validatePRDSemanticModel(path string) []string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	var raw struct {
+		SemanticModel map[string]interface{} `yaml:"semantic_model"`
+	}
+	if err := yaml.Unmarshal(data, &raw); err != nil {
+		return nil // YAML errors reported by schema validation
+	}
+	if raw.SemanticModel == nil {
+		return nil // no semantic model in this PRD
+	}
+	var errs []string
+	for _, key := range []string{"observe", "reason", "produce"} {
+		if _, ok := raw.SemanticModel[key]; !ok {
+			errs = append(errs, fmt.Sprintf("%s: semantic_model missing shorthand key %q (observe/reason/produce required)", path, key))
+		}
+	}
+	return errs
+}
+
+// validatePromptSemanticModel checks a prompt template file for an optional
+// semantic_model: field. When present, it must use the full format (SM1).
+func validatePromptSemanticModel(path string) []string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	var raw struct {
+		SemanticModel map[string]interface{} `yaml:"semantic_model"`
+	}
+	if err := yaml.Unmarshal(data, &raw); err != nil {
+		return nil
+	}
+	if raw.SemanticModel == nil {
+		return nil
+	}
+	prefix := path + ".semantic_model"
+	return smValidateSections(prefix, raw.SemanticModel)
+}
+
+// smValidateSections checks that a semantic model map has all four required
+// sections: data_sources, features, algorithm, output_format (SM1).
+func smValidateSections(prefix string, sm map[string]interface{}) []string {
+	var errs []string
+	for _, section := range []string{"data_sources", "features", "algorithm", "output_format"} {
+		if _, ok := sm[section]; !ok {
+			errs = append(errs, fmt.Sprintf("%s: missing required section %q (SM1)", prefix, section))
+		}
+	}
+	return errs
+}
+
+// smValidateSM7 checks that a semantic model's name matches the
+// {word}-{word}+ pattern and its version is valid semver (SM7).
+func smValidateSM7(prefix string, sm map[string]interface{}) []string {
+	var errs []string
+	if name, _ := sm["name"].(string); name != "" {
+		if !smNameRe.MatchString(name) {
+			errs = append(errs, fmt.Sprintf("%s: name %q does not match {word}-{word}+ pattern (SM7)", prefix, name))
+		}
+	}
+	if version, _ := sm["version"].(string); version != "" {
+		if !smSemverRe.MatchString(version) {
+			errs = append(errs, fmt.Sprintf("%s: version %q is not valid semver MAJOR.MINOR.PATCH (SM7)", prefix, version))
+		}
+	}
+	return errs
+}
+
+// smValidateSM3 checks that each feature's source references a declared
+// data_sources[*].id or another feature name (SM3).
+func smValidateSM3(prefix string, sm map[string]interface{}) []string {
+	// Collect declared data source IDs.
+	dataSourceIDs := make(map[string]bool)
+	if dsRaw, ok := sm["data_sources"]; ok {
+		if dsList, ok := dsRaw.([]interface{}); ok {
+			for _, ds := range dsList {
+				if dsMap, ok := ds.(map[string]interface{}); ok {
+					if id, ok := dsMap["id"].(string); ok && id != "" {
+						dataSourceIDs[id] = true
+					}
+				}
+			}
+		}
+	}
+
+	// Collect declared feature names.
+	featureNames := make(map[string]bool)
+	type featureEntry struct{ name, source string }
+	var features []featureEntry
+	if featRaw, ok := sm["features"]; ok {
+		if featList, ok := featRaw.([]interface{}); ok {
+			for _, f := range featList {
+				if fm, ok := f.(map[string]interface{}); ok {
+					name, _ := fm["name"].(string)
+					source, _ := fm["source"].(string)
+					if name != "" {
+						featureNames[name] = true
+					}
+					features = append(features, featureEntry{name, source})
+				}
+			}
+		}
+	}
+
+	// Check each feature's source references.
+	var errs []string
+	for _, feat := range features {
+		for _, ref := range smSourceRefs(feat.source) {
+			if !dataSourceIDs[ref] && !featureNames[ref] {
+				errs = append(errs, fmt.Sprintf("%s: feature %q source references undeclared id %q (SM3)", prefix, feat.name, ref))
+			}
+		}
+	}
+	return errs
+}
+
+// smSourceRefs extracts the base identifiers from a source expression.
+// "network_state.site_capacity - project_state.implemented" -> ["network_state", "project_state"]
+// "implementation_gap" -> ["implementation_gap"]
+func smSourceRefs(source string) []string {
+	tokens := smIdentRe.FindAllString(strings.ToLower(source), -1)
+	seen := make(map[string]bool)
+	var bases []string
+	for _, tok := range tokens {
+		base := strings.SplitN(tok, ".", 2)[0]
+		if !seen[base] {
+			seen[base] = true
+			bases = append(bases, base)
+		}
+	}
+	return bases
 }
