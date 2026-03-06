@@ -162,6 +162,23 @@ no_magic_strings: |
   new external command or path, define the constant first, then use it. Never
   scatter raw string literals across files.
 
+configuration_via_yaml: |
+  All configuration must flow through configuration.yaml, loaded into the Config
+  struct by LoadConfig(). Do not read os.Getenv() to control orchestrator
+  behaviour, select execution modes, set file paths, or pass any option that a
+  user would otherwise set in configuration.yaml. Environment variables are not
+  a configuration channel in this project.
+
+  os.Getenv() is permitted only for two purposes: reading platform context
+  provided by the operating system (HOME, PATH, TMPDIR) and, in test code only,
+  reading variables that the test harness itself sets to override behaviour for
+  the test process. In both cases, the env var must be documented at the call
+  site with a comment explaining why it cannot come from Config.
+
+  The concrete consequence: if you find yourself writing os.Getenv("SOME_MODE")
+  or os.LookupEnv("SOME_FLAG") outside of those two narrow contexts, stop and
+  add a field to the relevant Config sub-struct instead.
+
 constants: |
   Prefer typed constants over bare string or integer literals for values that
   form a fixed set. Give the type a name: type totalMode int, then define the
@@ -336,6 +353,7 @@ code_review_checklist:
   - "All receiver names are one- or two-letter abbreviations, consistent across all methods of the type."
   - "Imports are grouped: stdlib, external, internal — each group separated by a blank line."
   - "Every exported symbol has a godoc comment starting with the symbol name."
+  - "No os.Getenv() call controls orchestrator behaviour, execution mode, file paths, or any option that belongs in configuration.yaml."
   - "No init() function performs I/O or returns an error."
   - "No panic() is reachable from a runtime condition or user-provided input."
   - "Typed iota enums are used for any fixed set of integer values."
@@ -398,6 +416,15 @@ sections:
     content: |
       Centralize all string literals for binary names, file paths, URLs, and
       repeated text as named constants. Never scatter raw string literals.
+  - tag: configuration_via_yaml
+    title: Configuration via YAML Only
+    content: |
+      All configuration flows through configuration.yaml and the Config struct.
+      Do not use os.Getenv() to control orchestrator behaviour, execution modes,
+      or any option that belongs in configuration.yaml. os.Getenv() is
+      permitted only for platform context (HOME, PATH) and, in test code, for
+      variables the test harness itself sets.
+
   - tag: constants
     title: Constants and Iota
     content: |

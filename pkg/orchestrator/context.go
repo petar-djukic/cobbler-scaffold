@@ -566,6 +566,7 @@ type GoStyleDoc struct {
 	PanicVsError            string                `yaml:"panic_vs_error"`
 	InitFunctions           string                `yaml:"init_functions"`
 	NoMagicStrings          string                `yaml:"no_magic_strings"`
+	ConfigurationViaYAML    string                `yaml:"configuration_via_yaml"`
 	Constants               string                `yaml:"constants"`
 	ProjectStructure        string                `yaml:"project_structure"`
 	FileOrganization        string                `yaml:"file_organization"`
