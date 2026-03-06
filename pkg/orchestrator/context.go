@@ -1459,6 +1459,17 @@ func ucStatusDone(status string) bool {
 // use case whose status is neither "done" nor "implemented". When a release
 // filter is configured in cfg (via Releases or Release), only releases in
 // scope are considered.
+//
+// Release-level status is checked in addition to per-use-case status: a
+// release with status "implemented" or "done" is skipped entirely, even if
+// individual use cases within it are not explicitly marked done. This prevents
+// stale releases config values from causing re-implementation proposals.
+//
+// When a filter is active and all matching releases are already implemented,
+// the function falls back to scanning all releases without the filter and
+// returns the first pending use case found. The caller can detect this
+// auto-advance by comparing the returned UC's release to the configured scope.
+//
 // Returns (nil, nil) when all use cases are done or the road-map is absent.
 func selectNextPendingUseCase(cfg ProjectConfig) (*UseCaseDoc, error) {
 	rm := loadYAML[RoadmapDoc]("docs/road-map.yaml")
@@ -1468,32 +1479,82 @@ func selectNextPendingUseCase(cfg ProjectConfig) (*UseCaseDoc, error) {
 	}
 
 	rf := newReleaseFilter(cfg.Releases, cfg.Release)
-	for i := range rm.Releases {
-		rel := &rm.Releases[i]
-		// Skip releases outside the configured scope.
-		if rf.active() {
+
+	// firstPendingUC scans releases (optionally restricted by rf) and returns
+	// the first use case not yet done. Release-level implemented status is
+	// always respected regardless of filter.
+	firstPendingUC := func(filter releaseFilter) (*UseCaseDoc, error) {
+		for i := range rm.Releases {
+			rel := &rm.Releases[i]
+			if filter.active() {
+				if filter.ReleaseSet != nil && !filter.ReleaseSet[rel.Version] {
+					continue
+				}
+				if filter.ReleaseSet == nil && rel.Version > filter.MaxRelease {
+					continue
+				}
+			}
+			// Skip entire releases already marked as implemented at release level.
+			if ucStatusDone(rel.Status) {
+				logf("selectNextPendingUseCase: skipping release %s (status=%s)", rel.Version, rel.Status)
+				continue
+			}
+			for _, uc := range rel.UseCases {
+				if ucStatusDone(uc.Status) {
+					continue
+				}
+				path := filepath.Join("docs", "specs", "use-cases", uc.ID+".yaml")
+				doc := loadYAML[UseCaseDoc](path)
+				if doc == nil {
+					logf("selectNextPendingUseCase: use case file not found: %s", path)
+					return nil, nil
+				}
+				doc.File = path
+				logf("selectNextPendingUseCase: next pending UC=%s status=%s", uc.ID, uc.Status)
+				return doc, nil
+			}
+		}
+		return nil, nil
+	}
+
+	doc, err := firstPendingUC(rf)
+	if err != nil || doc != nil {
+		return doc, err
+	}
+
+	// When a filter was active but yielded nothing, check whether all
+	// filtered releases carry status "implemented". If so, the config is
+	// stale: auto-advance past the configured scope to find the next pending
+	// UC from any release. We use the strict "implemented" check (not the
+	// broader ucStatusDone that also matches "done") so that a release
+	// filtered to a "done"-but-not-yet-implemented release does not trigger
+	// unintended auto-advance (GH-847).
+	if rf.active() {
+		allImplemented := true
+		filteredAny := false
+		for i := range rm.Releases {
+			rel := &rm.Releases[i]
 			if rf.ReleaseSet != nil && !rf.ReleaseSet[rel.Version] {
 				continue
 			}
 			if rf.ReleaseSet == nil && rel.Version > rf.MaxRelease {
 				continue
 			}
+			filteredAny = true
+			if !strings.EqualFold(rel.Status, "implemented") {
+				allImplemented = false
+				break
+			}
 		}
-		for _, uc := range rel.UseCases {
-			if ucStatusDone(uc.Status) {
-				continue
+		if filteredAny && allImplemented {
+			logf("selectNextPendingUseCase: all configured releases implemented; scanning all releases for next pending UC")
+			doc, err = firstPendingUC(releaseFilter{})
+			if err != nil || doc != nil {
+				return doc, err
 			}
-			path := filepath.Join("docs", "specs", "use-cases", uc.ID+".yaml")
-			doc := loadYAML[UseCaseDoc](path)
-			if doc == nil {
-				logf("selectNextPendingUseCase: use case file not found: %s", path)
-				return nil, nil
-			}
-			doc.File = path
-			logf("selectNextPendingUseCase: next pending UC=%s status=%s", uc.ID, uc.Status)
-			return doc, nil
 		}
 	}
+
 	logf("selectNextPendingUseCase: all use cases done")
 	return nil, nil
 }

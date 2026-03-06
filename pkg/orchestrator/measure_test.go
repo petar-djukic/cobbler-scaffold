@@ -767,6 +767,92 @@ design_decisions:
 	}
 }
 
+// GH-847: filterImplementedReleases / filterImplementedRelease ----------------
+
+func TestFilterImplementedReleases_DropsImplemented(t *testing.T) {
+	_, cleanup := setupMeasureRoadmapDir(t, `id: rm1
+title: Roadmap
+releases:
+  - version: "01.0"
+    status: implemented
+    use_cases: []
+  - version: "02.0"
+    status: spec_complete
+    use_cases: []
+`, "", "")
+	defer cleanup()
+
+	got := filterImplementedReleases([]string{"01.0", "02.0"})
+	if len(got) != 1 || got[0] != "02.0" {
+		t.Errorf("filterImplementedReleases = %v; want [02.0]", got)
+	}
+}
+
+func TestFilterImplementedReleases_AllImplemented_ReturnsNil(t *testing.T) {
+	_, cleanup := setupMeasureRoadmapDir(t, `id: rm1
+title: Roadmap
+releases:
+  - version: "01.0"
+    status: implemented
+    use_cases: []
+`, "", "")
+	defer cleanup()
+
+	got := filterImplementedReleases([]string{"01.0"})
+	if len(got) != 0 {
+		t.Errorf("filterImplementedReleases all implemented = %v; want nil/empty", got)
+	}
+}
+
+func TestFilterImplementedReleases_UnknownReleaseKept(t *testing.T) {
+	_, cleanup := setupMeasureRoadmapDir(t, `id: rm1
+title: Roadmap
+releases:
+  - version: "01.0"
+    status: implemented
+    use_cases: []
+`, "", "")
+	defer cleanup()
+
+	// "99.0" not in road-map → unknown status → kept.
+	got := filterImplementedReleases([]string{"99.0"})
+	if len(got) != 1 || got[0] != "99.0" {
+		t.Errorf("filterImplementedReleases unknown = %v; want [99.0]", got)
+	}
+}
+
+func TestFilterImplementedRelease_ImplementedReturnsEmpty(t *testing.T) {
+	_, cleanup := setupMeasureRoadmapDir(t, `id: rm1
+title: Roadmap
+releases:
+  - version: "01.0"
+    status: implemented
+    use_cases: []
+`, "", "")
+	defer cleanup()
+
+	got := filterImplementedRelease("01.0")
+	if got != "" {
+		t.Errorf("filterImplementedRelease implemented = %q; want empty", got)
+	}
+}
+
+func TestFilterImplementedRelease_NotImplementedKept(t *testing.T) {
+	_, cleanup := setupMeasureRoadmapDir(t, `id: rm1
+title: Roadmap
+releases:
+  - version: "01.0"
+    status: spec_complete
+    use_cases: []
+`, "", "")
+	defer cleanup()
+
+	got := filterImplementedRelease("01.0")
+	if got != "01.0" {
+		t.Errorf("filterImplementedRelease spec_complete = %q; want 01.0", got)
+	}
+}
+
 func TestMeasureReleasesConstraint_WithReleases(t *testing.T) {
 	t.Parallel()
 	got := measureReleasesConstraint([]string{"01.0", "02.0"}, "")

@@ -464,7 +464,12 @@ func (o *Orchestrator) buildMeasurePrompt(userInput, existingIssues string, limi
 	// Enforce releases scope: the roadmap is not filtered by release, so
 	// without an explicit constraint the agent may propose tasks from adjacent
 	// releases after exhausting the configured ones.
-	doc.Constraints += measureReleasesConstraint(o.cfg.Project.Releases, o.cfg.Project.Release)
+	// Filter out releases already marked as implemented in road-map.yaml so a
+	// stale releases config value does not direct Claude to re-implement work
+	// that is already done (GH-847).
+	activeReleases := filterImplementedReleases(o.cfg.Project.Releases)
+	activeRelease := filterImplementedRelease(o.cfg.Project.Release)
+	doc.Constraints += measureReleasesConstraint(activeReleases, activeRelease)
 
 	out, err := yaml.Marshal(&doc)
 	if err != nil {
@@ -493,6 +498,53 @@ func measureReleasesConstraint(releases []string, release string) string {
 		)
 	}
 	return ""
+}
+
+// filterImplementedReleases returns a copy of releases with any entry whose
+// road-map status is "implemented" or "done" removed. Releases not found in
+// road-map.yaml are kept (unknown status is not treated as implemented).
+// Returns nil when all releases are filtered out.
+func filterImplementedReleases(releases []string) []string {
+	if len(releases) == 0 {
+		return releases
+	}
+	rm := loadYAML[RoadmapDoc]("docs/road-map.yaml")
+	if rm == nil {
+		return releases
+	}
+	status := make(map[string]string, len(rm.Releases))
+	for _, rel := range rm.Releases {
+		status[rel.Version] = rel.Status
+	}
+	var out []string
+	for _, r := range releases {
+		if ucStatusDone(status[r]) {
+			logf("filterImplementedReleases: dropping implemented release %s from constraint", r)
+			continue
+		}
+		out = append(out, r)
+	}
+	return out
+}
+
+// filterImplementedRelease returns the release string unchanged unless the
+// road-map marks that release as implemented/done, in which case "" is
+// returned so no legacy single-release constraint is emitted.
+func filterImplementedRelease(release string) string {
+	if release == "" {
+		return ""
+	}
+	rm := loadYAML[RoadmapDoc]("docs/road-map.yaml")
+	if rm == nil {
+		return release
+	}
+	for _, rel := range rm.Releases {
+		if rel.Version == release && ucStatusDone(rel.Status) {
+			logf("filterImplementedRelease: dropping implemented release %s from constraint", release)
+			return ""
+		}
+	}
+	return release
 }
 
 type proposedIssue struct {

@@ -2028,3 +2028,143 @@ func TestSelectNextPendingUseCase_MissingRoadmap(t *testing.T) {
 		t.Errorf("expected nil for missing road-map, got %+v", uc)
 	}
 }
+
+// GH-847: release-level status checks -------------------------------------
+
+// TestSelectNextPendingUseCase_ReleaseLevelImplemented verifies that a release
+// with status "implemented" is skipped even when its individual use cases do
+// not carry a done status, and the next non-implemented release is returned.
+func TestSelectNextPendingUseCase_ReleaseLevelImplemented(t *testing.T) {
+	_, cleanup := setupContextTestDir(t)
+	defer cleanup()
+
+	roadmap := `id: rm1
+title: Roadmap
+releases:
+  - version: "01.0"
+    name: Release 1
+    status: implemented
+    use_cases:
+      - id: rel01.0-uc001-init
+        status: not started
+  - version: "02.0"
+    name: Release 2
+    status: in_progress
+    use_cases:
+      - id: rel02.0-uc001-ext
+        status: not started
+`
+	ucContent := `id: rel02.0-uc001-ext
+title: Extension
+touchpoints: []
+`
+	if err := os.WriteFile("docs/road-map.yaml", []byte(roadmap), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile("docs/specs/use-cases/rel02.0-uc001-ext.yaml", []byte(ucContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	uc, err := selectNextPendingUseCase(ProjectConfig{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if uc == nil {
+		t.Fatal("expected non-nil UC (rel01.0 is implemented, rel02.0 is pending)")
+	}
+	if uc.ID != "rel02.0-uc001-ext" {
+		t.Errorf("expected rel02.0-uc001-ext, got %s", uc.ID)
+	}
+}
+
+// TestSelectNextPendingUseCase_StaleFilterAutoAdvance verifies that when the
+// configured releases list points at a release that is already "implemented"
+// in road-map.yaml, the function auto-advances past it and returns the first
+// pending UC from any release (GH-847).
+func TestSelectNextPendingUseCase_StaleFilterAutoAdvance(t *testing.T) {
+	_, cleanup := setupContextTestDir(t)
+	defer cleanup()
+
+	roadmap := `id: rm1
+title: Roadmap
+releases:
+  - version: "01.0"
+    name: Release 1
+    status: implemented
+    use_cases:
+      - id: rel01.0-uc001-init
+        status: implemented
+  - version: "02.0"
+    name: Release 2
+    status: spec_complete
+    use_cases:
+      - id: rel02.0-uc001-ext
+        status: not started
+`
+	ucContent := `id: rel02.0-uc001-ext
+title: Extension
+touchpoints: []
+`
+	if err := os.WriteFile("docs/road-map.yaml", []byte(roadmap), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile("docs/specs/use-cases/rel02.0-uc001-ext.yaml", []byte(ucContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Configure the stale release: releases: ["01.0"] even though it's implemented.
+	uc, err := selectNextPendingUseCase(ProjectConfig{Releases: []string{"01.0"}})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if uc == nil {
+		t.Fatal("expected auto-advance to rel02.0-uc001-ext when filter is stale-implemented")
+	}
+	if uc.ID != "rel02.0-uc001-ext" {
+		t.Errorf("expected rel02.0-uc001-ext after auto-advance, got %s", uc.ID)
+	}
+}
+
+// TestSelectNextPendingUseCase_FilterNotImplementedNotAutoAdvanced verifies
+// that the auto-advance does NOT trigger when the configured release is not
+// yet fully implemented (i.e. the filter is valid, just no pending UCs).
+func TestSelectNextPendingUseCase_FilterNotImplementedNotAutoAdvanced(t *testing.T) {
+	_, cleanup := setupContextTestDir(t)
+	defer cleanup()
+
+	roadmap := `id: rm1
+title: Roadmap
+releases:
+  - version: "01.0"
+    name: Release 1
+    status: in_progress
+    use_cases:
+      - id: rel01.0-uc001-init
+        status: done
+  - version: "02.0"
+    name: Release 2
+    status: spec_complete
+    use_cases:
+      - id: rel02.0-uc001-ext
+        status: not started
+`
+	ucContent := `id: rel02.0-uc001-ext
+title: Extension
+touchpoints: []
+`
+	if err := os.WriteFile("docs/road-map.yaml", []byte(roadmap), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile("docs/specs/use-cases/rel02.0-uc001-ext.yaml", []byte(ucContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Filter to rel01.0 which is in_progress (not implemented) — no auto-advance.
+	uc, err := selectNextPendingUseCase(ProjectConfig{Releases: []string{"01.0"}})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if uc != nil {
+		t.Errorf("expected nil (rel01.0 in_progress but all UCs done, no auto-advance), got %s", uc.ID)
+	}
+}
