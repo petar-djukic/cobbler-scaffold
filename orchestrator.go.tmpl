@@ -144,6 +144,9 @@ func (Stats) Loc() error { return newOrch().Stats() }
 // Tokens enumerates prompt-attached files and counts tokens via the Anthropic API.
 func (Stats) Tokens() error { return newOrch().TokenStats() }
 
+// Generator prints a status report for the current generation run.
+func (Stats) Generator() error { return newOrch().GeneratorStats() }
+
 // --- Prompt targets ---
 
 // Measure prints the assembled measure prompt to stdout.
