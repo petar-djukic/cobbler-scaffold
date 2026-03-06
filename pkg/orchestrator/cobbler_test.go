@@ -682,6 +682,88 @@ func TestBuildPodmanCmd_ExtraArgsAppended(t *testing.T) {
 	}
 }
 
+// --- buildDirectCmd ---
+
+func TestBuildDirectCmd_UsesClaudeBinary(t *testing.T) {
+	t.Parallel()
+	o := New(Config{})
+	cmd := o.buildDirectCmd(context.TODO(), "/work/mydir")
+
+	if cmd.Path == "" {
+		t.Fatal("buildDirectCmd returned cmd with empty Path")
+	}
+	// The command base name must be "claude" (exact binary lookup may vary).
+	if !strings.HasSuffix(cmd.Path, binClaude) && cmd.Args[0] != binClaude {
+		t.Errorf("buildDirectCmd should invoke %q; got Path=%q Args=%v", binClaude, cmd.Path, cmd.Args)
+	}
+}
+
+func TestBuildDirectCmd_SetsWorkDir(t *testing.T) {
+	t.Parallel()
+	o := New(Config{})
+	cmd := o.buildDirectCmd(context.TODO(), "/work/mydir")
+
+	if cmd.Dir != "/work/mydir" {
+		t.Errorf("buildDirectCmd cmd.Dir = %q; want /work/mydir", cmd.Dir)
+	}
+}
+
+func TestBuildDirectCmd_ExtraArgsAppended(t *testing.T) {
+	t.Parallel()
+	o := New(Config{})
+	cmd := o.buildDirectCmd(context.TODO(), "/work", "--max-turns", "5")
+
+	joined := strings.Join(cmd.Args, " ")
+	if !strings.Contains(joined, "--max-turns") {
+		t.Errorf("buildDirectCmd missing extra arg --max-turns; args=%v", cmd.Args)
+	}
+	if !strings.Contains(joined, "5") {
+		t.Errorf("buildDirectCmd missing extra arg 5; args=%v", cmd.Args)
+	}
+}
+
+func TestBuildDirectCmd_NoVolumeMount(t *testing.T) {
+	t.Parallel()
+	o := New(Config{})
+	cmd := o.buildDirectCmd(context.TODO(), "/work/mydir")
+
+	joined := strings.Join(cmd.Args, " ")
+	// Check for the podman-style volume mount pattern ("-v /path:/path"),
+	// not just "-v" which would match "--verbose".
+	if strings.Contains(joined, " -v /") {
+		t.Errorf("buildDirectCmd should not contain volume mount flags; args=%v", cmd.Args)
+	}
+	if strings.Contains(joined, binPodman) {
+		t.Errorf("buildDirectCmd should not invoke podman; args=%v", cmd.Args)
+	}
+}
+
+// --- effectiveMode ---
+
+func TestEffectiveMode_DefaultIsPodman(t *testing.T) {
+	t.Parallel()
+	cfg := CobblerConfig{}
+	if got := cfg.effectiveMode(); got != ExecutionModePodman {
+		t.Errorf("effectiveMode() = %q; want %q", got, ExecutionModePodman)
+	}
+}
+
+func TestEffectiveMode_CLIMode(t *testing.T) {
+	t.Parallel()
+	cfg := CobblerConfig{Mode: ExecutionModeCLI}
+	if got := cfg.effectiveMode(); got != ExecutionModeCLI {
+		t.Errorf("effectiveMode() = %q; want %q", got, ExecutionModeCLI)
+	}
+}
+
+func TestEffectiveMode_UnknownFallsToPodman(t *testing.T) {
+	t.Parallel()
+	cfg := CobblerConfig{Mode: "docker"}
+	if got := cfg.effectiveMode(); got != ExecutionModePodman {
+		t.Errorf("effectiveMode() with unknown mode = %q; want %q", got, ExecutionModePodman)
+	}
+}
+
 // --- saveHistory* best-effort behavior ---
 
 func TestSaveHistoryReport_EmptyHistoryDir_NoOp(t *testing.T) {

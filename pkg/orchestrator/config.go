@@ -278,6 +278,33 @@ type CobblerConfig struct {
 	// the last argument. stdout replaces the file content in the prompt.
 	// On non-zero exit or empty output, the full file content is used.
 	MeasureSummarizeCommand string `yaml:"measure_summarize_command"`
+
+	// Mode selects the Claude execution backend. Valid values are
+	// ExecutionModePodman (default, run Claude inside a podman container)
+	// and ExecutionModeCLI (run the claude binary directly on the host,
+	// bypassing podman). Use ExecutionModeCLI in environments where podman
+	// is unavailable or when the host already provides an isolated claude
+	// installation. See prd001 R11.
+	Mode string `yaml:"mode"`
+}
+
+// Execution mode constants for CobblerConfig.Mode.
+const (
+	// ExecutionModePodman runs Claude inside a podman container (default).
+	ExecutionModePodman = "podman"
+
+	// ExecutionModeCLI runs the claude binary directly on the host,
+	// bypassing podman volume mounts and image management.
+	ExecutionModeCLI = "cli"
+)
+
+// effectiveMode returns the execution mode, defaulting to ExecutionModePodman
+// when Mode is empty or unrecognised.
+func (c *CobblerConfig) effectiveMode() string {
+	if c.Mode == ExecutionModeCLI {
+		return ExecutionModeCLI
+	}
+	return ExecutionModePodman
 }
 
 // PodmanConfig holds settings for the podman container runtime.

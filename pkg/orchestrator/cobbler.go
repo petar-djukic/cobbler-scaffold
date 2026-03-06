@@ -451,9 +451,16 @@ func parseClaudeTokens(output []byte) ClaudeResult {
 	return ClaudeResult{}
 }
 
-// checkClaude verifies that Claude can be invoked: podman is available,
-// the container image exists, and credentials are present.
+// checkClaude verifies that Claude can be invoked. In podman mode it
+// confirms podman is available and the container image exists. In CLI mode
+// it confirms the claude binary is on PATH. Both modes verify credentials.
 func (o *Orchestrator) checkClaude() error {
+	if o.cfg.Cobbler.effectiveMode() == ExecutionModeCLI {
+		if _, err := exec.LookPath(binClaude); err != nil {
+			return fmt.Errorf("claude not found on PATH; install the Claude CLI or set mode: podman")
+		}
+		return o.ensureCredentials()
+	}
 	if err := o.checkPodman(); err != nil {
 		return err
 	}
@@ -583,7 +590,12 @@ func (o *Orchestrator) runClaude(prompt, dir string, silence bool, extraClaudeAr
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	cmd := o.buildPodmanCmd(ctx, workDir, extraClaudeArgs...)
+	var cmd *exec.Cmd
+	if o.cfg.Cobbler.effectiveMode() == ExecutionModeCLI {
+		cmd = o.buildDirectCmd(ctx, workDir, extraClaudeArgs...)
+	} else {
+		cmd = o.buildPodmanCmd(ctx, workDir, extraClaudeArgs...)
+	}
 
 	cmd.Stdin = strings.NewReader(prompt)
 
@@ -678,6 +690,19 @@ func (o *Orchestrator) buildPodmanCmd(ctx context.Context, workDir string, extra
 
 	logf("runClaude: exec %s %v (timeout=%s)", binPodman, args, o.cfg.ClaudeTimeout())
 	return exec.CommandContext(ctx, binPodman, args...)
+}
+
+// buildDirectCmd constructs the exec.Cmd for running the claude binary
+// directly on the host, without a podman container. The working directory
+// is set on the command so Claude Code operates within the correct project
+// root. No volume mounts or image selection are involved.
+func (o *Orchestrator) buildDirectCmd(ctx context.Context, workDir string, extraClaudeArgs ...string) *exec.Cmd {
+	args := append([]string{}, o.cfg.Claude.Args...)
+	args = append(args, extraClaudeArgs...)
+	logf("runClaude: exec %s %v (mode=cli timeout=%s)", binClaude, args, o.cfg.ClaudeTimeout())
+	cmd := exec.CommandContext(ctx, binClaude, args...)
+	cmd.Dir = workDir
+	return cmd
 }
 
 // logConfig prints the resolved configuration for debugging.
