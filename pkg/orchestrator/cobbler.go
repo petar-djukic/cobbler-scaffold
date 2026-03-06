@@ -26,12 +26,16 @@ import (
 // InputTokens is the total input (non-cached + cache creation + cache read).
 // CacheCreationTokens and CacheReadTokens break down how the input was served.
 // RawOutput contains the full stream-json output from Claude for history.
+// NumTurns, DurationAPIMs, and SessionID are populated only in SDK mode.
 type ClaudeResult struct {
 	InputTokens         int
 	OutputTokens        int
 	CacheCreationTokens int
 	CacheReadTokens     int
 	CostUSD             float64
+	NumTurns            int    // SDK mode only; 0 in CLI/Podman
+	DurationAPIMs       int    // SDK mode only; API-side latency in milliseconds
+	SessionID           string // SDK mode only; Claude session identifier
 	RawOutput           []byte
 }
 
@@ -81,13 +85,14 @@ func (o *Orchestrator) captureLOCAt(dir string) LocSnapshot {
 // InvocationRecord is the JSON blob recorded as a GitHub issue comment after
 // every Claude invocation.
 type InvocationRecord struct {
-	Caller    string       `json:"caller"`
-	StartedAt string      `json:"started_at"`
-	DurationS int         `json:"duration_s"`
-	Tokens    claudeTokens `json:"tokens"`
-	LOCBefore LocSnapshot  `json:"loc_before"`
-	LOCAfter  LocSnapshot  `json:"loc_after"`
-	Diff      diffRecord   `json:"diff"`
+	Caller       string       `json:"caller"`
+	StartedAt    string       `json:"started_at"`
+	DurationS    int          `json:"duration_s"`
+	Tokens       claudeTokens `json:"tokens"`
+	LOCBefore    LocSnapshot  `json:"loc_before"`
+	LOCAfter     LocSnapshot  `json:"loc_after"`
+	Diff         diffRecord   `json:"diff"`
+	NumTurns     int          `json:"num_turns,omitempty"`
 }
 
 type claudeTokens struct {
@@ -107,19 +112,22 @@ type diffRecord struct {
 // HistoryStats is the YAML-serializable stats file saved alongside prompt
 // and log artifacts in the history directory.
 type HistoryStats struct {
-	Caller    string       `yaml:"caller"`
-	TaskID    string       `yaml:"task_id,omitempty"`
-	TaskTitle string       `yaml:"task_title,omitempty"`
-	Status    string       `yaml:"status,omitempty"`
-	Error     string       `yaml:"error,omitempty"`
-	StartedAt string       `yaml:"started_at"`
-	Duration  string       `yaml:"duration"`
-	DurationS int          `yaml:"duration_s"`
-	Tokens    historyTokens `yaml:"tokens"`
-	CostUSD   float64      `yaml:"cost_usd"`
-	LOCBefore LocSnapshot  `yaml:"loc_before"`
-	LOCAfter  LocSnapshot  `yaml:"loc_after"`
-	Diff      historyDiff  `yaml:"diff"`
+	Caller        string        `yaml:"caller"`
+	TaskID        string        `yaml:"task_id,omitempty"`
+	TaskTitle     string        `yaml:"task_title,omitempty"`
+	Status        string        `yaml:"status,omitempty"`
+	Error         string        `yaml:"error,omitempty"`
+	StartedAt     string        `yaml:"started_at"`
+	Duration      string        `yaml:"duration"`
+	DurationS     int           `yaml:"duration_s"`
+	Tokens        historyTokens `yaml:"tokens"`
+	CostUSD       float64       `yaml:"cost_usd"`
+	NumTurns      int           `yaml:"num_turns,omitempty"`
+	DurationAPIMs int           `yaml:"duration_api_ms,omitempty"`
+	SessionID     string        `yaml:"session_id,omitempty"`
+	LOCBefore     LocSnapshot   `yaml:"loc_before"`
+	LOCAfter      LocSnapshot   `yaml:"loc_after"`
+	Diff          historyDiff   `yaml:"diff"`
 }
 
 type historyTokens struct {
@@ -826,11 +834,12 @@ func (o *Orchestrator) runClaudeSDK(ctx context.Context, prompt, workDir string,
 		switch m := msg.(type) {
 		case *claudetypes.AssistantMessage:
 			for _, block := range m.Content {
-				if tb, ok := block.(*claudetypes.TextBlock); ok {
+				switch b := block.(type) {
+				case *claudetypes.TextBlock:
 					if !silence {
-						fmt.Print(tb.Text)
+						fmt.Print(b.Text)
 					}
-					textBuf.WriteString(tb.Text)
+					textBuf.WriteString(b.Text)
 				}
 			}
 		case *claudetypes.ResultMessage:
@@ -842,6 +851,9 @@ func (o *Orchestrator) runClaudeSDK(ctx context.Context, prompt, workDir string,
 			result.OutputTokens = intFromUsage(m.Usage, "output_tokens")
 			result.CacheCreationTokens = intFromUsage(m.Usage, "cache_creation_input_tokens")
 			result.CacheReadTokens = intFromUsage(m.Usage, "cache_read_input_tokens")
+			result.NumTurns = m.NumTurns
+			result.DurationAPIMs = m.DurationAPIMs
+			result.SessionID = m.SessionID
 			if m.IsError {
 				return result, fmt.Errorf("claude SDK session returned error result")
 			}

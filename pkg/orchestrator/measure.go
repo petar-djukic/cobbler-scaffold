@@ -236,16 +236,19 @@ func (o *Orchestrator) RunMeasure() error {
 				// Save log and stats even on failure.
 				o.saveHistoryLog(historyTS, "measure", tokens.RawOutput)
 				o.saveHistoryStats(historyTS, "measure", HistoryStats{
-					Caller:    "measure",
-					Status:    "failed",
-					Error:     fmt.Sprintf("claude failure (iteration %d/%d): %v", i+1, totalIssues, err),
-					StartedAt: iterStart.UTC().Format(time.RFC3339),
-					Duration:  iterDuration.Round(time.Second).String(),
-					DurationS: int(iterDuration.Seconds()),
-					Tokens:    historyTokens{Input: tokens.InputTokens, Output: tokens.OutputTokens, CacheCreation: tokens.CacheCreationTokens, CacheRead: tokens.CacheReadTokens},
-					CostUSD:   tokens.CostUSD,
-					LOCBefore: locBefore,
-					LOCAfter:  o.captureLOC(),
+					Caller:        "measure",
+					Status:        "failed",
+					Error:         fmt.Sprintf("claude failure (iteration %d/%d): %v", i+1, totalIssues, err),
+					StartedAt:     iterStart.UTC().Format(time.RFC3339),
+					Duration:      iterDuration.Round(time.Second).String(),
+					DurationS:     int(iterDuration.Seconds()),
+					Tokens:        historyTokens{Input: tokens.InputTokens, Output: tokens.OutputTokens, CacheCreation: tokens.CacheCreationTokens, CacheRead: tokens.CacheReadTokens},
+					CostUSD:       tokens.CostUSD,
+					NumTurns:      tokens.NumTurns,
+					DurationAPIMs: tokens.DurationAPIMs,
+					SessionID:     tokens.SessionID,
+					LOCBefore:     locBefore,
+					LOCAfter:      o.captureLOC(),
 				})
 				return fmt.Errorf("running Claude (iteration %d/%d): %w", i+1, totalIssues, err)
 			}
@@ -254,15 +257,18 @@ func (o *Orchestrator) RunMeasure() error {
 			// Save remaining history artifacts (log, issues, stats) after Claude.
 			o.saveHistory(historyTS, tokens.RawOutput, outputFile)
 			o.saveHistoryStats(historyTS, "measure", HistoryStats{
-				Caller:    "measure",
-				Status:    "success",
-				StartedAt: iterStart.UTC().Format(time.RFC3339),
-				Duration:  iterDuration.Round(time.Second).String(),
-				DurationS: int(iterDuration.Seconds()),
-				Tokens:    historyTokens{Input: tokens.InputTokens, Output: tokens.OutputTokens, CacheCreation: tokens.CacheCreationTokens, CacheRead: tokens.CacheReadTokens},
-				CostUSD:   tokens.CostUSD,
-				LOCBefore: locBefore,
-				LOCAfter:  o.captureLOC(),
+				Caller:        "measure",
+				Status:        "success",
+				StartedAt:     iterStart.UTC().Format(time.RFC3339),
+				Duration:      iterDuration.Round(time.Second).String(),
+				DurationS:     int(iterDuration.Seconds()),
+				Tokens:        historyTokens{Input: tokens.InputTokens, Output: tokens.OutputTokens, CacheCreation: tokens.CacheCreationTokens, CacheRead: tokens.CacheReadTokens},
+				CostUSD:       tokens.CostUSD,
+				NumTurns:      tokens.NumTurns,
+				DurationAPIMs: tokens.DurationAPIMs,
+				SessionID:     tokens.SessionID,
+				LOCBefore:     locBefore,
+				LOCAfter:      o.captureLOC(),
 			})
 
 			// Extract YAML from Claude's text output and write to file.

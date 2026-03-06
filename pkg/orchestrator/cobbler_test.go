@@ -1667,6 +1667,52 @@ func TestRunClaudeSDK_MaxTurnsArgParsed(t *testing.T) {
 	}
 }
 
+func TestRunClaudeSDK_SDKMetadataCaptured(t *testing.T) {
+	t.Parallel()
+	cost := 0.0099
+	rm := &claudetypes.ResultMessage{
+		TotalCostUSD:  &cost,
+		NumTurns:      5,
+		DurationAPIMs: 1234,
+		SessionID:     "sess-abc123",
+		Usage:         map[string]interface{}{"input_tokens": float64(7), "output_tokens": float64(3)},
+	}
+	o := newSDKOrchestrator(fakeSdkQuery(rm))
+	res, err := o.runClaudeSDK(context.Background(), "prompt", t.TempDir(), true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.NumTurns != 5 {
+		t.Errorf("NumTurns = %d; want 5", res.NumTurns)
+	}
+	if res.DurationAPIMs != 1234 {
+		t.Errorf("DurationAPIMs = %d; want 1234", res.DurationAPIMs)
+	}
+	if res.SessionID != "sess-abc123" {
+		t.Errorf("SessionID = %q; want %q", res.SessionID, "sess-abc123")
+	}
+}
+
+func TestRunClaudeSDK_SDKMetadataZeroWhenAbsent(t *testing.T) {
+	t.Parallel()
+	// A ResultMessage with no NumTurns/DurationAPIMs/SessionID should yield
+	// zero values so callers can use omitempty safely.
+	o := newSDKOrchestrator(fakeSdkQuery(resultMsg(1, 1, 0.001)))
+	res, err := o.runClaudeSDK(context.Background(), "prompt", t.TempDir(), true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.NumTurns != 0 {
+		t.Errorf("NumTurns = %d; want 0", res.NumTurns)
+	}
+	if res.DurationAPIMs != 0 {
+		t.Errorf("DurationAPIMs = %d; want 0", res.DurationAPIMs)
+	}
+	if res.SessionID != "" {
+		t.Errorf("SessionID = %q; want empty", res.SessionID)
+	}
+}
+
 func TestRunClaudeSDK_ConcurrentCalls_Race(t *testing.T) {
 	t.Parallel()
 	// Inject CLAUDECODE into the process env so sdkEnvMu unset/restore path

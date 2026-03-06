@@ -463,6 +463,7 @@ func (o *Orchestrator) doOneTask(task stitchTask, baseBranch, repoRoot string) e
 		},
 		LOCBefore: locBefore,
 		LOCAfter:  locAfter,
+		NumTurns:  tokens.NumTurns,
 	}
 	if err := appendOutcomeTrailers(task.worktreeDir, trailerRec); err != nil {
 		logf("doOneTask: outcome trailer warning for %s: %v", task.id, err)
@@ -516,18 +517,21 @@ func (o *Orchestrator) doOneTask(task stitchTask, baseBranch, repoRoot string) e
 	// Save stitch stats (log was saved immediately after runClaude).
 	taskDuration := time.Since(taskStart)
 	o.saveHistoryStats(historyTS, "stitch", HistoryStats{
-		Caller:    "stitch",
-		TaskID:    task.id,
-		TaskTitle: task.title,
-		Status:    "success",
-		StartedAt: claudeStart.UTC().Format(time.RFC3339),
-		Duration:  taskDuration.Round(time.Second).String(),
-		DurationS: int(taskDuration.Seconds()),
-		Tokens:    historyTokens{Input: tokens.InputTokens, Output: tokens.OutputTokens, CacheCreation: tokens.CacheCreationTokens, CacheRead: tokens.CacheReadTokens},
-		CostUSD:   tokens.CostUSD,
-		LOCBefore: locBefore,
-		LOCAfter:  locAfter,
-		Diff:      historyDiff{Files: diff.FilesChanged, Insertions: diff.Insertions, Deletions: diff.Deletions},
+		Caller:        "stitch",
+		TaskID:        task.id,
+		TaskTitle:     task.title,
+		Status:        "success",
+		StartedAt:     claudeStart.UTC().Format(time.RFC3339),
+		Duration:      taskDuration.Round(time.Second).String(),
+		DurationS:     int(taskDuration.Seconds()),
+		Tokens:        historyTokens{Input: tokens.InputTokens, Output: tokens.OutputTokens, CacheCreation: tokens.CacheCreationTokens, CacheRead: tokens.CacheReadTokens},
+		CostUSD:       tokens.CostUSD,
+		NumTurns:      tokens.NumTurns,
+		DurationAPIMs: tokens.DurationAPIMs,
+		SessionID:     tokens.SessionID,
+		LOCBefore:     locBefore,
+		LOCAfter:      locAfter,
+		Diff:          historyDiff{Files: diff.FilesChanged, Insertions: diff.Insertions, Deletions: diff.Deletions},
 	})
 
 	// Save stitch report with per-file diffstat.
@@ -551,6 +555,7 @@ func (o *Orchestrator) doOneTask(task stitchTask, baseBranch, repoRoot string) e
 		LOCBefore: locBefore,
 		LOCAfter:  locAfter,
 		Diff:      diffRecord{Files: diff.FilesChanged, Insertions: diff.Insertions, Deletions: diff.Deletions},
+		NumTurns:  tokens.NumTurns,
 	}
 	logf("doOneTask: closing task %s", task.id)
 	o.closeStitchTask(task, rec)
