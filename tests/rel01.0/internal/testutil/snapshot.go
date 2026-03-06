@@ -80,7 +80,9 @@ func PrepareSnapshot(orchRoot string) (string, func(), error) {
 
 // overrideSnapshotIssuesRepo writes cobbler.issues_repo into the snapshot's
 // configuration.yaml so that all test repos created from it point to the
-// correct GitHub repo for issue tracking.
+// correct GitHub repo for issue tracking. All other fields, including
+// cobbler.mode, are preserved from the snapshot's configuration.yaml so
+// that the execution mode is controlled by sdd-hello-world's config (GH-833).
 func overrideSnapshotIssuesRepo(snapDir, issuesRepo string) error {
 	cfgPath := filepath.Join(snapDir, orchestrator.DefaultConfigFile)
 	data, err := os.ReadFile(cfgPath)
@@ -92,7 +94,6 @@ func overrideSnapshotIssuesRepo(snapDir, issuesRepo string) error {
 		return err
 	}
 	cfg.Cobbler.IssuesRepo = issuesRepo
-	cfg.Cobbler.Mode = orchestrator.ExecutionModeSDK
 	newData, err := yaml.Marshal(&cfg)
 	if err != nil {
 		return err
