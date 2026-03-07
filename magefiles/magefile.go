@@ -303,6 +303,9 @@ func (Stats) Outcomes() error { return newOrch().Outcomes() }
 // Generator prints a live status report for the current generation run.
 func (Stats) Generator() error { return newOrch().GeneratorStats() }
 
+// Releases prints a table of roadmap releases with PRD and requirement counts.
+func (Stats) Releases() error { return newOrch().ReleaseStats() }
+
 // --- Prompt targets ---
 
 // Measure prints the assembled measure prompt to stdout.
