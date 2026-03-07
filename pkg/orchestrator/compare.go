@@ -73,7 +73,9 @@ func (r *GitTagResolver) ensureBuild() error {
 		return fmt.Errorf("creating worktree dir: %w", err)
 	}
 	// git worktree add requires a non-existing target directory.
-	os.Remove(wtDir)
+	if err := os.Remove(wtDir); err != nil {
+		return fmt.Errorf("removing temp dir for worktree: %w", err)
+	}
 
 	cmd := exec.Command(binGit, "worktree", "add", wtDir, r.Tag)
 	cmd.Stdout = os.Stderr

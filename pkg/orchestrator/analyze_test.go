@@ -560,6 +560,14 @@ func TestVisionDoc_Validate_MissingFields(t *testing.T) {
 	}
 }
 
+func TestVisionDoc_Validate_AllEmpty(t *testing.T) {
+	d := &VisionDoc{}
+	errs := d.Validate()
+	if len(errs) != 6 {
+		t.Errorf("got %d errors %v, want 6", len(errs), errs)
+	}
+}
+
 func TestArchitectureDoc_Validate_AllPresent(t *testing.T) {
 	d := &ArchitectureDoc{ID: "arch-01", Title: "Architecture"}
 	if errs := d.Validate(); len(errs) != 0 {
@@ -572,6 +580,14 @@ func TestArchitectureDoc_Validate_MissingID(t *testing.T) {
 	errs := d.Validate()
 	if len(errs) != 1 || errs[0] != "id is required" {
 		t.Errorf("got %v, want [id is required]", errs)
+	}
+}
+
+func TestArchitectureDoc_Validate_AllEmpty(t *testing.T) {
+	d := &ArchitectureDoc{}
+	errs := d.Validate()
+	if len(errs) != 2 {
+		t.Errorf("got %d errors %v, want 2", len(errs), errs)
 	}
 }
 
@@ -590,6 +606,14 @@ func TestSpecificationsDoc_Validate_MissingOverview(t *testing.T) {
 	}
 }
 
+func TestSpecificationsDoc_Validate_AllEmpty(t *testing.T) {
+	d := &SpecificationsDoc{}
+	errs := d.Validate()
+	if len(errs) != 3 {
+		t.Errorf("got %d errors %v, want 3", len(errs), errs)
+	}
+}
+
 func TestRoadmapDoc_Validate_AllPresent(t *testing.T) {
 	d := &RoadmapDoc{ID: "rm-01", Title: "Roadmap"}
 	if errs := d.Validate(); len(errs) != 0 {
@@ -605,6 +629,14 @@ func TestRoadmapDoc_Validate_MissingTitle(t *testing.T) {
 	}
 }
 
+func TestRoadmapDoc_Validate_AllEmpty(t *testing.T) {
+	d := &RoadmapDoc{}
+	errs := d.Validate()
+	if len(errs) != 2 {
+		t.Errorf("got %d errors %v, want 2", len(errs), errs)
+	}
+}
+
 func TestPRDDoc_Validate_AllPresent(t *testing.T) {
 	d := &PRDDoc{
 		ID:      "prd001-core",
@@ -616,6 +648,14 @@ func TestPRDDoc_Validate_AllPresent(t *testing.T) {
 	}
 	if errs := d.Validate(); len(errs) != 0 {
 		t.Errorf("expected no errors, got %v", errs)
+	}
+}
+
+func TestPRDDoc_Validate_AllEmpty(t *testing.T) {
+	d := &PRDDoc{}
+	errs := d.Validate()
+	if len(errs) != 3 {
+		t.Errorf("got %d errors %v, want 3 (id, title, problem)", len(errs), errs)
 	}
 }
 
@@ -723,6 +763,14 @@ func TestUseCaseDoc_Validate_AllPresent(t *testing.T) {
 	}
 }
 
+func TestUseCaseDoc_Validate_AllEmpty(t *testing.T) {
+	d := &UseCaseDoc{}
+	errs := d.Validate()
+	if len(errs) != 5 {
+		t.Errorf("got %d errors %v, want 5 (id, title, summary, actor, trigger)", len(errs), errs)
+	}
+}
+
 func TestUseCaseDoc_Validate_MissingSummary(t *testing.T) {
 	d := &UseCaseDoc{
 		ID:      "rel01.0-uc001-init",
@@ -752,6 +800,14 @@ func TestTestSuiteDoc_Validate_AllPresent(t *testing.T) {
 	}
 }
 
+func TestTestSuiteDoc_Validate_AllEmpty(t *testing.T) {
+	d := &TestSuiteDoc{}
+	errs := d.Validate()
+	if len(errs) != 3 {
+		t.Errorf("got %d errors %v, want 3 (id, title, release)", len(errs), errs)
+	}
+}
+
 func TestTestSuiteDoc_Validate_MissingRelease(t *testing.T) {
 	d := &TestSuiteDoc{ID: "test-rel01.0", Title: "Tests"}
 	errs := d.Validate()
@@ -771,6 +827,14 @@ func TestEngineeringDoc_Validate_AllPresent(t *testing.T) {
 	}
 	if errs := d.Validate(); len(errs) != 0 {
 		t.Errorf("expected no errors, got %v", errs)
+	}
+}
+
+func TestEngineeringDoc_Validate_AllEmpty(t *testing.T) {
+	d := &EngineeringDoc{}
+	errs := d.Validate()
+	if len(errs) != 3 {
+		t.Errorf("got %d errors %v, want 3 (id, title, introduction)", len(errs), errs)
 	}
 }
 

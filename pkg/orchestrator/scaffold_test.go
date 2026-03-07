@@ -395,6 +395,79 @@ func TestCopyDir_EmptySrc(t *testing.T) {
 	}
 }
 
+// --- clearGenerationBranch ---
+
+func TestClearGenerationBranch_ClearsStaleBranch(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	cfg := Config{}
+	cfg.Generation.Branch = "generation-old"
+	data, err := yaml.Marshal(&cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfgPath := filepath.Join(dir, DefaultConfigFile)
+	if err := os.WriteFile(cfgPath, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := clearGenerationBranch(dir); err != nil {
+		t.Fatalf("clearGenerationBranch: %v", err)
+	}
+
+	got, err := os.ReadFile(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var parsed Config
+	if err := yaml.Unmarshal(got, &parsed); err != nil {
+		t.Fatalf("parse written config: %v", err)
+	}
+	if parsed.Generation.Branch != "" {
+		t.Errorf("generation.branch = %q, want empty", parsed.Generation.Branch)
+	}
+}
+
+func TestClearGenerationBranch_NoOpWhenEmpty(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	cfg := Config{} // generation.branch is already empty
+	data, err := yaml.Marshal(&cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfgPath := filepath.Join(dir, DefaultConfigFile)
+	if err := os.WriteFile(cfgPath, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Should return nil without rewriting the file.
+	if err := clearGenerationBranch(dir); err != nil {
+		t.Fatalf("clearGenerationBranch: %v", err)
+	}
+}
+
+func TestClearGenerationBranch_MissingFile(t *testing.T) {
+	t.Parallel()
+	err := clearGenerationBranch(t.TempDir())
+	if err == nil {
+		t.Error("expected error for missing config file, got nil")
+	}
+}
+
+func TestClearGenerationBranch_InvalidYAML(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, DefaultConfigFile)
+	if err := os.WriteFile(cfgPath, []byte("not: [valid: yaml: {{"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err := clearGenerationBranch(dir)
+	if err == nil {
+		t.Error("expected error for invalid YAML, got nil")
+	}
+}
+
 func TestCopyDir_PreservesContent(t *testing.T) {
 	t.Parallel()
 	src := t.TempDir()
