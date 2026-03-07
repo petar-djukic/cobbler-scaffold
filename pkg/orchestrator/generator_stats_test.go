@@ -91,6 +91,33 @@ func TestParseStitchComment_NoMatch(t *testing.T) {
 	}
 }
 
+// --- extractRelease (GH-1025) ---
+
+func TestExtractRelease(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		text string
+		want string
+	}{
+		{"title with rel", "cmd/tee implementation (rel02.1-uc001-tee)", "02.1"},
+		{"rel01.0", "[stitch] prd001: Implement Foo (rel01.0-uc003)", "01.0"},
+		{"no release", "prd001: Implement Foo", ""},
+		{"plain text", "no release info here", ""},
+		{"multiple releases", "rel01.0 and rel02.1", "01.0"},
+		{"embedded in word", "xrel03.0y", "03.0"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := extractRelease(tc.text)
+			if got != tc.want {
+				t.Errorf("extractRelease(%q) = %q, want %q", tc.text, got, tc.want)
+			}
+		})
+	}
+}
+
 // --- extractPRDRefs (GH-571) ---
 
 func TestExtractPRDRefs(t *testing.T) {
