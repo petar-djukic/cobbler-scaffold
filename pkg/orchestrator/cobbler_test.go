@@ -1415,6 +1415,38 @@ func TestProgressWriter_LogLine_LongSnippetTruncated(t *testing.T) {
 	}
 }
 
+// --- progressWriter turn propagation (GH-1024) ---
+
+func TestProgressWriter_TurnCount_MultipleAssistantEvents(t *testing.T) {
+	t.Parallel()
+	var buf bytes.Buffer
+	pw := newProgressWriter(&buf, time.Now())
+
+	// Simulate 3 assistant turns followed by a result.
+	assistant := `{"type":"assistant","message":{"content":[{"type":"text","text":"turn"}]}}`
+	result := `{"type":"result","total_cost_usd":0.50,"usage":{"input_tokens":100,"output_tokens":50,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}`
+	stream := assistant + "\n" + assistant + "\n" + assistant + "\n" + result + "\n"
+
+	// Write the stream through progressWriter (simulating cmd.Stdout).
+	pw.Write([]byte(stream))
+
+	if pw.turn != 3 {
+		t.Errorf("pw.turn = %d, want 3", pw.turn)
+	}
+
+	// Verify parseClaudeTokens gets cost from the same buffer.
+	cr := parseClaudeTokens(buf.Bytes())
+	if cr.CostUSD != 0.50 {
+		t.Errorf("CostUSD = %v, want 0.50", cr.CostUSD)
+	}
+
+	// Simulate the propagation that runClaude does.
+	cr.NumTurns = pw.turn
+	if cr.NumTurns != 3 {
+		t.Errorf("NumTurns = %d, want 3", cr.NumTurns)
+	}
+}
+
 // --- logConfig ---
 
 func TestLogConfig(t *testing.T) {

@@ -27,14 +27,15 @@ import (
 // InputTokens is the total input (non-cached + cache creation + cache read).
 // CacheCreationTokens and CacheReadTokens break down how the input was served.
 // RawOutput contains the full stream-json output from Claude for history.
-// NumTurns, DurationAPIMs, and SessionID are populated only in SDK mode.
+// NumTurns is populated from progressWriter in CLI/Podman mode and from the
+// SDK ResultMessage in SDK mode. DurationAPIMs and SessionID are SDK-only.
 type ClaudeResult struct {
 	InputTokens         int
 	OutputTokens        int
 	CacheCreationTokens int
 	CacheReadTokens     int
 	CostUSD             float64
-	NumTurns            int    // SDK mode only; 0 in CLI/Podman
+	NumTurns            int    // CLI: from progressWriter; SDK: from ResultMessage
 	DurationAPIMs       int    // SDK mode only; API-side latency in milliseconds
 	SessionID           string // SDK mode only; Claude session identifier
 	RawOutput           []byte
@@ -692,8 +693,10 @@ func (o *Orchestrator) runClaude(prompt, dir string, silence bool, extraClaudeAr
 
 	var stdoutBuf bytes.Buffer
 	var outputWriter io.Writer
+	var pw *progressWriter
 	if silence {
-		outputWriter = newProgressWriter(&stdoutBuf, time.Now())
+		pw = newProgressWriter(&stdoutBuf, time.Now())
+		outputWriter = pw
 	} else {
 		outputWriter = io.MultiWriter(os.Stdout, &stdoutBuf)
 		cmd.Stderr = os.Stderr
@@ -741,6 +744,9 @@ func (o *Orchestrator) runClaude(prompt, dir string, silence bool, extraClaudeAr
 
 	rawOutput := stdoutBuf.Bytes()
 	result := parseClaudeTokens(rawOutput)
+	if pw != nil {
+		result.NumTurns = pw.turn
+	}
 	result.RawOutput = make([]byte, len(rawOutput))
 	copy(result.RawOutput, rawOutput)
 	logf("runClaude: finished in %s in=%d (cache_create=%d cache_read=%d) out=%d cost=$%.4f (err=%v)",
