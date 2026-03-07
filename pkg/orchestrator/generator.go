@@ -159,6 +159,11 @@ func (o *Orchestrator) RunCycles(label string) error {
 			consecutiveZeroLOC = 0
 		}
 
+		// Check if the current release is complete and auto-advance if so.
+		if advanced, ver := o.checkAutoAdvanceRelease(); advanced {
+			logf("generator %s: cycle %d — auto-advanced release %s", label, cycle, ver)
+		}
+
 		logf("generator %s: cycle %d — measure", label, cycle)
 		if err := o.RunMeasure(); err != nil {
 			return fmt.Errorf("cycle %d measure: %w", cycle, err)
@@ -177,6 +182,62 @@ func (o *Orchestrator) RunCycles(label string) error {
 
 	logf("generator %s: complete (total stitched=%d)", label, totalStitched)
 	return nil
+}
+
+// checkAutoAdvanceRelease detects when the current release's use cases are all
+// done and auto-advances by calling ReleaseUpdate (which marks UCs as
+// "implemented" in road-map.yaml and removes the release from
+// configuration.yaml). Changes are committed on the current branch. Returns
+// (true, version) if a release was advanced, (false, "") otherwise.
+func (o *Orchestrator) checkAutoAdvanceRelease() (bool, string) {
+	rm := loadYAML[RoadmapDoc]("docs/road-map.yaml")
+	if rm == nil {
+		return false, ""
+	}
+
+	// Find the first release that is not yet done/implemented.
+	var target *RoadmapRelease
+	for i := range rm.Releases {
+		rel := &rm.Releases[i]
+		if !ucStatusDone(rel.Status) {
+			target = rel
+			break
+		}
+	}
+	if target == nil {
+		return false, ""
+	}
+
+	// Check if all use cases in this release are done.
+	if len(target.UseCases) == 0 {
+		return false, ""
+	}
+	for _, uc := range target.UseCases {
+		if !ucStatusDone(uc.Status) {
+			return false, ""
+		}
+	}
+
+	// All UCs done — auto-advance this release.
+	logf("checkAutoAdvanceRelease: release %s has all use cases done, advancing", target.Version)
+	if err := o.ReleaseUpdate(target.Version); err != nil {
+		logf("checkAutoAdvanceRelease: ReleaseUpdate(%s) failed: %v", target.Version, err)
+		return false, ""
+	}
+
+	// Commit the changes on the current branch.
+	_ = gitStageAll(".")
+	msg := fmt.Sprintf("Auto-advance release %s: all use cases complete\n\nMarked use cases as implemented in road-map.yaml.\nRemoved %s from project.releases in configuration.yaml.", target.Version, target.Version)
+	if err := gitCommit(msg, "."); err != nil {
+		logf("checkAutoAdvanceRelease: commit failed: %v", err)
+	}
+
+	// Reload config so subsequent measure sees updated releases.
+	if cfg, err := LoadConfig(DefaultConfigFile); err == nil {
+		o.cfg = cfg
+	}
+
+	return true, target.Version
 }
 
 // GeneratorStart begins a new generation trail.

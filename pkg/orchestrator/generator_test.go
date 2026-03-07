@@ -1389,3 +1389,114 @@ func TestResolveStopTarget_CallerOnCustomBase_UsesCustomBase(t *testing.T) {
 		t.Errorf("resolveStopTarget = %q, want %q", got, "develop")
 	}
 }
+
+// --- checkAutoAdvanceRelease (GH-1006) ---
+
+func TestCheckAutoAdvanceRelease_AllUCsDone(t *testing.T) {
+	dir := initTestGitRepo(t)
+
+	// Write a roadmap where release 00.0 has all UCs done.
+	roadmapContent := `id: rm1
+title: Test Roadmap
+releases:
+  - version: "00.0"
+    name: Release 0
+    status: in_progress
+    use_cases:
+      - id: rel00.0-uc001-format
+        status: done
+        summary: Format output
+      - id: rel00.0-uc002-build
+        status: done
+        summary: Build pipeline
+  - version: "01.0"
+    name: Release 1
+    status: pending
+    use_cases:
+      - id: rel01.0-uc001-ext
+        status: spec_complete
+        summary: Extension
+`
+	writeRoadmapFile(t, dir, roadmapContent)
+	cfgPath := filepath.Join(dir, DefaultConfigFile)
+	writeConfigFile(t, cfgPath, []string{"00.0", "01.0"})
+
+	o := &Orchestrator{cfg: Config{}}
+	advanced, ver := o.checkAutoAdvanceRelease()
+	if !advanced {
+		t.Fatal("expected auto-advance, got false")
+	}
+	if ver != "00.0" {
+		t.Errorf("advanced version = %q, want %q", ver, "00.0")
+	}
+
+	// Verify road-map.yaml: release 00.0 UCs should be "implemented".
+	statuses, err := roadmapUCStatuses(filepath.Join(dir, "docs", "road-map.yaml"), "00.0")
+	if err != nil {
+		t.Fatalf("read statuses: %v", err)
+	}
+	for id, status := range statuses {
+		if status != "implemented" {
+			t.Errorf("UC %s: want implemented, got %q", id, status)
+		}
+	}
+
+	// Verify configuration.yaml: "00.0" should be removed.
+	versions, err := releaseVersionsFromConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	for _, v := range versions {
+		if v == "00.0" {
+			t.Error("00.0 should have been removed from config releases")
+		}
+	}
+}
+
+func TestCheckAutoAdvanceRelease_NotAllDone(t *testing.T) {
+	dir := initTestGitRepo(t)
+
+	// Release 00.0 has one pending UC.
+	writeRoadmapFile(t, dir, sampleRoadmap)
+	cfgPath := filepath.Join(dir, DefaultConfigFile)
+	writeConfigFile(t, cfgPath, []string{"00.0"})
+
+	o := &Orchestrator{cfg: Config{}}
+	advanced, ver := o.checkAutoAdvanceRelease()
+	if advanced {
+		t.Errorf("should not advance when UCs are pending, got version=%q", ver)
+	}
+}
+
+func TestCheckAutoAdvanceRelease_NoRoadmap(t *testing.T) {
+	_ = chdirTemp(t)
+
+	o := &Orchestrator{cfg: Config{}}
+	advanced, _ := o.checkAutoAdvanceRelease()
+	if advanced {
+		t.Error("should not advance when no road-map.yaml exists")
+	}
+}
+
+func TestCheckAutoAdvanceRelease_AllReleasesAlreadyDone(t *testing.T) {
+	dir := initTestGitRepo(t)
+
+	roadmapContent := `id: rm1
+title: Test Roadmap
+releases:
+  - version: "00.0"
+    name: Release 0
+    status: done
+    use_cases:
+      - id: rel00.0-uc001-format
+        status: done
+        summary: Format output
+`
+	writeRoadmapFile(t, dir, roadmapContent)
+
+	o := &Orchestrator{cfg: Config{}}
+	advanced, _ := o.checkAutoAdvanceRelease()
+	if advanced {
+		t.Error("should not advance when all releases already done")
+	}
+}
