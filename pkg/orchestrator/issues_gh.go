@@ -267,12 +267,13 @@ func closeMeasuringPlaceholderWithComment(repo string, number int, comment strin
 // if the generation name encodes one (GH-578).
 func upgradeMeasuringPlaceholder(repo string, number int, generation string, issue proposedIssue) error {
 	body := formatIssueFrontMatter(generation, issue.Index, issue.Dependency) + issue.Description
+	title := "[measure] " + issue.Title
 
 	// Edit title and body in one command.
 	if err := exec.Command(binGh, "issue", "edit",
 		"--repo", repo,
 		fmt.Sprintf("%d", number),
-		"--title", issue.Title,
+		"--title", title,
 		"--body", body,
 	).Run(); err != nil {
 		return fmt.Errorf("gh issue edit placeholder #%d: %w", number, err)
@@ -284,7 +285,7 @@ func upgradeMeasuringPlaceholder(repo string, number int, generation string, iss
 	}
 
 	logf("upgradeMeasuringPlaceholder: upgraded #%d %q gen=%s index=%d dep=%d",
-		number, issue.Title, generation, issue.Index, issue.Dependency)
+		number, title, generation, issue.Index, issue.Dependency)
 
 	// Link as sub-issue of the parent if the generation name encodes one.
 	if parentNumber := extractParentIssueNumber(generation); parentNumber > 0 {
@@ -302,11 +303,12 @@ func upgradeMeasuringPlaceholder(repo string, number int, generation string, iss
 // issue URL (https://github.com/owner/repo/issues/123) on success.
 func createCobblerIssue(repo, generation string, issue proposedIssue) (int, error) {
 	body := formatIssueFrontMatter(generation, issue.Index, issue.Dependency) + issue.Description
+	title := "[measure] " + issue.Title
 
 	genLabel := cobblerGenLabel(generation)
 	out, err := exec.Command(binGh, "issue", "create",
 		"--repo", repo,
-		"--title", issue.Title,
+		"--title", title,
 		"--body", body,
 		"--label", genLabel,
 	).Output()
@@ -319,7 +321,7 @@ func createCobblerIssue(repo, generation string, issue proposedIssue) (int, erro
 		return 0, err
 	}
 	logf("createCobblerIssue: created #%d %q gen=%s index=%d dep=%d",
-		number, issue.Title, generation, issue.Index, issue.Dependency)
+		number, title, generation, issue.Index, issue.Dependency)
 
 	// Link as sub-issue of the parent, if the generation name encodes one (GH-566).
 	if parentNumber := extractParentIssueNumber(generation); parentNumber > 0 {
