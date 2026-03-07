@@ -956,6 +956,109 @@ func TestGitBranchExists_ChecksLocalBranches(t *testing.T) {
 	}
 }
 
+// --- scopeSourceDirs (GH-1005) ---
+
+func TestScopeSourceDirs_EmptyDescription(t *testing.T) {
+	t.Parallel()
+	got := scopeSourceDirs([]string{"cmd/", "pkg/"}, "")
+	if got != nil {
+		t.Errorf("expected nil, got %v", got)
+	}
+}
+
+func TestScopeSourceDirs_NoDirs(t *testing.T) {
+	t.Parallel()
+	desc := "files:\n  - cmd/cat/main.go\n"
+	got := scopeSourceDirs(nil, desc)
+	if got != nil {
+		t.Errorf("expected nil, got %v", got)
+	}
+}
+
+func TestScopeSourceDirs_NoFilesField(t *testing.T) {
+	t.Parallel()
+	desc := "requirements:\n  - do something\n"
+	got := scopeSourceDirs([]string{"cmd/", "pkg/"}, desc)
+	if got != nil {
+		t.Errorf("expected nil, got %v", got)
+	}
+}
+
+func TestScopeSourceDirs_InvalidYAML(t *testing.T) {
+	t.Parallel()
+	got := scopeSourceDirs([]string{"cmd/"}, "{{not yaml")
+	if got != nil {
+		t.Errorf("expected nil, got %v", got)
+	}
+}
+
+func TestScopeSourceDirs_NarrowsCmd(t *testing.T) {
+	t.Parallel()
+	desc := "files:\n  - cmd/cat/main.go\n  - cmd/cat/cat_test.go\n  - pkg/orchestrator/stitch.go\n"
+	got := scopeSourceDirs([]string{"cmd/", "pkg/"}, desc)
+	// cmd/ narrows to cmd/cat; pkg/ narrows to pkg/orchestrator.
+	want := []string{"cmd/cat", "pkg/orchestrator"}
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("got[%d]=%q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+func TestScopeSourceDirs_MultipleCmdSubdirs(t *testing.T) {
+	t.Parallel()
+	desc := "files:\n  - cmd/cat/main.go\n  - cmd/grep/main.go\n"
+	got := scopeSourceDirs([]string{"cmd/"}, desc)
+	want := []string{"cmd/cat", "cmd/grep"}
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("got[%d]=%q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+func TestScopeSourceDirs_NoChangeReturnsNil(t *testing.T) {
+	t.Parallel()
+	// Files only at root level can't narrow any directory.
+	desc := "files:\n  - main.go\n  - go.mod\n"
+	got := scopeSourceDirs([]string{"cmd/", "pkg/"}, desc)
+	if got != nil {
+		t.Errorf("expected nil for shallow files, got %v", got)
+	}
+}
+
+func TestScopeSourceDirs_DotSlashPrefix(t *testing.T) {
+	t.Parallel()
+	desc := "files:\n  - ./cmd/cat/main.go\n"
+	got := scopeSourceDirs([]string{"./cmd/"}, desc)
+	want := []string{"cmd/cat"}
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	if got[0] != want[0] {
+		t.Errorf("got %q, want %q", got[0], want[0])
+	}
+}
+
+func TestScopeSourceDirs_PkgNarrows(t *testing.T) {
+	t.Parallel()
+	desc := "files:\n  - pkg/orchestrator/stitch.go\n"
+	got := scopeSourceDirs([]string{"pkg/"}, desc)
+	want := []string{"pkg/orchestrator"}
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	if got[0] != want[0] {
+		t.Errorf("got %q, want %q", got[0], want[0])
+	}
+}
+
 // --- commitWorktreeChanges (error path) ---
 
 func TestCommitWorktreeChanges_InvalidDir(t *testing.T) {

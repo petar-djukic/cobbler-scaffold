@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -330,6 +331,59 @@ func parseRequiredReading(description string) []string {
 	return parsed.RequiredReading
 }
 
+// scopeSourceDirs narrows GoSourceDirs based on the task description's files
+// field (GH-1005). For each configured dir, if the task's files reference a
+// sub-directory two levels deep (e.g. "cmd/cat/main.go" under "cmd/"), only
+// that sub-directory is included instead of the whole tree. Directories where
+// all task files sit directly inside (e.g. "pkg/orchestrator/foo.go" under
+// "pkg/") are kept as-is. Returns nil when no scoping is possible.
+func scopeSourceDirs(configDirs []string, description string) []string {
+	if description == "" || len(configDirs) == 0 {
+		return nil
+	}
+	var parsed struct {
+		Files []string `yaml:"files"`
+	}
+	if err := yaml.Unmarshal([]byte(description), &parsed); err != nil || len(parsed.Files) == 0 {
+		return nil
+	}
+
+	// Extract two-level prefixes from task files: "cmd/cat/main.go" → "cmd/cat".
+	subDirs := make(map[string]bool)
+	for _, f := range parsed.Files {
+		f = strings.TrimPrefix(f, "./")
+		parts := strings.SplitN(f, "/", 3)
+		if len(parts) == 3 {
+			subDirs[parts[0]+"/"+parts[1]] = true
+		}
+	}
+
+	changed := false
+	scoped := make([]string, 0, len(configDirs))
+	for _, dir := range configDirs {
+		clean := strings.TrimRight(strings.TrimPrefix(dir, "./"), "/")
+		// Collect sub-directories of this config dir referenced by the task.
+		var matches []string
+		for sd := range subDirs {
+			if strings.HasPrefix(sd, clean+"/") {
+				matches = append(matches, sd)
+			}
+		}
+		if len(matches) > 0 {
+			sort.Strings(matches)
+			scoped = append(scoped, matches...)
+			changed = true
+		} else {
+			scoped = append(scoped, dir)
+		}
+	}
+
+	if !changed {
+		return nil
+	}
+	return scoped
+}
+
 // validateIssueDescription checks that a description parses as valid YAML
 // and contains the required top-level keys defined by the issue-format
 // constitution. Returns an error describing what is missing; callers
@@ -619,6 +673,7 @@ func (o *Orchestrator) buildStitchPrompt(task stitchTask) (string, error) {
 
 	// Build project context from the worktree directory so source code
 	// reflects the latest state after prior stitches have been merged.
+	// Scope GoSourceDirs to only directories relevant to this task (GH-1005).
 	var projectCtx *ProjectContext
 	if task.worktreeDir != "" {
 		orig, err := os.Getwd()
@@ -629,7 +684,12 @@ func (o *Orchestrator) buildStitchPrompt(task stitchTask) (string, error) {
 			logf("buildStitchPrompt: chdir to worktree error: %v", err)
 		} else {
 			defer os.Chdir(orig)
-			ctx, ctxErr := buildProjectContext("", o.cfg.Project, phaseCtx)
+			scopedProject := o.cfg.Project
+			if scoped := scopeSourceDirs(o.cfg.Project.GoSourceDirs, task.description); len(scoped) > 0 {
+				logf("buildStitchPrompt: scoped go_source_dirs %v -> %v", o.cfg.Project.GoSourceDirs, scoped)
+				scopedProject.GoSourceDirs = scoped
+			}
+			ctx, ctxErr := buildProjectContext("", scopedProject, phaseCtx)
 			if ctxErr != nil {
 				logf("buildStitchPrompt: buildProjectContext error: %v", ctxErr)
 			} else {
