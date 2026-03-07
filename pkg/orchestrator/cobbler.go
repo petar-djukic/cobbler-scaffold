@@ -820,6 +820,15 @@ func (o *Orchestrator) runClaudeSDK(ctx context.Context, prompt, workDir string,
 	opts.DangerouslySkipPermissions = true
 	opts.AllowDangerouslySkipPermissions = true
 
+	// Preserve Claude Code's built-in system prompt (tool discipline, read-before-write,
+	// etc.) by using a preset instead of leaving SystemPrompt nil. When nil, the SDK
+	// passes --system-prompt "" which strips the defaults, causing stitch to hallucinate
+	// file reads from package_contracts (GH-965).
+	opts = opts.WithSystemPromptPreset(claudetypes.SystemPromptPreset{
+		Type:   "preset",
+		Preset: "claude_code",
+	})
+
 	// Map --max-turns from extraClaudeArgs into the options struct.
 	for i := 0; i+1 < len(extraClaudeArgs); i++ {
 		if extraClaudeArgs[i] == "--max-turns" {
