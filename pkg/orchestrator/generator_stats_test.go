@@ -238,6 +238,52 @@ func TestCountTotalPRDRequirements_NoPRDs(t *testing.T) {
 	}
 }
 
+// --- countDescriptionReqs (GH-1028) ---
+
+func TestCountDescriptionReqs(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		desc string
+		want int
+	}{
+		{
+			name: "three requirements",
+			desc: "title: some task\nrequirements:\n  - id: R1\n    text: first\n  - id: R2\n    text: second\n  - id: R3\n    text: third\n",
+			want: 3,
+		},
+		{
+			name: "no requirements key",
+			desc: "title: some task\ndescription: no reqs here\n",
+			want: 0,
+		},
+		{
+			name: "empty requirements list",
+			desc: "title: some task\nrequirements: []\n",
+			want: 0,
+		},
+		{
+			name: "invalid yaml",
+			desc: "{{not yaml at all",
+			want: 0,
+		},
+		{
+			name: "plain text",
+			desc: "Just a plain text description with no YAML structure.",
+			want: 0,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := countDescriptionReqs(tc.desc)
+			if got != tc.want {
+				t.Errorf("countDescriptionReqs() = %d, want %d", got, tc.want)
+			}
+		})
+	}
+}
+
 // --- buildPRDReleaseMap (GH-992) ---
 
 func TestBuildPRDReleaseMap(t *testing.T) {
