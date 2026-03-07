@@ -464,6 +464,12 @@ func (o *Orchestrator) GeneratorStop() error {
 		}
 	}
 
+	// Reset all implemented releases back to spec_complete so the repo is
+	// ready for the next generation run (GH-1021).
+	if err := o.resetImplementedReleases(); err != nil {
+		logf("generator:stop: reset releases warning: %v", err)
+	}
+
 	o.cleanupDirs()
 
 	logf("generator:stop: done, work is on %s", baseBranch)
@@ -534,6 +540,36 @@ func (o *Orchestrator) mergeGeneration(branch, baseBranch string) error {
 
 	logf("generator:stop: deleting branch")
 	_ = gitDeleteBranch(branch, ".") // best-effort; branch may already be deleted
+	return nil
+}
+
+// resetImplementedReleases loads road-map.yaml, finds all releases with
+// status "implemented", and calls ReleaseClear for each to reset them to
+// "spec_complete" and repopulate configuration.yaml (GH-1021).
+func (o *Orchestrator) resetImplementedReleases() error {
+	rm := loadYAML[RoadmapDoc]("docs/road-map.yaml")
+	if rm == nil {
+		return nil
+	}
+	var cleared []string
+	for _, rel := range rm.Releases {
+		if strings.EqualFold(rel.Status, "implemented") {
+			if err := o.ReleaseClear(rel.Version); err != nil {
+				logf("resetImplementedReleases: ReleaseClear(%s) failed: %v", rel.Version, err)
+				continue
+			}
+			cleared = append(cleared, rel.Version)
+		}
+	}
+	if len(cleared) == 0 {
+		return nil
+	}
+	_ = gitStageAll(".")
+	msg := fmt.Sprintf("Reset releases to spec_complete after generator:stop\n\nCleared: %s", strings.Join(cleared, ", "))
+	if err := gitCommit(msg, "."); err != nil {
+		return fmt.Errorf("commit release reset: %w", err)
+	}
+	logf("resetImplementedReleases: cleared %d release(s): %s", len(cleared), strings.Join(cleared, ", "))
 	return nil
 }
 

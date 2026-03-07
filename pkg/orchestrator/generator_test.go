@@ -1500,3 +1500,115 @@ releases:
 		t.Error("should not advance when all releases already done")
 	}
 }
+
+// --- resetImplementedReleases (GH-1021) ---
+
+func TestResetImplementedReleases(t *testing.T) {
+	dir := initTestGitRepo(t)
+
+	roadmapContent := `id: rm1
+title: Test Roadmap
+releases:
+  - version: "00.0"
+    name: Release 0
+    status: implemented
+    use_cases:
+      - id: rel00.0-uc001-format
+        status: implemented
+        summary: Format output
+  - version: "01.0"
+    name: Release 1
+    status: implemented
+    use_cases:
+      - id: rel01.0-uc001-ext
+        status: implemented
+        summary: Extension
+  - version: "02.0"
+    name: Release 2
+    status: spec_complete
+    use_cases:
+      - id: rel02.0-uc001-tee
+        status: spec_complete
+        summary: Tee
+`
+	writeRoadmapFile(t, dir, roadmapContent)
+	cfgPath := filepath.Join(dir, DefaultConfigFile)
+	writeConfigFile(t, cfgPath, []string{"02.0"})
+
+	o := &Orchestrator{cfg: Config{}}
+	if err := o.resetImplementedReleases(); err != nil {
+		t.Fatalf("resetImplementedReleases error: %v", err)
+	}
+
+	// Verify 00.0 and 01.0 are reset to spec_complete.
+	for _, ver := range []string{"00.0", "01.0"} {
+		statuses, err := roadmapUCStatuses(filepath.Join(dir, "docs", "road-map.yaml"), ver)
+		if err != nil {
+			t.Fatalf("read statuses for %s: %v", ver, err)
+		}
+		for id, status := range statuses {
+			if status != "spec_complete" {
+				t.Errorf("UC %s (rel %s): want spec_complete, got %q", id, ver, status)
+			}
+		}
+	}
+
+	// Verify 02.0 is unchanged.
+	statuses, err := roadmapUCStatuses(filepath.Join(dir, "docs", "road-map.yaml"), "02.0")
+	if err != nil {
+		t.Fatalf("read statuses for 02.0: %v", err)
+	}
+	for id, status := range statuses {
+		if status != "spec_complete" {
+			t.Errorf("UC %s (rel 02.0): want spec_complete, got %q", id, status)
+		}
+	}
+
+	// Verify configuration.yaml has 00.0 and 01.0 added to releases.
+	versions, err := releaseVersionsFromConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	found := map[string]bool{}
+	for _, v := range versions {
+		found[v] = true
+	}
+	if !found["00.0"] {
+		t.Error("00.0 should be in config releases after reset")
+	}
+	if !found["01.0"] {
+		t.Error("01.0 should be in config releases after reset")
+	}
+}
+
+func TestResetImplementedReleases_NoneImplemented(t *testing.T) {
+	dir := initTestGitRepo(t)
+
+	roadmapContent := `id: rm1
+title: Test Roadmap
+releases:
+  - version: "00.0"
+    name: Release 0
+    status: spec_complete
+    use_cases:
+      - id: rel00.0-uc001-format
+        status: spec_complete
+        summary: Format
+`
+	writeRoadmapFile(t, dir, roadmapContent)
+
+	o := &Orchestrator{cfg: Config{}}
+	if err := o.resetImplementedReleases(); err != nil {
+		t.Fatalf("resetImplementedReleases error: %v", err)
+	}
+	// No error, no commit — just a no-op.
+}
+
+func TestResetImplementedReleases_NoRoadmap(t *testing.T) {
+	initTestGitRepo(t)
+
+	o := &Orchestrator{cfg: Config{}}
+	if err := o.resetImplementedReleases(); err != nil {
+		t.Fatalf("resetImplementedReleases error: %v", err)
+	}
+}
