@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -109,7 +110,8 @@ func (o *Orchestrator) GeneratorStats() error {
 		s.numReqs = countDescriptionReqs(iss.Description)
 		totalReqs += s.numReqs
 
-		// Extract PRD references, resolve release, and track coverage.
+		// Extract release directly from title; fall back to PRD mapping.
+		s.release = extractRelease(iss.Title)
 		s.prds = extractPRDRefs(iss.Title + " " + iss.Description)
 		for _, prd := range s.prds {
 			if s.release == "" {
@@ -433,6 +435,19 @@ func countDescriptionReqs(description string) int {
 		return 0
 	}
 	return len(parsed.Requirements)
+}
+
+// reRelease matches release patterns like "rel01.0" or "rel02.1" in text.
+var reRelease = regexp.MustCompile(`rel(\d{2}\.\d)`)
+
+// extractRelease returns the first release version (e.g. "01.0") found in
+// text by matching relNN.N patterns. Returns "" if no match.
+func extractRelease(text string) string {
+	m := reRelease.FindStringSubmatch(text)
+	if m == nil {
+		return ""
+	}
+	return m[1]
 }
 
 // extractPRDRefs returns deduplicated prd-* tokens found in text.
