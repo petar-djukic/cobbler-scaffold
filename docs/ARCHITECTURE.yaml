@@ -124,6 +124,8 @@ interfaces:
       - "ConstitutionPreviewFile(): render constitution YAML to markdown"
       - "RunPreCycleAnalysis(): write analysis.yaml before each measure/stitch cycle"
       - "PrepareTestRepo(): download and scaffold a test repository for E2E tests"
+      - "GeneratorInit(): package-level function to initialize generator state from configuration.yaml"
+      - "WriteDefaultConfig(): package-level function to write a default configuration.yaml file"
 
   - name: Prompt Templates
     summary: |
@@ -133,8 +135,8 @@ interfaces:
       constitutions (planning for measure, execution for stitch) and a ProjectContext YAML blob
       containing all docs, specs, source code, and existing issues.
     data_structures:
-      - "MeasurePromptData: ProjectContext (string — YAML blob of all docs, specs, source code, and issues), Limit (int), OutputPath (string), UserInput (string), LinesMin (int), LinesMax (int), PlanningConstitution (embedded YAML)"
-      - "StitchPromptData: Title, ID, IssueType, Description (all strings), ExecutionConstitution (embedded YAML), ProjectContext (string — YAML blob built from worktree)"
+      - "MeasurePromptDoc: Role (string), ProjectContext (*ProjectContext), PlanningConstitution (*yaml.Node), IssueFormatConstitution (*yaml.Node), Task (string), Constraints (string), OutputFormat (string), GoldenExample (string), AdditionalContext (string), ValidationErrors ([]string), PackageContracts ([]OODPackageContractRef)"
+      - "StitchPromptDoc: Role (string), RepositoryFiles ([]string), ProjectContext (*ProjectContext), Context (string), ExecutionConstitution (*yaml.Node), GoStyleConstitution (*yaml.Node), Task (string), Constraints (string), Description (string), SharedProtocols ([]ArchSharedProtocol), PackageContracts ([]OODPackageContractRef)"
 
 components:
   - name: Orchestrator
@@ -169,7 +171,7 @@ components:
       Records invocation metrics. Saves history artifacts (prompt, log, issues, stats) per
       iteration to the configured history directory.
     capabilities:
-      - Build measure prompt from MeasurePromptData with full ProjectContext
+      - Build measure prompt from MeasurePromptDoc with full ProjectContext
       - Parse Claude YAML output into task list
       - Create GitHub Issues for proposed tasks with dependency labels
       - Save history artifacts per iteration
@@ -233,7 +235,7 @@ components:
       ready issues, and garbage collection of stale generation issues whose branches
       no longer exist locally.
     capabilities:
-      - Create cobbler issues with YAML front-matter (generation, index, dependency)
+      - "Create cobbler issues with YAML front-matter (generation, index, dependency) and [measure] title prefix"
       - List open issues filtered by generation label via REST API
       - Promote unblocked issues to cobbler-ready based on dependency DAG
       - Pick lowest-numbered ready issue and mark in-progress
@@ -313,8 +315,9 @@ components:
 
       Phase-specific context files (measure_context.yaml and stitch_context.yaml) in the
       cobbler scratch directory override global context settings at invocation time. The
-      PhaseContext struct holds include, exclude, sources, and release fields. When a phase
-      context file exists, its non-empty fields replace the corresponding ProjectConfig
+      PhaseContext struct holds include, exclude, sources, release, exclude_source,
+      source_patterns, exclude_tests, source_mode, and summarize_command fields. When a
+      phase context file exists, its non-empty fields replace the corresponding ProjectConfig
       values before context assembly. When absent, Config defaults apply unchanged.
     capabilities:
       - Load and marshal vision, architecture, specifications, roadmap, PRDs, use cases, test suites
@@ -352,15 +355,20 @@ components:
 
   - name: Constitutions
     responsibility: |
-      Three YAML constitutions (design, planning, execution) govern the three workflow phases.
-      Design constitution is scaffolded to consuming projects. Planning and execution
-      constitutions are embedded in the binary and injected into measure and stitch prompts.
-      constitution_md.go provides ConstitutionToMarkdown() and ConstitutionPreviewFile()
-      to render any YAML constitution to markdown for human inspection.
+      Six YAML constitutions govern different workflow phases. Design, planning, and execution
+      are the three primary constitutions aligned to workflow phases. Go-style, issue-format,
+      and testing provide supplementary rules for specific concerns. Design constitution is
+      scaffolded to consuming projects. All others are embedded in the binary and injected
+      into prompts or analysis as needed. constitution_md.go provides ConstitutionToMarkdown()
+      and ConstitutionPreviewFile() to render any YAML constitution to markdown for human
+      inspection.
     capabilities:
       - Design constitution (design.yaml) defines documentation standards, format schemas, and traceability model
       - Planning constitution (planning.yaml) defines release priority, task sizing, and issue structure
       - Execution constitution (execution.yaml) defines coding standards, design patterns, and session completion
+      - Go-style constitution (go-style.yaml) defines Go coding conventions, injected into stitch prompts as GoStyleConstitution
+      - Issue-format constitution (issue-format.yaml) defines task issue structure, injected into measure prompts as IssueFormatConstitution
+      - Testing constitution (testing.yaml) defines test writing standards, injected into analysis
       - ConstitutionToMarkdown converts a constitution's sections slice to markdown
       - ConstitutionPreviewFile reads a constitution YAML file and prints rendered markdown to stdout
     references:
@@ -721,7 +729,7 @@ project_structure:
   - path: pkg/orchestrator/prompts/
     role: Embedded prompt templates (measure.tmpl, stitch.tmpl)
   - path: pkg/orchestrator/constitutions/
-    role: Embedded constitutions (design.yaml, planning.yaml, execution.yaml)
+    role: Embedded constitutions (design.yaml, planning.yaml, execution.yaml, go-style.yaml, issue-format.yaml, testing.yaml)
   - path: magefiles/
     role: Mage targets exposing orchestrator methods
   - path: vscode-extension/
