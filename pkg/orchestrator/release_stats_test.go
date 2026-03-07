@@ -202,3 +202,104 @@ func TestReleaseAnyUCDone(t *testing.T) {
 		}
 	}
 }
+
+func TestReleaseStats_NoRoadmap(t *testing.T) {
+	// Uses os.Chdir — do NOT use t.Parallel()
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	t.Cleanup(func() { os.Chdir(orig) })
+	os.Chdir(dir)
+
+	o := &Orchestrator{}
+	if err := o.ReleaseStats(); err != nil {
+		t.Errorf("ReleaseStats() returned error: %v", err)
+	}
+}
+
+func TestReleaseStats_WithRoadmap(t *testing.T) {
+	// Uses os.Chdir — do NOT use t.Parallel()
+	dir := t.TempDir()
+	docsDir := filepath.Join(dir, "docs")
+	os.MkdirAll(docsDir, 0o755)
+	roadmap := `id: test
+title: Test
+releases:
+  - version: "01.0"
+    name: Core
+    status: done
+    use_cases:
+      - id: rel01.0-uc001-init
+        summary: Init
+        status: done
+`
+	os.WriteFile(filepath.Join(docsDir, "road-map.yaml"), []byte(roadmap), 0o644)
+
+	orig, _ := os.Getwd()
+	t.Cleanup(func() { os.Chdir(orig) })
+	os.Chdir(dir)
+
+	o := &Orchestrator{}
+	if err := o.ReleaseStats(); err != nil {
+		t.Errorf("ReleaseStats() returned error: %v", err)
+	}
+}
+
+func TestBuildReleaseRows_PRDWithZeroRequirements(t *testing.T) {
+	// Uses os.Chdir — do NOT use t.Parallel()
+	dir := t.TempDir()
+	docsDir := filepath.Join(dir, "docs")
+	os.MkdirAll(filepath.Join(docsDir, "specs", "product-requirements"), 0o755)
+	os.MkdirAll(filepath.Join(docsDir, "specs", "use-cases"), 0o755)
+
+	roadmap := `id: test
+title: Test
+releases:
+  - version: "01.0"
+    name: Core
+    status: done
+    use_cases:
+      - id: rel01.0-uc001-init
+        summary: Init
+        status: done
+`
+	os.WriteFile(filepath.Join(docsDir, "road-map.yaml"), []byte(roadmap), 0o644)
+
+	// PRD with no requirements section.
+	prd := `name: empty-prd
+requirements: {}
+`
+	os.WriteFile(filepath.Join(docsDir, "specs", "product-requirements", "prd001-empty.yaml"), []byte(prd), 0o644)
+
+	uc := `id: rel01.0-uc001-init
+title: Init
+summary: Init
+actor: Dev
+trigger: mage init
+flow:
+  - F1: "step"
+touchpoints:
+  - T1: "Config: prd001-empty R1"
+success_criteria:
+  - SC1: "works"
+out_of_scope: []
+`
+	os.WriteFile(filepath.Join(docsDir, "specs", "use-cases", "rel01.0-uc001-init.yaml"), []byte(uc), 0o644)
+
+	orig, _ := os.Getwd()
+	t.Cleanup(func() { os.Chdir(orig) })
+	os.Chdir(dir)
+
+	rows, err := buildReleaseRows()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("want 1 row, got %d", len(rows))
+	}
+	if rows[0].PRDsNoReqs != 1 {
+		t.Errorf("PRDsNoReqs = %d, want 1", rows[0].PRDsNoReqs)
+	}
+	if rows[0].PRDsComplete != 0 {
+		t.Errorf("PRDsComplete = %d, want 0 (no reqs means not counted as complete)", rows[0].PRDsComplete)
+	}
+}

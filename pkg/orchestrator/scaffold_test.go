@@ -23,6 +23,7 @@ func TestDetectBinaryName_LastSegment(t *testing.T) {
 		{"github.com/org/my-tool", "my-tool"},
 		{"example.com/foo/bar/baz", "baz"},
 		{"singleword", "singleword"},
+		{"", ""},
 	}
 	for _, tc := range cases {
 		if got := detectBinaryName(tc.module); got != tc.want {

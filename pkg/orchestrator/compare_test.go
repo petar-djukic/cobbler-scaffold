@@ -280,3 +280,31 @@ func createTestBinary(t *testing.T, script string) string {
 	}
 	return path
 }
+
+// --- GitTagResolver.cleanup ---
+
+func TestGitTagResolver_Cleanup_NoPaths(t *testing.T) {
+	t.Parallel()
+	r := &GitTagResolver{}
+	r.cleanup() // should be a no-op, no panic
+	if r.wtDir != "" || r.buildDir != "" {
+		t.Error("expected empty paths after cleanup")
+	}
+}
+
+func TestGitTagResolver_Cleanup_BuildDirOnly(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	buildDir := filepath.Join(dir, "build")
+	os.MkdirAll(buildDir, 0o755)
+	os.WriteFile(filepath.Join(buildDir, "bin"), []byte("x"), 0o644)
+
+	r := &GitTagResolver{buildDir: buildDir}
+	r.cleanup()
+	if r.buildDir != "" {
+		t.Error("buildDir should be cleared after cleanup")
+	}
+	if _, err := os.Stat(buildDir); !os.IsNotExist(err) {
+		t.Error("buildDir should be removed")
+	}
+}

@@ -173,6 +173,37 @@ func TestParseNumstat_EmptyInput(t *testing.T) {
 	}
 }
 
+func TestParseNumstat_ShortLine(t *testing.T) {
+	t.Parallel()
+	m := parseNumstat("10\n")
+	if len(m) != 0 {
+		t.Errorf("got %d entries, want 0 for short line", len(m))
+	}
+}
+
+func TestParseNameStatus_Copied(t *testing.T) {
+	t.Parallel()
+	nsOutput := "C100\told/file.go\tnew/file.go\n"
+	files := parseNameStatus(nsOutput, nil)
+	if len(files) != 1 {
+		t.Fatalf("got %d files, want 1", len(files))
+	}
+	if files[0].Path != "new/file.go" {
+		t.Errorf("Path = %q, want %q", files[0].Path, "new/file.go")
+	}
+	if files[0].Status != "C" {
+		t.Errorf("Status = %q, want %q", files[0].Status, "C")
+	}
+}
+
+func TestParseNameStatus_ShortLine(t *testing.T) {
+	t.Parallel()
+	files := parseNameStatus("M\n", nil)
+	if len(files) != 0 {
+		t.Errorf("got %d files, want 0 for line with no tab-separated path", len(files))
+	}
+}
+
 // --- saveHistoryReport ---
 
 func TestSaveHistoryReport_WritesFile(t *testing.T) {
