@@ -6,6 +6,7 @@ package orchestrator
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -164,6 +165,22 @@ func (o *Orchestrator) GeneratorStats() error {
 		}
 	}
 
+	// Requirements progress.
+	total, byPRD := countTotalPRDRequirements()
+	if total > 0 {
+		addressed := 0
+		for prd, status := range prdStatus {
+			if status == "done" || status == "in-progress" {
+				addressed += byPRD[prd]
+			}
+		}
+		pct := 0
+		if total > 0 {
+			pct = addressed * 100 / total
+		}
+		fmt.Printf("\nRequirements: %d/%d addressed by this generation (%d%%)\n", addressed, total, pct)
+	}
+
 	return nil
 }
 
@@ -209,6 +226,40 @@ func parseStitchComment(body string) stitchCommentData {
 	}
 
 	return d
+}
+
+// countTotalPRDRequirements loads all PRD files and counts the total number of
+// requirement items across all groups. Returns the total count and a map from
+// PRD short name (e.g. "prd-003") to its item count for cross-referencing with
+// generation task PRD references.
+func countTotalPRDRequirements() (int, map[string]int) {
+	paths, _ := filepath.Glob("docs/specs/product-requirements/prd*.yaml")
+	byPRD := make(map[string]int, len(paths))
+	total := 0
+	for _, path := range paths {
+		prd := loadYAML[PRDDoc](path)
+		if prd == nil {
+			continue
+		}
+		count := 0
+		for _, group := range prd.Requirements {
+			count += len(group.Items)
+		}
+		total += count
+		// Store under the short prd-NNN name that extractPRDRefs produces.
+		stem := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+		if idx := strings.IndexByte(stem, '-'); idx > 0 {
+			// "prd003-cobbler-workflows" → "prd-003-cobbler-workflows" matches
+			// extractPRDRefs output like "prd-003". Store both forms.
+			byPRD[stem] = count
+		}
+		// extractPRDRefs produces "prd-NNN" form, so convert "prd003" → "prd-003".
+		if len(stem) >= 6 && stem[:3] == "prd" {
+			short := "prd-" + stem[3:6]
+			byPRD[short] = count
+		}
+	}
+	return total, byPRD
 }
 
 // extractPRDRefs returns deduplicated prd-* tokens found in text.

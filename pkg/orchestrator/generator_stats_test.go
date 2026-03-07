@@ -3,7 +3,11 @@
 
 package orchestrator
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
 
 // --- parseStitchComment (GH-571) ---
 
@@ -137,5 +141,63 @@ func TestParseCobblerIssuesJSON_State(t *testing.T) {
 	}
 	if issues[1].State != "closed" {
 		t.Errorf("issues[1].State = %q, want \"closed\"", issues[1].State)
+	}
+}
+
+// --- countTotalPRDRequirements (GH-989) ---
+
+func TestCountTotalPRDRequirements(t *testing.T) {
+	// Uses os.Chdir — do NOT use t.Parallel()
+	dir := t.TempDir()
+
+	prdDir := filepath.Join(dir, "docs", "specs", "product-requirements")
+	if err := os.MkdirAll(prdDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	prdContent := `name: test-prd
+requirements:
+  group-a:
+    description: Group A
+    items:
+      - id: REQ-001
+        text: First requirement
+      - id: REQ-002
+        text: Second requirement
+  group-b:
+    description: Group B
+    items:
+      - id: REQ-003
+        text: Third requirement
+`
+	if err := os.WriteFile(filepath.Join(prdDir, "prd001-test.yaml"), []byte(prdContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	orig, _ := os.Getwd()
+	t.Cleanup(func() { os.Chdir(orig) })
+	os.Chdir(dir)
+
+	total, byPRD := countTotalPRDRequirements()
+	if total != 3 {
+		t.Errorf("total = %d, want 3", total)
+	}
+	if byPRD["prd-001"] != 3 {
+		t.Errorf("byPRD[prd-001] = %d, want 3", byPRD["prd-001"])
+	}
+}
+
+func TestCountTotalPRDRequirements_NoPRDs(t *testing.T) {
+	// Uses os.Chdir — do NOT use t.Parallel()
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	t.Cleanup(func() { os.Chdir(orig) })
+	os.Chdir(dir)
+
+	total, byPRD := countTotalPRDRequirements()
+	if total != 0 {
+		t.Errorf("total = %d, want 0", total)
+	}
+	if len(byPRD) != 0 {
+		t.Errorf("byPRD = %v, want empty", byPRD)
 	}
 }
