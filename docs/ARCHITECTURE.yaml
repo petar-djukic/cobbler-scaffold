@@ -84,7 +84,8 @@ interfaces:
       - "GeneratorReset(): destroy all generations, return to clean main (prd002)"
       - "GeneratorList(): show active and past generations (prd002)"
       - "GeneratorSwitch(): switch between generation branches (prd002)"
-      - "GeneratorStats(): print status report for the current generation run (stats:generator target)"
+      - "GeneratorStats(): print status report for the current generation run — issue table with release, cost, duration, turns, LOC deltas; per-release breakdown; PRD coverage table; requirements progress (stats:generator target)"
+      - "ReleaseStats(): print per-release table with PRD counts (complete/started/untouched) and requirement totals (stats:releases target)"
       - "ReleaseUpdate(version string) error: mark a release complete — set UC statuses to implemented, remove from project.releases in configuration.yaml (release:update target)"
       - "ReleaseClear(version string) error: reverse ReleaseUpdate — reset UC statuses to spec_complete, re-add to project.releases (release:clear target)"
       - "Measure(): propose tasks via Claude (prd003)"
@@ -460,6 +461,21 @@ components:
     references:
       - prd005-metrics-collection
 
+  - name: Release Stats
+    responsibility: |
+      Loads road-map.yaml, PRD files, and use case touchpoints to produce a
+      per-release table showing PRD completion status and requirement counts.
+      Determines PRD-to-release mapping via buildPRDReleaseMap (shared with
+      GeneratorStats). Exposed as mage stats:releases.
+    capabilities:
+      - Load roadmap releases with use case statuses
+      - Map PRDs to releases via use case touchpoint references
+      - Count requirements per PRD from YAML specification files
+      - Classify PRDs as complete, started, untouched, or no-requirements
+      - Print tabwriter table with release, name, status, PRD counts, requirement counts
+    references:
+      - prd005-metrics-collection
+
   - name: Prompt Files
     responsibility: |
       Enumerates all files that buildProjectContext loads, annotated with source
@@ -719,7 +735,9 @@ project_structure:
   - path: pkg/orchestrator/prompt_files.go
     role: Context file enumeration — list files included in Claude prompts with sizes and token estimates
   - path: pkg/orchestrator/generator_stats.go
-    role: Generation status report — summarize open/closed issues, cycle counts, and token usage for the current generation run (stats:generator target)
+    role: Generation status report — issue table with status, release, cost, duration, turns, LOC deltas per task; per-release task breakdown; PRD coverage table; requirements progress; shared helpers buildPRDReleaseMap, countTotalPRDRequirements, extractPRDRefs (stats:generator target)
+  - path: pkg/orchestrator/release_stats.go
+    role: Release statistics — per-release table with PRD counts (complete/started/untouched) and requirement totals sourced from road-map.yaml, PRD files, and use case touchpoints (stats:releases target)
   - path: pkg/orchestrator/release.go
     role: Release lifecycle management — ReleaseUpdate sets UC statuses to implemented and removes a release from configuration.yaml; ReleaseClear reverses it (release:update/clear targets)
   - path: pkg/orchestrator/token_stats.go
