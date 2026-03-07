@@ -649,6 +649,40 @@ func TestSaveHistoryLog_NoOpWhenEmpty(t *testing.T) {
 	o.saveHistoryLog("ts", "phase", []byte("data"))
 }
 
+func TestSaveHistoryReport_MkdirError(t *testing.T) {
+	t.Parallel()
+	// Point history dir to a path under a file (not a directory) so MkdirAll fails.
+	f := filepath.Join(t.TempDir(), "blocker")
+	os.WriteFile(f, []byte("x"), 0o644)
+	o := &Orchestrator{cfg: Config{Cobbler: CobblerConfig{HistoryDir: filepath.Join(f, "sub")}}}
+	// Should not panic; logs the mkdir error and returns.
+	o.saveHistoryReport("ts", StitchReport{})
+}
+
+func TestSaveHistoryStats_MkdirError(t *testing.T) {
+	t.Parallel()
+	f := filepath.Join(t.TempDir(), "blocker")
+	os.WriteFile(f, []byte("x"), 0o644)
+	o := &Orchestrator{cfg: Config{Cobbler: CobblerConfig{HistoryDir: filepath.Join(f, "sub")}}}
+	o.saveHistoryStats("ts", "phase", HistoryStats{})
+}
+
+func TestSaveHistoryPrompt_MkdirError(t *testing.T) {
+	t.Parallel()
+	f := filepath.Join(t.TempDir(), "blocker")
+	os.WriteFile(f, []byte("x"), 0o644)
+	o := &Orchestrator{cfg: Config{Cobbler: CobblerConfig{HistoryDir: filepath.Join(f, "sub")}}}
+	o.saveHistoryPrompt("ts", "phase", "prompt")
+}
+
+func TestSaveHistoryLog_MkdirError(t *testing.T) {
+	t.Parallel()
+	f := filepath.Join(t.TempDir(), "blocker")
+	os.WriteFile(f, []byte("x"), 0o644)
+	o := &Orchestrator{cfg: Config{Cobbler: CobblerConfig{HistoryDir: filepath.Join(f, "sub")}}}
+	o.saveHistoryLog("ts", "phase", []byte("data"))
+}
+
 // --- buildPodmanCmd ---
 
 func TestBuildPodmanCmd_ContainsWorkdirMount(t *testing.T) {

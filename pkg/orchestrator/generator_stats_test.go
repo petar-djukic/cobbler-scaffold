@@ -311,3 +311,87 @@ func TestBuildPRDReleaseMap_NoUseCases(t *testing.T) {
 		t.Errorf("expected empty map, got %v", m)
 	}
 }
+
+func TestBuildPRDReleaseMap_MalformedFilename(t *testing.T) {
+	// Uses os.Chdir — do NOT use t.Parallel()
+	dir := t.TempDir()
+	ucDir := filepath.Join(dir, "docs", "specs", "use-cases")
+	os.MkdirAll(ucDir, 0o755)
+
+	// File matches glob but has no "-uc" separator → rel extraction fails → skipped.
+	content := `id: rel01.0-something
+title: Bad
+summary: Missing uc pattern
+actor: A
+trigger: T
+flow:
+  - F1: "step"
+touchpoints:
+  - T1: "prd001-core R1"
+success_criteria:
+  - SC1: "ok"
+out_of_scope: []
+`
+	os.WriteFile(filepath.Join(ucDir, "rel01.0-something.yaml"), []byte(content), 0o644)
+
+	orig, _ := os.Getwd()
+	t.Cleanup(func() { os.Chdir(orig) })
+	os.Chdir(dir)
+
+	m := buildPRDReleaseMap()
+	if len(m) != 0 {
+		t.Errorf("expected empty map for malformed filename, got %v", m)
+	}
+}
+
+func TestBuildPRDReleaseMap_InvalidYAML(t *testing.T) {
+	// Uses os.Chdir — do NOT use t.Parallel()
+	dir := t.TempDir()
+	ucDir := filepath.Join(dir, "docs", "specs", "use-cases")
+	os.MkdirAll(ucDir, 0o755)
+
+	// Valid filename but invalid YAML content → loadYAML returns nil → skipped.
+	os.WriteFile(filepath.Join(ucDir, "rel01.0-uc001-broken.yaml"), []byte("{{invalid yaml"), 0o644)
+
+	orig, _ := os.Getwd()
+	t.Cleanup(func() { os.Chdir(orig) })
+	os.Chdir(dir)
+
+	m := buildPRDReleaseMap()
+	if len(m) != 0 {
+		t.Errorf("expected empty map for invalid YAML, got %v", m)
+	}
+}
+
+func TestBuildPRDReleaseMap_NonNumericPRD(t *testing.T) {
+	// Uses os.Chdir — do NOT use t.Parallel()
+	dir := t.TempDir()
+	ucDir := filepath.Join(dir, "docs", "specs", "use-cases")
+	os.MkdirAll(ucDir, 0o755)
+
+	// Touchpoints reference PRDs without numeric prefix → not extracted.
+	content := `id: rel01.0-uc001-test
+title: Test
+summary: Non-numeric PRD refs
+actor: A
+trigger: T
+flow:
+  - F1: "step"
+touchpoints:
+  - T1: "Config: prd-alpha R1"
+  - T2: "Short: prd R2"
+success_criteria:
+  - SC1: "ok"
+out_of_scope: []
+`
+	os.WriteFile(filepath.Join(ucDir, "rel01.0-uc001-test.yaml"), []byte(content), 0o644)
+
+	orig, _ := os.Getwd()
+	t.Cleanup(func() { os.Chdir(orig) })
+	os.Chdir(dir)
+
+	m := buildPRDReleaseMap()
+	if len(m) != 0 {
+		t.Errorf("expected empty map for non-numeric PRD refs, got %v", m)
+	}
+}
