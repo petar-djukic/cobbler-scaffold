@@ -799,3 +799,30 @@ func TestMeasureToStitchTitleRename(t *testing.T) {
 		})
 	}
 }
+
+// --- normalizeIssueTitle (GH-1026) ---
+
+func TestNormalizeIssueTitle(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"measure prefix", "[measure] prd001: Implement Foo", "prd001: Implement Foo"},
+		{"stitch prefix", "[stitch] prd001: Implement Foo", "prd001: Implement Foo"},
+		{"no prefix", "prd001: Implement Foo", "prd001: Implement Foo"},
+		{"extra whitespace", "  [measure]  prd001: Implement Foo  ", "prd001: Implement Foo"},
+		{"empty string", "", ""},
+		{"prefix only", "[measure] ", "[measure]"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := normalizeIssueTitle(tc.input)
+			if got != tc.want {
+				t.Errorf("normalizeIssueTitle(%q) = %q, want %q", tc.input, got, tc.want)
+			}
+		})
+	}
+}

@@ -608,6 +608,27 @@ func (o *Orchestrator) importIssuesImpl(yamlFile, repo, generation string, skipE
 			len(vr.Errors), strings.Join(vr.Errors, "; "))
 	}
 
+	// Deduplicate: fetch existing issues for this generation and skip any
+	// proposed issue whose normalized title matches a closed one (GH-1026).
+	closedTitles := make(map[string]int) // normalized title → issue number
+	if existing, err := listAllCobblerIssues(repo, generation); err == nil {
+		for _, ex := range existing {
+			if ex.State == "closed" {
+				closedTitles[normalizeIssueTitle(ex.Title)] = ex.Number
+			}
+		}
+	}
+	var filtered []proposedIssue
+	for _, issue := range issues {
+		norm := normalizeIssueTitle(issue.Title)
+		if dup, ok := closedTitles[norm]; ok {
+			logf("importIssues: skipping duplicate %q — already completed as #%d", issue.Title, dup)
+			continue
+		}
+		filtered = append(filtered, issue)
+	}
+	issues = filtered
+
 	// Create all issues on GitHub. When a placeholder number is given and exactly
 	// one issue is proposed, upgrade the placeholder in-place instead of creating
 	// a new issue, eliminating the two-issue dance (GH-578).

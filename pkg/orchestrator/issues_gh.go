@@ -612,6 +612,16 @@ func editIssueTitle(repo string, number int, title string) error {
 	).Run()
 }
 
+// normalizeIssueTitle strips [measure]/[stitch] prefixes and trims whitespace
+// so that proposed titles can be compared against existing issues (GH-1026).
+func normalizeIssueTitle(title string) string {
+	t := strings.TrimSpace(title)
+	for _, prefix := range []string{"[measure] ", "[stitch] "} {
+		t = strings.TrimPrefix(t, prefix)
+	}
+	return strings.TrimSpace(t)
+}
+
 // closeCobblerIssue closes a GitHub issue and re-runs promoteReadyIssues so
 // any unblocked issues become ready.
 func closeCobblerIssue(repo string, number int, generation string) error {
