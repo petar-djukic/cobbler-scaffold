@@ -74,6 +74,16 @@ func PrepareSnapshot(orchRoot string) (string, func(), error) {
 		return "", nil, fmt.Errorf("setting issues_repo in snapshot config: %w", err)
 	}
 
+	// Fix overly broad gitignore: sdd-hello-world's .gitignore has a bare
+	// "sdd-hello-world" entry intended to ignore the compiled binary at the
+	// repo root, but it also matches cmd/sdd-hello-world/ (the source
+	// directory), preventing generated code from being committed (GH-932).
+	// Prefix with "/" so it only matches at the root level.
+	if err := fixSnapshotGitignore(snap); err != nil {
+		os.RemoveAll(snap)
+		return "", nil, fmt.Errorf("fixing snapshot .gitignore: %w", err)
+	}
+
 	cleanup := func() { os.RemoveAll(snap) }
 	return snap, cleanup, nil
 }
@@ -99,6 +109,46 @@ func overrideSnapshotIssuesRepo(snapDir, issuesRepo string) error {
 		return err
 	}
 	return os.WriteFile(cfgPath, newData, 0o644)
+}
+
+// fixSnapshotGitignore rewrites bare binary-name entries in .gitignore to
+// root-only patterns. A bare "sdd-hello-world" matches cmd/sdd-hello-world/
+// (the source directory), preventing generated Go code from being committed.
+// Prefixing with "/" restricts the match to the repo root where go build
+// places the compiled binary.
+func fixSnapshotGitignore(snapDir string) error {
+	path := filepath.Join(snapDir, ".gitignore")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+
+	lines := strings.Split(string(data), "\n")
+	changed := false
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		// Fix bare binary names that lack a "/" prefix and could match
+		// source directories. Skip lines that are comments, already
+		// rooted, or contain wildcards.
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") ||
+			strings.HasPrefix(trimmed, "/") || strings.HasSuffix(trimmed, "/") ||
+			strings.ContainsAny(trimmed, "*?[") {
+			continue
+		}
+		// Only fix entries that look like a binary name (no path separators,
+		// no extension) and could collide with a cmd/<name>/ directory.
+		if !strings.Contains(trimmed, "/") && filepath.Ext(trimmed) == "" {
+			lines[i] = "/" + trimmed
+			changed = true
+		}
+	}
+	if !changed {
+		return nil
+	}
+	return os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0o644)
 }
 
 // latestModuleVersion resolves the latest tagged version of a Go module
