@@ -14,6 +14,8 @@ import (
 	claudesdk "github.com/schlunsen/claude-agent-sdk-go"
 
 	"github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/claude"
+	gh "github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/github"
+	"github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/gitops"
 )
 
 // sdkQueryFunc is the function signature for claudesdk.Query.
@@ -26,14 +28,38 @@ type sdkQueryFunc = claude.SdkQueryFunc
 type Orchestrator struct {
 	cfg        Config
 	sdkQueryFn sdkQueryFunc
+	tracker    gh.WorkTracker
+	git        gitops.GitOps
 }
 
 // New creates an Orchestrator with the given configuration.
 // It applies defaults to any zero-value Config fields.
 func New(cfg Config) *Orchestrator {
 	cfg.applyDefaults()
-	return &Orchestrator{cfg: cfg, sdkQueryFn: claudesdk.Query}
+	return &Orchestrator{
+		cfg:        cfg,
+		sdkQueryFn: claudesdk.Query,
+		tracker: gh.NewGitHubTracker(
+			gh.Deps{
+				Log:          logf,
+				GhBin:        binGh,
+				BranchExists: gitBranchExists,
+			},
+			gh.RepoConfig{
+				IssuesRepo: cfg.Cobbler.IssuesRepo,
+				ModulePath: cfg.Project.ModulePath,
+				TargetRepo: cfg.Project.TargetRepo,
+			},
+		),
+		git: &gitops.ShellGitOps{},
+	}
 }
+
+// Tracker returns the work tracker interface for issue operations.
+func (o *Orchestrator) Tracker() gh.WorkTracker { return o.tracker }
+
+// Git returns the git operations interface.
+func (o *Orchestrator) Git() gitops.GitOps { return o.git }
 
 // Config returns a copy of the Orchestrator's configuration.
 func (o *Orchestrator) Config() Config { return o.cfg }

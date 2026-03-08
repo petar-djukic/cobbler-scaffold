@@ -11,14 +11,6 @@ import (
 	gh "github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/github"
 )
 
-// GitHubIssueManager defines the interface for GitHub issue operations
-// used by the orchestrator.
-type GitHubIssueManager interface {
-	DetectGitHubRepo(repoRoot string) (string, error)
-	ListOpenIssues(repo, generation string) ([]gh.CobblerIssue, error)
-	PickReadyIssue(repo, generation string) (gh.CobblerIssue, error)
-}
-
 // Type aliases for backward compatibility within the package.
 type cobblerIssue = gh.CobblerIssue
 type cobblerFrontMatter = gh.CobblerFrontMatter
@@ -31,22 +23,28 @@ const (
 	cobblerGenLabelPrefix  = gh.GenLabelPrefix
 )
 
-// ghDeps constructs the Deps struct for the github sub-package from
-// the orchestrator's globals.
-func ghDeps() gh.Deps {
-	return gh.Deps{
+// ghTracker constructs a GitHubTracker from the orchestrator's globals and
+// the given Config. Replaces the former ghDeps() + ghRepoConfig() pair.
+func ghTracker(cfg Config) *gh.GitHubTracker {
+	return &gh.GitHubTracker{
 		Log:          logf,
 		GhBin:        binGh,
 		BranchExists: gitBranchExists,
+		Cfg: gh.RepoConfig{
+			IssuesRepo: cfg.Cobbler.IssuesRepo,
+			ModulePath: cfg.Project.ModulePath,
+			TargetRepo: cfg.Project.TargetRepo,
+		},
 	}
 }
 
-// ghRepoConfig builds a RepoConfig from the orchestrator Config.
-func ghRepoConfig(cfg Config) gh.RepoConfig {
-	return gh.RepoConfig{
-		IssuesRepo: cfg.Cobbler.IssuesRepo,
-		ModulePath: cfg.Project.ModulePath,
-		TargetRepo: cfg.Project.TargetRepo,
+// ghTrackerNoCfg constructs a GitHubTracker without RepoConfig, for
+// operations that do not need configuration (label ops, issue CRUD, etc.).
+func ghTrackerNoCfg() *gh.GitHubTracker {
+	return &gh.GitHubTracker{
+		Log:          logf,
+		GhBin:        binGh,
+		BranchExists: gitBranchExists,
 	}
 }
 
@@ -65,39 +63,39 @@ func parseIssueFrontMatter(body string) (cobblerFrontMatter, string) {
 }
 
 func detectGitHubRepo(repoRoot string, cfg Config) (string, error) {
-	return gh.DetectGitHubRepo(repoRoot, ghRepoConfig(cfg), ghDeps())
+	return ghTracker(cfg).DetectGitHubRepo(repoRoot)
 }
 
 func ensureCobblerLabels(repo string) error {
-	return gh.EnsureCobblerLabels(repo, ghDeps())
+	return ghTrackerNoCfg().EnsureCobblerLabels(repo)
 }
 
 func listRepoLabels(repo string) []string {
-	return gh.ListRepoLabels(repo, ghDeps())
+	return ghTrackerNoCfg().ListRepoLabels(repo)
 }
 
 func ensureCobblerGenLabel(repo, generation string) error {
-	return gh.EnsureCobblerGenLabel(repo, generation, ghDeps())
+	return ghTrackerNoCfg().EnsureCobblerGenLabel(repo, generation)
 }
 
 func createMeasuringPlaceholder(repo, generation string, iteration int) (int, error) {
-	return gh.CreateMeasuringPlaceholder(repo, generation, iteration, ghDeps())
+	return ghTrackerNoCfg().CreateMeasuringPlaceholder(repo, generation, iteration)
 }
 
 func closeMeasuringPlaceholder(repo string, number int) {
-	gh.CloseMeasuringPlaceholder(repo, number, ghDeps())
+	ghTrackerNoCfg().CloseMeasuringPlaceholder(repo, number)
 }
 
 func closeMeasuringPlaceholderWithComment(repo string, number int, comment string) {
-	gh.CloseMeasuringPlaceholderWithComment(repo, number, comment, ghDeps())
+	ghTrackerNoCfg().CloseMeasuringPlaceholderWithComment(repo, number, comment)
 }
 
 func upgradeMeasuringPlaceholder(repo string, number int, generation string, issue proposedIssue) error {
-	return gh.UpgradeMeasuringPlaceholder(repo, number, generation, issue, ghDeps())
+	return ghTrackerNoCfg().UpgradeMeasuringPlaceholder(repo, number, generation, issue)
 }
 
 func createCobblerIssue(repo, generation string, issue proposedIssue) (int, error) {
-	return gh.CreateCobblerIssue(repo, generation, issue, ghDeps())
+	return ghTrackerNoCfg().CreateCobblerIssue(repo, generation, issue)
 }
 
 func extractParentIssueNumber(generation string) int {
@@ -105,7 +103,7 @@ func extractParentIssueNumber(generation string) int {
 }
 
 func linkSubIssue(repo string, parentNumber, childNumber int) error {
-	return gh.LinkSubIssue(repo, parentNumber, childNumber, ghDeps())
+	return ghTrackerNoCfg().LinkSubIssue(repo, parentNumber, childNumber)
 }
 
 func parseIssueURL(raw string) (int, error) {
@@ -113,15 +111,15 @@ func parseIssueURL(raw string) (int, error) {
 }
 
 func listOpenCobblerIssues(repo, generation string) ([]cobblerIssue, error) {
-	return gh.ListOpenCobblerIssues(repo, generation, ghDeps())
+	return ghTrackerNoCfg().ListOpenCobblerIssues(repo, generation)
 }
 
 func listAllCobblerIssues(repo, generation string) ([]cobblerIssue, error) {
-	return gh.ListAllCobblerIssues(repo, generation, ghDeps())
+	return ghTrackerNoCfg().ListAllCobblerIssues(repo, generation)
 }
 
 func fetchIssueComments(repo string, number int) ([]string, error) {
-	return gh.FetchIssueComments(repo, number, ghDeps())
+	return ghTrackerNoCfg().FetchIssueComments(repo, number)
 }
 
 func parseCobblerIssuesJSON(data []byte) ([]cobblerIssue, error) {
@@ -129,7 +127,7 @@ func parseCobblerIssuesJSON(data []byte) ([]cobblerIssue, error) {
 }
 
 func waitForIssuesVisible(repo, generation string, expected int) {
-	gh.WaitForIssuesVisible(repo, generation, expected, ghDeps())
+	ghTrackerNoCfg().WaitForIssuesVisible(repo, generation, expected)
 }
 
 func hasLabel(issue cobblerIssue, label string) bool {
@@ -137,15 +135,15 @@ func hasLabel(issue cobblerIssue, label string) bool {
 }
 
 func promoteReadyIssues(repo, generation string) error {
-	return gh.PromoteReadyIssues(repo, generation, ghDeps())
+	return ghTrackerNoCfg().PromoteReadyIssues(repo, generation)
 }
 
 func pickReadyIssue(repo, generation string) (cobblerIssue, error) {
-	return gh.PickReadyIssue(repo, generation, ghDeps())
+	return ghTrackerNoCfg().PickReadyIssue(repo, generation)
 }
 
 func editIssueTitle(repo string, number int, title string) error {
-	return gh.EditIssueTitle(repo, number, title, ghDeps())
+	return ghTrackerNoCfg().EditIssueTitle(repo, number, title)
 }
 
 func normalizeIssueTitle(title string) string {
@@ -153,23 +151,23 @@ func normalizeIssueTitle(title string) string {
 }
 
 func closeCobblerIssue(repo string, number int, generation string) error {
-	return gh.CloseCobblerIssue(repo, number, generation, ghDeps())
+	return ghTrackerNoCfg().CloseCobblerIssue(repo, number, generation)
 }
 
 func removeInProgressLabel(repo string, number int) error {
-	return gh.RemoveInProgressLabel(repo, number, ghDeps())
+	return ghTrackerNoCfg().RemoveIssueLabel(repo, number, gh.LabelInProgress)
 }
 
 func closeGenerationIssues(repo, generation string) error {
-	return gh.CloseGenerationIssues(repo, generation, ghDeps())
+	return ghTrackerNoCfg().CloseGenerationIssues(repo, generation)
 }
 
 func gcStaleGenerationIssues(repo, generationPrefix string) {
-	gh.GcStaleGenerationIssues(repo, generationPrefix, ghDeps())
+	ghTrackerNoCfg().GcStaleGenerationIssues(repo, generationPrefix)
 }
 
 func listActiveIssuesContext(repo, generation string) (string, error) {
-	return gh.ListActiveIssuesContext(repo, generation, ghDeps())
+	return ghTrackerNoCfg().ListActiveIssuesContext(repo, generation)
 }
 
 func issuesContextJSON(issues []cobblerIssue) (string, error) {
@@ -177,15 +175,15 @@ func issuesContextJSON(issues []cobblerIssue) (string, error) {
 }
 
 func addIssueLabel(repo string, number int, label string) error {
-	return gh.AddIssueLabel(repo, number, label, ghDeps())
+	return ghTrackerNoCfg().AddIssueLabel(repo, number, label)
 }
 
 func removeIssueLabel(repo string, number int, label string) error {
-	return gh.RemoveIssueLabel(repo, number, label, ghDeps())
+	return ghTrackerNoCfg().RemoveIssueLabel(repo, number, label)
 }
 
 func ghExec(repoRoot string, args ...string) (string, error) {
-	return gh.GhExec(repoRoot, ghDeps(), args...)
+	return ghTrackerNoCfg().GhExec(repoRoot, args...)
 }
 
 func goModModulePath(repoRoot string) string {
@@ -193,13 +191,13 @@ func goModModulePath(repoRoot string) string {
 }
 
 func resolveTargetRepo(cfg Config) string {
-	return gh.ResolveTargetRepo(ghRepoConfig(cfg))
+	return ghTracker(cfg).ResolveTargetRepo()
 }
 
 func commentCobblerIssue(repo string, number int, body string) {
-	gh.CommentCobblerIssue(repo, number, body, ghDeps())
+	ghTrackerNoCfg().CommentCobblerIssue(repo, number, body)
 }
 
 func fileTargetRepoDefects(repo string, defects []string) {
-	gh.FileTargetRepoDefects(repo, defects, ghDeps())
+	ghTrackerNoCfg().FileTargetRepoDefects(repo, defects)
 }

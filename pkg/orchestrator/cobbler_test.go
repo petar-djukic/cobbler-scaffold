@@ -155,14 +155,14 @@ func TestParseNumstat_BinaryFile(t *testing.T) {
 
 	if entry, ok := m["image.png"]; !ok {
 		t.Error("missing entry for image.png")
-	} else if entry.ins != 0 || entry.del != 0 {
-		t.Errorf("image.png: got ins=%d del=%d, want 0 0", entry.ins, entry.del)
+	} else if entry.Ins != 0 || entry.Del != 0 {
+		t.Errorf("image.png: got ins=%d del=%d, want 0 0", entry.Ins, entry.Del)
 	}
 
 	if entry, ok := m["README.md"]; !ok {
 		t.Error("missing entry for README.md")
-	} else if entry.ins != 10 || entry.del != 2 {
-		t.Errorf("README.md: got ins=%d del=%d, want 10 2", entry.ins, entry.del)
+	} else if entry.Ins != 10 || entry.Del != 2 {
+		t.Errorf("README.md: got ins=%d del=%d, want 10 2", entry.Ins, entry.Del)
 	}
 }
 

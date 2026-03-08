@@ -4,11 +4,11 @@
 package orchestrator
 
 import (
-	"fmt"
 	"os"
 	"os/exec"
-	"strconv"
 	"strings"
+
+	"github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/gitops"
 )
 
 // Binary names.
@@ -28,6 +28,10 @@ const (
 	dirMagefiles = "magefiles"
 	dirCobbler   = ".cobbler"
 )
+
+// defaultGitOps is the package-level ShellGitOps instance used by all git
+// helper functions. It shells out to the "git" binary.
+var defaultGitOps = &gitops.ShellGitOps{}
 
 // orDefault returns val if non-empty, otherwise fallback.
 func orDefault(val, fallback string) string {
@@ -62,232 +66,81 @@ func init() {
 	}
 }
 
-// cmdGit returns an exec.Cmd for git with cmd.Dir set to dir when dir is non-empty.
-// Pass an empty string to use the process working directory (backward-compatible default).
-func cmdGit(dir string, arg ...string) *exec.Cmd {
-	cmd := exec.Command(binGit, arg...)
-	if dir != "" {
-		cmd.Dir = dir
-	}
-	return cmd
-}
-
 // Git helpers.
 // Each function accepts a dir string parameter; when dir is non-empty it is
 // forwarded to exec.Cmd.Dir so the command runs in that directory rather than
 // the process-wide working directory. Pass "" to use the existing CWD (the
 // original behaviour, preserved for callers that rely on os.Chdir).
+//
+// All git functions delegate to the defaultGitOps instance.
 
-func gitCheckout(branch, dir string) error {
-	return cmdGit(dir, "checkout", branch).Run()
-}
-
-func gitCheckoutNew(branch, dir string) error {
-	return cmdGit(dir, "checkout", "-b", branch).Run()
-}
-
-func gitCreateBranch(name, dir string) error {
-	return cmdGit(dir, "branch", name).Run()
-}
-
-func gitDeleteBranch(name, dir string) error {
-	return cmdGit(dir, "branch", "-d", name).Run()
-}
-
-func gitForceDeleteBranch(name, dir string) error {
-	return cmdGit(dir, "branch", "-D", name).Run()
-}
-
-func gitBranchExists(name, dir string) bool {
-	return cmdGit(dir, "show-ref", "--verify", "--quiet", "refs/heads/"+name).Run() == nil
-}
-
-func gitListBranches(pattern, dir string) []string {
-	out, _ := cmdGit(dir, "branch", "--list", pattern).Output() // empty output on error is acceptable
-	return parseBranchList(string(out))
-}
-
-func gitTag(name, dir string) error {
-	return cmdGit(dir, "tag", name).Run()
-}
-
-func gitDeleteTag(name, dir string) error {
-	return cmdGit(dir, "tag", "-d", name).Run()
-}
+func gitCheckout(branch, dir string) error        { return defaultGitOps.Checkout(branch, dir) }
+func gitCheckoutNew(branch, dir string) error      { return defaultGitOps.CheckoutNew(branch, dir) }
+func gitCreateBranch(name, dir string) error       { return defaultGitOps.CreateBranch(name, dir) }
+func gitDeleteBranch(name, dir string) error       { return defaultGitOps.DeleteBranch(name, dir) }
+func gitForceDeleteBranch(name, dir string) error  { return defaultGitOps.ForceDeleteBranch(name, dir) }
+func gitBranchExists(name, dir string) bool        { return defaultGitOps.BranchExists(name, dir) }
+func gitListBranches(pattern, dir string) []string { return defaultGitOps.ListBranches(pattern, dir) }
+func gitTag(name, dir string) error                { return defaultGitOps.Tag(name, dir) }
+func gitDeleteTag(name, dir string) error          { return defaultGitOps.DeleteTag(name, dir) }
+func gitListTags(pattern, dir string) []string     { return defaultGitOps.ListTags(pattern, dir) }
+func gitLsFiles(dir string) []string               { return defaultGitOps.LsFiles(dir) }
+func gitStageAll(dir string) error                 { return defaultGitOps.StageAll(dir) }
+func gitStageDir(path, dir string) error           { return defaultGitOps.StageDir(path, dir) }
+func gitUnstageAll(dir string) error               { return defaultGitOps.UnstageAll(dir) }
+func gitHasChanges(dir string) bool                { return defaultGitOps.HasChanges(dir) }
+func gitStash(msg, dir string) error               { return defaultGitOps.Stash(msg, dir) }
+func gitCommit(msg, dir string) error              { return defaultGitOps.Commit(msg, dir) }
+func gitCommitAllowEmpty(msg, dir string) error    { return defaultGitOps.CommitAllowEmpty(msg, dir) }
+func gitResetSoft(ref, dir string) error           { return defaultGitOps.ResetSoft(ref, dir) }
+func gitWorktreePrune(dir string) error            { return defaultGitOps.WorktreePrune(dir) }
 
 // gitTagAt creates a tag pointing at the given ref (commit, tag, or branch).
-func gitTagAt(name, ref, dir string) error {
-	return cmdGit(dir, "tag", name, ref).Run()
-}
+func gitTagAt(name, ref, dir string) error { return defaultGitOps.TagAt(name, ref, dir) }
 
 // gitRenameTag creates newName at the same commit as oldName, then
 // deletes oldName. Returns an error if the new tag cannot be created.
 func gitRenameTag(oldName, newName, dir string) error {
-	if err := cmdGit(dir, "tag", newName, oldName).Run(); err != nil {
-		return err
-	}
-	return gitDeleteTag(oldName, dir)
+	return defaultGitOps.RenameTag(oldName, newName, dir)
 }
 
-func gitListTags(pattern, dir string) []string {
-	out, _ := cmdGit(dir, "tag", "--list", pattern).Output() // empty output on error is acceptable
-	return parseBranchList(string(out))
-}
+func gitRevParseHEAD(dir string) (string, error) { return defaultGitOps.RevParseHEAD(dir) }
 
-// gitLsFiles returns all git-tracked file paths in dir, relative to dir.
-// Returns nil if dir is empty, if git ls-files produces no output, or on error.
-func gitLsFiles(dir string) []string {
-	if dir == "" {
-		return nil
-	}
-	out, err := cmdGit(dir, "ls-files").Output()
-	if err != nil || len(out) == 0 {
-		return nil
-	}
-	return parseBranchList(string(out))
-}
-
-func gitStageAll(dir string) error {
-	return cmdGit(dir, "add", "-A").Run()
-}
-
-func gitUnstageAll(dir string) error {
-	return cmdGit(dir, "reset", "HEAD").Run()
-}
-
-// gitHasChanges returns true if the working tree has staged or unstaged
-// changes (tracked files only).
-func gitHasChanges(dir string) bool {
-	// --quiet exits 1 when there are changes.
-	return cmdGit(dir, "diff", "--quiet", "HEAD").Run() != nil
-}
-
-func gitStash(msg, dir string) error {
-	return cmdGit(dir, "stash", "push", "-m", msg).Run()
-}
-
-// gitStageDir stages a specific path. path is the argument passed to git add;
-// dir is the repository root used as cmd.Dir (empty means process CWD).
-func gitStageDir(path, dir string) error {
-	return cmdGit(dir, "add", path).Run()
-}
-
-func gitCommit(msg, dir string) error {
-	return cmdGit(dir, "commit", "--no-verify", "-m", msg).Run()
-}
-
-func gitCommitAllowEmpty(msg, dir string) error {
-	return cmdGit(dir, "commit", "--no-verify", "-m", msg, "--allow-empty").Run()
-}
-
-func gitRevParseHEAD(dir string) (string, error) {
-	out, err := cmdGit(dir, "rev-parse", "HEAD").Output()
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(string(out)), nil
-}
-
-func gitResetSoft(ref, dir string) error {
-	return cmdGit(dir, "reset", "--soft", ref).Run()
-}
-
-func gitMergeCmd(branch, dir string) *exec.Cmd {
-	return cmdGit(dir, "merge", branch, "--no-edit")
-}
-
-func gitWorktreePrune(dir string) error {
-	return cmdGit(dir, "worktree", "prune").Run()
-}
+func gitMergeCmd(branch, dir string) *exec.Cmd { return defaultGitOps.MergeCmd(branch, dir) }
 
 // gitWorktreeAdd returns a Cmd that adds a worktree at worktreeDir on branch.
 // dir is the repository root used as cmd.Dir (empty means process CWD).
 func gitWorktreeAdd(worktreeDir, branch, dir string) *exec.Cmd {
-	return cmdGit(dir, "worktree", "add", worktreeDir, branch)
+	return defaultGitOps.WorktreeAdd(worktreeDir, branch, dir)
 }
 
 // gitWorktreeRemove removes the worktree at worktreeDir.
 // dir is the repository root used as cmd.Dir (empty means process CWD).
 func gitWorktreeRemove(worktreeDir, dir string) error {
-	return cmdGit(dir, "worktree", "remove", worktreeDir, "--force").Run()
+	return defaultGitOps.WorktreeRemove(worktreeDir, dir)
 }
 
-func gitCurrentBranch(dir string) (string, error) {
-	out, err := cmdGit(dir, "rev-parse", "--abbrev-ref", "HEAD").Output()
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(string(out)), nil
-}
-
-// parseBranchList parses the output of git branch --list or git tag --list.
-func parseBranchList(output string) []string {
-	var branches []string
-	for _, line := range strings.Split(output, "\n") {
-		line = strings.TrimSpace(line)
-		line = strings.TrimLeft(line, "*+ ")
-		if line != "" {
-			branches = append(branches, line)
-		}
-	}
-	return branches
-}
+func gitCurrentBranch(dir string) (string, error) { return defaultGitOps.CurrentBranch(dir) }
 
 // gitLsTreeFiles returns the list of file paths tracked at the given ref.
 func gitLsTreeFiles(ref, dir string) ([]string, error) {
-	out, err := cmdGit(dir, "ls-tree", "-r", "--name-only", ref).Output()
-	if err != nil {
-		return nil, err
-	}
-	var files []string
-	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		if line != "" {
-			files = append(files, line)
-		}
-	}
-	return files, nil
+	return defaultGitOps.LsTreeFiles(ref, dir)
 }
 
 // gitShowFileContent returns the raw content of a file at the given ref.
 func gitShowFileContent(ref, path, dir string) ([]byte, error) {
-	return cmdGit(dir, "show", ref+":"+path).Output()
+	return defaultGitOps.ShowFileContent(ref, path, dir)
 }
 
 // FileChange is defined in internal/claude and aliased in cobbler.go.
 
 // diffStat holds parsed output from git diff --shortstat.
-type diffStat struct {
-	FilesChanged int
-	Insertions   int
-	Deletions    int
-}
+type diffStat = gitops.DiffStat
 
 // gitDiffShortstat runs git diff --shortstat against the given ref and
 // parses the output (e.g. "5 files changed, 100 insertions(+), 20 deletions(-)").
 func gitDiffShortstat(ref, dir string) (diffStat, error) {
-	out, err := cmdGit(dir, "diff", "--shortstat", ref).Output()
-	if err != nil {
-		return diffStat{}, err
-	}
-	return parseDiffShortstat(string(out)), nil
-}
-
-// parseDiffShortstat extracts file/insertion/deletion counts from
-// git diff --shortstat output.
-func parseDiffShortstat(s string) diffStat {
-	var ds diffStat
-	for _, part := range strings.Split(s, ",") {
-		part = strings.TrimSpace(part)
-		var n int
-		if _, err := fmt.Sscanf(part, "%d file", &n); err == nil {
-			ds.FilesChanged = n
-		} else if _, err := fmt.Sscanf(part, "%d insertion", &n); err == nil {
-			ds.Insertions = n
-		} else if _, err := fmt.Sscanf(part, "%d deletion", &n); err == nil {
-			ds.Deletions = n
-		}
-	}
-	return ds
+	return defaultGitOps.DiffShortstat(ref, dir)
 }
 
 // gitDiffNameStatus runs git diff --name-status and --numstat against the
@@ -295,77 +148,42 @@ func parseDiffShortstat(s string) diffStat {
 // deletions. The two commands are combined to produce complete file-level
 // change records.
 func gitDiffNameStatus(ref, dir string) ([]FileChange, error) {
-	nsOut, err := cmdGit(dir, "diff", "--name-status", ref).Output()
+	gfc, err := defaultGitOps.DiffNameStatus(ref, dir)
 	if err != nil {
 		return nil, err
 	}
+	files := make([]FileChange, len(gfc))
+	for i, fc := range gfc {
+		files[i] = FileChange{
+			Path:       fc.Path,
+			Status:     fc.Status,
+			Insertions: fc.Insertions,
+			Deletions:  fc.Deletions,
+		}
+	}
+	return files, nil
+}
 
-	numOut, _ := cmdGit(dir, "diff", "--numstat", ref).Output()
-	numMap := parseNumstat(string(numOut))
+// parseBranchList parses the output of git branch --list or git tag --list.
+func parseBranchList(output string) []string {
+	return gitops.ParseBranchList(output)
+}
 
-	return parseNameStatus(string(nsOut), numMap), nil
+// parseDiffShortstat extracts file/insertion/deletion counts from
+// git diff --shortstat output.
+func parseDiffShortstat(s string) diffStat {
+	return gitops.ParseDiffShortstat(s)
+}
+
+// parseNumstat parses git diff --numstat output into a map keyed by file path.
+func parseNumstat(output string) map[string]gitops.NumstatEntry {
+	return gitops.ParseNumstat(output)
 }
 
 // parseNameStatus parses git diff --name-status output and merges it with
 // numstat data to produce FileChange entries.
-func parseNameStatus(output string, numMap map[string]numstatEntry) []FileChange {
-	var files []FileChange
-	for line := range strings.SplitSeq(strings.TrimSpace(output), "\n") {
-		if line == "" {
-			continue
-		}
-		parts := strings.Split(line, "\t")
-		if len(parts) < 2 {
-			continue
-		}
-		status := parts[0]
-		path := parts[1]
-
-		// Renames show as R### with old\tnew paths.
-		if strings.HasPrefix(status, "R") && len(parts) >= 3 {
-			path = parts[2]
-			status = "R"
-		}
-		// Copies show as C### with old\tnew paths.
-		if strings.HasPrefix(status, "C") && len(parts) >= 3 {
-			path = parts[2]
-			status = "C"
-		}
-
-		fc := FileChange{Path: path, Status: status}
-		if ns, ok := numMap[path]; ok {
-			fc.Insertions = ns.ins
-			fc.Deletions = ns.del
-		}
-		files = append(files, fc)
-	}
-	return files
-}
-
-type numstatEntry struct {
-	ins int
-	del int
-}
-
-// parseNumstat parses git diff --numstat output into a map keyed by file path.
-// Binary files show "-\t-\tpath" and are recorded with zero counts.
-func parseNumstat(output string) map[string]numstatEntry {
-	m := make(map[string]numstatEntry)
-	for line := range strings.SplitSeq(strings.TrimSpace(output), "\n") {
-		if line == "" {
-			continue
-		}
-		parts := strings.Split(line, "\t")
-		if len(parts) < 3 {
-			continue
-		}
-		// Binary files use "-" for insertions and deletions.
-		ins, _ := strconv.Atoi(parts[0])
-		del, _ := strconv.Atoi(parts[1])
-		path := parts[len(parts)-1]
-		m[path] = numstatEntry{ins: ins, del: del}
-	}
-	return m
+func parseNameStatus(output string, numMap map[string]gitops.NumstatEntry) []gitops.FileChange {
+	return gitops.ParseNameStatus(output, numMap)
 }
 
 // Podman helpers.

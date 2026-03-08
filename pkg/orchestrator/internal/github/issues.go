@@ -25,6 +25,7 @@ type Logger func(format string, args ...any)
 type BranchChecker func(branch, dir string) bool
 
 // Deps holds external dependencies injected by the parent package.
+// Retained for backward compatibility; new code should use GitHubTracker.
 type Deps struct {
 	Log            Logger
 	GhBin          string
@@ -36,6 +37,76 @@ type RepoConfig struct {
 	IssuesRepo string // cobbler.issues_repo override
 	ModulePath string // project.module_path for fallback detection
 	TargetRepo string // project.target_repo for defect filing
+}
+
+// WorkTracker defines the interface for all issue-tracking operations that
+// have external dependencies (gh CLI calls, branch checks). Pure functions
+// that operate only on in-memory data remain as package-level functions.
+// Designed so a future crumbs/trails implementation can satisfy it.
+type WorkTracker interface {
+	// Repo detection
+	DetectGitHubRepo(repoRoot string) (string, error)
+
+	// Label management
+	EnsureCobblerLabels(repo string) error
+	EnsureCobblerGenLabel(repo, generation string) error
+	ListRepoLabels(repo string) []string
+	AddIssueLabel(repo string, number int, label string) error
+	RemoveIssueLabel(repo string, number int, label string) error
+
+	// Issue CRUD
+	CreateCobblerIssue(repo, generation string, issue ProposedIssue) (int, error)
+	CreateMeasuringPlaceholder(repo, generation string, iteration int) (int, error)
+	UpgradeMeasuringPlaceholder(repo string, number int, generation string, issue ProposedIssue) error
+	CloseCobblerIssue(repo string, number int, generation string) error
+	CloseMeasuringPlaceholder(repo string, number int)
+	CloseMeasuringPlaceholderWithComment(repo string, number int, comment string)
+	EditIssueTitle(repo string, number int, title string) error
+	CommentCobblerIssue(repo string, number int, body string)
+	CloseGenerationIssues(repo, generation string) error
+
+	// Issue queries
+	ListOpenCobblerIssues(repo, generation string) ([]CobblerIssue, error)
+	ListAllCobblerIssues(repo, generation string) ([]CobblerIssue, error)
+	FetchIssueComments(repo string, number int) ([]string, error)
+	ListActiveIssuesContext(repo, generation string) (string, error)
+	WaitForIssuesVisible(repo, generation string, expected int)
+
+	// Sub-issues
+	LinkSubIssue(repo string, parentNumber, childNumber int) error
+
+	// DAG
+	PromoteReadyIssues(repo, generation string) error
+	PickReadyIssue(repo, generation string) (CobblerIssue, error)
+
+	// GC
+	GcStaleGenerationIssues(repo, generationPrefix string)
+
+	// Defects
+	FileTargetRepoDefects(repo string, defects []string)
+	ResolveTargetRepo() string
+
+	// Generic
+	GhExec(repoRoot string, args ...string) (string, error)
+}
+
+// GitHubTracker implements WorkTracker by wrapping the gh CLI and
+// configuration needed for GitHub issue operations.
+type GitHubTracker struct {
+	Log          Logger
+	GhBin        string
+	BranchExists BranchChecker
+	Cfg          RepoConfig
+}
+
+// NewGitHubTracker creates a GitHubTracker from Deps and RepoConfig.
+func NewGitHubTracker(deps Deps, cfg RepoConfig) *GitHubTracker {
+	return &GitHubTracker{
+		Log:          deps.Log,
+		GhBin:        deps.GhBin,
+		BranchExists: deps.BranchExists,
+		Cfg:          cfg,
+	}
 }
 
 // CobblerIssue holds the parsed representation of a GitHub issue created by
@@ -86,6 +157,8 @@ const (
 
 // GenLabelPrefix is the prefix for generation-scoped labels.
 const GenLabelPrefix = "cobbler-gen-"
+
+// --- Pure package-level functions (no external dependencies) ---
 
 // GenLabel returns the generation label for a given generation name.
 // GitHub enforces a 50-character maximum on label names. When the full label
@@ -150,278 +223,6 @@ func ParseIssueFrontMatter(body string) (CobblerFrontMatter, string) {
 	return fm, description
 }
 
-// DetectGitHubRepo resolves the GitHub owner/repo string for the target project.
-// Resolution order:
-//  1. cfg.IssuesRepo if set (explicit override, used for testing)
-//  2. `gh repo view --json nameWithOwner` run in repoRoot (reads git remote)
-//  3. Strip "github.com/" from cfg.ModulePath
-func DetectGitHubRepo(repoRoot string, cfg RepoConfig, deps Deps) (string, error) {
-	if cfg.IssuesRepo != "" {
-		return cfg.IssuesRepo, nil
-	}
-
-	// Try gh repo view in the repo root.
-	cmd := exec.Command(deps.GhBin, "repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner")
-	cmd.Dir = repoRoot
-	if out, err := cmd.Output(); err == nil {
-		if repo := strings.TrimSpace(string(out)); repo != "" {
-			return repo, nil
-		}
-	}
-
-	// Fall back to module path.
-	if strings.HasPrefix(cfg.ModulePath, "github.com/") {
-		return strings.TrimPrefix(cfg.ModulePath, "github.com/"), nil
-	}
-
-	return "", fmt.Errorf("cannot determine GitHub repo: set cobbler.issues_repo in configuration.yaml or ensure the project has a github.com module path")
-}
-
-// EnsureCobblerLabels creates the cobbler-ready and cobbler-in-progress labels
-// on the target repo if they do not already exist. Idempotent.
-func EnsureCobblerLabels(repo string, deps Deps) error {
-	existing := ListRepoLabels(repo, deps)
-	existingSet := make(map[string]bool, len(existing))
-	for _, l := range existing {
-		existingSet[l] = true
-	}
-
-	labels := []struct {
-		name  string
-		color string
-		desc  string
-	}{
-		{LabelReady, "0075ca", "Cobbler task ready to be picked by stitch"},
-		{LabelInProgress, "e4e669", "Cobbler task currently being worked on"},
-	}
-
-	for _, l := range labels {
-		if existingSet[l.name] {
-			continue
-		}
-		cmd := exec.Command(deps.GhBin, "api", "repos/"+repo+"/labels",
-			"--method", "POST",
-			"--field", "name="+l.name,
-			"--field", "color="+l.color,
-			"--field", "description="+l.desc,
-		)
-		if out, err := cmd.Output(); err != nil {
-			deps.Log("ensureCobblerLabels: could not create label %q: %v (output: %s)", l.name, err, string(out))
-		} else {
-			deps.Log("ensureCobblerLabels: created label %q on %s", l.name, repo)
-		}
-	}
-	return nil
-}
-
-// ListRepoLabels returns the names of all labels on the repo.
-func ListRepoLabels(repo string, deps Deps) []string {
-	out, err := exec.Command(deps.GhBin, "label", "list", "--repo", repo, "--json", "name", "--limit", "100").Output()
-	if err != nil {
-		return nil
-	}
-	var labels []struct {
-		Name string `json:"name"`
-	}
-	if err := json.Unmarshal(out, &labels); err != nil {
-		return nil
-	}
-	names := make([]string, 0, len(labels))
-	for _, l := range labels {
-		names = append(names, l.Name)
-	}
-	return names
-}
-
-// EnsureCobblerGenLabel creates the generation-scoped label on the repo if
-// it does not already exist.
-func EnsureCobblerGenLabel(repo, generation string, deps Deps) error {
-	label := GenLabel(generation)
-	cmd := exec.Command(deps.GhBin, "api", "repos/"+repo+"/labels",
-		"--method", "POST",
-		"--field", "name="+label,
-		"--field", "color=ededed", // light grey; GitHub API requires a valid 6-char hex color
-		"--field", "description=Cobbler generation "+generation,
-	)
-	// Ignore error — label may already exist (422 Unprocessable Entity).
-	cmd.Run() //nolint:errcheck // best-effort
-	return nil
-}
-
-// CreateMeasuringPlaceholder creates a transient GitHub issue that signals
-// the measure agent is actively calling Claude for iteration i (1-based).
-// The issue carries no cobbler-ready label so stitch won't pick it up.
-// Callers must call CloseMeasuringPlaceholder after the iteration completes.
-func CreateMeasuringPlaceholder(repo, generation string, iteration int, deps Deps) (int, error) {
-	title := fmt.Sprintf("[measuring] %s task %d", generation, iteration)
-	body := fmt.Sprintf("Cobbler measure is calling Claude to propose task %d for generation %s.\n\nThis issue will be closed automatically when measure completes.", iteration, generation)
-	// No cobbler labels: stitch ignores issues without a gen label, and the
-	// placeholder must not appear in the existing-issues context sent to Claude.
-	out, err := exec.Command(deps.GhBin, "issue", "create",
-		"--repo", repo,
-		"--title", title,
-		"--body", body,
-	).Output()
-	if err != nil {
-		return 0, fmt.Errorf("gh issue create placeholder: %w", err)
-	}
-	number, err := ParseIssueURL(string(out))
-	if err != nil {
-		return 0, err
-	}
-	deps.Log("createMeasuringPlaceholder: created #%d for iteration %d", number, iteration)
-	return number, nil
-}
-
-// CloseMeasuringPlaceholder closes the placeholder issue created by
-// CreateMeasuringPlaceholder. Best-effort: logs and ignores errors.
-func CloseMeasuringPlaceholder(repo string, number int, deps Deps) {
-	if err := exec.Command(deps.GhBin, "issue", "close",
-		"--repo", repo,
-		fmt.Sprintf("%d", number),
-	).Run(); err != nil {
-		deps.Log("closeMeasuringPlaceholder: close #%d warning: %v", number, err)
-		return
-	}
-	deps.Log("closeMeasuringPlaceholder: closed #%d", number)
-}
-
-// CloseMeasuringPlaceholderWithComment closes the placeholder issue and adds a
-// comment explaining why it was closed. Used on error paths to avoid orphans
-// (GH-747). Best-effort: logs and ignores errors.
-func CloseMeasuringPlaceholderWithComment(repo string, number int, comment string, deps Deps) {
-	if err := exec.Command(deps.GhBin, "issue", "comment",
-		"--repo", repo,
-		fmt.Sprintf("%d", number),
-		"--body", comment,
-	).Run(); err != nil {
-		deps.Log("closeMeasuringPlaceholderWithComment: comment on #%d warning: %v", number, err)
-	}
-	CloseMeasuringPlaceholder(repo, number, deps)
-}
-
-// UpgradeMeasuringPlaceholder converts the transient measuring placeholder
-// into the task issue in-place. It edits the placeholder's title and body
-// to match the proposed issue, adds the cobbler-gen label so stitch can
-// pick it up, and links it as a sub-issue of the parent generation issue
-// if the generation name encodes one (GH-578).
-func UpgradeMeasuringPlaceholder(repo string, number int, generation string, issue ProposedIssue, deps Deps) error {
-	body := FormatIssueFrontMatter(generation, issue.Index, issue.Dependency) + issue.Description
-	title := "[measure] " + issue.Title
-
-	// Edit title and body in one command.
-	if err := exec.Command(deps.GhBin, "issue", "edit",
-		"--repo", repo,
-		fmt.Sprintf("%d", number),
-		"--title", title,
-		"--body", body,
-	).Run(); err != nil {
-		return fmt.Errorf("gh issue edit placeholder #%d: %w", number, err)
-	}
-
-	// Add cobbler-gen label so stitch can pick it up.
-	if err := AddIssueLabel(repo, number, GenLabel(generation), deps); err != nil {
-		return fmt.Errorf("adding gen label to #%d: %w", number, err)
-	}
-
-	deps.Log("upgradeMeasuringPlaceholder: upgraded #%d %q gen=%s index=%d dep=%d",
-		number, title, generation, issue.Index, issue.Dependency)
-
-	// Link as sub-issue of the parent if the generation name encodes one.
-	if parentNumber := ExtractParentIssueNumber(generation); parentNumber > 0 {
-		if err := LinkSubIssue(repo, parentNumber, number, deps); err != nil {
-			deps.Log("upgradeMeasuringPlaceholder: linkSubIssue warning for #%d -> parent #%d: %v", number, parentNumber, err)
-		}
-	}
-	return nil
-}
-
-// CreateCobblerIssue creates a GitHub issue on repo for the given generation
-// and ProposedIssue. Returns the GitHub issue number.
-//
-// Note: gh issue create (v2.87.3) does not support --json; it outputs the
-// issue URL (https://github.com/owner/repo/issues/123) on success.
-func CreateCobblerIssue(repo, generation string, issue ProposedIssue, deps Deps) (int, error) {
-	body := FormatIssueFrontMatter(generation, issue.Index, issue.Dependency) + issue.Description
-	title := "[measure] " + issue.Title
-
-	genLabel := GenLabel(generation)
-	out, err := exec.Command(deps.GhBin, "issue", "create",
-		"--repo", repo,
-		"--title", title,
-		"--body", body,
-		"--label", genLabel,
-	).Output()
-	if err != nil {
-		return 0, fmt.Errorf("gh issue create: %w", err)
-	}
-
-	number, err := ParseIssueURL(string(out))
-	if err != nil {
-		return 0, err
-	}
-	deps.Log("createCobblerIssue: created #%d %q gen=%s index=%d dep=%d",
-		number, title, generation, issue.Index, issue.Dependency)
-
-	// Link as sub-issue of the parent, if the generation name encodes one (GH-566).
-	if parentNumber := ExtractParentIssueNumber(generation); parentNumber > 0 {
-		if err := LinkSubIssue(repo, parentNumber, number, deps); err != nil {
-			deps.Log("createCobblerIssue: linkSubIssue warning for #%d -> parent #%d: %v", number, parentNumber, err)
-		}
-	}
-
-	return number, nil
-}
-
-// ExtractParentIssueNumber parses a GitHub issue number from a generation name
-// that follows the pattern "...-gh-<N>-..." (e.g., "generation-gh-206-slug"
-// → 206). Returns 0 if the pattern is not found.
-func ExtractParentIssueNumber(generation string) int {
-	const marker = "-gh-"
-	idx := strings.Index(generation, marker)
-	if idx < 0 {
-		return 0
-	}
-	rest := generation[idx+len(marker):]
-	var n int
-	if _, err := fmt.Sscanf(rest, "%d", &n); err != nil || n <= 0 {
-		return 0
-	}
-	return n
-}
-
-// LinkSubIssue attaches childNumber as a GitHub sub-issue of parentNumber.
-// It first fetches the child's database ID, then POSTs to the sub_issues API.
-// Errors are returned so the caller can log them as warnings.
-func LinkSubIssue(repo string, parentNumber, childNumber int, deps Deps) error {
-	// Fetch the child issue's database ID (different from the display number).
-	dbIDOut, err := exec.Command(deps.GhBin, "api",
-		fmt.Sprintf("repos/%s/issues/%d", repo, childNumber),
-		"--jq", ".id",
-	).Output()
-	if err != nil {
-		return fmt.Errorf("fetching database id for #%d: %w", childNumber, err)
-	}
-	dbIDStr := strings.TrimSpace(string(dbIDOut))
-	var dbID int
-	if _, err := fmt.Sscanf(dbIDStr, "%d", &dbID); err != nil || dbID <= 0 {
-		return fmt.Errorf("parsing database id %q for #%d: %w", dbIDStr, childNumber, err)
-	}
-
-	// POST to the parent's sub_issues endpoint.
-	out, err := exec.Command(deps.GhBin, "api",
-		fmt.Sprintf("repos/%s/issues/%d/sub_issues", repo, parentNumber),
-		"--method", "POST",
-		"--field", fmt.Sprintf("sub_issue_id=%d", dbID),
-	).CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("linking #%d as sub-issue of #%d: %w (output: %s)",
-			childNumber, parentNumber, err, strings.TrimSpace(string(out)))
-	}
-	deps.Log("linkSubIssue: linked #%d as sub-issue of #%d", childNumber, parentNumber)
-	return nil
-}
-
 // ParseIssueURL extracts a GitHub issue number from a URL string like
 // "https://github.com/owner/repo/issues/123\n". Returns an error for
 // malformed or empty output.
@@ -439,63 +240,24 @@ func ParseIssueURL(raw string) (int, error) {
 	return number, nil
 }
 
-// ListOpenCobblerIssues returns all open GitHub issues for a generation.
-// It uses the REST API endpoint (gh api repos/.../issues) rather than
-// gh issue list, because gh issue list uses GitHub's search API which is
-// eventually consistent and can return stale results immediately after
-// label changes. The REST endpoint reads directly from the database.
-func ListOpenCobblerIssues(repo, generation string, deps Deps) ([]CobblerIssue, error) {
-	label := GenLabel(generation)
-	out, err := exec.Command(deps.GhBin, "api",
-		"--method", "GET",
-		fmt.Sprintf("repos/%s/issues", repo),
-		"-f", "state=open",
-		"-f", "labels="+label,
-		"-f", "per_page=100",
-	).Output()
-	if err != nil {
-		return nil, fmt.Errorf("gh api repos issues: %w", err)
+// NormalizeIssueTitle strips [measure]/[stitch] prefixes and trims whitespace
+// so that proposed titles can be compared against existing issues (GH-1026).
+func NormalizeIssueTitle(title string) string {
+	t := strings.TrimSpace(title)
+	for _, prefix := range []string{"[measure] ", "[stitch] "} {
+		t = strings.TrimPrefix(t, prefix)
 	}
-
-	return ParseCobblerIssuesJSON(out)
+	return strings.TrimSpace(t)
 }
 
-// ListAllCobblerIssues returns all GitHub issues (open and closed) for a
-// generation. Used by GeneratorStats to report completed tasks.
-func ListAllCobblerIssues(repo, generation string, deps Deps) ([]CobblerIssue, error) {
-	label := GenLabel(generation)
-	out, err := exec.Command(deps.GhBin, "api",
-		"--method", "GET",
-		fmt.Sprintf("repos/%s/issues", repo),
-		"-f", "state=all",
-		"-f", "labels="+label,
-		"-f", "per_page=100",
-	).Output()
-	if err != nil {
-		return nil, fmt.Errorf("gh api repos issues: %w", err)
+// HasLabel returns true if the issue has the given label.
+func HasLabel(issue CobblerIssue, label string) bool {
+	for _, l := range issue.Labels {
+		if l == label {
+			return true
+		}
 	}
-	return ParseCobblerIssuesJSON(out)
-}
-
-// FetchIssueComments returns the body text of all comments on the given issue.
-func FetchIssueComments(repo string, number int, deps Deps) ([]string, error) {
-	out, err := exec.Command(deps.GhBin, "api",
-		fmt.Sprintf("repos/%s/issues/%d/comments", repo, number),
-	).Output()
-	if err != nil {
-		return nil, fmt.Errorf("gh api issue comments for #%d: %w", number, err)
-	}
-	var raw []struct {
-		Body string `json:"body"`
-	}
-	if err := json.Unmarshal(out, &raw); err != nil {
-		return nil, fmt.Errorf("parsing issue comments for #%d: %w", number, err)
-	}
-	bodies := make([]string, 0, len(raw))
-	for _, r := range raw {
-		bodies = append(bodies, r.Body)
-	}
-	return bodies, nil
+	return false
 }
 
 // ParseCobblerIssuesJSON parses the JSON output from the GitHub REST API issues
@@ -535,40 +297,401 @@ func ParseCobblerIssuesJSON(data []byte) ([]CobblerIssue, error) {
 	return issues, nil
 }
 
+// IssuesContextJSON converts a slice of CobblerIssue into the JSON string
+// expected by parseIssuesJSON. Exported for testing.
+func IssuesContextJSON(issues []CobblerIssue) (string, error) {
+	ctx := make([]ContextIssue, len(issues))
+	for i, iss := range issues {
+		status := "backfill"
+		if HasLabel(iss, LabelInProgress) {
+			status = "in_progress"
+		} else if HasLabel(iss, LabelReady) {
+			status = "ready"
+		}
+		ctx[i] = ContextIssue{
+			ID:     fmt.Sprintf("%d", iss.Number),
+			Title:  iss.Title,
+			Status: status,
+		}
+	}
+	b, err := json.Marshal(ctx)
+	if err != nil {
+		return "", fmt.Errorf("issuesContextJSON: %w", err)
+	}
+	return string(b), nil
+}
+
+// ExtractParentIssueNumber parses a GitHub issue number from a generation name
+// that follows the pattern "...-gh-<N>-..." (e.g., "generation-gh-206-slug"
+// → 206). Returns 0 if the pattern is not found.
+func ExtractParentIssueNumber(generation string) int {
+	const marker = "-gh-"
+	idx := strings.Index(generation, marker)
+	if idx < 0 {
+		return 0
+	}
+	rest := generation[idx+len(marker):]
+	var n int
+	if _, err := fmt.Sscanf(rest, "%d", &n); err != nil || n <= 0 {
+		return 0
+	}
+	return n
+}
+
+// GoModModulePath reads the module path from the go.mod in repoRoot.
+func GoModModulePath(repoRoot string) string {
+	data, err := os.ReadFile(filepath.Join(repoRoot, "go.mod"))
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.HasPrefix(line, "module ") {
+			return strings.TrimSpace(strings.TrimPrefix(line, "module "))
+		}
+	}
+	return ""
+}
+
+// --- GitHubTracker methods (implement WorkTracker) ---
+
+// DetectGitHubRepo resolves the GitHub owner/repo string for the target project.
+// Resolution order:
+//  1. t.Cfg.IssuesRepo if set (explicit override, used for testing)
+//  2. `gh repo view --json nameWithOwner` run in repoRoot (reads git remote)
+//  3. Strip "github.com/" from t.Cfg.ModulePath
+func (t *GitHubTracker) DetectGitHubRepo(repoRoot string) (string, error) {
+	if t.Cfg.IssuesRepo != "" {
+		return t.Cfg.IssuesRepo, nil
+	}
+
+	// Try gh repo view in the repo root.
+	cmd := exec.Command(t.GhBin, "repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner")
+	cmd.Dir = repoRoot
+	if out, err := cmd.Output(); err == nil {
+		if repo := strings.TrimSpace(string(out)); repo != "" {
+			return repo, nil
+		}
+	}
+
+	// Fall back to module path.
+	if strings.HasPrefix(t.Cfg.ModulePath, "github.com/") {
+		return strings.TrimPrefix(t.Cfg.ModulePath, "github.com/"), nil
+	}
+
+	return "", fmt.Errorf("cannot determine GitHub repo: set cobbler.issues_repo in configuration.yaml or ensure the project has a github.com module path")
+}
+
+// EnsureCobblerLabels creates the cobbler-ready and cobbler-in-progress labels
+// on the target repo if they do not already exist. Idempotent.
+func (t *GitHubTracker) EnsureCobblerLabels(repo string) error {
+	existing := t.ListRepoLabels(repo)
+	existingSet := make(map[string]bool, len(existing))
+	for _, l := range existing {
+		existingSet[l] = true
+	}
+
+	labels := []struct {
+		name  string
+		color string
+		desc  string
+	}{
+		{LabelReady, "0075ca", "Cobbler task ready to be picked by stitch"},
+		{LabelInProgress, "e4e669", "Cobbler task currently being worked on"},
+	}
+
+	for _, l := range labels {
+		if existingSet[l.name] {
+			continue
+		}
+		cmd := exec.Command(t.GhBin, "api", "repos/"+repo+"/labels",
+			"--method", "POST",
+			"--field", "name="+l.name,
+			"--field", "color="+l.color,
+			"--field", "description="+l.desc,
+		)
+		if out, err := cmd.Output(); err != nil {
+			t.Log("ensureCobblerLabels: could not create label %q: %v (output: %s)", l.name, err, string(out))
+		} else {
+			t.Log("ensureCobblerLabels: created label %q on %s", l.name, repo)
+		}
+	}
+	return nil
+}
+
+// ListRepoLabels returns the names of all labels on the repo.
+func (t *GitHubTracker) ListRepoLabels(repo string) []string {
+	out, err := exec.Command(t.GhBin, "label", "list", "--repo", repo, "--json", "name", "--limit", "100").Output()
+	if err != nil {
+		return nil
+	}
+	var labels []struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(out, &labels); err != nil {
+		return nil
+	}
+	names := make([]string, 0, len(labels))
+	for _, l := range labels {
+		names = append(names, l.Name)
+	}
+	return names
+}
+
+// EnsureCobblerGenLabel creates the generation-scoped label on the repo if
+// it does not already exist.
+func (t *GitHubTracker) EnsureCobblerGenLabel(repo, generation string) error {
+	label := GenLabel(generation)
+	cmd := exec.Command(t.GhBin, "api", "repos/"+repo+"/labels",
+		"--method", "POST",
+		"--field", "name="+label,
+		"--field", "color=ededed", // light grey; GitHub API requires a valid 6-char hex color
+		"--field", "description=Cobbler generation "+generation,
+	)
+	// Ignore error — label may already exist (422 Unprocessable Entity).
+	cmd.Run() //nolint:errcheck // best-effort
+	return nil
+}
+
+// CreateMeasuringPlaceholder creates a transient GitHub issue that signals
+// the measure agent is actively calling Claude for iteration i (1-based).
+// The issue carries no cobbler-ready label so stitch won't pick it up.
+// Callers must call CloseMeasuringPlaceholder after the iteration completes.
+func (t *GitHubTracker) CreateMeasuringPlaceholder(repo, generation string, iteration int) (int, error) {
+	title := fmt.Sprintf("[measuring] %s task %d", generation, iteration)
+	body := fmt.Sprintf("Cobbler measure is calling Claude to propose task %d for generation %s.\n\nThis issue will be closed automatically when measure completes.", iteration, generation)
+	// No cobbler labels: stitch ignores issues without a gen label, and the
+	// placeholder must not appear in the existing-issues context sent to Claude.
+	out, err := exec.Command(t.GhBin, "issue", "create",
+		"--repo", repo,
+		"--title", title,
+		"--body", body,
+	).Output()
+	if err != nil {
+		return 0, fmt.Errorf("gh issue create placeholder: %w", err)
+	}
+	number, err := ParseIssueURL(string(out))
+	if err != nil {
+		return 0, err
+	}
+	t.Log("createMeasuringPlaceholder: created #%d for iteration %d", number, iteration)
+	return number, nil
+}
+
+// CloseMeasuringPlaceholder closes the placeholder issue created by
+// CreateMeasuringPlaceholder. Best-effort: logs and ignores errors.
+func (t *GitHubTracker) CloseMeasuringPlaceholder(repo string, number int) {
+	if err := exec.Command(t.GhBin, "issue", "close",
+		"--repo", repo,
+		fmt.Sprintf("%d", number),
+	).Run(); err != nil {
+		t.Log("closeMeasuringPlaceholder: close #%d warning: %v", number, err)
+		return
+	}
+	t.Log("closeMeasuringPlaceholder: closed #%d", number)
+}
+
+// CloseMeasuringPlaceholderWithComment closes the placeholder issue and adds a
+// comment explaining why it was closed. Used on error paths to avoid orphans
+// (GH-747). Best-effort: logs and ignores errors.
+func (t *GitHubTracker) CloseMeasuringPlaceholderWithComment(repo string, number int, comment string) {
+	if err := exec.Command(t.GhBin, "issue", "comment",
+		"--repo", repo,
+		fmt.Sprintf("%d", number),
+		"--body", comment,
+	).Run(); err != nil {
+		t.Log("closeMeasuringPlaceholderWithComment: comment on #%d warning: %v", number, err)
+	}
+	t.CloseMeasuringPlaceholder(repo, number)
+}
+
+// UpgradeMeasuringPlaceholder converts the transient measuring placeholder
+// into the task issue in-place. It edits the placeholder's title and body
+// to match the proposed issue, adds the cobbler-gen label so stitch can
+// pick it up, and links it as a sub-issue of the parent generation issue
+// if the generation name encodes one (GH-578).
+func (t *GitHubTracker) UpgradeMeasuringPlaceholder(repo string, number int, generation string, issue ProposedIssue) error {
+	body := FormatIssueFrontMatter(generation, issue.Index, issue.Dependency) + issue.Description
+	title := "[measure] " + issue.Title
+
+	// Edit title and body in one command.
+	if err := exec.Command(t.GhBin, "issue", "edit",
+		"--repo", repo,
+		fmt.Sprintf("%d", number),
+		"--title", title,
+		"--body", body,
+	).Run(); err != nil {
+		return fmt.Errorf("gh issue edit placeholder #%d: %w", number, err)
+	}
+
+	// Add cobbler-gen label so stitch can pick it up.
+	if err := t.AddIssueLabel(repo, number, GenLabel(generation)); err != nil {
+		return fmt.Errorf("adding gen label to #%d: %w", number, err)
+	}
+
+	t.Log("upgradeMeasuringPlaceholder: upgraded #%d %q gen=%s index=%d dep=%d",
+		number, title, generation, issue.Index, issue.Dependency)
+
+	// Link as sub-issue of the parent if the generation name encodes one.
+	if parentNumber := ExtractParentIssueNumber(generation); parentNumber > 0 {
+		if err := t.LinkSubIssue(repo, parentNumber, number); err != nil {
+			t.Log("upgradeMeasuringPlaceholder: linkSubIssue warning for #%d -> parent #%d: %v", number, parentNumber, err)
+		}
+	}
+	return nil
+}
+
+// CreateCobblerIssue creates a GitHub issue on repo for the given generation
+// and ProposedIssue. Returns the GitHub issue number.
+//
+// Note: gh issue create (v2.87.3) does not support --json; it outputs the
+// issue URL (https://github.com/owner/repo/issues/123) on success.
+func (t *GitHubTracker) CreateCobblerIssue(repo, generation string, issue ProposedIssue) (int, error) {
+	body := FormatIssueFrontMatter(generation, issue.Index, issue.Dependency) + issue.Description
+	title := "[measure] " + issue.Title
+
+	genLabel := GenLabel(generation)
+	out, err := exec.Command(t.GhBin, "issue", "create",
+		"--repo", repo,
+		"--title", title,
+		"--body", body,
+		"--label", genLabel,
+	).Output()
+	if err != nil {
+		return 0, fmt.Errorf("gh issue create: %w", err)
+	}
+
+	number, err := ParseIssueURL(string(out))
+	if err != nil {
+		return 0, err
+	}
+	t.Log("createCobblerIssue: created #%d %q gen=%s index=%d dep=%d",
+		number, title, generation, issue.Index, issue.Dependency)
+
+	// Link as sub-issue of the parent, if the generation name encodes one (GH-566).
+	if parentNumber := ExtractParentIssueNumber(generation); parentNumber > 0 {
+		if err := t.LinkSubIssue(repo, parentNumber, number); err != nil {
+			t.Log("createCobblerIssue: linkSubIssue warning for #%d -> parent #%d: %v", number, parentNumber, err)
+		}
+	}
+
+	return number, nil
+}
+
+// LinkSubIssue attaches childNumber as a GitHub sub-issue of parentNumber.
+// It first fetches the child's database ID, then POSTs to the sub_issues API.
+// Errors are returned so the caller can log them as warnings.
+func (t *GitHubTracker) LinkSubIssue(repo string, parentNumber, childNumber int) error {
+	// Fetch the child issue's database ID (different from the display number).
+	dbIDOut, err := exec.Command(t.GhBin, "api",
+		fmt.Sprintf("repos/%s/issues/%d", repo, childNumber),
+		"--jq", ".id",
+	).Output()
+	if err != nil {
+		return fmt.Errorf("fetching database id for #%d: %w", childNumber, err)
+	}
+	dbIDStr := strings.TrimSpace(string(dbIDOut))
+	var dbID int
+	if _, err := fmt.Sscanf(dbIDStr, "%d", &dbID); err != nil || dbID <= 0 {
+		return fmt.Errorf("parsing database id %q for #%d: %w", dbIDStr, childNumber, err)
+	}
+
+	// POST to the parent's sub_issues endpoint.
+	out, err := exec.Command(t.GhBin, "api",
+		fmt.Sprintf("repos/%s/issues/%d/sub_issues", repo, parentNumber),
+		"--method", "POST",
+		"--field", fmt.Sprintf("sub_issue_id=%d", dbID),
+	).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("linking #%d as sub-issue of #%d: %w (output: %s)",
+			childNumber, parentNumber, err, strings.TrimSpace(string(out)))
+	}
+	t.Log("linkSubIssue: linked #%d as sub-issue of #%d", childNumber, parentNumber)
+	return nil
+}
+
+// ListOpenCobblerIssues returns all open GitHub issues for a generation.
+// It uses the REST API endpoint (gh api repos/.../issues) rather than
+// gh issue list, because gh issue list uses GitHub's search API which is
+// eventually consistent and can return stale results immediately after
+// label changes. The REST endpoint reads directly from the database.
+func (t *GitHubTracker) ListOpenCobblerIssues(repo, generation string) ([]CobblerIssue, error) {
+	label := GenLabel(generation)
+	out, err := exec.Command(t.GhBin, "api",
+		"--method", "GET",
+		fmt.Sprintf("repos/%s/issues", repo),
+		"-f", "state=open",
+		"-f", "labels="+label,
+		"-f", "per_page=100",
+	).Output()
+	if err != nil {
+		return nil, fmt.Errorf("gh api repos issues: %w", err)
+	}
+
+	return ParseCobblerIssuesJSON(out)
+}
+
+// ListAllCobblerIssues returns all GitHub issues (open and closed) for a
+// generation. Used by GeneratorStats to report completed tasks.
+func (t *GitHubTracker) ListAllCobblerIssues(repo, generation string) ([]CobblerIssue, error) {
+	label := GenLabel(generation)
+	out, err := exec.Command(t.GhBin, "api",
+		"--method", "GET",
+		fmt.Sprintf("repos/%s/issues", repo),
+		"-f", "state=all",
+		"-f", "labels="+label,
+		"-f", "per_page=100",
+	).Output()
+	if err != nil {
+		return nil, fmt.Errorf("gh api repos issues: %w", err)
+	}
+	return ParseCobblerIssuesJSON(out)
+}
+
+// FetchIssueComments returns the body text of all comments on the given issue.
+func (t *GitHubTracker) FetchIssueComments(repo string, number int) ([]string, error) {
+	out, err := exec.Command(t.GhBin, "api",
+		fmt.Sprintf("repos/%s/issues/%d/comments", repo, number),
+	).Output()
+	if err != nil {
+		return nil, fmt.Errorf("gh api issue comments for #%d: %w", number, err)
+	}
+	var raw []struct {
+		Body string `json:"body"`
+	}
+	if err := json.Unmarshal(out, &raw); err != nil {
+		return nil, fmt.Errorf("parsing issue comments for #%d: %w", number, err)
+	}
+	bodies := make([]string, 0, len(raw))
+	for _, r := range raw {
+		bodies = append(bodies, r.Body)
+	}
+	return bodies, nil
+}
+
 // WaitForIssuesVisible polls ListOpenCobblerIssues until at least
 // expected issues appear or the timeout expires. The REST API label
 // index may lag briefly after issue creation, so this function
 // ensures all issues are visible before promotion or DAG resolution.
-func WaitForIssuesVisible(repo, generation string, expected int, deps Deps) {
+func (t *GitHubTracker) WaitForIssuesVisible(repo, generation string, expected int) {
 	const maxWait = 15 * time.Second
 	const interval = time.Second
 	deadline := time.Now().Add(maxWait)
 	for time.Now().Before(deadline) {
-		issues, err := ListOpenCobblerIssues(repo, generation, deps)
+		issues, err := t.ListOpenCobblerIssues(repo, generation)
 		if err == nil && len(issues) >= expected {
 			return
 		}
-		deps.Log("waitForIssuesVisible: %d/%d visible, retrying...", len(issues), expected)
+		t.Log("waitForIssuesVisible: %d/%d visible, retrying...", len(issues), expected)
 		time.Sleep(interval)
 	}
-	deps.Log("waitForIssuesVisible: timed out waiting for %d issues (generation=%s)", expected, generation)
-}
-
-// HasLabel returns true if the issue has the given label.
-func HasLabel(issue CobblerIssue, label string) bool {
-	for _, l := range issue.Labels {
-		if l == label {
-			return true
-		}
-	}
-	return false
+	t.Log("waitForIssuesVisible: timed out waiting for %d issues (generation=%s)", expected, generation)
 }
 
 // PromoteReadyIssues builds the DAG from open issues and applies
 // cobbler-ready to unblocked issues. Issues whose dependency is still open
 // have cobbler-ready removed.
-func PromoteReadyIssues(repo, generation string, deps Deps) error {
-	issues, err := ListOpenCobblerIssues(repo, generation, deps)
+func (t *GitHubTracker) PromoteReadyIssues(repo, generation string) error {
+	issues, err := t.ListOpenCobblerIssues(repo, generation)
 	if err != nil {
 		return fmt.Errorf("promoteReadyIssues: %w", err)
 	}
@@ -587,12 +710,12 @@ func PromoteReadyIssues(repo, generation string, deps Deps) error {
 		currentlyReady := HasLabel(iss, LabelReady)
 
 		if !blocked && !currentlyReady {
-			if err := AddIssueLabel(repo, iss.Number, LabelReady, deps); err != nil {
-				deps.Log("promoteReadyIssues: add ready label to #%d: %v", iss.Number, err)
+			if err := t.AddIssueLabel(repo, iss.Number, LabelReady); err != nil {
+				t.Log("promoteReadyIssues: add ready label to #%d: %v", iss.Number, err)
 			}
 		} else if blocked && currentlyReady {
-			if err := RemoveIssueLabel(repo, iss.Number, LabelReady, deps); err != nil {
-				deps.Log("promoteReadyIssues: remove ready label from #%d: %v", iss.Number, err)
+			if err := t.RemoveIssueLabel(repo, iss.Number, LabelReady); err != nil {
+				t.Log("promoteReadyIssues: remove ready label from #%d: %v", iss.Number, err)
 			}
 		}
 	}
@@ -601,12 +724,12 @@ func PromoteReadyIssues(repo, generation string, deps Deps) error {
 
 // PickReadyIssue promotes ready issues then picks the lowest-numbered
 // cobbler-ready issue, adds cobbler-in-progress, and returns it.
-func PickReadyIssue(repo, generation string, deps Deps) (CobblerIssue, error) {
-	if err := PromoteReadyIssues(repo, generation, deps); err != nil {
+func (t *GitHubTracker) PickReadyIssue(repo, generation string) (CobblerIssue, error) {
+	if err := t.PromoteReadyIssues(repo, generation); err != nil {
 		return CobblerIssue{}, fmt.Errorf("pickReadyIssue promote: %w", err)
 	}
 
-	issues, err := ListOpenCobblerIssues(repo, generation, deps)
+	issues, err := t.ListOpenCobblerIssues(repo, generation)
 	if err != nil {
 		return CobblerIssue{}, fmt.Errorf("pickReadyIssue list: %w", err)
 	}
@@ -624,91 +747,75 @@ func PickReadyIssue(repo, generation string, deps Deps) (CobblerIssue, error) {
 	sort.Slice(ready, func(i, j int) bool { return ready[i].Number < ready[j].Number })
 
 	picked := ready[0]
-	if err := AddIssueLabel(repo, picked.Number, LabelInProgress, deps); err != nil {
-		deps.Log("pickReadyIssue: add in-progress label to #%d: %v", picked.Number, err)
+	if err := t.AddIssueLabel(repo, picked.Number, LabelInProgress); err != nil {
+		t.Log("pickReadyIssue: add in-progress label to #%d: %v", picked.Number, err)
 	}
-	if err := RemoveIssueLabel(repo, picked.Number, LabelReady, deps); err != nil {
-		deps.Log("pickReadyIssue: remove ready label from #%d: %v", picked.Number, err)
+	if err := t.RemoveIssueLabel(repo, picked.Number, LabelReady); err != nil {
+		t.Log("pickReadyIssue: remove ready label from #%d: %v", picked.Number, err)
 	}
 
 	// Rename [measure] → [stitch] so stats:generator shows which phase executed the task.
 	if strings.HasPrefix(picked.Title, "[measure] ") {
 		picked.Title = "[stitch] " + strings.TrimPrefix(picked.Title, "[measure] ")
-		if err := EditIssueTitle(repo, picked.Number, picked.Title, deps); err != nil {
-			deps.Log("pickReadyIssue: rename title warning for #%d: %v", picked.Number, err)
+		if err := t.EditIssueTitle(repo, picked.Number, picked.Title); err != nil {
+			t.Log("pickReadyIssue: rename title warning for #%d: %v", picked.Number, err)
 		}
 	}
 
-	deps.Log("pickReadyIssue: picked #%d %q gen=%s", picked.Number, picked.Title, generation)
+	t.Log("pickReadyIssue: picked #%d %q gen=%s", picked.Number, picked.Title, generation)
 	return picked, nil
 }
 
 // EditIssueTitle updates the title of a GitHub issue.
-func EditIssueTitle(repo string, number int, title string, deps Deps) error {
-	return exec.Command(deps.GhBin, "issue", "edit",
+func (t *GitHubTracker) EditIssueTitle(repo string, number int, title string) error {
+	return exec.Command(t.GhBin, "issue", "edit",
 		"--repo", repo,
 		fmt.Sprintf("%d", number),
 		"--title", title,
 	).Run()
 }
 
-// NormalizeIssueTitle strips [measure]/[stitch] prefixes and trims whitespace
-// so that proposed titles can be compared against existing issues (GH-1026).
-func NormalizeIssueTitle(title string) string {
-	t := strings.TrimSpace(title)
-	for _, prefix := range []string{"[measure] ", "[stitch] "} {
-		t = strings.TrimPrefix(t, prefix)
-	}
-	return strings.TrimSpace(t)
-}
-
 // CloseCobblerIssue closes a GitHub issue and re-runs PromoteReadyIssues so
 // any unblocked issues become ready.
-func CloseCobblerIssue(repo string, number int, generation string, deps Deps) error {
-	if err := RemoveIssueLabel(repo, number, LabelInProgress, deps); err != nil {
-		deps.Log("closeCobblerIssue: remove in-progress label from #%d: %v", number, err)
+func (t *GitHubTracker) CloseCobblerIssue(repo string, number int, generation string) error {
+	if err := t.RemoveIssueLabel(repo, number, LabelInProgress); err != nil {
+		t.Log("closeCobblerIssue: remove in-progress label from #%d: %v", number, err)
 	}
-	if err := exec.Command(deps.GhBin, "issue", "close",
+	if err := exec.Command(t.GhBin, "issue", "close",
 		"--repo", repo,
 		fmt.Sprintf("%d", number),
 	).Run(); err != nil {
 		return fmt.Errorf("gh issue close #%d: %w", number, err)
 	}
-	deps.Log("closeCobblerIssue: closed #%d", number)
+	t.Log("closeCobblerIssue: closed #%d", number)
 
-	if err := PromoteReadyIssues(repo, generation, deps); err != nil {
-		deps.Log("closeCobblerIssue: promoteReadyIssues warning: %v", err)
+	if err := t.PromoteReadyIssues(repo, generation); err != nil {
+		t.Log("closeCobblerIssue: promoteReadyIssues warning: %v", err)
 	}
 	return nil
 }
 
-// RemoveInProgressLabel removes the cobbler-in-progress label from an issue,
-// returning it to cobbler-ready state. Used by resetTask.
-func RemoveInProgressLabel(repo string, number int, deps Deps) error {
-	return RemoveIssueLabel(repo, number, LabelInProgress, deps)
-}
-
 // CloseGenerationIssues closes all open issues scoped to a generation.
 // Used during reset or cleanup of a failed generation.
-func CloseGenerationIssues(repo, generation string, deps Deps) error {
+func (t *GitHubTracker) CloseGenerationIssues(repo, generation string) error {
 	if generation == "" {
 		return nil
 	}
-	issues, err := ListOpenCobblerIssues(repo, generation, deps)
+	issues, err := t.ListOpenCobblerIssues(repo, generation)
 	if err != nil {
 		return fmt.Errorf("closeGenerationIssues: list: %w", err)
 	}
 	if len(issues) == 0 {
-		deps.Log("closeGenerationIssues: no open issues for generation %s", generation)
+		t.Log("closeGenerationIssues: no open issues for generation %s", generation)
 		return nil
 	}
-	deps.Log("closeGenerationIssues: closing %d issue(s) for generation %s", len(issues), generation)
+	t.Log("closeGenerationIssues: closing %d issue(s) for generation %s", len(issues), generation)
 	for _, iss := range issues {
-		if err := exec.Command(deps.GhBin, "issue", "close",
+		if err := exec.Command(t.GhBin, "issue", "close",
 			"--repo", repo,
 			fmt.Sprintf("%d", iss.Number),
 		).Run(); err != nil {
-			deps.Log("closeGenerationIssues: close #%d warning: %v", iss.Number, err)
+			t.Log("closeGenerationIssues: close #%d warning: %v", iss.Number, err)
 		}
 	}
 	return nil
@@ -720,18 +827,18 @@ func CloseGenerationIssues(repo, generation string, deps Deps) error {
 // It fetches all open issues in a single API call, filters locally for
 // cobbler-gen-* labels, groups by generation, and closes issues for
 // missing branches. Cost: 1 API call for discovery + 1 per stale issue.
-func GcStaleGenerationIssues(repo, generationPrefix string, deps Deps) {
+func (t *GitHubTracker) GcStaleGenerationIssues(repo, generationPrefix string) {
 	// Fetch all open issues in a single API call and filter locally for
 	// cobbler-gen-* labels. This replaces the previous O(labels) approach
 	// that listed all labels then queried issues per label.
-	out, err := exec.Command(deps.GhBin, "api",
+	out, err := exec.Command(t.GhBin, "api",
 		fmt.Sprintf("repos/%s/issues", repo),
 		"--method", "GET",
 		"-f", "state=open",
 		"-f", "per_page=100",
 	).Output()
 	if err != nil {
-		deps.Log("gcStaleGenerationIssues: list issues: %v", err)
+		t.Log("gcStaleGenerationIssues: list issues: %v", err)
 		return
 	}
 
@@ -743,7 +850,7 @@ func GcStaleGenerationIssues(repo, generationPrefix string, deps Deps) {
 		} `json:"labels"`
 	}
 	if err := json.Unmarshal(out, &raw); err != nil {
-		deps.Log("gcStaleGenerationIssues: parse issues: %v", err)
+		t.Log("gcStaleGenerationIssues: parse issues: %v", err)
 		return
 	}
 
@@ -774,16 +881,16 @@ func GcStaleGenerationIssues(repo, generationPrefix string, deps Deps) {
 
 	// Close issues for generations whose branch no longer exists locally.
 	for generation, numbers := range byGeneration {
-		if deps.BranchExists(generation, ".") {
+		if t.BranchExists(generation, ".") {
 			continue
 		}
-		deps.Log("gcStaleGenerationIssues: branch %s gone, closing %d issue(s)", generation, len(numbers))
+		t.Log("gcStaleGenerationIssues: branch %s gone, closing %d issue(s)", generation, len(numbers))
 		for _, num := range numbers {
-			if err := exec.Command(deps.GhBin, "issue", "close",
+			if err := exec.Command(t.GhBin, "issue", "close",
 				"--repo", repo,
 				fmt.Sprintf("%d", num),
 			).Run(); err != nil {
-				deps.Log("gcStaleGenerationIssues: close #%d: %v", num, err)
+				t.Log("gcStaleGenerationIssues: close #%d: %v", num, err)
 			}
 		}
 	}
@@ -792,8 +899,8 @@ func GcStaleGenerationIssues(repo, generationPrefix string, deps Deps) {
 // ListActiveIssuesContext returns a JSON array of ContextIssue objects for all
 // open issues in the generation, suitable for injection into the measure prompt.
 // The JSON format matches what parseIssuesJSON expects.
-func ListActiveIssuesContext(repo, generation string, deps Deps) (string, error) {
-	issues, err := ListOpenCobblerIssues(repo, generation, deps)
+func (t *GitHubTracker) ListActiveIssuesContext(repo, generation string) (string, error) {
+	issues, err := t.ListOpenCobblerIssues(repo, generation)
 	if err != nil {
 		return "", fmt.Errorf("listActiveIssuesContext: %w", err)
 	}
@@ -804,33 +911,9 @@ func ListActiveIssuesContext(repo, generation string, deps Deps) (string, error)
 	return IssuesContextJSON(issues)
 }
 
-// IssuesContextJSON converts a slice of CobblerIssue into the JSON string
-// expected by parseIssuesJSON. Exported for testing.
-func IssuesContextJSON(issues []CobblerIssue) (string, error) {
-	ctx := make([]ContextIssue, len(issues))
-	for i, iss := range issues {
-		status := "backfill"
-		if HasLabel(iss, LabelInProgress) {
-			status = "in_progress"
-		} else if HasLabel(iss, LabelReady) {
-			status = "ready"
-		}
-		ctx[i] = ContextIssue{
-			ID:     fmt.Sprintf("%d", iss.Number),
-			Title:  iss.Title,
-			Status: status,
-		}
-	}
-	b, err := json.Marshal(ctx)
-	if err != nil {
-		return "", fmt.Errorf("issuesContextJSON: %w", err)
-	}
-	return string(b), nil
-}
-
 // AddIssueLabel adds a label to a GitHub issue via the API.
-func AddIssueLabel(repo string, number int, label string, deps Deps) error {
-	return exec.Command(deps.GhBin, "issue", "edit",
+func (t *GitHubTracker) AddIssueLabel(repo string, number int, label string) error {
+	return exec.Command(t.GhBin, "issue", "edit",
 		"--repo", repo,
 		fmt.Sprintf("%d", number),
 		"--add-label", label,
@@ -838,8 +921,8 @@ func AddIssueLabel(repo string, number int, label string, deps Deps) error {
 }
 
 // RemoveIssueLabel removes a label from a GitHub issue via the API.
-func RemoveIssueLabel(repo string, number int, label string, deps Deps) error {
-	return exec.Command(deps.GhBin, "issue", "edit",
+func (t *GitHubTracker) RemoveIssueLabel(repo string, number int, label string) error {
+	return exec.Command(t.GhBin, "issue", "edit",
 		"--repo", repo,
 		fmt.Sprintf("%d", number),
 		"--remove-label", label,
@@ -847,67 +930,38 @@ func RemoveIssueLabel(repo string, number int, label string, deps Deps) error {
 }
 
 // GhExec runs a gh subcommand with dir set to repoRoot and returns stdout.
-func GhExec(repoRoot string, deps Deps, args ...string) (string, error) {
-	cmd := exec.Command(deps.GhBin, args...)
+func (t *GitHubTracker) GhExec(repoRoot string, args ...string) (string, error) {
+	cmd := exec.Command(t.GhBin, args...)
 	cmd.Dir = repoRoot
 	out, err := cmd.Output()
 	return strings.TrimSpace(string(out)), err
 }
 
-// GoModModulePath reads the module path from the go.mod in repoRoot.
-func GoModModulePath(repoRoot string) string {
-	data, err := os.ReadFile(filepath.Join(repoRoot, "go.mod"))
-	if err != nil {
-		return ""
-	}
-	for _, line := range strings.Split(string(data), "\n") {
-		if strings.HasPrefix(line, "module ") {
-			return strings.TrimSpace(strings.TrimPrefix(line, "module "))
-		}
-	}
-	return ""
-}
-
-// ResolveTargetRepo returns the GitHub owner/repo string for the project being
-// developed. It checks cfg.TargetRepo first; if empty it strips
-// "github.com/" from cfg.ModulePath. Returns "" if neither yields a
-// non-empty value. Intentionally separate from DetectGitHubRepo to avoid
-// cobbler.issues_repo contaminating target resolution (prd003 R11.4, D2).
-func ResolveTargetRepo(cfg RepoConfig) string {
-	if cfg.TargetRepo != "" {
-		return cfg.TargetRepo
-	}
-	if strings.HasPrefix(cfg.ModulePath, "github.com/") {
-		return strings.TrimPrefix(cfg.ModulePath, "github.com/")
-	}
-	return ""
-}
-
 // CommentCobblerIssue posts a comment on a GitHub issue. Errors are logged
 // but do not fail the caller — commenting is best-effort.
-func CommentCobblerIssue(repo string, number int, body string, deps Deps) {
+func (t *GitHubTracker) CommentCobblerIssue(repo string, number int, body string) {
 	if repo == "" || number <= 0 {
 		return
 	}
-	out, err := exec.Command(deps.GhBin, "issue", "comment",
+	out, err := exec.Command(t.GhBin, "issue", "comment",
 		fmt.Sprintf("%d", number),
 		"--repo", repo,
 		"--body", body,
 	).CombinedOutput()
 	if err != nil {
-		deps.Log("commentCobblerIssue: gh issue comment failed for #%d: %v (output: %s)", number, err, strings.TrimSpace(string(out)))
+		t.Log("commentCobblerIssue: gh issue comment failed for #%d: %v (output: %s)", number, err, strings.TrimSpace(string(out)))
 		return
 	}
-	deps.Log("commentCobblerIssue: posted comment on #%d", number)
+	t.Log("commentCobblerIssue: posted comment on #%d", number)
 }
 
 // FileTargetRepoDefects files each defect as a GitHub bug issue in repo.
 // Errors are logged but do not fail the caller — filing is best-effort
 // (prd003 R11.5, R11.6). If repo is empty the call is a no-op with a
 // warning log (prd003 R11.7).
-func FileTargetRepoDefects(repo string, defects []string, deps Deps) {
+func (t *GitHubTracker) FileTargetRepoDefects(repo string, defects []string) {
 	if repo == "" {
-		deps.Log("fileTargetRepoDefects: no target repo configured; skipping %d defect(s)", len(defects))
+		t.Log("fileTargetRepoDefects: no target repo configured; skipping %d defect(s)", len(defects))
 		return
 	}
 	for _, defect := range defects {
@@ -916,16 +970,31 @@ func FileTargetRepoDefects(repo string, defects []string, deps Deps) {
 			title = title[:68] + "..."
 		}
 		body := "## Defect detected by cobbler:measure\n\n" + defect
-		out, err := exec.Command(deps.GhBin, "issue", "create",
+		out, err := exec.Command(t.GhBin, "issue", "create",
 			"--repo", repo,
 			"--title", title,
 			"--body", body,
 			"--label", "bug",
 		).CombinedOutput()
 		if err != nil {
-			deps.Log("fileTargetRepoDefects: gh issue create failed for %q: %v (output: %s)", defect, err, string(out))
+			t.Log("fileTargetRepoDefects: gh issue create failed for %q: %v (output: %s)", defect, err, string(out))
 			continue
 		}
-		deps.Log("fileTargetRepoDefects: filed defect issue in %s: %s", repo, strings.TrimSpace(string(out)))
+		t.Log("fileTargetRepoDefects: filed defect issue in %s: %s", repo, strings.TrimSpace(string(out)))
 	}
+}
+
+// ResolveTargetRepo returns the GitHub owner/repo string for the project being
+// developed. It checks t.Cfg.TargetRepo first; if empty it strips
+// "github.com/" from t.Cfg.ModulePath. Returns "" if neither yields a
+// non-empty value. Intentionally separate from DetectGitHubRepo to avoid
+// cobbler.issues_repo contaminating target resolution (prd003 R11.4, D2).
+func (t *GitHubTracker) ResolveTargetRepo() string {
+	if t.Cfg.TargetRepo != "" {
+		return t.Cfg.TargetRepo
+	}
+	if strings.HasPrefix(t.Cfg.ModulePath, "github.com/") {
+		return strings.TrimPrefix(t.Cfg.ModulePath, "github.com/")
+	}
+	return ""
 }

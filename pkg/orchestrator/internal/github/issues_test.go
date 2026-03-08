@@ -11,6 +11,9 @@ import (
 	"testing"
 )
 
+// Compile-time interface satisfaction check.
+var _ WorkTracker = (*GitHubTracker)(nil)
+
 // TestParseIssueFrontMatter verifies round-trip parsing of the YAML
 // front-matter block embedded in issue bodies.
 func TestParseIssueFrontMatter(t *testing.T) {
@@ -158,13 +161,25 @@ func TestGenLabel(t *testing.T) {
 	}
 }
 
+// testTracker returns a GitHubTracker suitable for unit tests that call
+// the gh CLI against fake repos (expecting errors, not panics).
+func testTracker(t *testing.T) *GitHubTracker {
+	t.Helper()
+	return &GitHubTracker{
+		Log:   t.Logf,
+		GhBin: "gh",
+	}
+}
+
 // TestDetectGitHubRepoFromConfig verifies that IssuesRepo config override
 // is returned directly without running any external commands.
 func TestDetectGitHubRepoFromConfig(t *testing.T) {
 	t.Parallel()
-	cfg := RepoConfig{IssuesRepo: "owner/repo"}
-	deps := Deps{Log: t.Logf}
-	got, err := DetectGitHubRepo(t.TempDir(), cfg, deps)
+	tr := &GitHubTracker{
+		Log: t.Logf,
+		Cfg: RepoConfig{IssuesRepo: "owner/repo"},
+	}
+	got, err := tr.DetectGitHubRepo(t.TempDir())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -184,10 +199,13 @@ func TestDetectGitHubRepoFromModulePath(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cfg := RepoConfig{ModulePath: "github.com/acme/myproject"}
-	deps := Deps{Log: t.Logf, GhBin: "gh"}
+	tr := &GitHubTracker{
+		Log:   t.Logf,
+		GhBin: "gh",
+		Cfg:   RepoConfig{ModulePath: "github.com/acme/myproject"},
+	}
 	// Pass non-existent dir so gh repo view fails → falls through to module path.
-	got, err := DetectGitHubRepo(dir, cfg, deps)
+	got, err := tr.DetectGitHubRepo(dir)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -289,12 +307,14 @@ func TestGoModModulePath_NoModuleLine(t *testing.T) {
 
 func TestResolveTargetRepo_ExplicitTargetRepo(t *testing.T) {
 	t.Parallel()
-	cfg := RepoConfig{
-		TargetRepo: "owner/target-project",
-		ModulePath: "github.com/owner/other", // ignored when TargetRepo set
+	tr := &GitHubTracker{
+		Cfg: RepoConfig{
+			TargetRepo: "owner/target-project",
+			ModulePath: "github.com/owner/other", // ignored when TargetRepo set
+		},
 	}
 
-	got := ResolveTargetRepo(cfg)
+	got := tr.ResolveTargetRepo()
 	if got != "owner/target-project" {
 		t.Errorf("got %q, want %q", got, "owner/target-project")
 	}
@@ -302,9 +322,11 @@ func TestResolveTargetRepo_ExplicitTargetRepo(t *testing.T) {
 
 func TestResolveTargetRepo_FallbackToModulePath(t *testing.T) {
 	t.Parallel()
-	cfg := RepoConfig{ModulePath: "github.com/acme/sdd-hello-world"}
+	tr := &GitHubTracker{
+		Cfg: RepoConfig{ModulePath: "github.com/acme/sdd-hello-world"},
+	}
 
-	got := ResolveTargetRepo(cfg)
+	got := tr.ResolveTargetRepo()
 	if got != "acme/sdd-hello-world" {
 		t.Errorf("got %q, want %q", got, "acme/sdd-hello-world")
 	}
@@ -312,9 +334,11 @@ func TestResolveTargetRepo_FallbackToModulePath(t *testing.T) {
 
 func TestResolveTargetRepo_NonGitHub(t *testing.T) {
 	t.Parallel()
-	cfg := RepoConfig{ModulePath: "gitlab.com/org/project"}
+	tr := &GitHubTracker{
+		Cfg: RepoConfig{ModulePath: "gitlab.com/org/project"},
+	}
 
-	got := ResolveTargetRepo(cfg)
+	got := tr.ResolveTargetRepo()
 	if got != "" {
 		t.Errorf("got %q, want empty for non-github module path", got)
 	}
@@ -322,8 +346,8 @@ func TestResolveTargetRepo_NonGitHub(t *testing.T) {
 
 func TestResolveTargetRepo_Empty(t *testing.T) {
 	t.Parallel()
-	cfg := RepoConfig{}
-	got := ResolveTargetRepo(cfg)
+	tr := &GitHubTracker{Cfg: RepoConfig{}}
+	got := tr.ResolveTargetRepo()
 	if got != "" {
 		t.Errorf("got %q, want empty when nothing configured", got)
 	}
@@ -615,8 +639,8 @@ func TestPickReadyIssue_FilterExcludesBothLabels(t *testing.T) {
 // error (not panic) when the GitHub CLI fails on a fake repo (GH-569).
 func TestCloseCobblerIssue_FakeRepo_NoOp(t *testing.T) {
 	t.Parallel()
-	deps := Deps{Log: t.Logf, GhBin: "gh"}
-	err := CloseCobblerIssue("fake/repo-that-does-not-exist", 99999, "gen-test", deps)
+	tr := testTracker(t)
+	err := tr.CloseCobblerIssue("fake/repo-that-does-not-exist", 99999, "gen-test")
 	if err == nil {
 		t.Error("CloseCobblerIssue with fake repo must return an error")
 	}
@@ -628,8 +652,8 @@ func TestCloseCobblerIssue_FakeRepo_NoOp(t *testing.T) {
 // returns an error (not panic) when the GitHub CLI fails on a fake repo (GH-568).
 func TestCreateMeasuringPlaceholder_FakeRepo_Error(t *testing.T) {
 	t.Parallel()
-	deps := Deps{Log: t.Logf, GhBin: "gh"}
-	_, err := CreateMeasuringPlaceholder("fake/repo-that-does-not-exist", "gen-test", 1, deps)
+	tr := testTracker(t)
+	_, err := tr.CreateMeasuringPlaceholder("fake/repo-that-does-not-exist", "gen-test", 1)
 	if err == nil {
 		t.Error("CreateMeasuringPlaceholder with fake repo must return an error")
 	}
@@ -639,8 +663,8 @@ func TestCreateMeasuringPlaceholder_FakeRepo_Error(t *testing.T) {
 // does not panic when the GitHub CLI fails on a fake repo (GH-568).
 func TestCloseMeasuringPlaceholder_FakeRepo_NoOp(t *testing.T) {
 	t.Parallel()
-	deps := Deps{Log: t.Logf, GhBin: "gh"}
-	CloseMeasuringPlaceholder("fake/repo-that-does-not-exist", 99999, deps) // must not panic
+	tr := testTracker(t)
+	tr.CloseMeasuringPlaceholder("fake/repo-that-does-not-exist", 99999) // must not panic
 }
 
 // TestCloseMeasuringPlaceholderWithComment_FakeRepo_NoOp verifies
@@ -648,9 +672,9 @@ func TestCloseMeasuringPlaceholder_FakeRepo_NoOp(t *testing.T) {
 // fails on a fake repo (GH-747).
 func TestCloseMeasuringPlaceholderWithComment_FakeRepo_NoOp(t *testing.T) {
 	t.Parallel()
-	deps := Deps{Log: t.Logf, GhBin: "gh"}
-	CloseMeasuringPlaceholderWithComment("fake/repo-that-does-not-exist", 99999,
-		"Measure did not complete; closed automatically.", deps) // must not panic
+	tr := testTracker(t)
+	tr.CloseMeasuringPlaceholderWithComment("fake/repo-that-does-not-exist", 99999,
+		"Measure did not complete; closed automatically.") // must not panic
 }
 
 // TestPlaceholderResolved_DeferIsNoOpOnSuccess verifies that when
@@ -700,17 +724,17 @@ func TestPlaceholderResolved_DeferFiresOnFailure(t *testing.T) {
 // panic when the GitHub CLI fails on a fake repo (GH-567).
 func TestCommentCobblerIssue_FakeRepo_NoOp(t *testing.T) {
 	t.Parallel()
-	deps := Deps{Log: t.Logf, GhBin: "gh"}
-	CommentCobblerIssue("fake/repo-that-does-not-exist", 99999, "test body", deps) // must not panic
+	tr := testTracker(t)
+	tr.CommentCobblerIssue("fake/repo-that-does-not-exist", 99999, "test body") // must not panic
 }
 
 // TestCommentCobblerIssue_ZeroNumber_NoOp verifies CommentCobblerIssue is a
 // no-op for invalid inputs (GH-567).
 func TestCommentCobblerIssue_ZeroNumber_NoOp(t *testing.T) {
 	t.Parallel()
-	deps := Deps{Log: t.Logf, GhBin: "gh"}
-	CommentCobblerIssue("petar-djukic/cobbler-scaffold", 0, "test body", deps)  // must not panic
-	CommentCobblerIssue("", 1, "test body", deps)                                // must not panic
+	tr := testTracker(t)
+	tr.CommentCobblerIssue("petar-djukic/cobbler-scaffold", 0, "test body")  // must not panic
+	tr.CommentCobblerIssue("", 1, "test body")                                // must not panic
 }
 
 // --- sub-issue linking (GH-566) ---
@@ -742,8 +766,8 @@ func TestExtractParentIssueNumber(t *testing.T) {
 // panic) when the GitHub CLI fails on a fake repo (GH-566).
 func TestLinkSubIssue_FakeRepo_Error(t *testing.T) {
 	t.Parallel()
-	deps := Deps{Log: t.Logf, GhBin: "gh"}
-	err := LinkSubIssue("fake/repo-that-does-not-exist", 1, 99999, deps)
+	tr := testTracker(t)
+	err := tr.LinkSubIssue("fake/repo-that-does-not-exist", 1, 99999)
 	if err == nil {
 		t.Error("LinkSubIssue with fake repo must return an error")
 	}
