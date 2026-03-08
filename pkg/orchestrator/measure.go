@@ -8,8 +8,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
-	"sort"
 	"strings"
 	"time"
 
@@ -115,16 +113,12 @@ func (o *Orchestrator) RunMeasure() error {
 	o.RunPreCycleAnalysis()
 
 	// Warn about PRD requirement groups whose sub-item count exceeds
-	// max_requirements_per_task. This is advisory — measure continues
-	// regardless so the operator can restructure PRDs later.
+	// max_requirements_per_task.
 	if o.cfg.Cobbler.MaxRequirementsPerTask > 0 {
 		warnOversizedGroups(o.cfg.Cobbler.MaxRequirementsPerTask)
 	}
 
 	// Route target-repo defects to the target repo (prd003 R11).
-	// Schema errors and constitution drift are bugs in the target project's
-	// files; filing them as GitHub issues prevents Claude from proposing them
-	// as measure tasks, which would fail validation and block the cycle.
 	if analysis := loadAnalysisDoc(o.cfg.Cobbler.Dir); analysis != nil && len(analysis.Defects) > 0 {
 		if targetRepo := resolveTargetRepo(o.cfg); targetRepo != "" {
 			logf("measure: filing %d defect(s) as bug issues in %s", len(analysis.Defects), targetRepo)
@@ -155,8 +149,6 @@ func (o *Orchestrator) RunMeasure() error {
 	logf("locBefore prod=%d test=%d", locBefore.Production, locBefore.Test)
 
 	// Iterative measure: call Claude once per issue with limit=1.
-	// Between calls, import the result into GitHub Issues and refresh the issue list
-	// so subsequent calls see existing issues and avoid duplicates.
 	totalIssues := o.cfg.Cobbler.MaxMeasureIssues
 	var allCreatedIDs []string
 	var totalTokens ClaudeResult
@@ -165,8 +157,7 @@ func (o *Orchestrator) RunMeasure() error {
 	for i := 0; i < totalIssues; i++ {
 		logf("--- iteration %d/%d ---", i+1, totalIssues)
 
-		// Refresh existing issues from GitHub before each call (except the first,
-		// where we already have them).
+		// Refresh existing issues from GitHub before each call (except the first).
 		if i > 0 {
 			refreshed, refreshErr := listActiveIssuesContext(repo, generation)
 			if refreshErr != nil {
@@ -177,10 +168,6 @@ func (o *Orchestrator) RunMeasure() error {
 		}
 
 		// Create a placeholder issue so users can see measure is running Claude.
-		// The placeholder has no cobbler labels and is invisible to stitch and to
-		// the measure context prompt. It is closed after the iteration regardless
-		// of outcome (GH-568). The defer below closes it on any early-return path
-		// (e.g. Claude failure) so it never stays open as an orphan (GH-747).
 		placeholderNum, placeholderErr := createMeasuringPlaceholder(repo, generation, i+1)
 		if placeholderErr != nil {
 			logf("measure: warning: createMeasuringPlaceholder: %v", placeholderErr)
@@ -321,14 +308,10 @@ func (o *Orchestrator) RunMeasure() error {
 		}
 
 		// Close the placeholder only when it was not upgraded in-place (GH-578).
-		// An upgraded placeholder became the task issue; closing it destroys the task.
-		// Mark placeholderResolved so the defer registered above is a no-op (GH-747).
 		placeholderResolved = true
 		if placeholderNum > 0 && !placeholderUpgraded {
 			closeMeasuringPlaceholder(repo, placeholderNum)
 		}
-
-		// Record invocation metrics on each created issue.
 
 		allCreatedIDs = append(allCreatedIDs, createdIDs...)
 
@@ -342,15 +325,6 @@ func (o *Orchestrator) RunMeasure() error {
 	logf("completed %d iteration(s), %d issue(s) created in %s",
 		totalIssues, len(allCreatedIDs), time.Since(measureStart).Round(time.Second))
 	return nil
-}
-
-// truncateSHA returns the first 8 characters of a SHA, or the full
-// string if shorter.
-func truncateSHA(sha string) string {
-	if len(sha) > 8 {
-		return sha[:8]
-	}
-	return sha
 }
 
 func (o *Orchestrator) buildMeasurePrompt(userInput, existingIssues string, limit int, validationErrors ...string) (string, error) {
@@ -374,8 +348,6 @@ func (o *Orchestrator) buildMeasurePrompt(userInput, existingIssues string, limi
 	}
 
 	// Apply CobblerConfig measure source settings to phaseCtx (GH-565).
-	// Config values are overridden only when the phaseCtx file has not
-	// already set the field (file-level wins over config-level).
 	if phaseCtx == nil {
 		phaseCtx = &PhaseContext{}
 	}
@@ -387,14 +359,10 @@ func (o *Orchestrator) buildMeasurePrompt(userInput, existingIssues string, limi
 		phaseCtx.SourcePatterns = o.cfg.Cobbler.MeasureSourcePatterns
 		logf("buildMeasurePrompt: measure_source_patterns set from config")
 	}
-	// Apply test exclusion setting (GH-616). Default true; file-level wins
-	// when already set to true by the phaseCtx file.
 	if o.cfg.Cobbler.effectiveMeasureExcludeTests() && !phaseCtx.ExcludeTests {
 		phaseCtx.ExcludeTests = true
 		logf("buildMeasurePrompt: measure_exclude_tests=true, _test.go files will be excluded")
 	}
-	// Wire source summarization mode (GH-617, prd003 R12). Config wins when
-	// the phaseCtx file has not already set the mode (file-level wins).
 	if o.cfg.Cobbler.MeasureSourceMode != "" && phaseCtx.SourceMode == "" {
 		phaseCtx.SourceMode = o.cfg.Cobbler.MeasureSourceMode
 		logf("buildMeasurePrompt: measure_source_mode=%q from config", phaseCtx.SourceMode)
@@ -440,9 +408,7 @@ func (o *Orchestrator) buildMeasurePrompt(userInput, existingIssues string, limi
 		"max_requirements": fmt.Sprintf("%d", o.cfg.Cobbler.MaxRequirementsPerTask),
 	}
 
-	// Inject package_contracts when source mode is "headers" or "custom"
-	// and any PRD declares a package_contract. The contracts give the
-	// measure agent structured API context alongside (or instead of) source.
+	// Inject package_contracts when source mode is "headers" or "custom".
 	var measureContracts []OODPackageContractRef
 	sourceMode := phaseCtx.SourceMode
 	if sourceMode == "headers" || sourceMode == "custom" {
@@ -467,12 +433,7 @@ func (o *Orchestrator) buildMeasurePrompt(userInput, existingIssues string, limi
 		PackageContracts:        measureContracts,
 	}
 
-	// Enforce releases scope: the roadmap is not filtered by release, so
-	// without an explicit constraint the agent may propose tasks from adjacent
-	// releases after exhausting the configured ones.
-	// Filter out releases already marked as implemented in road-map.yaml so a
-	// stale releases config value does not direct Claude to re-implement work
-	// that is already done (GH-847).
+	// Enforce releases scope.
 	activeReleases := filterImplementedReleases(o.cfg.Project.Releases)
 	activeRelease := filterImplementedRelease(o.cfg.Project.Release)
 	doc.Constraints += measureReleasesConstraint(activeReleases, activeRelease)
@@ -487,86 +448,14 @@ func (o *Orchestrator) buildMeasurePrompt(userInput, existingIssues string, limi
 	return string(out), nil
 }
 
-// measureReleasesConstraint returns a hard constraint string to append to the
-// measure prompt when a release scope is configured. Returns "" when no scope
-// is set. Releases (list) takes precedence over Release (single string).
-func measureReleasesConstraint(releases []string, release string) string {
-	if len(releases) > 0 {
-		return fmt.Sprintf(
-			"\n\nRelease scope: You MUST only propose tasks for use cases in releases [%s]. Do not propose tasks for any other release.",
-			strings.Join(releases, ", "),
-		)
-	}
-	if release != "" {
-		return fmt.Sprintf(
-			"\n\nRelease scope: You MUST only propose tasks for use cases in release %q or earlier. Do not propose tasks for later releases.",
-			release,
-		)
-	}
-	return ""
-}
-
-// filterImplementedReleases returns a copy of releases with any entry whose
-// road-map status is "implemented" or "done" removed. Releases not found in
-// road-map.yaml are kept (unknown status is not treated as implemented).
-// Returns nil when all releases are filtered out.
-func filterImplementedReleases(releases []string) []string {
-	if len(releases) == 0 {
-		return releases
-	}
-	rm := loadYAML[RoadmapDoc]("docs/road-map.yaml")
-	if rm == nil {
-		return releases
-	}
-	status := make(map[string]string, len(rm.Releases))
-	for _, rel := range rm.Releases {
-		status[rel.Version] = rel.Status
-	}
-	var out []string
-	for _, r := range releases {
-		if ucStatusDone(status[r]) {
-			logf("filterImplementedReleases: dropping implemented release %s from constraint", r)
-			continue
-		}
-		out = append(out, r)
-	}
-	return out
-}
-
-// filterImplementedRelease returns the release string unchanged unless the
-// road-map marks that release as implemented/done, in which case "" is
-// returned so no legacy single-release constraint is emitted.
-func filterImplementedRelease(release string) string {
-	if release == "" {
-		return ""
-	}
-	rm := loadYAML[RoadmapDoc]("docs/road-map.yaml")
-	if rm == nil {
-		return release
-	}
-	for _, rel := range rm.Releases {
-		if rel.Version == release && ucStatusDone(rel.Status) {
-			logf("filterImplementedRelease: dropping implemented release %s from constraint", release)
-			return ""
-		}
-	}
-	return release
-}
-
 // proposedIssue is aliased from internal/github in issues_gh.go.
 
-// importIssues imports proposed issues from a YAML file into GitHub. It returns
-// the created issue IDs, any validation error strings (for retry feedback), and
-// a non-nil error when validation fails in enforcing mode. ph is the measuring
-// placeholder issue number; when ph > 0 and exactly one issue is proposed, the
-// placeholder is upgraded in-place instead of creating a new issue (GH-578).
+// importIssues imports proposed issues from a YAML file into GitHub.
 func (o *Orchestrator) importIssues(yamlFile, repo, generation string, ph int) ([]string, []string, error) {
 	return o.importIssuesImpl(yamlFile, repo, generation, false, ph)
 }
 
-// importIssuesForce imports issues bypassing enforcing validation. Used when
-// retries are exhausted to accept the last result with warnings (R5). ph is
-// the placeholder number passed through to importIssuesImpl (GH-578).
+// importIssuesForce imports issues bypassing enforcing validation.
 func (o *Orchestrator) importIssuesForce(yamlFile, repo, generation string, ph int) ([]string, error) {
 	ids, _, err := o.importIssuesImpl(yamlFile, repo, generation, true, ph)
 	return ids, err
@@ -591,8 +480,7 @@ func (o *Orchestrator) importIssuesImpl(yamlFile, repo, generation string, skipE
 		logf("importIssues: [%d] title=%q dep=%d", i, issue.Title, issue.Dependency)
 	}
 
-	// Validate proposed issues against P9/P7 rules. Load PRD sub-item
-	// counts so the validator can expand group references (GH-122).
+	// Validate proposed issues against P9/P7 rules.
 	subItemCounts := loadPRDSubItemCounts()
 	vr := validateMeasureOutput(issues, o.cfg.Cobbler.MaxRequirementsPerTask, subItemCounts)
 	if len(vr.Warnings) > 0 {
@@ -605,8 +493,6 @@ func (o *Orchestrator) importIssuesImpl(yamlFile, repo, generation string, skipE
 
 	// Deduplicate: fetch existing issues for this generation and skip any
 	// proposed issue whose normalized title matches a closed one (GH-1026).
-	// Only dedup when the generation has open issues — indicates an active run.
-	// If all issues are closed, this is likely a fresh start on the same branch.
 	closedTitles := make(map[string]int) // normalized title → issue number
 	if existing, err := listAllCobblerIssues(repo, generation); err == nil {
 		hasOpen := false
@@ -635,9 +521,7 @@ func (o *Orchestrator) importIssuesImpl(yamlFile, repo, generation string, skipE
 	}
 	issues = filtered
 
-	// Create all issues on GitHub. When a placeholder number is given and exactly
-	// one issue is proposed, upgrade the placeholder in-place instead of creating
-	// a new issue, eliminating the two-issue dance (GH-578).
+	// Create all issues on GitHub.
 	var ids []string
 	upgraded := false
 	if ph > 0 && len(issues) == 1 {
@@ -674,227 +558,8 @@ func (o *Orchestrator) importIssuesImpl(yamlFile, repo, generation string, skipE
 	return ids, nil, nil
 }
 
-// issueDescription is the subset of fields parsed from an issue description
-// YAML for advisory validation.
-type issueDescription struct {
-	DeliverableType    string              `yaml:"deliverable_type"`
-	Files              []issueDescFile     `yaml:"files"`
-	Requirements       []issueDescItem     `yaml:"requirements"`
-	AcceptanceCriteria []issueDescItem     `yaml:"acceptance_criteria"`
-	DesignDecisions    []issueDescItem     `yaml:"design_decisions"`
-}
-
-type issueDescFile struct {
-	Path string `yaml:"path"`
-}
-
-type issueDescItem struct {
-	ID   string `yaml:"id"`
-	Text string `yaml:"text"`
-}
-
-// validationResult holds the outcome of measure output validation.
-type validationResult struct {
-	Warnings []string // advisory issues (logged but do not block import)
-	Errors   []string // blocking issues (cause rejection in enforcing mode)
-}
-
-// HasErrors returns true if the validation found blocking issues.
-func (v validationResult) HasErrors() bool {
-	return len(v.Errors) > 0
-}
-
-// validateMeasureOutput checks proposed issues against P9 granularity ranges
-// and P7 file naming conventions. Returns structured warnings and errors.
-// All issues are logged regardless of enforcing mode. maxReqs is the
-// operator-configured requirement cap (0 = unlimited). subItemCounts maps
-// PRD stems to group IDs to sub-item counts; when a task requirement
-// references a PRD group, the expanded sub-item count is used instead of 1.
-// Expanded-count violations are logged as warnings (best-effort), not errors.
-func validateMeasureOutput(issues []proposedIssue, maxReqs int, subItemCounts map[string]map[string]int) validationResult {
-	var result validationResult
-	for _, issue := range issues {
-		var desc issueDescription
-		if err := yaml.Unmarshal([]byte(issue.Description), &desc); err != nil {
-			msg := fmt.Sprintf("[%d] %q: could not parse description: %v", issue.Index, issue.Title, err)
-			logf("validateMeasureOutput: %s", msg)
-			result.Warnings = append(result.Warnings, msg)
-			continue
-		}
-
-		rCount := len(desc.Requirements)
-		acCount := len(desc.AcceptanceCriteria)
-		dCount := len(desc.DesignDecisions)
-
-		// Compute expanded requirement count by resolving PRD group
-		// references to their sub-item counts (GH-122).
-		expandedCount := expandedRequirementCount(desc.Requirements, subItemCounts)
-
-		// Enforce max_requirements_per_task on the expanded sub-item count,
-		// not the top-level group count (GH-535). A requirement referencing
-		// "prd003 R2" where R2 has 10 sub-items counts as 10, not 1.
-		if maxReqs > 0 && expandedCount > maxReqs {
-			msg := fmt.Sprintf("[%d] %q: expanded sub-item count is %d, max is %d", issue.Index, issue.Title, expandedCount, maxReqs)
-			logf("validateMeasureOutput: %s", msg)
-			result.Errors = append(result.Errors, msg)
-		}
-
-		if desc.DeliverableType == "code" {
-			if rCount < 5 || rCount > 8 {
-				msg := fmt.Sprintf("[%d] %q: requirement count %d outside P9 range 5-8", issue.Index, issue.Title, rCount)
-				logf("validateMeasureOutput: %s", msg)
-				result.Errors = append(result.Errors, msg)
-			}
-			if acCount < 5 || acCount > 8 {
-				msg := fmt.Sprintf("[%d] %q: acceptance criteria count %d outside P9 range 5-8", issue.Index, issue.Title, acCount)
-				logf("validateMeasureOutput: %s", msg)
-				result.Errors = append(result.Errors, msg)
-			}
-			if dCount < 3 || dCount > 5 {
-				msg := fmt.Sprintf("[%d] %q: design decision count %d outside P9 range 3-5", issue.Index, issue.Title, dCount)
-				logf("validateMeasureOutput: %s", msg)
-				result.Errors = append(result.Errors, msg)
-			}
-		} else if desc.DeliverableType == "documentation" {
-			if rCount < 2 || rCount > 4 {
-				msg := fmt.Sprintf("[%d] %q: requirement count %d outside P9 doc range 2-4", issue.Index, issue.Title, rCount)
-				logf("validateMeasureOutput: %s", msg)
-				result.Errors = append(result.Errors, msg)
-			}
-			if acCount < 3 || acCount > 5 {
-				msg := fmt.Sprintf("[%d] %q: acceptance criteria count %d outside P9 doc range 3-5", issue.Index, issue.Title, acCount)
-				logf("validateMeasureOutput: %s", msg)
-				result.Errors = append(result.Errors, msg)
-			}
-		}
-
-		// Check for P7 violation: file named after its package.
-		for _, f := range desc.Files {
-			parts := strings.Split(f.Path, "/")
-			if len(parts) >= 2 {
-				dir := parts[len(parts)-2]
-				file := parts[len(parts)-1]
-				if file == dir+".go" || file == dir+"_test.go" {
-					msg := fmt.Sprintf("[%d] %q: file %s matches package name (P7 violation)", issue.Index, issue.Title, f.Path)
-					logf("validateMeasureOutput: %s", msg)
-					result.Errors = append(result.Errors, msg)
-				}
-			}
-		}
-	}
-	return result
-}
-
-// prdRefPattern matches PRD requirement references in task requirement text.
-// Examples: "prd003 R2", "prd004-ts R1.3", "prd001-orchestrator-core R5".
-// Group 1 = PRD stem (e.g., "prd003" or "prd004-ts").
-// Group 2 = requirement group number (e.g., "2" from "R2").
-// Group 3 = optional sub-item number (e.g., "3" from "R1.3"); empty for groups.
-var prdRefPattern = regexp.MustCompile(`(prd\d+[-\w]*)\s+R(\d+)(?:\.(\d+))?`)
-
-// loadPRDSubItemCounts loads all PRDs from the standard path and returns a
-// map of PRD stem -> group key -> sub-item count. A group with no sub-items
-// maps to 1. The stem is the filename without path and extension (e.g.,
-// "prd003-cobbler-workflows"); an additional entry keyed by the short prefix
-// (e.g., "prd003") is added for fuzzy matching.
-func loadPRDSubItemCounts() map[string]map[string]int {
-	paths, _ := filepath.Glob("docs/specs/product-requirements/prd*.yaml")
-	counts := make(map[string]map[string]int, len(paths)*2)
-	for _, path := range paths {
-		prd := loadYAML[PRDDoc](path)
-		if prd == nil {
-			continue
-		}
-		stem := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
-		groupCounts := make(map[string]int, len(prd.Requirements))
-		for key, group := range prd.Requirements {
-			if len(group.Items) > 0 {
-				groupCounts[key] = len(group.Items)
-			} else {
-				groupCounts[key] = 1
-			}
-		}
-		counts[stem] = groupCounts
-		// Add short prefix entry (e.g., "prd003") for fuzzy matching.
-		if idx := strings.IndexByte(stem, '-'); idx > 0 {
-			short := stem[:idx]
-			if _, exists := counts[short]; !exists {
-				counts[short] = groupCounts
-			}
-		}
-	}
-	return counts
-}
-
-// expandedRequirementCount computes the effective requirement count by
-// parsing PRD group references from each requirement's text and expanding
-// groups to their sub-item counts. A requirement referencing "prd003 R2"
-// where R2 has 4 sub-items counts as 4, not 1. Requirements without a
-// recognized PRD reference or referencing a specific sub-item (R1.3)
-// count as 1.
-func expandedRequirementCount(reqs []issueDescItem, subItemCounts map[string]map[string]int) int {
-	if len(subItemCounts) == 0 {
-		return len(reqs)
-	}
-	total := 0
-	for _, req := range reqs {
-		matches := prdRefPattern.FindStringSubmatch(req.Text)
-		if matches == nil {
-			total++
-			continue
-		}
-		prdStem := matches[1]
-		groupNum := matches[2]
-		subItem := matches[3]
-
-		// Specific sub-item reference (e.g., R1.3) counts as 1.
-		if subItem != "" {
-			total++
-			continue
-		}
-
-		// Group reference (e.g., R2). Look up sub-item count.
-		groupKey := "R" + groupNum
-		if groups, ok := subItemCounts[prdStem]; ok {
-			if count, found := groups[groupKey]; found {
-				total += count
-				continue
-			}
-		}
-		// PRD or group not found — count as 1.
-		total++
-	}
-	return total
-}
-
-// warnOversizedGroups loads PRDs and logs a warning for each requirement
-// group whose sub-item count exceeds maxReqs. This is advisory and runs
-// before the measure prompt is built so operators can restructure PRDs.
-func warnOversizedGroups(maxReqs int) {
-	paths, _ := filepath.Glob("docs/specs/product-requirements/prd*.yaml")
-	for _, path := range paths {
-		prd := loadYAML[PRDDoc](path)
-		if prd == nil {
-			continue
-		}
-		stem := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
-		keys := make([]string, 0, len(prd.Requirements))
-		for k := range prd.Requirements {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		for _, key := range keys {
-			group := prd.Requirements[key]
-			if len(group.Items) > maxReqs {
-				logf("warning: %s %s has %d sub-items (max_requirements_per_task=%d); consider splitting this requirement group",
-					stem, key, len(group.Items), maxReqs)
-			}
-		}
-	}
-}
-
 // saveHistory persists measure artifacts (log, issues YAML) to the configured
-// history directory. The prompt is saved separately before runClaude.
+// history directory.
 func (o *Orchestrator) saveHistory(ts string, rawOutput []byte, issuesFile string) {
 	o.saveHistoryLog(ts, "measure", rawOutput)
 
@@ -908,30 +573,4 @@ func (o *Orchestrator) saveHistory(ts string, rawOutput []byte, issuesFile strin
 			logf("saveHistory: write issues: %v", err)
 		}
 	}
-}
-
-// appendMeasureLog merges newIssues into the persistent measure.yaml list.
-// measure.yaml is a single growing YAML list of all issues proposed across runs.
-func appendMeasureLog(cobblerDir string, newIssues []proposedIssue) {
-	logPath := filepath.Join(cobblerDir, "measure.yaml")
-
-	var existing []proposedIssue
-	if data, err := os.ReadFile(logPath); err == nil {
-		if err := yaml.Unmarshal(data, &existing); err != nil {
-			logf("appendMeasureLog: could not parse existing list, starting fresh: %v", err)
-			existing = nil
-		}
-	}
-
-	combined := append(existing, newIssues...)
-	out, err := yaml.Marshal(combined)
-	if err != nil {
-		logf("appendMeasureLog: marshal failed: %v", err)
-		return
-	}
-	if err := os.WriteFile(logPath, out, 0o644); err != nil {
-		logf("appendMeasureLog: write failed: %v", err)
-		return
-	}
-	logf("appendMeasureLog: %d total issues in %s", len(combined), logPath)
 }

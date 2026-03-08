@@ -169,9 +169,9 @@ func TestBuildStitchPrompt_NilContext(t *testing.T) {
 	// embedded constitution defaults.
 	o := New(Config{})
 	task := stitchTask{
-		id:        "test-01",
-		title:     "Add unit tests",
-		issueType: "code",
+		ID:        "test-01",
+		Title:     "Add unit tests",
+		IssueType: "code",
 	}
 	out, err := o.buildStitchPrompt(task)
 	if err != nil {
@@ -192,10 +192,10 @@ func TestBuildStitchPrompt_ConstitutionDocs(t *testing.T) {
 	tmp := t.TempDir()
 	o := New(Config{})
 	task := stitchTask{
-		id:          "test-02",
-		title:       "Implement feature",
-		issueType:   "code",
-		worktreeDir: tmp,
+		ID:          "test-02",
+		Title:       "Implement feature",
+		IssueType:   "code",
+		WorktreeDir: tmp,
 	}
 	out, err := o.buildStitchPrompt(task)
 	if err != nil {
@@ -215,7 +215,7 @@ func TestBuildStitchPrompt_InvalidTemplate(t *testing.T) {
 	cfg := Config{}
 	cfg.Cobbler.StitchPrompt = "role: [unclosed bracket"
 	o := New(cfg)
-	task := stitchTask{id: "test-03", title: "Test", issueType: "code"}
+	task := stitchTask{ID: "test-03", Title: "Test", IssueType: "code"}
 	_, err := o.buildStitchPrompt(task)
 	if err == nil {
 		t.Error("buildStitchPrompt() expected error for invalid template, got nil")
@@ -230,9 +230,9 @@ func TestCleanupWorktree_NonExistentDir_NoOp(t *testing.T) {
 	// not exist (e.g., in test environments without a real git repo),
 	// cleanupWorktree must not panic; git errors are logged as warnings.
 	task := stitchTask{
-		id:          "test-cleanup",
-		worktreeDir: "/nonexistent/worktree/path",
-		branchName:  "stitch-test-cleanup",
+		ID:          "test-cleanup",
+		WorktreeDir: "/nonexistent/worktree/path",
+		BranchName:  "stitch-test-cleanup",
 	}
 	ok := cleanupWorktree(task) // must not panic
 	if ok {
@@ -261,10 +261,10 @@ func TestBuildStitchPrompt_RepositoryFiles(t *testing.T) {
 
 	o := New(Config{})
 	task := stitchTask{
-		id:          "test-05",
-		title:       "Repository files test",
-		issueType:   "code",
-		worktreeDir: tmp,
+		ID:          "test-05",
+		Title:       "Repository files test",
+		IssueType:   "code",
+		WorktreeDir: tmp,
 	}
 	out, err := o.buildStitchPrompt(task)
 	if err != nil {
@@ -471,7 +471,7 @@ func TestCleanGoBinaries_BinaryNotCommittedAfterClean(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "wc"), []byte("ELF binary"), 0o755)
 	os.WriteFile(filepath.Join(dir, "wc.go"), []byte("package main\n"), 0o644)
 
-	task := stitchTask{id: "1", title: "wc impl", worktreeDir: dir}
+	task := stitchTask{ID: "1", Title: "wc impl", WorktreeDir: dir}
 	if err := commitWorktreeChanges(task); err != nil {
 		t.Fatalf("commitWorktreeChanges() error = %v", err)
 	}
@@ -510,9 +510,9 @@ func TestCommitWorktreeChanges_NoChanges(t *testing.T) {
 	run("git", "commit", "--allow-empty", "-m", "initial")
 
 	task := stitchTask{
-		id:          "123",
-		title:       "test task",
-		worktreeDir: dir,
+		ID:          "123",
+		Title:       "test task",
+		WorktreeDir: dir,
 	}
 
 	if err := commitWorktreeChanges(task); err != nil {
@@ -539,9 +539,9 @@ func TestCommitWorktreeChanges_WithChanges(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "newfile.go"), []byte("package main\n"), 0o644)
 
 	task := stitchTask{
-		id:          "456",
-		title:       "add file",
-		worktreeDir: dir,
+		ID:          "456",
+		Title:       "add file",
+		WorktreeDir: dir,
 	}
 
 	if err := commitWorktreeChanges(task); err != nil {
@@ -566,27 +566,27 @@ func TestCreateWorktree_CreatesWorktreeAndBranch(t *testing.T) {
 	dir := initTestGitRepo(t)
 
 	task := stitchTask{
-		id:          "789",
-		branchName:  "task/main-789",
-		worktreeDir: filepath.Join(dir+"-worktrees", "789"),
+		ID:          "789",
+		BranchName:  "task/main-789",
+		WorktreeDir: filepath.Join(dir+"-worktrees", "789"),
 	}
 
 	if err := createWorktree(task); err != nil {
 		t.Fatalf("createWorktree() error = %v", err)
 	}
 	t.Cleanup(func() {
-		gitWorktreeRemove(task.worktreeDir, "")
-		gitDeleteBranch(task.branchName, "")
+		gitWorktreeRemove(task.WorktreeDir, "")
+		gitDeleteBranch(task.BranchName, "")
 	})
 
 	// Verify the worktree directory exists.
-	if _, err := os.Stat(task.worktreeDir); os.IsNotExist(err) {
+	if _, err := os.Stat(task.WorktreeDir); os.IsNotExist(err) {
 		t.Error("worktree directory should exist after createWorktree()")
 	}
 
 	// Verify the branch was created.
-	if !gitBranchExists(task.branchName, "") {
-		t.Errorf("branch %q should exist after createWorktree()", task.branchName)
+	if !gitBranchExists(task.BranchName, "") {
+		t.Errorf("branch %q should exist after createWorktree()", task.BranchName)
 	}
 }
 
@@ -596,14 +596,14 @@ func TestBuildStitchPrompt_RequiredReadingFilter(t *testing.T) {
 	tmp := t.TempDir()
 	o := New(Config{})
 	task := stitchTask{
-		id:        "test-04",
-		title:     "Filter sources",
-		issueType: "code",
-		description: `required_reading:
+		ID:        "test-04",
+		Title:     "Filter sources",
+		IssueType: "code",
+		Description: `required_reading:
   - pkg/orchestrator/context.go
   - pkg/orchestrator/stitch.go
 `,
-		worktreeDir: tmp,
+		WorktreeDir: tmp,
 	}
 	out, err := o.buildStitchPrompt(task)
 	if err != nil {
@@ -811,11 +811,11 @@ func TestResetTask_NonExistentWorktree(t *testing.T) {
 	// resetTask must not panic when the worktree and branch don't exist.
 	o := New(Config{})
 	task := stitchTask{
-		id:          "99999",
-		ghNumber:    99999,
-		branchName:  "task/main-99999",
-		worktreeDir: "/nonexistent/worktree/path",
-		repo:        "fake/repo",
+		ID:          "99999",
+		GhNumber:    99999,
+		BranchName:  "task/main-99999",
+		WorktreeDir: "/nonexistent/worktree/path",
+		Repo:        "fake/repo",
 	}
 
 	o.resetTask(task, "test reason") // must not panic
@@ -832,11 +832,11 @@ func TestResetTask_WithRealWorktree(t *testing.T) {
 
 	o := New(Config{})
 	task := stitchTask{
-		id:          "66666",
-		ghNumber:    66666,
-		branchName:  branchName,
-		worktreeDir: worktreeDir,
-		repo:        "fake/repo",
+		ID:          "66666",
+		GhNumber:    66666,
+		BranchName:  branchName,
+		WorktreeDir: worktreeDir,
+		Repo:        "fake/repo",
 	}
 
 	o.resetTask(task, "test cleanup")
@@ -858,11 +858,11 @@ func TestCloseStitchTask_GHFailureNoOp(t *testing.T) {
 	// (e.g., fake repo, no network).
 	o := New(Config{})
 	task := stitchTask{
-		id:         "99999",
-		ghNumber:   99999,
-		title:      "test task",
-		repo:       "fake/repo",
-		generation: "test-gen",
+		ID:         "99999",
+		GhNumber:   99999,
+		Title:      "test task",
+		Repo:       "fake/repo",
+		Generation: "test-gen",
 	}
 	rec := InvocationRecord{}
 
@@ -878,20 +878,20 @@ func TestCreateWorktree_ExistingBranch(t *testing.T) {
 	gitRun(t, "branch", branchName)
 
 	task := stitchTask{
-		id:          "existing",
-		branchName:  branchName,
-		worktreeDir: filepath.Join(dir+"-worktrees", "existing"),
+		ID:          "existing",
+		BranchName:  branchName,
+		WorktreeDir: filepath.Join(dir+"-worktrees", "existing"),
 	}
 
 	if err := createWorktree(task); err != nil {
 		t.Fatalf("createWorktree() with existing branch error = %v", err)
 	}
 	t.Cleanup(func() {
-		gitWorktreeRemove(task.worktreeDir, "")
-		gitDeleteBranch(task.branchName, "")
+		gitWorktreeRemove(task.WorktreeDir, "")
+		gitDeleteBranch(task.BranchName, "")
 	})
 
-	if _, err := os.Stat(task.worktreeDir); os.IsNotExist(err) {
+	if _, err := os.Stat(task.WorktreeDir); os.IsNotExist(err) {
 		t.Error("worktree directory should exist")
 	}
 }
@@ -909,9 +909,9 @@ func TestCleanupWorktree_RealWorktree(t *testing.T) {
 	gitRun(t, "worktree", "add", worktreeDir, branchName)
 
 	task := stitchTask{
-		id:          "cleanup",
-		branchName:  branchName,
-		worktreeDir: worktreeDir,
+		ID:          "cleanup",
+		BranchName:  branchName,
+		WorktreeDir: worktreeDir,
 	}
 
 	ok := cleanupWorktree(task)
@@ -936,9 +936,9 @@ func TestCreateWorktree_Success(t *testing.T) {
 
 	worktreeDir := filepath.Join(dir+"-worktrees", "wt-create")
 	task := stitchTask{
-		id:          "12345",
-		branchName:  "task/main-12345",
-		worktreeDir: worktreeDir,
+		ID:          "12345",
+		BranchName:  "task/main-12345",
+		WorktreeDir: worktreeDir,
 	}
 
 	err := createWorktree(task)
@@ -952,7 +952,7 @@ func TestCreateWorktree_Success(t *testing.T) {
 	}
 
 	// Branch should exist.
-	if !gitBranchExists(task.branchName, ".") {
+	if !gitBranchExists(task.BranchName, ".") {
 		t.Error("branch should exist after createWorktree")
 	}
 
@@ -963,9 +963,9 @@ func TestCreateWorktree_Success(t *testing.T) {
 func TestCreateWorktree_InvalidParentDir(t *testing.T) {
 	t.Parallel()
 	task := stitchTask{
-		id:          "88888",
-		branchName:  "task/main-88888",
-		worktreeDir: "/dev/null/impossible/path",
+		ID:          "88888",
+		BranchName:  "task/main-88888",
+		WorktreeDir: "/dev/null/impossible/path",
 	}
 
 	err := createWorktree(task)
@@ -1103,9 +1103,9 @@ func TestScopeSourceDirs_PkgNarrows(t *testing.T) {
 func TestCommitWorktreeChanges_InvalidDir(t *testing.T) {
 	t.Parallel()
 	task := stitchTask{
-		id:          "invalid",
-		title:       "invalid dir test",
-		worktreeDir: "/nonexistent/dir/xyz",
+		ID:          "invalid",
+		Title:       "invalid dir test",
+		WorktreeDir: "/nonexistent/dir/xyz",
 	}
 
 	err := commitWorktreeChanges(task)

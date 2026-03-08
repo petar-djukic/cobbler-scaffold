@@ -6,14 +6,292 @@ package orchestrator
 import (
 	"bytes"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
-	"maps"
 	"slices"
 	"strings"
 	"text/template"
 	"time"
+
+	"github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/generate"
 )
+
+// ---------------------------------------------------------------------------
+// Dependency injection: wire the parent package's logf and binary paths
+// into the internal/generate package at init time.
+// ---------------------------------------------------------------------------
+
+func init() {
+	generate.Log = logf
+	generate.BinGit = binGit
+}
+
+// ---------------------------------------------------------------------------
+// Type aliases for backward compatibility
+// ---------------------------------------------------------------------------
+
+// validationResult holds the outcome of measure output validation.
+type validationResult = generate.ValidationResult
+
+// issueDescription is the subset of fields parsed from an issue description.
+type issueDescription = generate.IssueDescription
+
+// issueDescFile holds a file path from an issue description.
+type issueDescFile = generate.IssueDescFile
+
+// issueDescItem holds an ID+text pair from an issue description.
+type issueDescItem = generate.IssueDescItem
+
+// stitchTask holds the state for a single stitch work item.
+type stitchTask = generate.StitchTask
+
+// ---------------------------------------------------------------------------
+// Sentinel errors
+// ---------------------------------------------------------------------------
+
+// errTaskReset is returned by doOneTask when a task fails but the stitch
+// loop should continue to the next task.
+var errTaskReset = generate.ErrTaskReset
+
+// ---------------------------------------------------------------------------
+// Constants re-exported from internal/generate.
+// ---------------------------------------------------------------------------
+
+// baseBranchFile is the name of the file that records which branch a
+// generation was started from, stored inside the cobbler directory.
+const baseBranchFile = generate.BaseBranchFile
+
+// tagSuffixes lists the lifecycle tag suffixes in order.
+var tagSuffixes = generate.TagSuffixes
+
+// prdRefPattern matches PRD requirement references in task requirement text.
+var prdRefPattern = generate.PRDRefPattern
+
+// ---------------------------------------------------------------------------
+// gitDeps builds the GitDeps struct for the generate package.
+// ---------------------------------------------------------------------------
+
+func genGitDeps() generate.GitDeps {
+	return generate.GitDeps{
+		Checkout:      gitCheckout,
+		CurrentBranch: gitCurrentBranch,
+		StageAll:      gitStageAll,
+		UnstageAll:    gitUnstageAll,
+		Commit:        gitCommit,
+		HasChanges:    gitHasChanges,
+		Stash:         gitStash,
+	}
+}
+
+// stitchGitDeps builds the StitchGitDeps struct for stitch operations.
+func stitchGitDeps() generate.StitchGitDeps {
+	return generate.StitchGitDeps{
+		BranchExists:      gitBranchExists,
+		CreateBranch:      gitCreateBranch,
+		DeleteBranch:      gitDeleteBranch,
+		ForceDeleteBranch: gitForceDeleteBranch,
+		ListBranches:      gitListBranches,
+		WorktreeAdd:       gitWorktreeAdd,
+		WorktreeRemove:    gitWorktreeRemove,
+		WorktreePrune:     gitWorktreePrune,
+		Checkout:          gitCheckout,
+		CurrentBranch:     gitCurrentBranch,
+		MergeCmd:          gitMergeCmd,
+		RevParseHEAD:      gitRevParseHEAD,
+	}
+}
+
+// stitchIssueDeps builds the StitchIssueDeps struct for stitch operations.
+func stitchIssueDeps(repo, generation string) generate.StitchIssueDeps {
+	return generate.StitchIssueDeps{
+		ListOpenCobblerIssues: func(r, g string) ([]generate.StitchIssue, error) {
+			issues, err := listOpenCobblerIssues(r, g)
+			if err != nil {
+				return nil, err
+			}
+			result := make([]generate.StitchIssue, len(issues))
+			for i, iss := range issues {
+				labels := make([]string, len(iss.Labels))
+				copy(labels, iss.Labels)
+				result[i] = generate.StitchIssue{
+					Number:      iss.Number,
+					Title:       iss.Title,
+					Description: iss.Description,
+					State:       iss.State,
+					Labels:      labels,
+				}
+			}
+			return result, nil
+		},
+		PickReadyIssue: func(r, g string) (generate.StitchIssue, error) {
+			iss, err := pickReadyIssue(r, g)
+			if err != nil {
+				return generate.StitchIssue{}, err
+			}
+			return generate.StitchIssue{
+				Number:      iss.Number,
+				Title:       iss.Title,
+				Description: iss.Description,
+				State:       iss.State,
+				Labels:      iss.Labels,
+			}, nil
+		},
+		RemoveInProgressLabel: func(r string, num int) error {
+			return removeInProgressLabel(r, num)
+		},
+		HasLabel: func(iss generate.StitchIssue, label string) bool {
+			for _, l := range iss.Labels {
+				if l == label {
+					return true
+				}
+			}
+			return false
+		},
+		LabelInProgress: cobblerLabelInProgress,
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Function delegates — unexported wrappers that preserve the original
+// call signatures used throughout the parent package.
+// ---------------------------------------------------------------------------
+
+func resolveStopTarget(callerBranch, genBranch, recordedBase string) string {
+	return generate.ResolveStopTarget(callerBranch, genBranch, recordedBase)
+}
+
+func generationName(tag string) string {
+	return generate.GenerationName(tag)
+}
+
+func saveAndSwitchBranch(target string) error {
+	return generate.SaveAndSwitchBranch(target, genGitDeps())
+}
+
+func ensureOnBranch(branch string) error {
+	return generate.EnsureOnBranch(branch, genGitDeps())
+}
+
+func removeEmptyDirs(root string) {
+	generate.RemoveEmptyDirs(root)
+}
+
+func appendToGitignore(dir, entry string) error {
+	return generate.AppendToGitignore(dir, entry)
+}
+
+func truncateSHA(sha string) string {
+	return generate.TruncateSHA(sha)
+}
+
+func measureReleasesConstraint(releases []string, release string) string {
+	return generate.MeasureReleasesConstraint(releases, release)
+}
+
+func filterImplementedReleases(releases []string) []string {
+	return generate.FilterImplementedReleases(releases)
+}
+
+func filterImplementedRelease(release string) string {
+	return generate.FilterImplementedRelease(release)
+}
+
+func validateMeasureOutput(issues []proposedIssue, maxReqs int, subItemCounts map[string]map[string]int) validationResult {
+	// Convert proposedIssue (from internal/github) to generate.ProposedIssue.
+	genIssues := make([]generate.ProposedIssue, len(issues))
+	for i, iss := range issues {
+		genIssues[i] = generate.ProposedIssue{
+			Index:       iss.Index,
+			Title:       iss.Title,
+			Description: iss.Description,
+			Dependency:  iss.Dependency,
+		}
+	}
+	return generate.ValidateMeasureOutput(genIssues, maxReqs, subItemCounts)
+}
+
+func expandedRequirementCount(reqs []issueDescItem, subItemCounts map[string]map[string]int) int {
+	return generate.ExpandedRequirementCount(reqs, subItemCounts)
+}
+
+func loadPRDSubItemCounts() map[string]map[string]int {
+	return generate.LoadPRDSubItemCounts()
+}
+
+func warnOversizedGroups(maxReqs int) {
+	generate.WarnOversizedGroups(maxReqs)
+}
+
+func appendMeasureLog(cobblerDir string, newIssues []proposedIssue) {
+	// Convert proposedIssue to generate.ProposedIssue.
+	genIssues := make([]generate.ProposedIssue, len(newIssues))
+	for i, iss := range newIssues {
+		genIssues[i] = generate.ProposedIssue{
+			Index:       iss.Index,
+			Title:       iss.Title,
+			Description: iss.Description,
+			Dependency:  iss.Dependency,
+		}
+	}
+	generate.AppendMeasureLog(cobblerDir, genIssues)
+}
+
+func taskBranchName(baseBranch, issueID string) string {
+	return generate.TaskBranchName(baseBranch, issueID)
+}
+
+func taskBranchPattern(baseBranch string) string {
+	return generate.TaskBranchPattern(baseBranch)
+}
+
+func parseRequiredReading(description string) []string {
+	return generate.ParseRequiredReading(description)
+}
+
+func scopeSourceDirs(configDirs []string, description string) []string {
+	return generate.ScopeSourceDirs(configDirs, description)
+}
+
+func validateIssueDescription(desc string) error {
+	return generate.ValidateIssueDescription(desc)
+}
+
+func recoverStaleBranches(baseBranch, worktreeBase, repo string) bool {
+	return generate.RecoverStaleBranches(baseBranch, worktreeBase, repo, stitchGitDeps(), stitchIssueDeps(repo, ""))
+}
+
+func resetOrphanedIssues(baseBranch, repo, generation string) bool {
+	return generate.ResetOrphanedIssues(baseBranch, repo, generation, stitchGitDeps(), stitchIssueDeps(repo, generation))
+}
+
+func pickTask(baseBranch, worktreeBase, repo, generation string) (stitchTask, error) {
+	return generate.PickTask(baseBranch, worktreeBase, repo, generation, stitchIssueDeps(repo, generation))
+}
+
+func createWorktree(task stitchTask) error {
+	return generate.CreateWorktree(task, stitchGitDeps())
+}
+
+func commitWorktreeChanges(task stitchTask) error {
+	return generate.CommitWorktreeChanges(task)
+}
+
+func cleanGoBinaries(dir string) {
+	generate.CleanGoBinaries(dir)
+}
+
+func mergeBranch(branchName, baseBranch, repoRoot string) error {
+	return generate.MergeBranch(branchName, baseBranch, repoRoot, stitchGitDeps())
+}
+
+func cleanupWorktree(task stitchTask) bool {
+	return generate.CleanupWorktree(task, stitchGitDeps())
+}
+
+// ---------------------------------------------------------------------------
+// Orchestrator receiver methods
+// ---------------------------------------------------------------------------
 
 // GeneratorRun executes N cycles of Measure + Stitch within the current generation.
 // If cycles > 0 it overrides configuration.yaml's generation.cycles for this run only.
@@ -340,10 +618,6 @@ func (o *Orchestrator) GeneratorStart() error {
 	return nil
 }
 
-// baseBranchFile is the name of the file that records which branch a
-// generation was started from, stored inside the cobbler directory.
-const baseBranchFile = "base-branch"
-
 // writeBaseBranch writes the base branch name to .cobbler/base-branch.
 func (o *Orchestrator) writeBaseBranch(branch string) error {
 	dir := o.cfg.Cobbler.Dir
@@ -366,20 +640,6 @@ func (o *Orchestrator) readBaseBranch() string {
 		return "main"
 	}
 	return branch
-}
-
-// resolveStopTarget returns the branch that generator:stop should merge into.
-// callerBranch is the branch checked out when generator:stop was invoked.
-// genBranch is the generation branch being stopped. recordedBase is the branch
-// written by generator:start. When the caller is on a branch other than the
-// generation branch and other than the recorded base, that caller branch is
-// returned so that generator:stop merges into an explicit feature branch rather
-// than always forcing a merge into the recorded base (GH-523).
-func resolveStopTarget(callerBranch, genBranch, recordedBase string) string {
-	if callerBranch != genBranch && callerBranch != recordedBase {
-		return callerBranch
-	}
-	return recordedBase
 }
 
 // GeneratorStop completes a generation trail and merges it into the base branch.
@@ -420,10 +680,6 @@ func (o *Orchestrator) GeneratorStop() error {
 	logf("generator:stop: beginning")
 
 	// Capture the caller's branch before switching to the generation branch.
-	// If the caller is on a feature branch (e.g. gh-168-...) rather than
-	// the recorded base branch, prefer it as the merge target so that
-	// generator:stop respects the PR workflow described in the close-out
-	// procedure (GH-523).
 	callerBranch, err := gitCurrentBranch(".")
 	if err != nil {
 		return fmt.Errorf("getting current branch: %w", err)
@@ -456,16 +712,14 @@ func (o *Orchestrator) GeneratorStop() error {
 		return err
 	}
 
-	// Close any open cobbler-gen issues for this generation so they do not
-	// accumulate as orphans after the branch is deleted.
+	// Close any open cobbler-gen issues for this generation.
 	if ghRepo, err := detectGitHubRepo(".", o.cfg); err == nil && ghRepo != "" {
 		if err := closeGenerationIssues(ghRepo, branch); err != nil {
 			logf("generator:stop: close issues warning: %v", err)
 		}
 	}
 
-	// Reset all implemented releases back to spec_complete so the repo is
-	// ready for the next generation run (GH-1021).
+	// Reset all implemented releases back to spec_complete (GH-1021).
 	if err := o.resetImplementedReleases(); err != nil {
 		logf("generator:stop: reset releases warning: %v", err)
 	}
@@ -479,8 +733,6 @@ func (o *Orchestrator) GeneratorStop() error {
 // mergeGeneration resets Go sources, commits the clean state, merges the
 // generation branch into the base branch, tags the result, resets the base
 // branch to specs-only, and deletes the generation branch.
-// When preserve_sources is true the pre-merge source reset and the
-// post-tag cleanGoSources call are both skipped (prd002 R10.2).
 func (o *Orchestrator) mergeGeneration(branch, baseBranch string) error {
 	if o.cfg.Generation.PreserveSources {
 		logf("generator:stop: preserve_sources=true, skipping pre-merge Go source reset on %s", baseBranch)
@@ -508,8 +760,7 @@ func (o *Orchestrator) mergeGeneration(branch, baseBranch string) error {
 		return fmt.Errorf("merging %s: %w", branch, err)
 	}
 
-	// Restore Go files from earlier generations so the v1 tag captures a
-	// complete snapshot (prd002 R5.9). Runs before tagging.
+	// Restore Go files from earlier generations.
 	startTag := branch + "-start"
 	if err := o.restoreFromStartTag(startTag); err != nil {
 		logf("generator:stop: restore warning: %v", err)
@@ -521,10 +772,7 @@ func (o *Orchestrator) mergeGeneration(branch, baseBranch string) error {
 		return fmt.Errorf("tagging merge: %w", err)
 	}
 
-	// Reset base branch to specs-only (prd002 R5.10, R5.11).
-	// Version tagging is handled separately by mage tag (Tag() in tag.go).
-	// Use cleanGoSources (not resetGoSources) to avoid re-seeding files like version.go.
-	// Skip when preserve_sources is true — library repos keep their Go source (prd002 R10.2).
+	// Reset base branch to specs-only.
 	if o.cfg.Generation.PreserveSources {
 		logf("generator:stop: preserve_sources=true, skipping post-tag source reset on %s", baseBranch)
 	} else {
@@ -574,9 +822,7 @@ func (o *Orchestrator) resetImplementedReleases() error {
 }
 
 // restoreFromStartTag restores Go source files that existed on main at the
-// given start tag but are missing after the merge. This preserves code from
-// earlier generations that would otherwise be lost during the reset+merge
-// cycle. See prd002-generation-lifecycle R5.8.
+// given start tag but are missing after the merge.
 func (o *Orchestrator) restoreFromStartTag(startTag string) error {
 	startFiles, err := gitLsTreeFiles(startTag, ".")
 	if err != nil {
@@ -585,15 +831,12 @@ func (o *Orchestrator) restoreFromStartTag(startTag string) error {
 
 	var restored []string
 	for _, path := range startFiles {
-		// Only restore Go source files outside magefiles/.
 		if !strings.HasSuffix(path, ".go") {
 			continue
 		}
 		if strings.HasPrefix(path, o.cfg.Project.MagefilesDir+"/") {
 			continue
 		}
-
-		// Skip files that already exist on disk.
 		if _, err := os.Stat(path); err == nil {
 			continue
 		}
@@ -633,27 +876,13 @@ func (o *Orchestrator) restoreFromStartTag(startTag string) error {
 
 // listGenerationBranches returns all generation-* branch names.
 func (o *Orchestrator) listGenerationBranches() []string {
-	return gitListBranches(o.cfg.Generation.Prefix + "*", ".")
-}
-
-// tagSuffixes lists the lifecycle tag suffixes in order.
-var tagSuffixes = []string{"-start", "-finished", "-merged", "-abandoned"}
-
-// generationName strips the lifecycle suffix from a tag to recover
-// the generation name.
-func generationName(tag string) string {
-	for _, suffix := range tagSuffixes {
-		if cut, ok := strings.CutSuffix(tag, suffix); ok {
-			return cut
-		}
-	}
-	return tag
+	return gitListBranches(o.cfg.Generation.Prefix+"*", ".")
 }
 
 // cleanupUnmergedTags renames tags for generations that were never
 // merged into a single -abandoned tag.
 func (o *Orchestrator) cleanupUnmergedTags() {
-	tags := gitListTags(o.cfg.Generation.Prefix + "*", ".")
+	tags := gitListTags(o.cfg.Generation.Prefix+"*", ".")
 	if len(tags) == 0 {
 		return
 	}
@@ -706,55 +935,10 @@ func (o *Orchestrator) resolveBranch(explicit string) (string, error) {
 	}
 }
 
-// saveAndSwitchBranch commits or stashes uncommitted changes on the
-// current branch, then checks out the target branch. It tries a WIP
-// commit first; if that fails and the tree is still dirty, it stashes
-// changes so the checkout can succeed.
-func saveAndSwitchBranch(target string) error {
-	current, err := gitCurrentBranch(".")
-	if err != nil {
-		return err
-	}
-	if current == target {
-		return nil
-	}
-
-	if err := gitStageAll("."); err != nil {
-		return fmt.Errorf("staging changes: %w", err)
-	}
-
-	msg := fmt.Sprintf("WIP: save state before switching to %s", target)
-	if err := gitCommit(msg, "."); err != nil {
-		// Commit failed (e.g. nothing to commit). Unstage and fall
-		// back to stash if the tree is still dirty.
-		_ = gitUnstageAll(".") // best-effort; unstage before stash fallback
-		if gitHasChanges(".") {
-			logf("saveAndSwitchBranch: commit failed, stashing dirty tree")
-			_ = gitStash(msg, ".") // best-effort; switching branch is the priority
-		}
-	}
-
-	logf("saveAndSwitchBranch: %s -> %s", current, target)
-	return gitCheckout(target, ".")
-}
-
-// ensureOnBranch switches to the given branch if not already on it.
-func ensureOnBranch(branch string) error {
-	current, err := gitCurrentBranch(".")
-	if err != nil {
-		return err
-	}
-	if current == branch {
-		return nil
-	}
-	logf("ensureOnBranch: switching from %s to %s", current, branch)
-	return gitCheckout(branch, ".")
-}
-
 // GeneratorList shows active branches and past generations.
 func (o *Orchestrator) GeneratorList() error {
 	branches := o.listGenerationBranches()
-	tags := gitListTags(o.cfg.Generation.Prefix + "*", ".")
+	tags := gitListTags(o.cfg.Generation.Prefix+"*", ".")
 	current, _ := gitCurrentBranch(".")
 
 	nameSet := make(map[string]bool)
@@ -814,7 +998,6 @@ func (o *Orchestrator) GeneratorList() error {
 }
 
 // GeneratorSwitch commits current work and checks out another generation branch.
-// Uses Config.GenerationBranch as the target.
 func (o *Orchestrator) GeneratorSwitch() error {
 	target := o.cfg.Generation.Branch
 	baseBranch := o.cfg.Cobbler.BaseBranch
@@ -872,8 +1055,6 @@ func (o *Orchestrator) GeneratorReset() error {
 				logf("generator:reset: close issues warning for %s: %v", gb, err)
 			}
 		}
-		// Close issues created on the base branch (handles repos where measure ran on the
-		// base branch, such as test repos that run cobbler:measure without a generation branch).
 		if err := closeGenerationIssues(ghRepo, baseBranch); err != nil {
 			logf("generator:reset: close issues warning for %s: %v", baseBranch, err)
 		}
@@ -940,7 +1121,6 @@ func (o *Orchestrator) resetGoSources(version string) error {
 
 // cleanGoSources removes all Go files, empty source directories, and the
 // binary directory without re-seeding files or reinitializing the module.
-// Used for the specs-only reset after v1 tags are created.
 func (o *Orchestrator) cleanGoSources() {
 	o.deleteGoFiles(".")
 	for _, dir := range o.cfg.Project.GoSourceDirs {
@@ -1015,29 +1195,6 @@ func (o *Orchestrator) deleteGoFiles(root string) {
 	})
 }
 
-// removeEmptyDirs removes empty directories under the given root.
-func removeEmptyDirs(root string) {
-	if _, err := os.Stat(root); os.IsNotExist(err) {
-		return
-	}
-	var dirs []string
-	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return nil
-		}
-		if d.IsDir() {
-			dirs = append(dirs, path)
-		}
-		return nil
-	})
-	for i := len(dirs) - 1; i >= 0; i-- {
-		entries, err := os.ReadDir(dirs[i])
-		if err == nil && len(entries) == 0 {
-			_ = os.Remove(dirs[i]) // best-effort empty dir cleanup
-		}
-	}
-}
-
 // cleanupDirs removes all directories listed in Config.CleanupDirs.
 func (o *Orchestrator) cleanupDirs() {
 	for _, dir := range o.cfg.Generation.CleanupDirs {
@@ -1047,7 +1204,6 @@ func (o *Orchestrator) cleanupDirs() {
 }
 
 // GeneratorInit writes a default configuration.yaml if one does not exist.
-// Exposed as mage generator:init.
 func GeneratorInit() error {
 	logf("generator:init: writing %s", DefaultConfigFile)
 	if err := WriteDefaultConfig(DefaultConfigFile); err != nil {
@@ -1068,36 +1224,4 @@ func (o *Orchestrator) FullReset() error {
 		return err
 	}
 	return o.GeneratorReset()
-}
-
-// appendToGitignore adds entry to the .gitignore file in dir if not already
-// present. Creates the file if it does not exist. Used by GeneratorStart to
-// ensure build artifacts (bin/) are not committed to the generation branch
-// regardless of where they are produced (GH-469).
-func appendToGitignore(dir, entry string) error {
-	path := filepath.Join(dir, ".gitignore")
-
-	data, err := os.ReadFile(path)
-	if err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("reading .gitignore: %w", err)
-	}
-
-	for _, line := range strings.Split(string(data), "\n") {
-		if strings.TrimSpace(line) == entry {
-			return nil // already present
-		}
-	}
-
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-	if err != nil {
-		return fmt.Errorf("opening .gitignore: %w", err)
-	}
-	defer f.Close()
-
-	prefix := ""
-	if len(data) > 0 && data[len(data)-1] != '\n' {
-		prefix = "\n"
-	}
-	_, err = fmt.Fprintf(f, "%s%s\n", prefix, entry)
-	return err
 }

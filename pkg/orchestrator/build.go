@@ -82,11 +82,11 @@ func (o *Orchestrator) DumpStitchPrompt() error {
 		return fmt.Errorf("getting working directory: %w", err)
 	}
 	prompt, err := o.buildStitchPrompt(stitchTask{
-		worktreeDir: cwd,
-		id:          "EXAMPLE-001",
-		title:       "Example task",
-		description: "Placeholder task description for prompt preview.",
-		issueType:   "task",
+		WorktreeDir: cwd,
+		ID:          "EXAMPLE-001",
+		Title:       "Example task",
+		Description: "Placeholder task description for prompt preview.",
+		IssueType:   "task",
 	})
 	if err != nil {
 		return fmt.Errorf("building stitch prompt: %w", err)

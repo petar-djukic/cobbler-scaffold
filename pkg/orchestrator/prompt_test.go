@@ -276,11 +276,11 @@ func TestMeasurePromptSourceCodeOverProseConstraint(t *testing.T) {
 func TestStitchPromptIsValidYAML(t *testing.T) {
 	o := New(Config{})
 	task := stitchTask{
-		id:          "test-001",
-		title:       "Test task",
-		issueType:   "task",
-		description: "A test description.",
-		worktreeDir: "/tmp",
+		ID:          "test-001",
+		Title:       "Test task",
+		IssueType:   "task",
+		Description: "A test description.",
+		WorktreeDir: "/tmp",
 	}
 
 	prompt, err := o.buildStitchPrompt(task)
@@ -297,11 +297,11 @@ func TestStitchPromptIsValidYAML(t *testing.T) {
 func TestStitchPromptIncludesExecutionConstitution(t *testing.T) {
 	o := New(Config{})
 	task := stitchTask{
-		id:          "test-001",
-		title:       "Test task",
-		issueType:   "task",
-		description: "A test description.",
-		worktreeDir: "/tmp",
+		ID:          "test-001",
+		Title:       "Test task",
+		IssueType:   "task",
+		Description: "A test description.",
+		WorktreeDir: "/tmp",
 	}
 
 	prompt, err := o.buildStitchPrompt(task)
@@ -320,11 +320,11 @@ func TestStitchPromptIncludesExecutionConstitution(t *testing.T) {
 func TestStitchPromptIncludesTaskContext(t *testing.T) {
 	o := New(Config{})
 	task := stitchTask{
-		id:          "task-123",
-		title:       "Implement feature X",
-		issueType:   "task",
-		description: "Detailed requirements here.",
-		worktreeDir: "/tmp",
+		ID:          "task-123",
+		Title:       "Implement feature X",
+		IssueType:   "task",
+		Description: "Detailed requirements here.",
+		WorktreeDir: "/tmp",
 	}
 
 	prompt, err := o.buildStitchPrompt(task)
@@ -346,11 +346,11 @@ func TestStitchPromptIncludesTaskContext(t *testing.T) {
 func TestStitchPromptIncludesGoStyleConstitution(t *testing.T) {
 	o := New(Config{})
 	task := stitchTask{
-		id:          "test-001",
-		title:       "Test task",
-		issueType:   "task",
-		description: "A test description.",
-		worktreeDir: "/tmp",
+		ID:          "test-001",
+		Title:       "Test task",
+		IssueType:   "task",
+		Description: "A test description.",
+		WorktreeDir: "/tmp",
 	}
 
 	prompt, err := o.buildStitchPrompt(task)
@@ -490,9 +490,9 @@ shared_protocols:
 
 	o := New(Config{})
 	task := stitchTask{
-		id:        "test-ood",
-		title:     "Implement ls",
-		issueType: "code",
+		ID:        "test-ood",
+		Title:     "Implement ls",
+		IssueType: "code",
 	}
 	out, err := o.buildStitchPrompt(task)
 	if err != nil {
@@ -522,7 +522,7 @@ package_contract:
 `), 0o644)
 
 	o := New(Config{})
-	task := stitchTask{id: "t1", title: "impl", issueType: "code"}
+	task := stitchTask{ID: "t1", Title: "impl", IssueType: "code"}
 	out, err := o.buildStitchPrompt(task)
 	if err != nil {
 		t.Fatalf("buildStitchPrompt: %v", err)

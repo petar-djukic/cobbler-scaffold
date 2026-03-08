@@ -8,19 +8,12 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"sort"
 	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
 )
-
-// errTaskReset is returned by doOneTask when a task fails but the stitch
-// loop should continue to the next task (e.g., Claude failure, worktree
-// commit failure, merge failure). The task has been reset to open.
-var errTaskReset = errors.New("task reset to open")
 
 //go:embed prompts/stitch.yaml
 var defaultStitchPrompt string
@@ -39,9 +32,6 @@ func (o *Orchestrator) Stitch() error {
 }
 
 // RunStitch runs the stitch workflow using Config settings.
-// It processes up to MaxStitchIssuesPerCycle tasks and returns the count
-// of tasks completed. The caller (RunCycles) uses this to track the
-// total across all cycles against MaxStitchIssues.
 func (o *Orchestrator) RunStitch() (int, error) {
 	return o.RunStitchN(o.cfg.Cobbler.MaxStitchIssuesPerCycle)
 }
@@ -121,8 +111,6 @@ func (o *Orchestrator) RunStitchN(limit int) (int, error) {
 
 	totalTasks := 0
 	// failedTaskIDs tracks tasks that returned errTaskReset in this cycle.
-	// A task whose in-progress label is removed is re-eligible immediately,
-	// so without this set the stitch loop retries the same task indefinitely.
 	failedTaskIDs := map[string]struct{}{}
 	for {
 		if limit > 0 && totalTasks >= limit {
@@ -137,55 +125,30 @@ func (o *Orchestrator) RunStitchN(limit int) (int, error) {
 			break
 		}
 
-		// If this task already failed in the current cycle, stop. It was
-		// reset to open and will be retried in the next measure+stitch cycle.
-		if _, alreadyFailed := failedTaskIDs[task.id]; alreadyFailed {
-			logf("task %s already failed this cycle, stopping stitch", task.id)
+		// If this task already failed in the current cycle, stop.
+		if _, alreadyFailed := failedTaskIDs[task.ID]; alreadyFailed {
+			logf("task %s already failed this cycle, stopping stitch", task.ID)
 			break
 		}
 
 		taskStart := time.Now()
-		logf("executing task %d: id=%s title=%q", totalTasks+1, task.id, task.title)
+		logf("executing task %d: id=%s title=%q", totalTasks+1, task.ID, task.Title)
 		if err := o.doOneTask(task, baseBranch, repoRoot); err != nil {
 			if errors.Is(err, errTaskReset) {
-				logf("task %s was reset after %s, continuing", task.id, time.Since(taskStart).Round(time.Second))
-				failedTaskIDs[task.id] = struct{}{}
+				logf("task %s was reset after %s, continuing", task.ID, time.Since(taskStart).Round(time.Second))
+				failedTaskIDs[task.ID] = struct{}{}
 				continue
 			}
-			logf("task %s failed after %s: %v", task.id, time.Since(taskStart).Round(time.Second), err)
-			return totalTasks, fmt.Errorf("executing task %s: %w", task.id, err)
+			logf("task %s failed after %s: %v", task.ID, time.Since(taskStart).Round(time.Second), err)
+			return totalTasks, fmt.Errorf("executing task %s: %w", task.ID, err)
 		}
-		logf("task %s completed in %s", task.id, time.Since(taskStart).Round(time.Second))
+		logf("task %s completed in %s", task.ID, time.Since(taskStart).Round(time.Second))
 
 		totalTasks++
 	}
 
 	logf("completed %d task(s) in %s", totalTasks, time.Since(stitchStart).Round(time.Second))
 	return totalTasks, nil
-}
-
-// taskBranchName returns the git branch name for a stitch task.
-// Uses "task/<base>-<id>" instead of "<base>/task/<id>" to avoid
-// ref conflicts when the base branch is "main".
-func taskBranchName(baseBranch, issueID string) string {
-	return "task/" + baseBranch + "-" + issueID
-}
-
-// taskBranchPattern returns the glob pattern for listing task branches.
-func taskBranchPattern(baseBranch string) string {
-	return "task/" + baseBranch + "-*"
-}
-
-type stitchTask struct {
-	id          string // cobbler_index as string — used for branch/worktree naming
-	title       string
-	description string
-	issueType   string
-	branchName  string
-	worktreeDir string
-	ghNumber    int    // GitHub issue number — used for closing/labelling
-	generation  string // generation label value
-	repo        string // GitHub owner/repo
 }
 
 // recoverStaleTasks cleans up task branches and orphaned in_progress issues
@@ -211,234 +174,14 @@ func (o *Orchestrator) recoverStaleTasks(baseBranch, worktreeBase, repo, generat
 	return nil
 }
 
-// recoverStaleBranches removes leftover task branches and worktrees,
-// removing the in-progress label from their issues. Returns true if any were recovered.
-func recoverStaleBranches(baseBranch, worktreeBase, repo string) bool {
-	branches := gitListBranches(taskBranchPattern(baseBranch), ".")
-	if len(branches) == 0 {
-		logf("recoverStaleBranches: no stale branches found")
-		return false
-	}
-
-	logf("recoverStaleBranches: found %d stale branch(es): %v", len(branches), branches)
-	for _, branch := range branches {
-		logf("recoverStaleBranches: recovering %s", branch)
-
-		issueID := strings.TrimPrefix(branch, "task/"+baseBranch+"-")
-		worktreeDir := filepath.Join(worktreeBase, issueID)
-
-		if _, err := os.Stat(worktreeDir); err == nil {
-			logf("recoverStaleBranches: removing worktree %s", worktreeDir)
-			if err := gitWorktreeRemove(worktreeDir, "."); err != nil {
-				logf("recoverStaleBranches: worktree remove warning: %v", err)
-			}
-		} else {
-			logf("recoverStaleBranches: no worktree at %s", worktreeDir)
-		}
-
-		logf("recoverStaleBranches: deleting branch %s", branch)
-		if err := gitForceDeleteBranch(branch, "."); err != nil {
-			logf("recoverStaleBranches: branch delete warning: %v", err)
-		}
-
-		if issueID != "" {
-			var num int
-			if _, err := fmt.Sscanf(issueID, "%d", &num); err == nil && num > 0 {
-				logf("recoverStaleBranches: removing in-progress label from issue #%d", num)
-				if err := removeInProgressLabel(repo, num); err != nil {
-					logf("recoverStaleBranches: label removal warning: %v", err)
-				}
-			}
-		}
-	}
-	return true
-}
-
-// resetOrphanedIssues finds in_progress GitHub issues with no corresponding
-// task branch and removes their in-progress label. Returns true if any were reset.
-func resetOrphanedIssues(baseBranch, repo, generation string) bool {
-	issues, err := listOpenCobblerIssues(repo, generation)
-	if err != nil {
-		logf("resetOrphanedIssues: list issues failed: %v", err)
-		return false
-	}
-
-	recovered := false
-	for _, iss := range issues {
-		if !hasLabel(iss, cobblerLabelInProgress) {
-			continue
-		}
-		id := fmt.Sprintf("%d", iss.Number)
-		taskBranch := taskBranchName(baseBranch, id)
-		if !gitBranchExists(taskBranch, ".") {
-			recovered = true
-			logf("resetOrphanedIssues: orphaned issue #%d (no branch %s), removing in-progress label", iss.Number, taskBranch)
-			if err := removeInProgressLabel(repo, iss.Number); err != nil {
-				logf("resetOrphanedIssues: label removal warning for #%d: %v", iss.Number, err)
-			}
-		} else {
-			logf("resetOrphanedIssues: issue #%d has branch %s, skipping", iss.Number, taskBranch)
-		}
-	}
-	return recovered
-}
-
-func pickTask(baseBranch, worktreeBase, repo, generation string) (stitchTask, error) {
-	logf("pickTask: calling pickReadyIssue repo=%s generation=%s", repo, generation)
-	iss, err := pickReadyIssue(repo, generation)
-	if err != nil {
-		logf("pickTask: no tasks available: %v", err)
-		return stitchTask{}, fmt.Errorf("no tasks available")
-	}
-
-	id := fmt.Sprintf("%d", iss.Number)
-	task := stitchTask{
-		id:          id,
-		title:       iss.Title,
-		description: iss.Description,
-		issueType:   "task",
-		branchName:  taskBranchName(baseBranch, id),
-		worktreeDir: filepath.Join(worktreeBase, id),
-		ghNumber:    iss.Number,
-		generation:  generation,
-		repo:        repo,
-	}
-
-	// Validate the issue description as YAML with required fields.
-	if err := validateIssueDescription(task.description); err != nil {
-		logf("pickTask: description validation warning: %v", err)
-	}
-
-	logf("pickTask: picked #%d id=%s branch=%s worktree=%s", iss.Number, task.id, task.branchName, task.worktreeDir)
-	logf("pickTask: title=%q", task.title)
-	logf("pickTask: descriptionLen=%d", len(task.description))
-	return task, nil
-}
-
-// parseRequiredReading extracts the required_reading list from a YAML task
-// description. Handles both the canonical string format ("- path (reason)")
-// and the map format ("- path: foo.go") that Claude sometimes emits.
-// Returns nil if the field is absent or unparseable.
-func parseRequiredReading(description string) []string {
-	if description == "" {
-		return nil
-	}
-
-	// Try []string first (canonical format: "- path/to/file.go (reason)").
-	var stringParsed struct {
-		RequiredReading []string `yaml:"required_reading"`
-	}
-	if err := yaml.Unmarshal([]byte(description), &stringParsed); err == nil {
-		return stringParsed.RequiredReading
-	}
-
-	// Fall back to []map format when Claude emits structured entries
-	// like {path: "foo.go", reason: "..."}.
-	var mapParsed struct {
-		RequiredReading []map[string]string `yaml:"required_reading"`
-	}
-	if err := yaml.Unmarshal([]byte(description), &mapParsed); err != nil {
-		logf("parseRequiredReading: YAML parse error: %v", err)
-		return nil
-	}
-	var result []string
-	for _, entry := range mapParsed.RequiredReading {
-		if p := entry["path"]; p != "" {
-			result = append(result, p)
-		}
-	}
-	return result
-}
-
-// scopeSourceDirs narrows GoSourceDirs based on the task description's files
-// field (GH-1005). For each configured dir, if the task's files reference a
-// sub-directory two levels deep (e.g. "cmd/cat/main.go" under "cmd/"), only
-// that sub-directory is included instead of the whole tree. Directories where
-// all task files sit directly inside (e.g. "pkg/orchestrator/foo.go" under
-// "pkg/") are kept as-is. Returns nil when no scoping is possible.
-func scopeSourceDirs(configDirs []string, description string) []string {
-	if description == "" || len(configDirs) == 0 {
-		return nil
-	}
-	var parsed struct {
-		Files []string `yaml:"files"`
-	}
-	if err := yaml.Unmarshal([]byte(description), &parsed); err != nil || len(parsed.Files) == 0 {
-		return nil
-	}
-
-	// Extract two-level prefixes from task files: "cmd/cat/main.go" → "cmd/cat".
-	subDirs := make(map[string]bool)
-	for _, f := range parsed.Files {
-		f = strings.TrimPrefix(f, "./")
-		parts := strings.SplitN(f, "/", 3)
-		if len(parts) == 3 {
-			subDirs[parts[0]+"/"+parts[1]] = true
-		}
-	}
-
-	changed := false
-	scoped := make([]string, 0, len(configDirs))
-	for _, dir := range configDirs {
-		clean := strings.TrimRight(strings.TrimPrefix(dir, "./"), "/")
-		// Collect sub-directories of this config dir referenced by the task.
-		var matches []string
-		for sd := range subDirs {
-			if strings.HasPrefix(sd, clean+"/") {
-				matches = append(matches, sd)
-			}
-		}
-		if len(matches) > 0 {
-			sort.Strings(matches)
-			scoped = append(scoped, matches...)
-			changed = true
-		} else {
-			scoped = append(scoped, dir)
-		}
-	}
-
-	if !changed {
-		return nil
-	}
-	return scoped
-}
-
-// validateIssueDescription checks that a description parses as valid YAML
-// and contains the required top-level keys defined by the issue-format
-// constitution. Returns an error describing what is missing; callers
-// should log a warning but not block on validation failures.
-func validateIssueDescription(desc string) error {
-	if desc == "" {
-		return fmt.Errorf("empty description")
-	}
-
-	var parsed map[string]any
-	if err := yaml.Unmarshal([]byte(desc), &parsed); err != nil {
-		return fmt.Errorf("not valid YAML: %w", err)
-	}
-
-	required := []string{"deliverable_type", "required_reading", "files", "requirements", "acceptance_criteria"}
-	var missing []string
-	for _, key := range required {
-		if _, ok := parsed[key]; !ok {
-			missing = append(missing, key)
-		}
-	}
-	if len(missing) > 0 {
-		return fmt.Errorf("missing required fields: %s", strings.Join(missing, ", "))
-	}
-	return nil
-}
-
 func (o *Orchestrator) doOneTask(task stitchTask, baseBranch, repoRoot string) error {
 	taskStart := time.Now()
-	logf("doOneTask: starting task %s (%s)", task.id, task.title)
+	logf("doOneTask: starting task %s (%s)", task.ID, task.Title)
 
-	// The cobbler-in-progress label was added by pickReadyIssue; no separate claim step is needed.
-	logf("doOneTask: task #%d claimed via pickReadyIssue label", task.ghNumber)
+	logf("doOneTask: task #%d claimed via pickReadyIssue label", task.GhNumber)
 
 	// Create worktree.
-	logf("doOneTask: creating worktree for %s", task.id)
+	logf("doOneTask: creating worktree for %s", task.ID)
 	wtStart := time.Now()
 	if err := createWorktree(task); err != nil {
 		logf("doOneTask: createWorktree failed after %s: %v", time.Since(wtStart).Round(time.Second), err)
@@ -459,26 +202,26 @@ func (o *Orchestrator) doOneTask(task stitchTask, baseBranch, repoRoot string) e
 	logf("doOneTask: prompt built, length=%d bytes", len(prompt))
 
 	// Post "started" comment so the issue reflects pickup immediately.
-	commentCobblerIssue(task.repo, task.ghNumber, fmt.Sprintf(
-		"Stitch started. Branch: `%s`, prompt: %d bytes.", task.branchName, len(prompt)))
+	commentCobblerIssue(task.Repo, task.GhNumber, fmt.Sprintf(
+		"Stitch started. Branch: `%s`, prompt: %d bytes.", task.BranchName, len(prompt)))
 
-	// Save prompt BEFORE calling Claude so it's on disk even if Claude times out.
+	// Save prompt BEFORE calling Claude.
 	historyTS := time.Now().Format("2006-01-02-15-04-05")
 	o.saveHistoryPrompt(historyTS, "stitch", prompt)
 
-	logf("doOneTask: invoking Claude for task %s", task.id)
+	logf("doOneTask: invoking Claude for task %s", task.ID)
 	claudeStart := time.Now()
-	tokens, claudeErr := o.runClaude(prompt, task.worktreeDir, o.cfg.Silence())
+	tokens, claudeErr := o.runClaude(prompt, task.WorktreeDir, o.cfg.Silence())
 
-	// Save Claude log immediately — even on failure, partial output is valuable.
+	// Save Claude log immediately.
 	o.saveHistoryLog(historyTS, "stitch", tokens.RawOutput)
 
 	if claudeErr != nil {
-		logf("doOneTask: Claude failed for %s after %s: %v", task.id, time.Since(claudeStart).Round(time.Second), claudeErr)
+		logf("doOneTask: Claude failed for %s after %s: %v", task.ID, time.Since(claudeStart).Round(time.Second), claudeErr)
 		o.saveHistoryStats(historyTS, "stitch", HistoryStats{
 			Caller:    "stitch",
-			TaskID:    task.id,
-			TaskTitle: task.title,
+			TaskID:    task.ID,
+			TaskTitle: task.Title,
 			Status:    "failed",
 			Error:     fmt.Sprintf("claude failure: %v", claudeErr),
 			StartedAt: claudeStart.UTC().Format(time.RFC3339),
@@ -491,16 +234,15 @@ func (o *Orchestrator) doOneTask(task stitchTask, baseBranch, repoRoot string) e
 		o.failTask(task, "Claude failure", taskStart)
 		return errTaskReset
 	}
-	logf("doOneTask: Claude completed for %s in %s", task.id, time.Since(claudeStart).Round(time.Second))
+	logf("doOneTask: Claude completed for %s in %s", task.ID, time.Since(claudeStart).Round(time.Second))
 
-	// Commit Claude's changes in the worktree. Claude does not run git;
-	// the orchestrator manages all git operations externally.
+	// Commit Claude's changes in the worktree.
 	if err := commitWorktreeChanges(task); err != nil {
-		logf("doOneTask: worktree commit failed for %s: %v", task.id, err)
+		logf("doOneTask: worktree commit failed for %s: %v", task.ID, err)
 		o.saveHistoryStats(historyTS, "stitch", HistoryStats{
 			Caller:    "stitch",
-			TaskID:    task.id,
-			TaskTitle: task.title,
+			TaskID:    task.ID,
+			TaskTitle: task.Title,
 			Status:    "failed",
 			Error:     fmt.Sprintf("worktree commit failure: %v", err),
 			StartedAt: claudeStart.UTC().Format(time.RFC3339),
@@ -514,15 +256,11 @@ func (o *Orchestrator) doOneTask(task stitchTask, baseBranch, repoRoot string) e
 		return errTaskReset
 	}
 
-	// Capture locAfter from the worktree before merging. The worktree starts
-	// from the current generation branch state and includes Claude's additions,
-	// so this gives the correct post-task LOC without waiting for the merge.
-	locAfter := o.captureLOCAt(task.worktreeDir)
+	// Capture locAfter from the worktree before merging.
+	locAfter := o.captureLOCAt(task.WorktreeDir)
 	logf("doOneTask: locAfter prod=%d test=%d", locAfter.Production, locAfter.Test)
 
 	// Append outcome trailers to the worktree commit before merging.
-	// Trailers must be on the pre-merge commit so they travel into the
-	// generation branch history.
 	trailerRec := InvocationRecord{
 		Caller:    "stitch",
 		StartedAt: claudeStart.UTC().Format(time.RFC3339),
@@ -538,8 +276,8 @@ func (o *Orchestrator) doOneTask(task stitchTask, baseBranch, repoRoot string) e
 		LOCAfter:  locAfter,
 		NumTurns:  tokens.NumTurns,
 	}
-	if err := appendOutcomeTrailers(task.worktreeDir, trailerRec); err != nil {
-		logf("doOneTask: outcome trailer warning for %s: %v", task.id, err)
+	if err := appendOutcomeTrailers(task.WorktreeDir, trailerRec); err != nil {
+		logf("doOneTask: outcome trailer warning for %s: %v", task.ID, err)
 	}
 
 	// Capture pre-merge HEAD for diffstat.
@@ -549,14 +287,14 @@ func (o *Orchestrator) doOneTask(task stitchTask, baseBranch, repoRoot string) e
 	}
 
 	// Merge branch back.
-	logf("doOneTask: merging %s into %s", task.branchName, baseBranch)
+	logf("doOneTask: merging %s into %s", task.BranchName, baseBranch)
 	mergeStart := time.Now()
-	if err := mergeBranch(task.branchName, baseBranch, repoRoot); err != nil {
-		logf("doOneTask: merge failed for %s after %s: %v", task.id, time.Since(mergeStart).Round(time.Second), err)
+	if err := mergeBranch(task.BranchName, baseBranch, repoRoot); err != nil {
+		logf("doOneTask: merge failed for %s after %s: %v", task.ID, time.Since(mergeStart).Round(time.Second), err)
 		o.saveHistoryStats(historyTS, "stitch", HistoryStats{
 			Caller:    "stitch",
-			TaskID:    task.id,
-			TaskTitle: task.title,
+			TaskID:    task.ID,
+			TaskTitle: task.Title,
 			Status:    "failed",
 			Error:     fmt.Sprintf("merge failure: %v", err),
 			StartedAt: claudeStart.UTC().Format(time.RFC3339),
@@ -584,15 +322,15 @@ func (o *Orchestrator) doOneTask(task stitchTask, baseBranch, repoRoot string) e
 	logf("doOneTask: fileChanges=%d entries", len(fileChanges))
 
 	// Cleanup worktree.
-	logf("doOneTask: cleaning up worktree for %s", task.id)
+	logf("doOneTask: cleaning up worktree for %s", task.ID)
 	cleanupWorktree(task)
 
-	// Save stitch stats (log was saved immediately after runClaude).
+	// Save stitch stats.
 	taskDuration := time.Since(taskStart)
 	o.saveHistoryStats(historyTS, "stitch", HistoryStats{
 		Caller:        "stitch",
-		TaskID:        task.id,
-		TaskTitle:     task.title,
+		TaskID:        task.ID,
+		TaskTitle:     task.Title,
 		Status:        "success",
 		StartedAt:     claudeStart.UTC().Format(time.RFC3339),
 		Duration:      taskDuration.Round(time.Second).String(),
@@ -609,10 +347,10 @@ func (o *Orchestrator) doOneTask(task stitchTask, baseBranch, repoRoot string) e
 
 	// Save stitch report with per-file diffstat.
 	o.saveHistoryReport(historyTS, StitchReport{
-		TaskID:    task.id,
-		TaskTitle: task.title,
+		TaskID:    task.ID,
+		TaskTitle: task.Title,
 		Status:    "success",
-		Branch:    task.branchName,
+		Branch:    task.BranchName,
 		Diff:      historyDiff{Files: diff.FilesChanged, Insertions: diff.Insertions, Deletions: diff.Deletions},
 		Files:     fileChanges,
 		LOCBefore: locBefore,
@@ -630,41 +368,10 @@ func (o *Orchestrator) doOneTask(task stitchTask, baseBranch, repoRoot string) e
 		Diff:      diffRecord{Files: diff.FilesChanged, Insertions: diff.Insertions, Deletions: diff.Deletions},
 		NumTurns:  tokens.NumTurns,
 	}
-	logf("doOneTask: closing task %s", task.id)
+	logf("doOneTask: closing task %s", task.ID)
 	o.closeStitchTask(task, rec)
 
-	logf("doOneTask: task %s finished in %s", task.id, time.Since(taskStart).Round(time.Second))
-	return nil
-}
-
-func createWorktree(task stitchTask) error {
-	logf("createWorktree: dir=%s branch=%s", task.worktreeDir, task.branchName)
-
-	if err := os.MkdirAll(filepath.Dir(task.worktreeDir), 0o755); err != nil {
-		return fmt.Errorf("creating worktree parent directory: %w", err)
-	}
-
-	if !gitBranchExists(task.branchName, ".") {
-		logf("createWorktree: branch %s does not exist, creating", task.branchName)
-		if err := gitCreateBranch(task.branchName, "."); err != nil {
-			logf("createWorktree: gitCreateBranch failed: %v", err)
-			return fmt.Errorf("creating branch %s: %w", task.branchName, err)
-		}
-		logf("createWorktree: branch %s created", task.branchName)
-	} else {
-		logf("createWorktree: branch %s already exists", task.branchName)
-	}
-
-	logf("createWorktree: adding worktree")
-	cmd := gitWorktreeAdd(task.worktreeDir, task.branchName, ".")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		logf("createWorktree: worktree add failed: %v", err)
-		return fmt.Errorf("adding worktree: %w", err)
-	}
-
-	logf("createWorktree: worktree ready at %s on branch %s", task.worktreeDir, task.branchName)
+	logf("doOneTask: task %s finished in %s", task.ID, time.Since(taskStart).Round(time.Second))
 	return nil
 }
 
@@ -677,8 +384,7 @@ func (o *Orchestrator) buildStitchPrompt(task stitchTask) (string, error) {
 	executionConst := orDefault(o.cfg.Cobbler.ExecutionConstitution, executionConstitution)
 	goStyleConst := orDefault(o.cfg.Cobbler.GoStyleConstitution, goStyleConstitution)
 
-	// Load per-phase context file (prd003 R9.9). Resolved from the
-	// original working directory before chdir to worktree.
+	// Load per-phase context file (prd003 R9.9).
 	stitchCtxPath := filepath.Join(o.cfg.Cobbler.Dir, "stitch_context.yaml")
 	phaseCtx, phaseErr := loadPhaseContext(stitchCtxPath)
 	if phaseErr != nil {
@@ -690,21 +396,19 @@ func (o *Orchestrator) buildStitchPrompt(task stitchTask) (string, error) {
 		logf("buildStitchPrompt: no phase context file, using config defaults")
 	}
 
-	// Build project context from the worktree directory so source code
-	// reflects the latest state after prior stitches have been merged.
-	// Scope GoSourceDirs to only directories relevant to this task (GH-1005).
+	// Build project context from the worktree directory.
 	var projectCtx *ProjectContext
-	if task.worktreeDir != "" {
+	if task.WorktreeDir != "" {
 		orig, err := os.Getwd()
 		if err != nil {
 			return "", fmt.Errorf("buildStitchPrompt: getwd: %w", err)
 		}
-		if err := os.Chdir(task.worktreeDir); err != nil {
+		if err := os.Chdir(task.WorktreeDir); err != nil {
 			logf("buildStitchPrompt: chdir to worktree error: %v", err)
 		} else {
 			defer os.Chdir(orig)
 			scopedProject := o.cfg.Project
-			if scoped := scopeSourceDirs(o.cfg.Project.GoSourceDirs, task.description); len(scoped) > 0 {
+			if scoped := scopeSourceDirs(o.cfg.Project.GoSourceDirs, task.Description); len(scoped) > 0 {
 				logf("buildStitchPrompt: scoped go_source_dirs %v -> %v", o.cfg.Project.GoSourceDirs, scoped)
 				scopedProject.GoSourceDirs = scoped
 			}
@@ -718,11 +422,9 @@ func (o *Orchestrator) buildStitchPrompt(task stitchTask) (string, error) {
 	}
 	logf("buildStitchPrompt: projectCtx=%v", projectCtx != nil)
 
-	// Selective stitch context (eng05 rec D): filter source files to only
-	// those listed in the task's required_reading. Documentation files are
-	// not filtered; only SourceCode is filtered.
+	// Selective stitch context: filter source files to required_reading.
 	if projectCtx != nil {
-		requiredReading := parseRequiredReading(task.description)
+		requiredReading := parseRequiredReading(task.Description)
 		var sourcePaths []string
 		for _, entry := range requiredReading {
 			clean := stripParenthetical(entry)
@@ -740,19 +442,16 @@ func (o *Orchestrator) buildStitchPrompt(task stitchTask) (string, error) {
 				len(projectCtx.SourceCode))
 		}
 
-		// Context budget enforcement: truncate non-required source files
-		// when the serialized context exceeds MaxContextBytes.
+		// Context budget enforcement.
 		applyContextBudget(projectCtx, o.cfg.Cobbler.MaxContextBytes, sourcePaths)
 	}
 
 	taskContext := fmt.Sprintf("Task ID: %s\nType: %s\nTitle: %s",
-		task.id, task.issueType, task.title)
+		task.ID, task.IssueType, task.Title)
 
-	repoFiles := gitLsFiles(task.worktreeDir)
+	repoFiles := gitLsFiles(task.WorktreeDir)
 
-	// Load OOD context: shared_protocols from ARCHITECTURE.yaml and
-	// package_contracts from any PRD that declares them. These give the
-	// agent structured API context for its dependencies.
+	// Load OOD context.
 	oodContracts, oodProtocols := loadOODPromptContext()
 	if len(oodProtocols) > 0 {
 		logf("buildStitchPrompt: injecting %d shared_protocols", len(oodProtocols))
@@ -770,7 +469,7 @@ func (o *Orchestrator) buildStitchPrompt(task stitchTask) (string, error) {
 		GoStyleConstitution:   parseYAMLNode(goStyleConst),
 		Task:                  tmpl.Task,
 		Constraints:           tmpl.Constraints,
-		Description:           task.description,
+		Description:           task.Description,
 		SharedProtocols:       oodProtocols,
 		PackageContracts:      oodContracts,
 	}
@@ -784,137 +483,8 @@ func (o *Orchestrator) buildStitchPrompt(task stitchTask) (string, error) {
 	return string(out), nil
 }
 
-func mergeBranch(branchName, baseBranch, repoRoot string) error {
-	logf("mergeBranch: %s into %s (repoRoot=%s)", branchName, baseBranch, repoRoot)
-
-	logf("mergeBranch: checking out %s", baseBranch)
-	if err := gitCheckout(baseBranch, "."); err != nil {
-		logf("mergeBranch: checkout failed: %v", err)
-		return fmt.Errorf("checking out %s: %w", baseBranch, err)
-	}
-	logf("mergeBranch: checked out %s", baseBranch)
-
-	logf("mergeBranch: merging %s", branchName)
-	cmd := gitMergeCmd(branchName, ".")
-	cmd.Dir = repoRoot
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		logf("mergeBranch: merge failed: %v", err)
-		return fmt.Errorf("merging %s: %w", branchName, err)
-	}
-
-	logf("mergeBranch: merge successful")
-	return nil
-}
-
-// cleanGoBinaries removes untracked executable files with no extension from
-// dir before staging. Go binaries produced by `go build ./cmd/<name>/` land
-// in the working directory as extensionless executables; this prevents them
-// from being committed to the generation branch (GH-456).
-// Errors are logged but never fatal — a missed binary is less harmful than
-// blocking the commit.
-func cleanGoBinaries(dir string) {
-	cmd := exec.Command(binGit, "ls-files", "--others", "--exclude-standard")
-	cmd.Dir = dir
-	out, err := cmd.Output()
-	if err != nil {
-		logf("cleanGoBinaries: git ls-files: %v", err)
-		return
-	}
-
-	removed := 0
-	for _, name := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		if name == "" || filepath.Ext(name) != "" {
-			continue // skip empty lines and files with extensions
-		}
-		path := filepath.Join(dir, name)
-		info, err := os.Stat(path)
-		if err != nil || info.IsDir() || info.Mode()&0o111 == 0 {
-			continue // skip missing, directories, and non-executables
-		}
-		if err := os.Remove(path); err != nil {
-			logf("cleanGoBinaries: remove %s: %v", name, err)
-		} else {
-			logf("cleanGoBinaries: removed binary %s", name)
-			removed++
-		}
-	}
-	logf("cleanGoBinaries: removed %d binary file(s)", removed)
-}
-
-// commitWorktreeChanges stages and commits all changes Claude made in the
-// worktree. Claude does not run git commands; the orchestrator handles git
-// externally. Returns nil if there are no changes to commit.
-func commitWorktreeChanges(task stitchTask) error {
-	logf("commitWorktreeChanges: staging changes in %s", task.worktreeDir)
-
-	// Remove compiled Go binaries before staging so they are not committed.
-	cleanGoBinaries(task.worktreeDir)
-
-	addCmd := exec.Command(binGit, "add", "-A")
-	addCmd.Dir = task.worktreeDir
-	if out, err := addCmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("git add -A: %w\n%s", err, out)
-	}
-
-	// Check if there are staged changes to commit.
-	diffCmd := exec.Command(binGit, "diff", "--cached", "--quiet")
-	diffCmd.Dir = task.worktreeDir
-	if diffCmd.Run() == nil {
-		logf("commitWorktreeChanges: no changes to commit for %s", task.id)
-		return nil
-	}
-
-	msg := fmt.Sprintf("Task %s: %s", task.id, task.title)
-	logf("commitWorktreeChanges: committing %q", msg)
-	commitCmd := exec.Command(binGit, "commit", "--no-verify", "-m", msg)
-	commitCmd.Dir = task.worktreeDir
-	if out, err := commitCmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("git commit: %w\n%s", err, out)
-	}
-
-	logf("commitWorktreeChanges: committed in worktree for %s", task.id)
-	return nil
-}
-
-// resetTask removes the in-progress label from a failed task, cleans up its
-// worktree and branch. The reason string is included in log messages for traceability.
-func (o *Orchestrator) resetTask(task stitchTask, reason string) {
-	logf("resetTask: resetting #%d to ready (%s)", task.ghNumber, reason)
-	if err := removeInProgressLabel(task.repo, task.ghNumber); err != nil {
-		logf("resetTask: WARNING removeInProgressLabel failed for #%d: %v", task.ghNumber, err)
-	}
-	if !cleanupWorktree(task) {
-		logf("resetTask: skipping force branch delete for %s (worktree not removed)", task.branchName)
-		return
-	}
-	if err := gitForceDeleteBranch(task.branchName, "."); err != nil {
-		logf("resetTask: WARNING force branch delete failed for %s: %v", task.branchName, err)
-	}
-}
-
-// cleanupWorktree removes the worktree and its branch. Returns true if the
-// worktree was removed successfully, false if removal failed (branch is left
-// intact to avoid orphaning the worktree).
-func cleanupWorktree(task stitchTask) bool {
-	logf("cleanupWorktree: removing worktree %s", task.worktreeDir)
-	if err := gitWorktreeRemove(task.worktreeDir, "."); err != nil {
-		logf("cleanupWorktree: worktree remove failed, skipping branch delete: %v", err)
-		return false
-	}
-
-	logf("cleanupWorktree: deleting branch %s", task.branchName)
-	if err := gitDeleteBranch(task.branchName, "."); err != nil {
-		logf("cleanupWorktree: branch delete warning: %v", err)
-	}
-
-	logf("cleanupWorktree: done for task %s", task.id)
-	return true
-}
-
 func (o *Orchestrator) closeStitchTask(task stitchTask, rec InvocationRecord) {
-	logf("closeStitchTask: closing #%d %q", task.ghNumber, task.title)
+	logf("closeStitchTask: closing #%d %q", task.GhNumber, task.Title)
 	locDeltaProd := rec.LOCAfter.Production - rec.LOCBefore.Production
 	locDeltaTest := rec.LOCAfter.Test - rec.LOCBefore.Test
 	comment := fmt.Sprintf(
@@ -925,11 +495,27 @@ func (o *Orchestrator) closeStitchTask(task stitchTask, rec InvocationRecord) {
 		rec.NumTurns,
 		rec.Tokens.Input, rec.Tokens.Output,
 	)
-	commentCobblerIssue(task.repo, task.ghNumber, comment)
-	if err := closeCobblerIssue(task.repo, task.ghNumber, task.generation); err != nil {
-		logf("closeStitchTask: closeCobblerIssue warning for #%d: %v", task.ghNumber, err)
+	commentCobblerIssue(task.Repo, task.GhNumber, comment)
+	if err := closeCobblerIssue(task.Repo, task.GhNumber, task.Generation); err != nil {
+		logf("closeStitchTask: closeCobblerIssue warning for #%d: %v", task.GhNumber, err)
 	}
-	logf("closeStitchTask: #%d closed", task.ghNumber)
+	logf("closeStitchTask: #%d closed", task.GhNumber)
+}
+
+// resetTask removes the in-progress label from a failed task, cleans up its
+// worktree and branch.
+func (o *Orchestrator) resetTask(task stitchTask, reason string) {
+	logf("resetTask: resetting #%d to ready (%s)", task.GhNumber, reason)
+	if err := removeInProgressLabel(task.Repo, task.GhNumber); err != nil {
+		logf("resetTask: WARNING removeInProgressLabel failed for #%d: %v", task.GhNumber, err)
+	}
+	if !cleanupWorktree(task) {
+		logf("resetTask: skipping force branch delete for %s (worktree not removed)", task.BranchName)
+		return
+	}
+	if err := gitForceDeleteBranch(task.BranchName, "."); err != nil {
+		logf("resetTask: WARNING force branch delete failed for %s: %v", task.BranchName, err)
+	}
 }
 
 // failTask posts a failure comment on the task issue, then resets it.
@@ -939,6 +525,6 @@ func (o *Orchestrator) failTask(task stitchTask, reason string, startedAt time.T
 		"Stitch failed after %dm %ds. Error: %s.",
 		durationS/60, durationS%60, reason,
 	)
-	commentCobblerIssue(task.repo, task.ghNumber, comment)
+	commentCobblerIssue(task.Repo, task.GhNumber, comment)
 	o.resetTask(task, reason)
 }
