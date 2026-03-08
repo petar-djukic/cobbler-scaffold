@@ -4,13 +4,9 @@
 package orchestrator
 
 import (
-	"context"
 	_ "embed"
-	"fmt"
-	"os"
-	"os/exec"
-	"strings"
-	"time"
+
+	"github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/build"
 )
 
 //go:embed Dockerfile.claude
@@ -25,30 +21,10 @@ var embeddedDockerfile string
 //
 // Exposed as a mage target (e.g., mage buildImage).
 func (o *Orchestrator) BuildImage() error {
-	imageName := imageBaseName(o.cfg.Podman.Image)
-	if imageName == "" {
-		return fmt.Errorf("podman.image not set in configuration; cannot determine image name")
-	}
-
-	// Prefer version from the project's version file; fall back to git tags.
-	tag := readVersionConst(o.cfg.Project.VersionFile)
-	if tag == "" {
-		tag = latestVersionTag()
-	}
-	if tag == "" {
-		return fmt.Errorf("no version found; set version_file in configuration.yaml or tag the repository (e.g., v[REL].YYYYMMDD.N)")
-	}
-
-	versionedImage := imageName + ":" + tag
-	latestImage := imageName + ":latest"
-
-	logf("buildImage: building %s", versionedImage)
-	if err := buildFromEmbeddedDockerfile(versionedImage, latestImage); err != nil {
-		return fmt.Errorf("podman build: %w", err)
-	}
-
-	logf("buildImage: done — %s and %s", versionedImage, latestImage)
-	return nil
+	return build.BuildImage(build.DockerConfig{
+		Image:       o.cfg.Podman.Image,
+		VersionFile: o.cfg.Project.VersionFile,
+	}, embeddedDockerfile)
 }
 
 // PodmanClean removes all podman containers (running or stopped) that
@@ -60,131 +36,37 @@ func (o *Orchestrator) BuildImage() error {
 //
 // Exposed as a mage target (e.g., mage podman:clean).
 func (o *Orchestrator) PodmanClean() error {
-	image := o.cfg.Podman.Image
-	if image == "" {
-		return fmt.Errorf("podman.image not set in configuration")
-	}
-
-	// Resolve to image ID so we catch containers from any name alias.
-	imageID, err := podmanImageID(image)
-	if err != nil {
-		return fmt.Errorf("resolving image ID for %s: %w", image, err)
-	}
-	if imageID == "" {
-		logf("podmanClean: image %s not found locally, nothing to clean", image)
-		return nil
-	}
-
-	// List all containers (running + stopped) created from this image ID.
-	out, err := exec.Command(binPodman, "ps", "-a",
-		"--filter", "ancestor="+imageID,
-		"--format", "{{.ID}} {{.Status}}",
-	).Output()
-	if err != nil {
-		return fmt.Errorf("listing containers for %s (%s): %w", image, imageID, err)
-	}
-
-	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
-	if len(lines) == 0 || lines[0] == "" {
-		logf("podmanClean: no containers found for image %s (%s)", image, shortID(imageID))
-		return nil
-	}
-
-	var ids []string
-	for _, line := range lines {
-		if fields := strings.Fields(line); len(fields) > 0 && fields[0] != "" {
-			ids = append(ids, fields[0])
-		}
-	}
-
-	logf("podmanClean: removing %d container(s) for image %s (%s)", len(ids), image, shortID(imageID))
-	args := append([]string{"rm", "-f"}, ids...)
-	cmd := exec.Command(binPodman, args...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("removing containers: %w", err)
-	}
-
-	logf("podmanClean: done")
-	return nil
+	return build.PodmanClean(o.cfg.Podman.Image)
 }
 
 // ensureImage checks whether the configured PodmanImage exists locally.
 // If missing, it builds it from the embedded Dockerfile.
 func (o *Orchestrator) ensureImage() error {
-	if podmanImageExists(o.cfg.Podman.Image) {
-		return nil
-	}
-
-	logf("ensureImage: %s not found locally, building from embedded Dockerfile", o.cfg.Podman.Image)
-	if err := buildFromEmbeddedDockerfile(o.cfg.Podman.Image); err != nil {
-		return fmt.Errorf("auto-building %s: %w", o.cfg.Podman.Image, err)
-	}
-	logf("ensureImage: built %s", o.cfg.Podman.Image)
-	return nil
+	return build.EnsureImage(o.cfg.Podman.Image, embeddedDockerfile)
 }
 
 // buildFromEmbeddedDockerfile writes the embedded Dockerfile to a temp
 // file and runs podman build with the given image tags.
 func buildFromEmbeddedDockerfile(tags ...string) error {
-	tmp, err := os.CreateTemp("", "Dockerfile.claude-*")
-	if err != nil {
-		return fmt.Errorf("creating temp Dockerfile: %w", err)
-	}
-	defer func() {
-		if err := os.Remove(tmp.Name()); err != nil && !os.IsNotExist(err) {
-			logf("docker: warning: removing temp Dockerfile: %v", err)
-		}
-	}()
-
-	if _, err := tmp.WriteString(embeddedDockerfile); err != nil {
-		tmp.Close()
-		return fmt.Errorf("writing temp Dockerfile: %w", err)
-	}
-	tmp.Close()
-
-	return podmanBuild(tmp.Name(), tags...)
+	return build.BuildFromEmbeddedDockerfile(embeddedDockerfile, tags...)
 }
 
 // podmanImageExists returns true if the given image reference exists
-// in the local podman image store. A 15-second deadline prevents a
-// slow or unresponsive podman socket from blocking indefinitely.
+// in the local podman image store.
 func podmanImageExists(image string) bool {
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-	if err := exec.CommandContext(ctx, binPodman, "image", "exists", image).Run(); err != nil {
-		if ctx.Err() != nil {
-			logf("podmanImageExists: timed out querying podman for %s", image)
-		}
-		return false
-	}
-	return true
+	return build.PodmanImageExists(image)
 }
 
 // podmanImageID resolves an image name/tag to its full image ID.
 // Returns "" if the image does not exist locally.
 func podmanImageID(image string) (string, error) {
-	out, err := exec.Command(binPodman, "image", "inspect", image,
-		"--format", "{{.Id}}",
-	).Output()
-	if err != nil {
-		// image not found is not an error for our purposes
-		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 125 {
-			return "", nil
-		}
-		return "", err
-	}
-	return strings.TrimSpace(string(out)), nil
+	return build.PodmanImageID(image)
 }
 
 // shortID returns the first 12 characters of an image ID for display,
 // or the full string if it is shorter than 12 characters.
 func shortID(id string) string {
-	if len(id) > 12 {
-		return id[:12]
-	}
-	return id
+	return build.ShortID(id)
 }
 
 // imageBaseName extracts the image name without a tag from a full image
@@ -192,19 +74,11 @@ func shortID(id string) string {
 // "cobbler-scaffold". If no tag is present, the input is returned
 // as-is.
 func imageBaseName(image string) string {
-	if i := strings.LastIndex(image, ":"); i > 0 {
-		return image[:i]
-	}
-	return image
+	return build.ImageBaseName(image)
 }
 
 // latestVersionTag returns the most recent v* git tag, or "" if none exist.
 func latestVersionTag() string {
-	tags := gitListTags("v*", ".")
-	if len(tags) == 0 {
-		return ""
-	}
-	// gitListTags returns tags sorted by name; the last one is the highest
-	// version when using the v[REL].[DATE].[REVISION] convention.
-	return tags[len(tags)-1]
+	return build.LatestVersionTag()
 }
+
