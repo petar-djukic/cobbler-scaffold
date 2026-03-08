@@ -374,6 +374,7 @@ type RoadmapRelease struct {
 	Name        string           `yaml:"name"`
 	Status      string           `yaml:"status"`
 	Description string           `yaml:"description,omitempty"`
+	DependsOn   []string         `yaml:"depends_on,omitempty"`
 	UseCases    []RoadmapUseCase `yaml:"use_cases"`
 }
 
