@@ -610,11 +610,22 @@ func (o *Orchestrator) importIssuesImpl(yamlFile, repo, generation string, skipE
 
 	// Deduplicate: fetch existing issues for this generation and skip any
 	// proposed issue whose normalized title matches a closed one (GH-1026).
+	// Only dedup when the generation has open issues — indicates an active run.
+	// If all issues are closed, this is likely a fresh start on the same branch.
 	closedTitles := make(map[string]int) // normalized title → issue number
 	if existing, err := listAllCobblerIssues(repo, generation); err == nil {
+		hasOpen := false
 		for _, ex := range existing {
-			if ex.State == "closed" {
-				closedTitles[normalizeIssueTitle(ex.Title)] = ex.Number
+			if ex.State == "open" {
+				hasOpen = true
+				break
+			}
+		}
+		if hasOpen {
+			for _, ex := range existing {
+				if ex.State == "closed" {
+					closedTitles[normalizeIssueTitle(ex.Title)] = ex.Number
+				}
 			}
 		}
 	}
