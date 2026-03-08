@@ -5,14 +5,15 @@ package stats
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 	"text/tabwriter"
 
-	"os"
-
+	cl "github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/claude"
 	gh "github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/github"
 	"gopkg.in/yaml.v3"
 )
@@ -42,6 +43,38 @@ type GeneratorStatsDeps struct {
 	DetectGitHubRepo       func() (string, error)
 	ListAllIssues          func(repo, generation string) ([]gh.CobblerIssue, error)
 	FetchIssueComments     func(repo string, number int) ([]string, error)
+	HistoryDir             string // path to .cobbler/history for local stats files
+}
+
+// LoadHistoryStats reads all *-stats.yaml files from dir and returns the
+// parsed entries. Returns nil, nil when dir is empty or does not exist.
+func LoadHistoryStats(dir string) ([]cl.HistoryStats, error) {
+	if dir == "" {
+		return nil, nil
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("reading history dir %s: %w", dir, err)
+	}
+	var result []cl.HistoryStats
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), "-stats.yaml") {
+			continue
+		}
+		data, readErr := os.ReadFile(filepath.Join(dir, e.Name()))
+		if readErr != nil {
+			continue
+		}
+		var hs cl.HistoryStats
+		if parseErr := yaml.Unmarshal(data, &hs); parseErr != nil {
+			continue
+		}
+		result = append(result, hs)
+	}
+	return result, nil
 }
 
 // PrintGeneratorStats prints a status report for the current generation run.
@@ -72,9 +105,46 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 		return nil
 	}
 
+	// Load local history stats if available.
+	historyStats, _ := LoadHistoryStats(deps.HistoryDir)
+
+	// Build lookup maps from history data: task_id → aggregated stitch stats.
+	type stitchAgg struct {
+		CostUSD      float64
+		DurationS    int
+		NumTurns     int
+		InputTokens  int
+		OutputTokens int
+	}
+	stitchByTask := make(map[string]*stitchAgg)
+	var measureEntries []cl.HistoryStats
+	for _, hs := range historyStats {
+		switch hs.Caller {
+		case "stitch":
+			tid := hs.TaskID
+			if tid == "" {
+				continue
+			}
+			agg := stitchByTask[tid]
+			if agg == nil {
+				agg = &stitchAgg{}
+				stitchByTask[tid] = agg
+			}
+			agg.CostUSD += hs.CostUSD
+			if hs.DurationS > agg.DurationS {
+				agg.DurationS = hs.DurationS
+			}
+			agg.NumTurns += hs.NumTurns
+			agg.InputTokens += hs.Tokens.Input
+			agg.OutputTokens += hs.Tokens.Output
+		case "measure":
+			measureEntries = append(measureEntries, hs)
+		}
+	}
+
 	// Collect per-issue stats.
 	rows := make([]GeneratorIssueStats, 0, len(issues))
-	var totalCost float64
+	var totalStitchCost float64
 	var totalTurns, totalLocProd, totalLocTest, totalReqs, totalPromptBytes int
 	var totalInputTokens, totalOutputTokens int
 	var nDone, nFailed, nInProgress, nPending int
@@ -99,28 +169,38 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 			nPending++
 		}
 
-		// Parse stitch progress comments for cost, duration, and turns.
-		comments, _ := deps.FetchIssueComments(repo, iss.Number)
-		for _, c := range comments {
-			p := ParseStitchComment(c)
-			if p.CostUSD > 0 {
-				s.CostUSD += p.CostUSD
+		// Prefer local history data over comment parsing.
+		taskID := fmt.Sprintf("%d", iss.Number)
+		if agg, ok := stitchByTask[taskID]; ok {
+			s.CostUSD = agg.CostUSD
+			s.DurationS = agg.DurationS
+			s.NumTurns = agg.NumTurns
+			s.InputTokens = agg.InputTokens
+			s.OutputTokens = agg.OutputTokens
+		} else {
+			// Fallback: parse stitch progress comments.
+			comments, _ := deps.FetchIssueComments(repo, iss.Number)
+			for _, c := range comments {
+				p := ParseStitchComment(c)
+				if p.CostUSD > 0 {
+					s.CostUSD += p.CostUSD
+				}
+				if p.DurationS > 0 {
+					s.DurationS = p.DurationS
+				}
+				if p.NumTurns > 0 {
+					s.NumTurns += p.NumTurns
+				}
+				s.LocDeltaProd += p.LocDeltaProd
+				s.LocDeltaTest += p.LocDeltaTest
+				if p.PromptBytes > 0 {
+					s.PromptBytes = p.PromptBytes
+				}
+				s.InputTokens += p.InputTokens
+				s.OutputTokens += p.OutputTokens
 			}
-			if p.DurationS > 0 {
-				s.DurationS = p.DurationS
-			}
-			if p.NumTurns > 0 {
-				s.NumTurns += p.NumTurns
-			}
-			s.LocDeltaProd += p.LocDeltaProd
-			s.LocDeltaTest += p.LocDeltaTest
-			if p.PromptBytes > 0 {
-				s.PromptBytes = p.PromptBytes
-			}
-			s.InputTokens += p.InputTokens
-			s.OutputTokens += p.OutputTokens
 		}
-		totalCost += s.CostUSD
+		totalStitchCost += s.CostUSD
 		totalTurns += s.NumTurns
 		totalLocProd += s.LocDeltaProd
 		totalLocTest += s.LocDeltaTest
@@ -158,6 +238,18 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 		rows = append(rows, s)
 	}
 
+	// Aggregate measure costs.
+	var totalMeasureCost float64
+	var totalMeasureTurns, totalMeasureIn, totalMeasureOut, totalMeasureDurS int
+	for _, m := range measureEntries {
+		totalMeasureCost += m.CostUSD
+		totalMeasureTurns += m.NumTurns
+		totalMeasureIn += m.Tokens.Input
+		totalMeasureOut += m.Tokens.Output
+		totalMeasureDurS += m.DurationS
+	}
+	totalCost := totalStitchCost + totalMeasureCost
+
 	sort.Slice(rows, func(i, j int) bool { return rows[i].Number < rows[j].Number })
 
 	// Header.
@@ -170,7 +262,11 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 		fmt.Printf(", %d failed", nFailed)
 	}
 	fmt.Println()
-	fmt.Printf("Total cost: $%.2f, %d turns\n", totalCost, totalTurns)
+	fmt.Printf("Total cost: $%.2f", totalCost)
+	if totalMeasureCost > 0 {
+		fmt.Printf(" (stitch $%.2f + measure $%.2f)", totalStitchCost, totalMeasureCost)
+	}
+	fmt.Printf(", %d turns\n", totalTurns)
 	fmt.Printf("LOC created: %+d prod, %+d test\n", totalLocProd, totalLocTest)
 	fmt.Printf("Requirements: %d total in tasks\n", totalReqs)
 	if totalPromptBytes > 0 {
@@ -274,6 +370,17 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 	}
 	if err := w.Flush(); err != nil {
 		return err
+	}
+
+	// Measure invocations summary.
+	if len(measureEntries) > 0 {
+		fmt.Printf("\nMeasure invocations: %d, cost $%.2f, %d turns, %s duration\n",
+			len(measureEntries), totalMeasureCost, totalMeasureTurns,
+			FormatDuration(totalMeasureDurS))
+		if totalMeasureIn > 0 || totalMeasureOut > 0 {
+			fmt.Printf("Measure tokens: %s in, %s out\n",
+				FormatTokens(totalMeasureIn), FormatTokens(totalMeasureOut))
+		}
 	}
 
 	// PRD coverage table.
