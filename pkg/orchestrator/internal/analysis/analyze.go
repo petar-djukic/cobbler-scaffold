@@ -175,22 +175,29 @@ func CollectAnalyzeResult(deps AnalyzeDeps) (AnalyzeResult, AnalyzeCounts, error
 	}
 	deps.Log("analyze: found %d test suites", len(testSuiteIDs))
 
-	// 4. Load road-map.yaml — collect release IDs and use case IDs
+	// 4. Load road-map.yaml — collect release IDs, use case IDs, and depends_on
 	roadmapUCs := make(map[string]bool)
 	roadmapReleaseIDs := make(map[string]bool)
+	roadmapAllVersions := make(map[string]bool)             // all release versions (including those without UCs)
+	releaseDependsOn := make(map[string][]string)            // release version -> depends_on entries
 	if data, err := os.ReadFile("docs/road-map.yaml"); err == nil {
 		var roadmap struct {
 			Releases []struct {
-				ID       string `yaml:"version"`
-				UseCases []struct {
+				ID        string   `yaml:"version"`
+				DependsOn []string `yaml:"depends_on"`
+				UseCases  []struct {
 					ID string `yaml:"id"`
 				} `yaml:"use_cases"`
 			} `yaml:"releases"`
 		}
 		if err := yaml.Unmarshal(data, &roadmap); err == nil {
 			for _, release := range roadmap.Releases {
+				roadmapAllVersions[release.ID] = true
 				if len(release.UseCases) > 0 {
 					roadmapReleaseIDs[release.ID] = true
+				}
+				if len(release.DependsOn) > 0 {
+					releaseDependsOn[release.ID] = release.DependsOn
 				}
 				for _, uc := range release.UseCases {
 					roadmapUCs[uc.ID] = true
@@ -205,6 +212,16 @@ func CollectAnalyzeResult(deps AnalyzeDeps) (AnalyzeResult, AnalyzeCounts, error
 		if !roadmapReleaseIDs[r] {
 			result.InvalidReleases = append(result.InvalidReleases,
 				fmt.Sprintf("configured release %q not found in road-map.yaml", r))
+		}
+	}
+
+	// Check 0b: Release depends_on references must be valid release versions.
+	for version, depVersions := range releaseDependsOn {
+		for _, dep := range depVersions {
+			if !roadmapAllVersions[dep] {
+				result.InvalidReleases = append(result.InvalidReleases,
+					fmt.Sprintf("release %s: depends_on references non-existent release %q", version, dep))
+			}
 		}
 	}
 

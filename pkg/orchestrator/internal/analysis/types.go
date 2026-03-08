@@ -25,10 +25,11 @@ type RoadmapDoc struct {
 
 // RoadmapRelease is a single release entry in the roadmap.
 type RoadmapRelease struct {
-	Version  string           `yaml:"version"`
-	Name     string           `yaml:"name"`
-	Status   string           `yaml:"status"`
-	UseCases []RoadmapUseCase `yaml:"use_cases"`
+	Version   string           `yaml:"version"`
+	Name      string           `yaml:"name"`
+	Status    string           `yaml:"status"`
+	DependsOn []string         `yaml:"depends_on,omitempty"`
+	UseCases  []RoadmapUseCase `yaml:"use_cases"`
 }
 
 // RoadmapUseCase is a use case entry within a roadmap release.
