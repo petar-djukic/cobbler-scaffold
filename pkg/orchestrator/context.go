@@ -909,14 +909,23 @@ func filterSourceFiles(sources []SourceFile, requiredPaths []string) []SourceFil
 	return filtered
 }
 
+// defaultMaxContextBytes is the fallback budget when MaxContextBytes is not
+// configured. 200KB is approximately 50K tokens at 4 bytes/token, leaving
+// room for the rest of the stitch prompt (constitutions, task description).
+const defaultMaxContextBytes = 200_000
+
 // applyContextBudget measures the YAML-serialized size of ctx and, if it
 // exceeds budget, progressively removes SourceCode entries not in
 // requiredPaths until within budget. Files are removed in reverse order
 // (last loaded first) to preserve files closer to the top of the directory
-// tree. When budget is 0 or negative, this function is a no-op.
+// tree. When budget is 0, the default of 200KB is used. A negative budget
+// disables enforcement entirely.
 func applyContextBudget(ctx *ProjectContext, budget int, requiredPaths []string) {
-	if budget <= 0 || ctx == nil {
+	if ctx == nil || budget < 0 {
 		return
+	}
+	if budget == 0 {
+		budget = defaultMaxContextBytes
 	}
 
 	data, err := yaml.Marshal(ctx)

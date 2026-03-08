@@ -316,19 +316,38 @@ func pickTask(baseBranch, worktreeBase, repo, generation string) (stitchTask, er
 }
 
 // parseRequiredReading extracts the required_reading list from a YAML task
-// description. Returns nil if the field is absent or unparseable.
+// description. Handles both the canonical string format ("- path (reason)")
+// and the map format ("- path: foo.go") that Claude sometimes emits.
+// Returns nil if the field is absent or unparseable.
 func parseRequiredReading(description string) []string {
 	if description == "" {
 		return nil
 	}
-	var parsed struct {
+
+	// Try []string first (canonical format: "- path/to/file.go (reason)").
+	var stringParsed struct {
 		RequiredReading []string `yaml:"required_reading"`
 	}
-	if err := yaml.Unmarshal([]byte(description), &parsed); err != nil {
+	if err := yaml.Unmarshal([]byte(description), &stringParsed); err == nil {
+		return stringParsed.RequiredReading
+	}
+
+	// Fall back to []map format when Claude emits structured entries
+	// like {path: "foo.go", reason: "..."}.
+	var mapParsed struct {
+		RequiredReading []map[string]string `yaml:"required_reading"`
+	}
+	if err := yaml.Unmarshal([]byte(description), &mapParsed); err != nil {
 		logf("parseRequiredReading: YAML parse error: %v", err)
 		return nil
 	}
-	return parsed.RequiredReading
+	var result []string
+	for _, entry := range mapParsed.RequiredReading {
+		if p := entry["path"]; p != "" {
+			result = append(result, p)
+		}
+	}
+	return result
 }
 
 // scopeSourceDirs narrows GoSourceDirs based on the task description's files

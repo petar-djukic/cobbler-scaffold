@@ -4,6 +4,7 @@
 package orchestrator
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -1386,6 +1387,53 @@ func TestApplyContextBudget_ExactlyAtLimit(t *testing.T) {
 func TestApplyContextBudget_NilContext(t *testing.T) {
 	// Should not panic.
 	applyContextBudget(nil, 100, nil)
+}
+
+func TestApplyContextBudget_NegativeBudget(t *testing.T) {
+	ctx := &ProjectContext{
+		SourceCode: []SourceFile{
+			{File: "pkg/a.go", Lines: strings.Repeat("x", 5000)},
+			{File: "pkg/b.go", Lines: strings.Repeat("y", 5000)},
+		},
+	}
+
+	applyContextBudget(ctx, -1, nil)
+
+	if len(ctx.SourceCode) != 2 {
+		t.Errorf("negative budget should disable enforcement, got %d files", len(ctx.SourceCode))
+	}
+}
+
+func TestApplyContextBudget_DefaultBudget(t *testing.T) {
+	// With budget=0, the default (200KB) should be used. A context well
+	// over 200KB should have non-required files removed.
+	var sources []SourceFile
+	for i := 0; i < 100; i++ {
+		sources = append(sources, SourceFile{
+			File:  fmt.Sprintf("pkg/file%03d.go", i),
+			Lines: strings.Repeat("x", 3000),
+		})
+	}
+	ctx := &ProjectContext{SourceCode: sources}
+
+	required := []string{"pkg/file000.go"}
+	applyContextBudget(ctx, 0, required)
+
+	// Required file must survive.
+	found := false
+	for _, sf := range ctx.SourceCode {
+		if sf.File == "pkg/file000.go" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("required file pkg/file000.go was removed by default budget")
+	}
+
+	// Some files should have been removed to fit under 200KB.
+	if len(ctx.SourceCode) >= 100 {
+		t.Errorf("expected default budget to remove files, still have %d", len(ctx.SourceCode))
+	}
 }
 
 func TestContextExcludeEverything(t *testing.T) {

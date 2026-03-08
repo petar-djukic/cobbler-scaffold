@@ -314,6 +314,45 @@ func TestParseRequiredReading_ValidYAML(t *testing.T) {
 	}
 }
 
+func TestParseRequiredReading_MapFormat(t *testing.T) {
+	t.Parallel()
+	desc := `required_reading:
+  - path: pkg/orchestrator/generator.go
+    reason: contains GeneratorStats
+  - path: pkg/orchestrator/stitch.go
+    reason: buildStitchPrompt implementation
+  - path: docs/ARCHITECTURE.yaml
+    reason: system context
+`
+	got := parseRequiredReading(desc)
+	if len(got) != 3 {
+		t.Fatalf("parseRequiredReading() returned %d items, want 3: %v", len(got), got)
+	}
+	want := []string{
+		"pkg/orchestrator/generator.go",
+		"pkg/orchestrator/stitch.go",
+		"docs/ARCHITECTURE.yaml",
+	}
+	for i, w := range want {
+		if got[i] != w {
+			t.Errorf("got[%d] = %q, want %q", i, got[i], w)
+		}
+	}
+}
+
+func TestParseRequiredReading_MapFormat_MissingPath(t *testing.T) {
+	t.Parallel()
+	desc := `required_reading:
+  - path: pkg/orchestrator/generator.go
+    reason: has path
+  - reason: no path field here
+`
+	got := parseRequiredReading(desc)
+	if len(got) != 1 {
+		t.Errorf("parseRequiredReading() returned %d items, want 1 (only entries with path): %v", len(got), got)
+	}
+}
+
 // --- cleanGoBinaries ---
 
 func TestCleanGoBinaries_RemovesExecutableNoExtension(t *testing.T) {

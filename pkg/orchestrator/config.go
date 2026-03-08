@@ -193,8 +193,8 @@ type CobblerConfig struct {
 	// MaxContextBytes is the maximum serialized size (in bytes) of the
 	// ProjectContext injected into the stitch prompt. When the context
 	// exceeds this budget, non-required source files are progressively
-	// removed. Recommended value: 200000 (~50K tokens at 4 bytes/token).
-	// When 0 (the default), budget enforcement is skipped.
+	// removed. Defaults to 200000 (~50K tokens at 4 bytes/token) when 0.
+	// Set to -1 to disable budget enforcement entirely.
 	MaxContextBytes int `yaml:"max_context_bytes"`
 
 	// EnforceMeasureValidation enables strict validation of measure output.
