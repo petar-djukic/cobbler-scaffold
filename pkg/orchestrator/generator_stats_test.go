@@ -109,6 +109,30 @@ func TestParseStitchComment_PromptBytes_NoMatch(t *testing.T) {
 	}
 }
 
+func TestParseStitchComment_Tokens(t *testing.T) {
+	t.Parallel()
+	body := "Stitch completed in 3m 15s. LOC delta: +20 prod, +10 test. Cost: $0.55. Turns: 12. Tokens: 125000in 5000out."
+	d := parseStitchComment(body)
+	if d.inputTokens != 125000 {
+		t.Errorf("inputTokens = %d, want 125000", d.inputTokens)
+	}
+	if d.outputTokens != 5000 {
+		t.Errorf("outputTokens = %d, want 5000", d.outputTokens)
+	}
+}
+
+func TestParseStitchComment_Tokens_NoMatch(t *testing.T) {
+	t.Parallel()
+	body := "Stitch completed in 5m 32s. LOC delta: +45 prod, +17 test. Cost: $0.42."
+	d := parseStitchComment(body)
+	if d.inputTokens != 0 {
+		t.Errorf("inputTokens = %d, want 0", d.inputTokens)
+	}
+	if d.outputTokens != 0 {
+		t.Errorf("outputTokens = %d, want 0", d.outputTokens)
+	}
+}
+
 // --- formatBytes (GH-1116) ---
 
 func TestFormatBytes(t *testing.T) {
@@ -131,6 +155,33 @@ func TestFormatBytes(t *testing.T) {
 			got := formatBytes(tc.bytes)
 			if got != tc.want {
 				t.Errorf("formatBytes(%d) = %q, want %q", tc.bytes, got, tc.want)
+			}
+		})
+	}
+}
+
+// --- formatTokens (GH-1153) ---
+
+func TestFormatTokens(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name   string
+		tokens int
+		want   string
+	}{
+		{"millions", 1_500_000, "1.5M"},
+		{"exactly 1M", 1_000_000, "1.0M"},
+		{"thousands", 125000, "125K"},
+		{"small thousands", 1000, "1K"},
+		{"small", 999, "999"},
+		{"zero", 0, "0"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := formatTokens(tc.tokens)
+			if got != tc.want {
+				t.Errorf("formatTokens(%d) = %q, want %q", tc.tokens, got, tc.want)
 			}
 		})
 	}

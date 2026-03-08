@@ -918,11 +918,12 @@ func (o *Orchestrator) closeStitchTask(task stitchTask, rec InvocationRecord) {
 	locDeltaProd := rec.LOCAfter.Production - rec.LOCBefore.Production
 	locDeltaTest := rec.LOCAfter.Test - rec.LOCBefore.Test
 	comment := fmt.Sprintf(
-		"Stitch completed in %dm %ds. LOC delta: %+d prod, %+d test. Cost: $%.2f. Turns: %d.",
+		"Stitch completed in %dm %ds. LOC delta: %+d prod, %+d test. Cost: $%.2f. Turns: %d. Tokens: %din %dout.",
 		rec.DurationS/60, rec.DurationS%60,
 		locDeltaProd, locDeltaTest,
 		rec.Tokens.CostUSD,
 		rec.NumTurns,
+		rec.Tokens.Input, rec.Tokens.Output,
 	)
 	commentCobblerIssue(task.repo, task.ghNumber, comment)
 	if err := closeCobblerIssue(task.repo, task.ghNumber, task.generation); err != nil {

@@ -27,6 +27,8 @@ type generatorIssueStats struct {
 	locDeltaTest int
 	numReqs      int // number of requirements in the task description
 	promptBytes  int // prompt size in bytes from "Stitch started" comment
+	inputTokens  int // total input tokens from stitch completion comments
+	outputTokens int // total output tokens from stitch completion comments
 	prds         []string
 	release      string // roadmap release version, e.g. "01.0"
 }
@@ -65,6 +67,7 @@ func (o *Orchestrator) GeneratorStats() error {
 	rows := make([]generatorIssueStats, 0, len(issues))
 	var totalCost float64
 	var totalTurns, totalLocProd, totalLocTest, totalReqs, totalPromptBytes int
+	var totalInputTokens, totalOutputTokens int
 	var nDone, nFailed, nInProgress, nPending int
 	prdStatus := make(map[string]string) // prd name → highest-priority status
 	prdReleaseMap := buildPRDReleaseMap()
@@ -105,12 +108,16 @@ func (o *Orchestrator) GeneratorStats() error {
 			if p.promptBytes > 0 {
 				s.promptBytes = p.promptBytes
 			}
+			s.inputTokens += p.inputTokens
+			s.outputTokens += p.outputTokens
 		}
 		totalCost += s.costUSD
 		totalTurns += s.numTurns
 		totalLocProd += s.locDeltaProd
 		totalLocTest += s.locDeltaTest
 		totalPromptBytes += s.promptBytes
+		totalInputTokens += s.inputTokens
+		totalOutputTokens += s.outputTokens
 
 		s.numReqs = countDescriptionReqs(iss.Description)
 		totalReqs += s.numReqs
@@ -160,6 +167,9 @@ func (o *Orchestrator) GeneratorStats() error {
 	if totalPromptBytes > 0 {
 		fmt.Printf("Prompt total: %s\n", formatBytes(totalPromptBytes))
 	}
+	if totalInputTokens > 0 || totalOutputTokens > 0 {
+		fmt.Printf("Tokens: %s in, %s out\n", formatTokens(totalInputTokens), formatTokens(totalOutputTokens))
+	}
 
 	// Per-release breakdown.
 	type relCounts struct{ done, inProgress, pending, failed int }
@@ -204,7 +214,7 @@ func (o *Orchestrator) GeneratorStats() error {
 
 	// Issue table.
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "#\tStatus\tRel\tReqs\tPrompt\tCost\tDuration\tTurns\tProd\tTest\tTitle")
+	fmt.Fprintln(w, "#\tStatus\tRel\tReqs\tPrompt\tCost\tDuration\tTurns\tTokIn\tTokOut\tProd\tTest\tTitle")
 	for _, r := range rows {
 		prompt := "-"
 		if r.promptBytes > 0 {
@@ -221,6 +231,14 @@ func (o *Orchestrator) GeneratorStats() error {
 		turns := "-"
 		if r.numTurns > 0 {
 			turns = strconv.Itoa(r.numTurns)
+		}
+		tokIn := "-"
+		if r.inputTokens > 0 {
+			tokIn = formatTokens(r.inputTokens)
+		}
+		tokOut := "-"
+		if r.outputTokens > 0 {
+			tokOut = formatTokens(r.outputTokens)
 		}
 		prod := "-"
 		if r.locDeltaProd != 0 {
@@ -242,8 +260,8 @@ func (o *Orchestrator) GeneratorStats() error {
 		if len(title) > 48 {
 			title = title[:45] + "..."
 		}
-		fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-			r.Number, r.status, rel, reqs, prompt, cost, dur, turns, prod, test, title)
+		fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			r.Number, r.status, rel, reqs, prompt, cost, dur, turns, tokIn, tokOut, prod, test, title)
 	}
 	if err := w.Flush(); err != nil {
 		return err
@@ -295,6 +313,8 @@ type stitchCommentData struct {
 	locDeltaProd int
 	locDeltaTest int
 	promptBytes  int
+	inputTokens  int
+	outputTokens int
 }
 
 // parseStitchComment extracts cost and duration from a stitch progress comment
@@ -345,6 +365,16 @@ func parseStitchComment(body string) stitchCommentData {
 		bytesStr = strings.TrimRight(bytesStr, ".,;")
 		if v, err := strconv.Atoi(bytesStr); err == nil {
 			d.promptBytes = v
+		}
+	}
+
+	// Parse "Tokens: Nin Nout" from stitch completion comment.
+	if i := strings.Index(body, "Tokens: "); i >= 0 {
+		rest := body[i+8:]
+		var in, out int
+		if n, _ := fmt.Sscanf(rest, "%din %dout", &in, &out); n == 2 {
+			d.inputTokens = in
+			d.outputTokens = out
 		}
 	}
 
@@ -472,6 +502,18 @@ func extractRelease(text string) string {
 		return ""
 	}
 	return m[1]
+}
+
+// formatTokens returns a human-readable token count, e.g. "125K" or "1.2M".
+func formatTokens(n int) string {
+	switch {
+	case n >= 1_000_000:
+		return fmt.Sprintf("%.1fM", float64(n)/1_000_000)
+	case n >= 1_000:
+		return fmt.Sprintf("%dK", n/1_000)
+	default:
+		return strconv.Itoa(n)
+	}
 }
 
 // formatBytes returns a human-readable byte size, e.g. "125K" or "1.2M".
