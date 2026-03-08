@@ -16,6 +16,9 @@ import (
 	"github.com/mesh-intelligence/cobbler-scaffold/tests/rel01.0/internal/testutil"
 )
 
+// claudeTimeout is the per-invocation limit for mage targets that call Claude.
+var claudeTimeout = testutil.ClaudeTestTimeout
+
 // RunOneCycle runs 1 measure + 1 stitch cycle via generator:run with
 // Cycles=1 and MaxMeasureIssues=1, then verifies generator:stop merges
 // and tags correctly.
@@ -39,7 +42,7 @@ func TestRel01_UC002_RunOneCycle(t *testing.T) {
 	}
 	genBranch := testutil.GitBranch(t, dir)
 
-	if err := testutil.RunMage(t, dir, "generator:run"); err != nil {
+	if err := testutil.RunMageTimeout(t, dir, claudeTimeout, "generator:run"); err != nil {
 		t.Fatalf("generator:run: %v", err)
 	}
 	if err := testutil.RunMage(t, dir, "generator:stop"); err != nil {

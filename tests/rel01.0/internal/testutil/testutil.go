@@ -10,6 +10,7 @@ package testutil
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -24,6 +25,12 @@ import (
 	"github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator"
 	"gopkg.in/yaml.v3"
 )
+
+// ClaudeTestTimeout is the per-invocation timeout for mage targets that call
+// Claude. Individual Claude calls should complete well within this limit;
+// if they don't, the test fails fast rather than burning the full 30-minute
+// package timeout.
+const ClaudeTestTimeout = 5 * time.Minute
 
 // ClaudeImage is the container image used for Claude in E2E tests.
 const ClaudeImage = "localhost/cobbler-scaffold:latest"
@@ -90,8 +97,25 @@ func RunMage(t testing.TB, dir string, target ...string) error {
 // prefixed with the test name so parallel output is attributable.
 func RunMageOut(t testing.TB, dir string, target ...string) (string, error) {
 	t.Helper()
+	return RunMageOutCtx(context.Background(), t, dir, target...)
+}
+
+// RunMageOutTimeout is like RunMageOut but cancels the process after timeout.
+// Use this for Claude-calling targets (cobbler:measure, cobbler:stitch,
+// generator:run) so a hung API call fails fast instead of consuming the
+// full package timeout.
+func RunMageOutTimeout(t testing.TB, dir string, timeout time.Duration, target ...string) (string, error) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	return RunMageOutCtx(ctx, t, dir, target...)
+}
+
+// RunMageOutCtx runs a mage target with a context for cancellation/timeout.
+func RunMageOutCtx(ctx context.Context, t testing.TB, dir string, target ...string) (string, error) {
+	t.Helper()
 	args := append([]string{"-d", "."}, target...)
-	cmd := exec.Command("mage", args...)
+	cmd := exec.CommandContext(ctx, "mage", args...)
 	cmd.Dir = dir
 
 	tag := "[" + t.Name() + "] "
@@ -101,7 +125,17 @@ func RunMageOut(t testing.TB, dir string, target ...string) (string, error) {
 	cmd.Stderr = io.MultiWriter(pw, &buf)
 
 	err := cmd.Run()
+	if ctx.Err() == context.DeadlineExceeded {
+		return buf.String(), fmt.Errorf("mage %s timed out after %v: %w", strings.Join(target, " "), ctx.Err(), err)
+	}
 	return buf.String(), err
+}
+
+// RunMageTimeout runs a mage target with a timeout. Returns error on failure.
+func RunMageTimeout(t testing.TB, dir string, timeout time.Duration, target ...string) error {
+	t.Helper()
+	_, err := RunMageOutTimeout(t, dir, timeout, target...)
+	return err
 }
 
 // prefixWriter wraps an io.Writer and inserts a test-name tag into each

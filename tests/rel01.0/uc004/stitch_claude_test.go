@@ -17,6 +17,9 @@ import (
 	"github.com/mesh-intelligence/cobbler-scaffold/tests/rel01.0/internal/testutil"
 )
 
+// claudeTimeout is the per-invocation limit for mage targets that call Claude.
+var claudeTimeout = testutil.ClaudeTestTimeout
+
 // StitchExecutesTask runs 1 measure (MaxMeasureIssues=1) then 1 stitch
 // (MaxStitchIssuesPerCycle=1) and verifies the task was processed.
 // Requires Claude: invokes cobbler:measure and cobbler:stitch which call Claude via podman.
@@ -38,14 +41,14 @@ func TestRel01_UC004_StitchExecutesTask(t *testing.T) {
 
 	headBefore := testutil.GitHead(t, dir)
 
-	if err := testutil.RunMage(t, dir, "cobbler:measure"); err != nil {
+	if err := testutil.RunMageTimeout(t, dir, claudeTimeout, "cobbler:measure"); err != nil {
 		t.Fatalf("cobbler:measure: %v", err)
 	}
 	if n := testutil.WaitForReadyIssues(t, dir, 1, 30*time.Second); n == 0 {
 		t.Fatal("expected at least 1 ready issue after measure, got 0")
 	}
 
-	if err := testutil.RunMage(t, dir, "cobbler:stitch"); err != nil {
+	if err := testutil.RunMageTimeout(t, dir, claudeTimeout, "cobbler:stitch"); err != nil {
 		t.Fatalf("cobbler:stitch: %v", err)
 	}
 
@@ -73,10 +76,10 @@ func TestRel01_UC004_StitchRecordsInvocation(t *testing.T) {
 	if err := testutil.RunMage(t, dir, "generator:start"); err != nil {
 		t.Fatalf("generator:start: %v", err)
 	}
-	if err := testutil.RunMage(t, dir, "cobbler:measure"); err != nil {
+	if err := testutil.RunMageTimeout(t, dir, claudeTimeout, "cobbler:measure"); err != nil {
 		t.Fatalf("cobbler:measure: %v", err)
 	}
-	if err := testutil.RunMage(t, dir, "cobbler:stitch"); err != nil {
+	if err := testutil.RunMageTimeout(t, dir, claudeTimeout, "cobbler:stitch"); err != nil {
 		t.Fatalf("cobbler:stitch: %v", err)
 	}
 
@@ -134,7 +137,7 @@ func TestRel01_UC004_SecondMeasureProducesNoNewTasks(t *testing.T) {
 	}
 
 	// First measure: propose one task.
-	if err := testutil.RunMage(t, dir, "cobbler:measure"); err != nil {
+	if err := testutil.RunMageTimeout(t, dir, claudeTimeout, "cobbler:measure"); err != nil {
 		t.Fatalf("first cobbler:measure: %v", err)
 	}
 	if n := testutil.WaitForReadyIssues(t, dir, 1, 30*time.Second); n == 0 {
@@ -142,13 +145,13 @@ func TestRel01_UC004_SecondMeasureProducesNoNewTasks(t *testing.T) {
 	}
 
 	// Stitch: implement the proposed task and close its issue.
-	if err := testutil.RunMage(t, dir, "cobbler:stitch"); err != nil {
+	if err := testutil.RunMageTimeout(t, dir, claudeTimeout, "cobbler:stitch"); err != nil {
 		t.Fatalf("cobbler:stitch: %v", err)
 	}
 
 	// Second measure: with the task implemented and its issue closed, measure
 	// should recognise the spec is satisfied and return an empty task list.
-	if err := testutil.RunMage(t, dir, "cobbler:measure"); err != nil {
+	if err := testutil.RunMageTimeout(t, dir, claudeTimeout, "cobbler:measure"); err != nil {
 		t.Fatalf("second cobbler:measure: %v", err)
 	}
 
