@@ -438,7 +438,11 @@ func (o *Orchestrator) RunCycles(label string) error {
 		}
 
 		// Mark UCs as implemented when no open issues remain (GH-1187).
-		o.markCompletedReleaseUCs()
+		// Only check after stitch has completed at least one task to avoid
+		// false positives on the first cycle before measure creates issues.
+		if totalStitched > 0 {
+			o.markCompletedReleaseUCs()
+		}
 
 		// Check if the current release is complete and auto-advance if so.
 		if advanced, ver := o.checkAutoAdvanceRelease(); advanced {
