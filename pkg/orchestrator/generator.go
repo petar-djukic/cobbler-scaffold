@@ -437,6 +437,9 @@ func (o *Orchestrator) RunCycles(label string) error {
 			consecutiveZeroLOC = 0
 		}
 
+		// Mark UCs as implemented when no open issues remain (GH-1187).
+		o.markCompletedReleaseUCs()
+
 		// Check if the current release is complete and auto-advance if so.
 		if advanced, ver := o.checkAutoAdvanceRelease(); advanced {
 			logf("generator %s: cycle %d — auto-advanced release %s", label, cycle, ver)
@@ -516,6 +519,65 @@ func (o *Orchestrator) checkAutoAdvanceRelease() (bool, string) {
 	}
 
 	return true, target.Version
+}
+
+// markCompletedReleaseUCs checks whether all cobbler issues for the current
+// generation are closed. If so, it marks the first non-implemented release's
+// use cases as "implemented" in road-map.yaml so that checkAutoAdvanceRelease
+// can detect the completion and advance the release (GH-1187).
+func (o *Orchestrator) markCompletedReleaseUCs() {
+	open, err := o.hasOpenIssues()
+	if err != nil || open {
+		return
+	}
+	o.markActiveReleaseUCsDone()
+}
+
+// markActiveReleaseUCsDone finds the first non-implemented release in
+// road-map.yaml and marks all its UCs as "implemented". Commits the change.
+// Separated from markCompletedReleaseUCs for testability (no GitHub API).
+func (o *Orchestrator) markActiveReleaseUCsDone() {
+	rm := loadYAML[RoadmapDoc]("docs/road-map.yaml")
+	if rm == nil {
+		return
+	}
+
+	// Find the first release that is not yet done/implemented.
+	var target *RoadmapRelease
+	for i := range rm.Releases {
+		rel := &rm.Releases[i]
+		if !ucStatusDone(rel.Status) {
+			target = rel
+			break
+		}
+	}
+	if target == nil || len(target.UseCases) == 0 {
+		return
+	}
+
+	// Check if any UCs still need marking.
+	allDone := true
+	for _, uc := range target.UseCases {
+		if !ucStatusDone(uc.Status) {
+			allDone = false
+			break
+		}
+	}
+	if allDone {
+		return
+	}
+
+	logf("markActiveReleaseUCsDone: marking release %s UCs as implemented", target.Version)
+	if err := updateRoadmapUCStatuses(target.Version, "implemented"); err != nil {
+		logf("markActiveReleaseUCsDone: failed: %v", err)
+		return
+	}
+
+	_ = gitStageAll(".")
+	msg := fmt.Sprintf("Mark release %s use cases as implemented\n\nAll cobbler issues closed; UCs updated in road-map.yaml.", target.Version)
+	if err := gitCommit(msg, "."); err != nil {
+		logf("markActiveReleaseUCsDone: commit failed: %v", err)
+	}
 }
 
 // GeneratorStart begins a new generation trail.

@@ -1390,6 +1390,118 @@ func TestResolveStopTarget_CallerOnCustomBase_UsesCustomBase(t *testing.T) {
 	}
 }
 
+// --- markActiveReleaseUCsDone (GH-1187) ---
+
+func TestMarkActiveReleaseUCsDone(t *testing.T) {
+	dir := initTestGitRepo(t)
+
+	// Release 00.0 has spec_complete UCs (stitch has finished all tasks but
+	// UC statuses were never updated — the bug this fixes).
+	roadmapContent := `id: rm1
+title: Test Roadmap
+releases:
+  - version: "00.0"
+    name: Release 0
+    status: in_progress
+    use_cases:
+      - id: rel00.0-uc001-format
+        status: spec_complete
+        summary: Format output
+      - id: rel00.0-uc002-build
+        status: spec_complete
+        summary: Build pipeline
+  - version: "01.0"
+    name: Release 1
+    status: pending
+    use_cases:
+      - id: rel01.0-uc001-ext
+        status: spec_complete
+        summary: Extension
+`
+	writeRoadmapFile(t, dir, roadmapContent)
+
+	o := &Orchestrator{cfg: Config{}}
+	o.markActiveReleaseUCsDone()
+
+	// Verify 00.0 UCs are now "implemented".
+	rmPath := filepath.Join(dir, "docs", "road-map.yaml")
+	relStatus, err := roadmapReleaseStatus(rmPath, "00.0")
+	if err != nil {
+		t.Fatalf("read release status for 00.0: %v", err)
+	}
+	if relStatus != "implemented" {
+		t.Errorf("release 00.0 status: want implemented, got %q", relStatus)
+	}
+	statuses, err := roadmapUCStatuses(rmPath, "00.0")
+	if err != nil {
+		t.Fatalf("read UC statuses for 00.0: %v", err)
+	}
+	for id, status := range statuses {
+		if status != "implemented" {
+			t.Errorf("UC %s: want implemented, got %q", id, status)
+		}
+	}
+
+	// Verify 01.0 is unchanged.
+	statuses01, err := roadmapUCStatuses(rmPath, "01.0")
+	if err != nil {
+		t.Fatalf("read UC statuses for 01.0: %v", err)
+	}
+	for id, status := range statuses01 {
+		if status != "spec_complete" {
+			t.Errorf("UC %s (rel 01.0): want spec_complete, got %q", id, status)
+		}
+	}
+}
+
+func TestMarkActiveReleaseUCsDone_AlreadyImplemented(t *testing.T) {
+	dir := initTestGitRepo(t)
+
+	// Release 00.0 is already implemented — should be a no-op.
+	roadmapContent := `id: rm1
+title: Test Roadmap
+releases:
+  - version: "00.0"
+    name: Release 0
+    status: implemented
+    use_cases:
+      - id: rel00.0-uc001-format
+        status: implemented
+        summary: Format output
+  - version: "01.0"
+    name: Release 1
+    status: in_progress
+    use_cases:
+      - id: rel01.0-uc001-ext
+        status: spec_complete
+        summary: Extension
+`
+	writeRoadmapFile(t, dir, roadmapContent)
+
+	o := &Orchestrator{cfg: Config{}}
+	o.markActiveReleaseUCsDone()
+
+	// 01.0 should now be marked as implemented (it's the first non-done release).
+	rmPath := filepath.Join(dir, "docs", "road-map.yaml")
+	statuses, err := roadmapUCStatuses(rmPath, "01.0")
+	if err != nil {
+		t.Fatalf("read UC statuses for 01.0: %v", err)
+	}
+	for id, status := range statuses {
+		if status != "implemented" {
+			t.Errorf("UC %s (rel 01.0): want implemented, got %q", id, status)
+		}
+	}
+}
+
+func TestMarkActiveReleaseUCsDone_NoRoadmap(t *testing.T) {
+	initTestGitRepo(t)
+
+	o := &Orchestrator{cfg: Config{}}
+	// Should be a no-op, no panic.
+	o.markActiveReleaseUCsDone()
+}
+
 // --- checkAutoAdvanceRelease (GH-1006) ---
 
 func TestCheckAutoAdvanceRelease_AllUCsDone(t *testing.T) {
