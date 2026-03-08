@@ -20,6 +20,9 @@ import (
 	"github.com/mesh-intelligence/cobbler-scaffold/tests/rel01.0/internal/testutil"
 )
 
+// claudeTimeout is the per-invocation limit for mage targets that call Claude.
+var claudeTimeout = testutil.ClaudeTestTimeout
+
 // MeasureCreatesIssues runs a single measure invocation with
 // MaxMeasureIssues=1 and verifies at least one issue is created.
 // Requires Claude: invokes cobbler:measure which calls Claude via podman.
@@ -37,7 +40,7 @@ func TestRel01_UC003_MeasureCreatesIssues(t *testing.T) {
 	if err := testutil.RunMage(t, dir, "init"); err != nil {
 		t.Fatalf("init: %v", err)
 	}
-	if err := testutil.RunMage(t, dir, "cobbler:measure"); err != nil {
+	if err := testutil.RunMageTimeout(t, dir, claudeTimeout, "cobbler:measure"); err != nil {
 		t.Fatalf("cobbler:measure: %v", err)
 	}
 
@@ -115,7 +118,7 @@ func TestRel01_UC003_MeasureReturnsZeroForImplementedSpec(t *testing.T) {
 	if err := testutil.RunMage(t, dir, "init"); err != nil {
 		t.Fatalf("init: %v", err)
 	}
-	if err := testutil.RunMage(t, dir, "cobbler:measure"); err != nil {
+	if err := testutil.RunMageTimeout(t, dir, claudeTimeout, "cobbler:measure"); err != nil {
 		t.Fatalf("cobbler:measure: %v", err)
 	}
 
@@ -143,7 +146,7 @@ func TestRel01_UC003_MeasureRecordsInvocation(t *testing.T) {
 	if err := testutil.RunMage(t, dir, "init"); err != nil {
 		t.Fatalf("init: %v", err)
 	}
-	if err := testutil.RunMage(t, dir, "cobbler:measure"); err != nil {
+	if err := testutil.RunMageTimeout(t, dir, claudeTimeout, "cobbler:measure"); err != nil {
 		t.Fatalf("cobbler:measure: %v", err)
 	}
 
