@@ -36,12 +36,30 @@ touchpoints:
   - T9: "Version tag format: v[REL].[DATE].[REVISION] where REL is the release version and DATE is the build date"
 
 success_criteria:
-  - S1: Quick-pick list displays all version tags matching the v[REL].[DATE].[REVISION] pattern
-  - S2: File summary tree shows added, modified, and deleted files grouped by directory after selecting two tags
-  - S3: Clicking a file in the summary opens a VS Code diff editor showing changes between the two refs
-  - S4: Generation-to-generation comparison resolves each generation to its branch ref and displays the same file summary
-  - S5: Comparison works when one or both refs have been merged or abandoned (uses tag refs, not branches)
-  - S6: Empty diff (identical refs) displays an informational message instead of an empty tree
+  - id: S1
+    criterion: Quick-pick list displays all version tags matching the v[REL].[DATE].[REVISION] pattern
+    traces:
+      - prd006-vscode-extension AC3
+  - id: S2
+    criterion: File summary tree shows added, modified, and deleted files grouped by directory after selecting two tags
+    traces:
+      - prd006-vscode-extension AC3
+  - id: S3
+    criterion: Clicking a file in the summary opens a VS Code diff editor showing changes between the two refs
+    traces:
+      - prd006-vscode-extension AC3
+  - id: S4
+    criterion: Generation-to-generation comparison resolves each generation to its branch ref and displays the same file summary
+    traces:
+      - prd006-vscode-extension AC4
+  - id: S5
+    criterion: Comparison works when one or both refs have been merged or abandoned (uses tag refs, not branches)
+    traces:
+      - prd006-vscode-extension AC3
+  - id: S6
+    criterion: Empty diff (identical refs) displays an informational message instead of an empty tree
+    traces:
+      - prd006-vscode-extension AC3
 
 out_of_scope:
   - Line-level inline annotations or blame views

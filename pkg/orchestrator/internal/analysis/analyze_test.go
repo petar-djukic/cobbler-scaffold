@@ -1434,3 +1434,260 @@ func TestCollectAnalyzeResult_SemanticModelErrors(t *testing.T) {
 		t.Errorf("expected error mentioning algorithm, got %v", result.SemanticModelErrors)
 	}
 }
+
+// --- Check 15: R-item coverage by acceptance criteria ---
+
+func TestCollectAnalyzeResult_RItemCoverage_FullCoverage(t *testing.T) {
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(orig)
+	setupMinimalAnalyzeDir(t)
+
+	prd := `id: prd001-core
+title: Core
+requirements:
+  R1:
+    title: Config
+    items:
+      - R1.1: Field A
+      - R1.2: Field B
+acceptance_criteria:
+  - id: AC1
+    criterion: All fields present
+    traces:
+      - R1.1
+      - R1.2
+`
+	os.WriteFile("docs/specs/product-requirements/prd001-core.yaml", []byte(prd), 0o644)
+
+	result, _, err := CollectAnalyzeResult(noopDeps())
+	if err != nil {
+		t.Fatalf("CollectAnalyzeResult: %v", err)
+	}
+	if len(result.UncoveredRItems) != 0 {
+		t.Errorf("expected no uncovered R-items, got %v", result.UncoveredRItems)
+	}
+}
+
+func TestCollectAnalyzeResult_RItemCoverage_MissingCoverage(t *testing.T) {
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(orig)
+	setupMinimalAnalyzeDir(t)
+
+	prd := `id: prd001-core
+title: Core
+requirements:
+  R1:
+    title: Config
+    items:
+      - R1.1: Field A
+      - R1.2: Field B
+      - R1.3: Field C
+acceptance_criteria:
+  - id: AC1
+    criterion: Some fields
+    traces:
+      - R1.1
+`
+	os.WriteFile("docs/specs/product-requirements/prd001-core.yaml", []byte(prd), 0o644)
+
+	result, _, err := CollectAnalyzeResult(noopDeps())
+	if err != nil {
+		t.Fatalf("CollectAnalyzeResult: %v", err)
+	}
+	if len(result.UncoveredRItems) != 2 {
+		t.Fatalf("expected 2 uncovered R-items, got %d: %v", len(result.UncoveredRItems), result.UncoveredRItems)
+	}
+	// Check that R1.2 and R1.3 are reported
+	combined := strings.Join(result.UncoveredRItems, " ")
+	if !strings.Contains(combined, "R1.2") {
+		t.Errorf("expected R1.2 in uncovered items, got %v", result.UncoveredRItems)
+	}
+	if !strings.Contains(combined, "R1.3") {
+		t.Errorf("expected R1.3 in uncovered items, got %v", result.UncoveredRItems)
+	}
+}
+
+// --- Check 16: AC coverage by test cases ---
+
+func TestCollectAnalyzeResult_ACCoverage_Covered(t *testing.T) {
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(orig)
+	setupMinimalAnalyzeDir(t)
+
+	prd := `id: prd001-core
+title: Core
+requirements:
+  R1:
+    title: Config
+    items:
+      - R1.1: Field A
+acceptance_criteria:
+  - id: AC1
+    criterion: All fields present
+    traces:
+      - R1.1
+`
+	os.WriteFile("docs/specs/product-requirements/prd001-core.yaml", []byte(prd), 0o644)
+
+	ts := `id: test-rel01.0
+title: Tests
+release: rel01.0
+traces:
+  - rel01.0-uc001-init
+test_cases:
+  - use_case: rel01.0-uc001-init
+    name: Config fields test
+    traces:
+      - prd001-core AC1
+`
+	os.WriteFile("docs/specs/test-suites/test-rel01.0.yaml", []byte(ts), 0o644)
+	os.WriteFile("docs/specs/use-cases/rel01.0-uc001-init.yaml",
+		[]byte("id: rel01.0-uc001-init\ntitle: Init\ntouchpoints:\n  - T1: prd001-core R1\n"), 0o644)
+
+	result, _, err := CollectAnalyzeResult(noopDeps())
+	if err != nil {
+		t.Fatalf("CollectAnalyzeResult: %v", err)
+	}
+	if len(result.UncoveredACs) != 0 {
+		t.Errorf("expected no uncovered ACs, got %v", result.UncoveredACs)
+	}
+}
+
+func TestCollectAnalyzeResult_ACCoverage_Uncovered(t *testing.T) {
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(orig)
+	setupMinimalAnalyzeDir(t)
+
+	prd := `id: prd001-core
+title: Core
+requirements:
+  R1:
+    title: Config
+    items:
+      - R1.1: Field A
+acceptance_criteria:
+  - id: AC1
+    criterion: Field A present
+    traces:
+      - R1.1
+  - id: AC2
+    criterion: Field B present
+    traces:
+      - R1.1
+`
+	os.WriteFile("docs/specs/product-requirements/prd001-core.yaml", []byte(prd), 0o644)
+
+	// No test suite traces to ACs
+	ts := `id: test-rel01.0
+title: Tests
+release: rel01.0
+traces:
+  - rel01.0-uc001-init
+test_cases:
+  - use_case: rel01.0-uc001-init
+    name: Basic test
+`
+	os.WriteFile("docs/specs/test-suites/test-rel01.0.yaml", []byte(ts), 0o644)
+	os.WriteFile("docs/specs/use-cases/rel01.0-uc001-init.yaml",
+		[]byte("id: rel01.0-uc001-init\ntitle: Init\ntouchpoints:\n  - T1: prd001-core R1\n"), 0o644)
+
+	result, _, err := CollectAnalyzeResult(noopDeps())
+	if err != nil {
+		t.Fatalf("CollectAnalyzeResult: %v", err)
+	}
+	if len(result.UncoveredACs) != 2 {
+		t.Fatalf("expected 2 uncovered ACs, got %d: %v", len(result.UncoveredACs), result.UncoveredACs)
+	}
+	combined := strings.Join(result.UncoveredACs, " ")
+	if !strings.Contains(combined, "AC1") || !strings.Contains(combined, "AC2") {
+		t.Errorf("expected AC1 and AC2 in uncovered ACs, got %v", result.UncoveredACs)
+	}
+}
+
+// --- Check 17: S-item traces to AC ---
+
+func TestCollectAnalyzeResult_SItemTraces_Valid(t *testing.T) {
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(orig)
+	setupMinimalAnalyzeDir(t)
+
+	os.WriteFile("docs/specs/product-requirements/prd001-core.yaml",
+		[]byte("id: prd001-core\ntitle: Core\nrequirements:\n  R1:\n    title: Req\n    items:\n      - R1.1: X\n"), 0o644)
+
+	uc := `id: rel01.0-uc001-init
+title: Init
+touchpoints:
+  - T1: prd001-core R1
+success_criteria:
+  - id: S1
+    criterion: Init works
+    traces:
+      - prd001-core AC1
+  - id: S2
+    criterion: Defaults applied
+    traces:
+      - prd001-core AC2
+`
+	os.WriteFile("docs/specs/use-cases/rel01.0-uc001-init.yaml", []byte(uc), 0o644)
+
+	result, _, err := CollectAnalyzeResult(noopDeps())
+	if err != nil {
+		t.Fatalf("CollectAnalyzeResult: %v", err)
+	}
+	if len(result.UntracedSuccessCriteria) != 0 {
+		t.Errorf("expected no untraced success criteria, got %v", result.UntracedSuccessCriteria)
+	}
+}
+
+func TestCollectAnalyzeResult_SItemTraces_MissingACTrace(t *testing.T) {
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(orig)
+	setupMinimalAnalyzeDir(t)
+
+	os.WriteFile("docs/specs/product-requirements/prd001-core.yaml",
+		[]byte("id: prd001-core\ntitle: Core\nrequirements:\n  R1:\n    title: Req\n    items:\n      - R1.1: X\n"), 0o644)
+
+	uc := `id: rel01.0-uc001-init
+title: Init
+touchpoints:
+  - T1: prd001-core R1
+success_criteria:
+  - id: S1
+    criterion: Init works
+    traces:
+      - prd001-core AC1
+  - id: S2
+    criterion: Something else
+    traces: []
+  - id: S3
+    criterion: No traces at all
+`
+	os.WriteFile("docs/specs/use-cases/rel01.0-uc001-init.yaml", []byte(uc), 0o644)
+
+	result, _, err := CollectAnalyzeResult(noopDeps())
+	if err != nil {
+		t.Fatalf("CollectAnalyzeResult: %v", err)
+	}
+	if len(result.UntracedSuccessCriteria) != 2 {
+		t.Fatalf("expected 2 untraced success criteria, got %d: %v", len(result.UntracedSuccessCriteria), result.UntracedSuccessCriteria)
+	}
+	combined := strings.Join(result.UntracedSuccessCriteria, " ")
+	if !strings.Contains(combined, "S2") {
+		t.Errorf("expected S2 in untraced criteria, got %v", result.UntracedSuccessCriteria)
+	}
+	if !strings.Contains(combined, "S3") {
+		t.Errorf("expected S3 in untraced criteria, got %v", result.UntracedSuccessCriteria)
+	}
+}

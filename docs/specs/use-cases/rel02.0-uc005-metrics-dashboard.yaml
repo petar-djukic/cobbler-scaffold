@@ -39,14 +39,38 @@ touchpoints:
   - T9: "InvocationRecord data model: token counts (input, output, cache creation, cache read), cost, LOC before/after, duration, diff stats read from GitHub issue comments"
 
 success_criteria:
-  - S1: Dashboard command opens a webview panel with aggregated metrics from GitHub issue comments
-  - S2: Summary section shows total invocation count, token breakdown (input, output, cache creation, cache read), estimated cost, and total duration
-  - S3: Summary section shows diff statistics (files changed, insertions, deletions) when records contain diff data
-  - S4: Per-invocation table shows caller, date, duration, input/output/total tokens, LOC progression, diff stats, and issue ID for each record
-  - S5: Dashboard renders with VS Code theme colors (foreground, background, borders)
-  - S6: When no invocation records exist, an informational empty-state message appears
-  - S7: Re-invoking the dashboard command when the panel is visible refreshes content rather than creating a new panel
-  - S8: Dashboard refreshes automatically on the configured polling interval
+  - id: S1
+    criterion: Dashboard command opens a webview panel with aggregated metrics from GitHub issue comments
+    traces:
+      - prd006-vscode-extension AC7
+  - id: S2
+    criterion: Summary section shows total invocation count, token breakdown (input, output, cache creation, cache read), estimated cost, and total duration
+    traces:
+      - prd006-vscode-extension AC7
+  - id: S3
+    criterion: Summary section shows diff statistics (files changed, insertions, deletions) when records contain diff data
+    traces:
+      - prd006-vscode-extension AC7
+  - id: S4
+    criterion: Per-invocation table shows caller, date, duration, input/output/total tokens, LOC progression, diff stats, and issue ID for each record
+    traces:
+      - prd006-vscode-extension AC7
+  - id: S5
+    criterion: Dashboard renders with VS Code theme colors (foreground, background, borders)
+    traces:
+      - prd006-vscode-extension AC7
+  - id: S6
+    criterion: When no invocation records exist, an informational empty-state message appears
+    traces:
+      - prd006-vscode-extension AC7
+  - id: S7
+    criterion: Re-invoking the dashboard command when the panel is visible refreshes content rather than creating a new panel
+    traces:
+      - prd006-vscode-extension AC7
+  - id: S8
+    criterion: Dashboard refreshes automatically on the configured polling interval
+    traces:
+      - prd006-vscode-extension AC9
 
 out_of_scope:
   - Real-time streaming of Claude output during invocations

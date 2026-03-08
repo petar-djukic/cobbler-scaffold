@@ -30,11 +30,27 @@ touchpoints:
   - T5: "InvocationRecord: prd005-metrics-collection R1"
 
 success_criteria:
-  - S1: Measure queries existing GitHub issues and includes them in the prompt
-  - S2: Claude receives a well-formed prompt with project context
-  - S3: Proposed issues are created on GitHub with correct titles and descriptions
-  - S4: Dependencies between issues are wired correctly
-  - S5: Token usage is recorded in the history directory
+  - id: S1
+    criterion: Measure queries existing GitHub issues and includes them in the prompt
+    traces:
+      - prd003-cobbler-workflows AC1
+  - id: S2
+    criterion: Claude receives a well-formed prompt with project context
+    traces:
+      - prd003-cobbler-workflows AC4
+  - id: S3
+    criterion: Proposed issues are created on GitHub with correct titles and descriptions
+    traces:
+      - prd003-cobbler-workflows AC1
+      - prd003-cobbler-workflows AC6
+  - id: S4
+    criterion: Dependencies between issues are wired correctly
+    traces:
+      - prd003-cobbler-workflows AC1
+  - id: S5
+    criterion: Token usage is recorded in the history directory
+    traces:
+      - prd005-metrics-collection AC1
 
 out_of_scope:
   - Claude behavior and prompt quality (we test the workflow, not Claude output)

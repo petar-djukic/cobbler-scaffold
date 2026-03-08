@@ -29,12 +29,31 @@ touchpoints:
   - T4: "Branch resolution: prd002-generation-lifecycle R9"
 
 success_criteria:
-  - S1: Resume resolves the correct generation branch
-  - S2: Uncommitted work is saved before switching branches
-  - S3: Stale worktrees and task branches are removed
-  - S4: Orphaned in_progress issues are reset to ready
-  - S5: Existing ready issues are executed before new cycles start
-  - S6: Generation continues without data loss
+  - id: S1
+    criterion: Resume resolves the correct generation branch
+    traces:
+      - prd002-generation-lifecycle AC4
+      - prd002-generation-lifecycle AC10
+  - id: S2
+    criterion: Uncommitted work is saved before switching branches
+    traces:
+      - prd002-generation-lifecycle AC4
+  - id: S3
+    criterion: Stale worktrees and task branches are removed
+    traces:
+      - prd003-cobbler-workflows AC3
+  - id: S4
+    criterion: Orphaned in_progress issues are reset to ready
+    traces:
+      - prd003-cobbler-workflows AC3
+  - id: S5
+    criterion: Existing ready issues are executed before new cycles start
+    traces:
+      - prd002-generation-lifecycle AC4
+  - id: S6
+    criterion: Generation continues without data loss
+    traces:
+      - prd002-generation-lifecycle AC4
 
 out_of_scope:
   - Initial generation start (see rel01.0-uc002)

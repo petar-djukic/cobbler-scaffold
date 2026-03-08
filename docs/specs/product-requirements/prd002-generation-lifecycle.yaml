@@ -112,15 +112,95 @@ non_goals:
   - This PRD does not define multi-generation concurrency (one generation at a time)
 
 acceptance_criteria:
-  - GeneratorStart creates a tagged generation branch with clean state from any clean base branch
-  - GeneratorStart records the base branch name in .cobbler/base-branch
-  - GeneratorRun executes the specified number of measure+stitch cycles
-  - GeneratorResume recovers from interruption and continues without data loss
-  - GeneratorStop reads the base branch from the generation branch and merges back to it with correct tags
-  - GeneratorStop falls back to "main" when .cobbler/base-branch is absent (backward compatibility)
-  - GeneratorReset returns to a clean main-only state
-  - GeneratorList shows active, merged, and abandoned generations
-  - GeneratorSwitch commits work and changes branches safely
-  - When preserve_sources is true, GeneratorStart does not delete Go source files or reinitialize go.mod
-  - When preserve_sources is true, GeneratorStop does not reset Go sources on the base branch after merge
-  - preserve_sources defaults to false; existing behaviour is unchanged when false
+  - id: AC1
+    criterion: GeneratorStart creates a tagged generation branch with clean state from any clean base branch
+    traces:
+      - R1.1
+      - R1.2
+      - R2.1
+      - R2.2
+      - R2.3
+      - R2.4
+      - R2.5
+      - R2.6
+      - R2.7
+  - id: AC2
+    criterion: GeneratorStart records the base branch name in .cobbler/base-branch
+    traces:
+      - R2.8
+  - id: AC3
+    criterion: GeneratorRun executes the specified number of measure+stitch cycles
+    traces:
+      - R3.1
+      - R3.2
+      - R3.3
+      - R3.4
+  - id: AC4
+    criterion: GeneratorResume recovers from interruption and continues without data loss
+    traces:
+      - R4.1
+      - R4.2
+      - R4.3
+      - R4.4
+      - R4.5
+      - R4.6
+  - id: AC5
+    criterion: GeneratorStop reads the base branch from the generation branch and merges back to it with correct tags
+    traces:
+      - R5.1
+      - R5.2
+      - R5.3
+      - R5.4
+      - R5.5
+      - R5.6
+      - R5.7
+      - R5.8
+      - R5.9
+      - R5.10
+      - R5.11
+  - id: AC6
+    criterion: GeneratorStop falls back to "main" when .cobbler/base-branch is absent (backward compatibility)
+    traces:
+      - R5.3
+  - id: AC7
+    criterion: GeneratorReset returns to a clean main-only state
+    traces:
+      - R6.1
+      - R6.2
+      - R6.3
+      - R6.4
+      - R6.5
+      - R6.6
+      - R6.7
+  - id: AC8
+    criterion: GeneratorList shows active, merged, and abandoned generations
+    traces:
+      - R7.1
+      - R7.2
+      - R7.3
+  - id: AC9
+    criterion: GeneratorSwitch commits work and changes branches safely
+    traces:
+      - R8.1
+      - R8.2
+      - R8.3
+      - R8.4
+  - id: AC10
+    criterion: Branch resolution selects the correct generation branch based on explicit, auto-detect, or current-branch logic
+    traces:
+      - R9.1
+      - R9.2
+      - R9.3
+      - R9.4
+  - id: AC11
+    criterion: When preserve_sources is true, GeneratorStart does not delete Go source files or reinitialize go.mod
+    traces:
+      - R10.1
+  - id: AC12
+    criterion: When preserve_sources is true, GeneratorStop does not reset Go sources on the base branch after merge
+    traces:
+      - R10.2
+  - id: AC13
+    criterion: preserve_sources defaults to false; existing behaviour is unchanged when false
+    traces:
+      - R10.3

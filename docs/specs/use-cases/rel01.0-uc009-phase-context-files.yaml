@@ -34,12 +34,30 @@ touchpoints:
   - T6: "Logging: prd003-cobbler-workflows R9.10"
 
 success_criteria:
-  - S1: When measure_context.yaml exists, measure uses its include, exclude, sources, and release fields instead of ProjectConfig equivalents
-  - S2: When stitch_context.yaml exists, stitch uses its include, exclude, sources, and release fields instead of ProjectConfig equivalents
-  - S3: When context files do not exist, both phases use ProjectConfig fields unchanged (backward compatible)
-  - S4: When a context file is malformed, the invocation aborts with a descriptive error
-  - S5: Log output indicates which context source was used for each invocation
-  - S6: Changes to context files between invocations are visible to the next invocation (invocation-time loading)
+  - id: S1
+    criterion: When measure_context.yaml exists, measure uses its include, exclude, sources, and release fields instead of ProjectConfig equivalents
+    traces:
+      - prd003-cobbler-workflows AC8
+  - id: S2
+    criterion: When stitch_context.yaml exists, stitch uses its include, exclude, sources, and release fields instead of ProjectConfig equivalents
+    traces:
+      - prd003-cobbler-workflows AC8
+  - id: S3
+    criterion: When context files do not exist, both phases use ProjectConfig fields unchanged (backward compatible)
+    traces:
+      - prd003-cobbler-workflows AC9
+  - id: S4
+    criterion: When a context file is malformed, the invocation aborts with a descriptive error
+    traces:
+      - prd003-cobbler-workflows AC8
+  - id: S5
+    criterion: Log output indicates which context source was used for each invocation
+    traces:
+      - prd003-cobbler-workflows AC8
+  - id: S6
+    criterion: Changes to context files between invocations are visible to the next invocation (invocation-time loading)
+    traces:
+      - prd003-cobbler-workflows AC8
 
 out_of_scope:
   - Auto-updating context files after stitch creates new files

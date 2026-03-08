@@ -35,10 +35,22 @@ touchpoints:
   - T4: "Resume and recovery: prd003-cobbler-workflows R4.1, R4.2"
 
 success_criteria:
-  - S1: worktreeBasePath returns the same temp directory path when called from the main repo root and from any of its git worktrees
-  - S2: Task worktrees created by stitch invoked from a git worktree land under the same base path as a main-repo stitch run
-  - S3: mage generator:resume invoked from a git worktree finds and removes stale task worktrees created by a previous run from a different directory
-  - S4: worktreeBasePath falls back to filepath.Base(os.Getwd()) when git rev-parse --git-common-dir fails
+  - id: S1
+    criterion: worktreeBasePath returns the same temp directory path when called from the main repo root and from any of its git worktrees
+    traces:
+      - prd003-cobbler-workflows AC2
+  - id: S2
+    criterion: Task worktrees created by stitch invoked from a git worktree land under the same base path as a main-repo stitch run
+    traces:
+      - prd003-cobbler-workflows AC2
+  - id: S3
+    criterion: mage generator:resume invoked from a git worktree finds and removes stale task worktrees created by a previous run from a different directory
+    traces:
+      - prd003-cobbler-workflows AC3
+  - id: S4
+    criterion: worktreeBasePath falls back to filepath.Base(os.Getwd()) when git rev-parse --git-common-dir fails
+    traces:
+      - prd003-cobbler-workflows AC2
 
 out_of_scope:
   - Running multiple concurrent orchestrators from different worktrees simultaneously

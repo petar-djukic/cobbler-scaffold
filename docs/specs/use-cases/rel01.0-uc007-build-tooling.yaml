@@ -22,12 +22,30 @@ touchpoints:
   - T1: "BinaryDir, BinaryName, MainPackage Config fields: prd001-orchestrator-core R1.2, R1.3, R1.4"
 
 success_criteria:
-  - S1: Build produces a binary at {BinaryDir}/{BinaryName} when MainPackage is set
-  - S2: Build exits zero on success and propagates go build errors on failure
-  - S3: Lint runs golangci-lint and exits zero when no lint errors are found
-  - S4: Install places the binary in GOPATH/bin and exits zero on success
-  - S5: Clean removes BinaryDir without error, including when it does not exist
-  - S6: Build and Install skip silently and return nil when MainPackage is empty
+  - id: S1
+    criterion: Build produces a binary at {BinaryDir}/{BinaryName} when MainPackage is set
+    traces:
+      - prd001-orchestrator-core AC1
+  - id: S2
+    criterion: Build exits zero on success and propagates go build errors on failure
+    traces:
+      - prd001-orchestrator-core AC1
+  - id: S3
+    criterion: Lint runs golangci-lint and exits zero when no lint errors are found
+    traces:
+      - prd001-orchestrator-core AC1
+  - id: S4
+    criterion: Install places the binary in GOPATH/bin and exits zero on success
+    traces:
+      - prd001-orchestrator-core AC1
+  - id: S5
+    criterion: Clean removes BinaryDir without error, including when it does not exist
+    traces:
+      - prd001-orchestrator-core AC1
+  - id: S6
+    criterion: Build and Install skip silently and return nil when MainPackage is empty
+    traces:
+      - prd001-orchestrator-core AC1
 
 out_of_scope:
   - Cross-generation comparison builds (see rel03.0-uc001)

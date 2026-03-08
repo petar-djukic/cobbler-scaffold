@@ -36,13 +36,34 @@ touchpoints:
   - T8: "Git worktree management: git worktree add/remove pattern reused from stitch workflow (create branch worktree, build, clean up)"
 
 success_criteria:
-  - S1: Two generation tags can be compared with mage compare:run and produce pass/fail results
-  - S2: The gnu pseudo-tag resolves Homebrew reference binaries with correct g-prefix mapping
-  - S3: A directory path resolves pre-built binaries via PathResolver
-  - S4: Test cases are loaded from YAML spec test suites, not from _test.go files
-  - S5: Output shows pass/fail per utility per test case with summary counts
-  - S6: Worktrees and temporary directories are removed after comparison completes
-  - S7: A single utility can be tested by setting the UTILITY environment variable
+  - id: S1
+    criterion: Two generation tags can be compared with mage compare:run and produce pass/fail results
+    traces:
+      - prd004-differential-comparison AC1
+  - id: S2
+    criterion: The gnu pseudo-tag resolves Homebrew reference binaries with correct g-prefix mapping
+    traces:
+      - prd004-differential-comparison AC2
+  - id: S3
+    criterion: A directory path resolves pre-built binaries via PathResolver
+    traces:
+      - prd004-differential-comparison AC6
+  - id: S4
+    criterion: Test cases are loaded from YAML spec test suites, not from _test.go files
+    traces:
+      - prd004-differential-comparison AC3
+  - id: S5
+    criterion: Output shows pass/fail per utility per test case with summary counts
+    traces:
+      - prd004-differential-comparison AC4
+  - id: S6
+    criterion: Worktrees and temporary directories are removed after comparison completes
+    traces:
+      - prd004-differential-comparison AC5
+  - id: S7
+    criterion: A single utility can be tested by setting the UTILITY environment variable
+    traces:
+      - prd004-differential-comparison AC3
 
 out_of_scope:
   - Performance comparison between generations (we compare correctness only)

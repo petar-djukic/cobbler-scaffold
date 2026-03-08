@@ -42,14 +42,38 @@ touchpoints:
   - T12: "CodeLens opens spec YAML: prd006-vscode-extension R9.5"
 
 success_criteria:
-  - S1: Specification Browser tree displays Use Cases, PRDs, and Test Suites as top-level nodes populated from docs/specs/
-  - S2: Expanding a use case node shows its PRD touchpoints as child nodes
-  - S3: Expanding a PRD requirement node shows Go source files under pkg/ that reference the PRD ID
-  - S4: Clicking any tree node opens the corresponding YAML or Go file in the editor
-  - S5: Tree refreshes automatically when files under docs/specs/ are added, modified, or deleted
-  - S6: "CodeLens appears above prd-annotation comments in Go files with a View Requirement action"
-  - S7: "CodeLens appears above uc-annotation comments in Go files with a View Requirement action"
-  - S8: Activating a CodeLens opens the correct specification YAML in the editor
+  - id: S1
+    criterion: Specification Browser tree displays Use Cases, PRDs, and Test Suites as top-level nodes populated from docs/specs/
+    traces:
+      - prd006-vscode-extension AC13
+  - id: S2
+    criterion: Expanding a use case node shows its PRD touchpoints as child nodes
+    traces:
+      - prd006-vscode-extension AC13
+  - id: S3
+    criterion: Expanding a PRD requirement node shows Go source files under pkg/ that reference the PRD ID
+    traces:
+      - prd006-vscode-extension AC13
+  - id: S4
+    criterion: Clicking any tree node opens the corresponding YAML or Go file in the editor
+    traces:
+      - prd006-vscode-extension AC13
+  - id: S5
+    criterion: Tree refreshes automatically when files under docs/specs/ are added, modified, or deleted
+    traces:
+      - prd006-vscode-extension AC9
+  - id: S6
+    criterion: CodeLens appears above prd-annotation comments in Go files with a View Requirement action
+    traces:
+      - prd006-vscode-extension AC14
+  - id: S7
+    criterion: CodeLens appears above uc-annotation comments in Go files with a View Requirement action
+    traces:
+      - prd006-vscode-extension AC14
+  - id: S8
+    criterion: Activating a CodeLens opens the correct specification YAML in the editor
+    traces:
+      - prd006-vscode-extension AC14
 
 out_of_scope:
   - Editing specification YAML from within the tree view (read-only navigation only)

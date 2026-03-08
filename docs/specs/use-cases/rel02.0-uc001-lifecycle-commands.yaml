@@ -34,13 +34,35 @@ touchpoints:
   - T7: "Generation lifecycle operations: GeneratorStart, Run, Resume, Stop, Reset, Switch mage targets invoked via integrated terminal"
 
 success_criteria:
-  - S1: All six lifecycle commands appear in Command Palette when configuration.yaml exists in workspace
-  - S2: Each command executes the correct mage target in an integrated terminal
-  - S3: Start, Stop, and Reset commands show confirmation dialogs before executing
-  - S4: Switch command shows a quick-pick list of available generation branches
-  - S5: Invalid commands are disabled (e.g., Start disabled when on generation branch, Resume disabled when not on generation branch)
-  - S6: All extension views refresh automatically after a command completes
-  - S7: Terminal output is visible and can be interacted with (scroll, copy)
+  - id: S1
+    criterion: All six lifecycle commands appear in Command Palette when configuration.yaml exists in workspace
+    traces:
+      - prd006-vscode-extension AC1
+      - prd006-vscode-extension AC10
+  - id: S2
+    criterion: Each command executes the correct mage target in an integrated terminal
+    traces:
+      - prd006-vscode-extension AC1
+  - id: S3
+    criterion: Start, Stop, and Reset commands show confirmation dialogs before executing
+    traces:
+      - prd006-vscode-extension AC1
+  - id: S4
+    criterion: Switch command shows a quick-pick list of available generation branches
+    traces:
+      - prd006-vscode-extension AC1
+  - id: S5
+    criterion: Invalid commands are disabled (e.g., Start disabled when on generation branch, Resume disabled when not on generation branch)
+    traces:
+      - prd006-vscode-extension AC1
+  - id: S6
+    criterion: All extension views refresh automatically after a command completes
+    traces:
+      - prd006-vscode-extension AC9
+  - id: S7
+    criterion: Terminal output is visible and can be interacted with (scroll, copy)
+    traces:
+      - prd006-vscode-extension AC1
 
 out_of_scope:
   - Real-time streaming of Claude agent output (see prd006 non-goals)

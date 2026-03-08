@@ -23,10 +23,24 @@ touchpoints:
   - T3: "Init method: initializes cobbler scratch directory per prd001-orchestrator-core R5"
 
 success_criteria:
-  - S1: New(config) returns a non-nil *Orchestrator
-  - S2: Zero-value Config fields receive their documented defaults
-  - S3: Init() creates the cobbler scratch directory without error
-  - S4: The orchestrator is ready to accept generation commands
+  - id: S1
+    criterion: New(config) returns a non-nil *Orchestrator
+    traces:
+      - prd001-orchestrator-core AC2
+  - id: S2
+    criterion: Zero-value Config fields receive their documented defaults
+    traces:
+      - prd001-orchestrator-core AC1
+      - prd001-orchestrator-core AC2
+  - id: S3
+    criterion: Init() creates the cobbler scratch directory without error
+    traces:
+      - prd001-orchestrator-core AC6
+  - id: S4
+    criterion: The orchestrator is ready to accept generation commands
+    traces:
+      - prd001-orchestrator-core AC2
+      - prd001-orchestrator-core AC6
 
 out_of_scope:
   - Generation lifecycle operations (see rel01.0-uc002)

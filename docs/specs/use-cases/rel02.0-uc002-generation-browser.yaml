@@ -40,13 +40,34 @@ touchpoints:
   - T9: "FileSystemWatcher on .git/refs/: prd006-vscode-extension R2.9, R7.2"
 
 success_criteria:
-  - S1: Tree lists all generations discovered from git tags matching {GenPrefix}*-start
-  - S2: Each generation node displays the correct lifecycle state (started, finished, merged, or abandoned)
-  - S3: Version tags appear on generation nodes when a v[REL].[DATE].[REVISION] tag exists for that generation
-  - S4: The generation matching the active git branch is visually distinct from inactive generations
-  - S5: Expanding a generation node reveals child nodes for lifecycle tags and version tags
-  - S6: The Switch to Generation context menu action changes the active branch to the selected generation
-  - S7: The tree refreshes automatically when git refs change (new tags, branch switches, merges)
+  - id: S1
+    criterion: Tree lists all generations discovered from git tags matching {GenPrefix}*-start
+    traces:
+      - prd006-vscode-extension AC2
+  - id: S2
+    criterion: Each generation node displays the correct lifecycle state (started, finished, merged, or abandoned)
+    traces:
+      - prd006-vscode-extension AC2
+  - id: S3
+    criterion: Version tags appear on generation nodes when a v[REL].[DATE].[REVISION] tag exists for that generation
+    traces:
+      - prd006-vscode-extension AC2
+  - id: S4
+    criterion: The generation matching the active git branch is visually distinct from inactive generations
+    traces:
+      - prd006-vscode-extension AC2
+  - id: S5
+    criterion: Expanding a generation node reveals child nodes for lifecycle tags and version tags
+    traces:
+      - prd006-vscode-extension AC2
+  - id: S6
+    criterion: The Switch to Generation context menu action changes the active branch to the selected generation
+    traces:
+      - prd006-vscode-extension AC2
+  - id: S7
+    criterion: The tree refreshes automatically when git refs change (new tags, branch switches, merges)
+    traces:
+      - prd006-vscode-extension AC9
 
 out_of_scope:
   - Lifecycle command execution from Command Palette (see rel02.0-uc001)

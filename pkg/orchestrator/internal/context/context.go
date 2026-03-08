@@ -404,7 +404,7 @@ type SpecsCollection struct {
 // PRDDoc corresponds to docs/specs/product-requirements/prd*.yaml.
 // Goals use "- G1: text" format (list of single-key maps).
 // Requirements use a map keyed by group ID (R1, R2, ...).
-// AcceptanceCriteria are plain strings.
+// AcceptanceCriteria use structured objects with id, criterion, and traces.
 type PRDDoc struct {
 	File               string                         `yaml:"file,omitempty"`
 	ID                 string                         `yaml:"id"`
@@ -413,12 +413,20 @@ type PRDDoc struct {
 	Goals              []map[string]string            `yaml:"goals"`
 	Requirements       map[string]PRDRequirementGroup `yaml:"requirements"`
 	NonGoals           []string                       `yaml:"non_goals"`
-	AcceptanceCriteria []string                       `yaml:"acceptance_criteria"`
+	AcceptanceCriteria []PRDAcceptanceCriterion        `yaml:"acceptance_criteria"`
 	References         []string                       `yaml:"references,omitempty"`
 	PackageContract    *PRDPackageContract            `yaml:"package_contract,omitempty"`
 	DependsOn          []PRDDependsOn                 `yaml:"depends_on,omitempty"`
 	StructRefs         []PRDStructRef                 `yaml:"struct_refs,omitempty"`
 	SemanticModel      *yaml.Node                     `yaml:"semantic_model,omitempty"`
+}
+
+// PRDAcceptanceCriterion is a structured acceptance criterion with an ID,
+// description, and traceability links to requirement items.
+type PRDAcceptanceCriterion struct {
+	ID        string   `yaml:"id"`
+	Criterion string   `yaml:"criterion"`
+	Traces    []string `yaml:"traces"`
 }
 
 // PRDRequirementGroup is a requirement section within a PRD.
@@ -460,22 +468,31 @@ type PRDStructRef struct {
 // ---------------------------------------------------------------------------
 
 // UseCaseDoc corresponds to docs/specs/use-cases/rel*.yaml.
-// Flow, touchpoints, and success_criteria use "- KEY: text" format.
+// Flow and touchpoints use "- KEY: text" format.
+// SuccessCriteria use structured objects with id, criterion, and traces.
 type UseCaseDoc struct {
-	File                string               `yaml:"file,omitempty"`
-	ID                  string               `yaml:"id"`
-	Title               string               `yaml:"title"`
-	Summary             string               `yaml:"summary"`
-	Actor               string               `yaml:"actor"`
-	Trigger             string               `yaml:"trigger"`
-	Flow                []map[string]string  `yaml:"flow"`
-	Touchpoints         []map[string]string  `yaml:"touchpoints"`
-	SuccessCriteria     []map[string]string  `yaml:"success_criteria"`
-	Dependencies        []map[string]string  `yaml:"dependencies,omitempty"`
-	Risks               []map[string]string  `yaml:"risks,omitempty"`
-	OutOfScope          []string             `yaml:"out_of_scope"`
-	TestSuite           string               `yaml:"test_suite,omitempty"`
-	InteractionSequence []UCInteractionStep  `yaml:"interaction_sequence,omitempty"`
+	File                string                `yaml:"file,omitempty"`
+	ID                  string                `yaml:"id"`
+	Title               string                `yaml:"title"`
+	Summary             string                `yaml:"summary"`
+	Actor               string                `yaml:"actor"`
+	Trigger             string                `yaml:"trigger"`
+	Flow                []map[string]string   `yaml:"flow"`
+	Touchpoints         []map[string]string   `yaml:"touchpoints"`
+	SuccessCriteria     []UCSuccessCriterion   `yaml:"success_criteria"`
+	Dependencies        []map[string]string   `yaml:"dependencies,omitempty"`
+	Risks               []map[string]string   `yaml:"risks,omitempty"`
+	OutOfScope          []string              `yaml:"out_of_scope"`
+	TestSuite           string                `yaml:"test_suite,omitempty"`
+	InteractionSequence []UCInteractionStep   `yaml:"interaction_sequence,omitempty"`
+}
+
+// UCSuccessCriterion is a structured success criterion from a use case,
+// with an ID, description, and traceability links to PRD acceptance criteria.
+type UCSuccessCriterion struct {
+	ID        string   `yaml:"id"`
+	Criterion string   `yaml:"criterion"`
+	Traces    []string `yaml:"traces"`
 }
 
 // UCInteractionStep is one structured caller/callee/step tuple in an
@@ -676,12 +693,15 @@ type DesignFormatting struct {
 
 // DesignDocType describes one entry in the document_types map.
 type DesignDocType struct {
-	Location       string            `yaml:"location,omitempty"`
-	FormatRule     string            `yaml:"format_rule,omitempty"`
-	RequiredFields []string          `yaml:"required_fields,omitempty"`
-	OptionalFields []string          `yaml:"optional_fields,omitempty"`
-	Numbering      map[string]string `yaml:"numbering,omitempty"`
-	Purpose        string            `yaml:"purpose,omitempty"`
+	Location                string            `yaml:"location,omitempty"`
+	FormatRule              string            `yaml:"format_rule,omitempty"`
+	RequiredFields          []string          `yaml:"required_fields,omitempty"`
+	OptionalFields          []string          `yaml:"optional_fields,omitempty"`
+	Numbering               map[string]string `yaml:"numbering,omitempty"`
+	Purpose                 string            `yaml:"purpose,omitempty"`
+	AcceptanceCriteriaSchema map[string]any `yaml:"acceptance_criteria_schema,omitempty"`
+	SuccessCriteriaSchema    map[string]any `yaml:"success_criteria_schema,omitempty"`
+	TracesFormat             string         `yaml:"traces_format,omitempty"`
 }
 
 // ---------------------------------------------------------------------------

@@ -155,12 +155,129 @@ non_goals:
   - This PRD does not define metrics collection (see prd005)
 
 acceptance_criteria:
-  - Config struct and its five sub-structs (ProjectConfig, GenerationConfig, CobblerConfig, PodmanConfig, ClaudeConfig) include all fields listed in R1 with YAML struct tags
-  - New() returns a configured Orchestrator with defaults applied
-  - NewFromFile() reads YAML and returns a configured Orchestrator
-  - LoadConfig resolves seed file paths, prompt file paths, and constitution file paths to content
-  - logf produces timestamped output with optional generation tag
-  - Init and FullReset operate without errors on a clean repository
-  - Seed files are created from templates with correct data
-  - CodeStatus() reports per-use-case test file presence and exits non-zero when spec-vs-code gaps exist
-  - Analyze() passes with zero violations on a consistent artifact set and exits non-zero when violations exist
+  - id: AC1
+    criterion: Config struct and its five sub-structs (ProjectConfig, GenerationConfig, CobblerConfig, PodmanConfig, ClaudeConfig) include all fields listed in R1 with YAML struct tags
+    traces:
+      - R1.1
+      - R1.2
+      - R1.3
+      - R1.4
+      - R1.5
+      - R1.6
+      - R1.7
+      - R1.8
+      - R1.9
+      - R1.10
+      - R1.11
+      - R1.12
+      - R1.13
+      - R1.14
+      - R1.15
+      - R1.16
+      - R1.17
+      - R1.18
+      - R1.19
+      - R1.20
+      - R1.21
+      - R1.22
+      - R1.23
+      - R1.24
+      - R1.25
+      - R1.26
+      - R1.27
+      - R1.28
+      - R1.29
+      - R1.30
+      - R1.31
+      - R1.32
+      - R1.33
+      - R1.34
+      - R1.35
+      - R1.36
+      - R1.37
+      - R1.38
+      - R1.39
+      - R1.40
+      - R1.41
+      - R1.42
+      - R1.43
+      - R1.44
+      - R1.45
+      - R1.46
+  - id: AC2
+    criterion: New() returns a configured Orchestrator with defaults applied
+    traces:
+      - R2.1
+      - R2.2
+      - R2.3
+      - R2.4
+      - R2.5
+      - R2.6
+      - R2.7
+      - R2.8
+      - R2.9
+      - R2.10
+      - R2.11
+      - R2.12
+      - R2.13
+      - R2.14
+      - R2.15
+      - R2.16
+      - R2.17
+      - R2.18
+      - R2.19
+      - R2.20
+  - id: AC3
+    criterion: NewFromFile() reads YAML and returns a configured Orchestrator
+    traces:
+      - R4.1
+      - R4.4
+      - R4.5
+  - id: AC4
+    criterion: LoadConfig resolves seed file paths, prompt file paths, and constitution file paths to content
+    traces:
+      - R4.2
+      - R4.3
+      - R4.6
+      - R4.7
+      - R4.8
+  - id: AC5
+    criterion: logf produces timestamped output with optional generation tag
+    traces:
+      - R3.1
+      - R3.2
+      - R3.3
+  - id: AC6
+    criterion: Init and FullReset operate without errors on a clean repository
+    traces:
+      - R5.1
+      - R5.2
+      - R5.3
+      - R5.4
+  - id: AC7
+    criterion: Seed files are created from templates with correct data
+    traces:
+      - R6.1
+      - R6.2
+      - R6.3
+  - id: AC8
+    criterion: CodeStatus() reports per-use-case test file presence and exits non-zero when spec-vs-code gaps exist
+    traces:
+      - R7.1
+      - R7.2
+      - R7.3
+      - R7.4
+      - R7.5
+  - id: AC9
+    criterion: Analyze() passes with zero violations on a consistent artifact set and exits non-zero when violations exist
+    traces:
+      - R8.1
+      - R8.2
+      - R8.3
+      - R8.4
+      - R8.5
+      - R8.6
+      - R8.7
+      - R8.8
+      - R8.9
+      - R8.10

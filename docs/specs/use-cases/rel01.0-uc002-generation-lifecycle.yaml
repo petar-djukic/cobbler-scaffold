@@ -30,13 +30,37 @@ touchpoints:
   - T6: "Base branch state: .cobbler/base-branch file on the generation branch"
 
 success_criteria:
-  - S1: GeneratorStart creates a generation branch with clean state, start tag, and .cobbler/base-branch file from any clean branch
-  - S2: GeneratorRun executes the specified number of cycles
-  - S3: GeneratorStop reads the base branch from .cobbler/base-branch and merges back to it with finished and merged tags
-  - S4: The generation branch is deleted after successful stop
-  - S5: The base branch is specs-only after stop (no generated Go code, no build artifacts, no history) and the v1 tag preserves the complete code
-  - S6: When .cobbler/base-branch is absent (older generations), GeneratorStop falls back to "main" for backward compatibility
-  - S7: Starting from a feature branch and stopping returns to that feature branch, not main
+  - id: S1
+    criterion: GeneratorStart creates a generation branch with clean state, start tag, and .cobbler/base-branch file from any clean branch
+    traces:
+      - prd002-generation-lifecycle AC1
+      - prd002-generation-lifecycle AC2
+  - id: S2
+    criterion: GeneratorRun executes the specified number of cycles
+    traces:
+      - prd002-generation-lifecycle AC3
+  - id: S3
+    criterion: GeneratorStop reads the base branch from .cobbler/base-branch and merges back to it with finished and merged tags
+    traces:
+      - prd002-generation-lifecycle AC5
+  - id: S4
+    criterion: The generation branch is deleted after successful stop
+    traces:
+      - prd002-generation-lifecycle AC5
+  - id: S5
+    criterion: The base branch is specs-only after stop (no generated Go code, no build artifacts, no history) and the v1 tag preserves the complete code
+    traces:
+      - prd002-generation-lifecycle AC5
+  - id: S6
+    criterion: When .cobbler/base-branch is absent (older generations), GeneratorStop falls back to "main" for backward compatibility
+    traces:
+      - prd002-generation-lifecycle AC6
+  - id: S7
+    criterion: Starting from a feature branch and stopping returns to that feature branch, not main
+    traces:
+      - prd002-generation-lifecycle AC1
+      - prd002-generation-lifecycle AC2
+      - prd002-generation-lifecycle AC5
 
 out_of_scope:
   - Content of measure and stitch workflows (see rel01.0-uc003, rel01.0-uc004)

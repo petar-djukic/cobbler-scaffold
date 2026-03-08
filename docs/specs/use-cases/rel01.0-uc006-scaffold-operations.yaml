@@ -31,13 +31,34 @@ touchpoints:
   - T3: "YAML configuration loading: prd001-orchestrator-core R4"
 
 success_criteria:
-  - S1: Scaffold writes magefiles/orchestrator.go from the embedded template
-  - S2: docs/constitutions/ contains design.yaml, planning.yaml, execution.yaml, and go-style.yaml
-  - S3: docs/prompts/ contains measure.yaml and stitch.yaml
-  - S4: configuration.yaml exists at the repository root with detected values filled in
-  - S5: magefiles/go.mod references the orchestrator module
-  - S6: mage -l succeeds in the target repository after scaffolding
-  - S7: Uninstall removes all scaffold artifacts and mage -l succeeds without orchestrator targets
+  - id: S1
+    criterion: Scaffold writes magefiles/orchestrator.go from the embedded template
+    traces:
+      - prd001-orchestrator-core AC7
+  - id: S2
+    criterion: docs/constitutions/ contains design.yaml, planning.yaml, execution.yaml, and go-style.yaml
+    traces:
+      - prd001-orchestrator-core AC4
+  - id: S3
+    criterion: docs/prompts/ contains measure.yaml and stitch.yaml
+    traces:
+      - prd001-orchestrator-core AC4
+  - id: S4
+    criterion: configuration.yaml exists at the repository root with detected values filled in
+    traces:
+      - prd001-orchestrator-core AC3
+  - id: S5
+    criterion: magefiles/go.mod references the orchestrator module
+    traces:
+      - prd001-orchestrator-core AC1
+  - id: S6
+    criterion: mage -l succeeds in the target repository after scaffolding
+    traces:
+      - prd001-orchestrator-core AC3
+  - id: S7
+    criterion: Uninstall removes all scaffold artifacts and mage -l succeeds without orchestrator targets
+    traces:
+      - prd001-orchestrator-core AC6
 
 out_of_scope:
   - Generation lifecycle and run operations (see rel01.0-uc002, rel01.0-uc003)

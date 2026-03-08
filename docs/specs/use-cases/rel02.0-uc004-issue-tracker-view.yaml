@@ -38,13 +38,34 @@ touchpoints:
   - T9: "InvocationRecord data shape: fields input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens, cost, loc_before, loc_after, duration_sec, git_diff_stat parsed from issue comments"
 
 success_criteria:
-  - S1: Issue Tracker tree displays Open, In Progress, and Closed as collapsible parent nodes
-  - S2: Each issue node shows its title, type, and ID
-  - S3: Expanding an issue reveals description, dependencies, and comments as child nodes
-  - S4: InvocationRecord comments display tokens, LOC delta, duration, and diff stats as formatted child nodes
-  - S5: Tree refreshes automatically on the configured polling interval
-  - S6: Context menu action opens a read-only editor panel with the full issue details
-  - S7: Tree handles an empty issue list or API error without crashing
+  - id: S1
+    criterion: Issue Tracker tree displays Open, In Progress, and Closed as collapsible parent nodes
+    traces:
+      - prd006-vscode-extension AC5
+  - id: S2
+    criterion: Each issue node shows its title, type, and ID
+    traces:
+      - prd006-vscode-extension AC5
+  - id: S3
+    criterion: Expanding an issue reveals description, dependencies, and comments as child nodes
+    traces:
+      - prd006-vscode-extension AC5
+  - id: S4
+    criterion: InvocationRecord comments display tokens, LOC delta, duration, and diff stats as formatted child nodes
+    traces:
+      - prd006-vscode-extension AC6
+  - id: S5
+    criterion: Tree refreshes automatically on the configured polling interval
+    traces:
+      - prd006-vscode-extension AC9
+  - id: S6
+    criterion: Context menu action opens a read-only editor panel with the full issue details
+    traces:
+      - prd006-vscode-extension AC6
+  - id: S7
+    criterion: Tree handles an empty issue list or API error without crashing
+    traces:
+      - prd006-vscode-extension AC11
 
 out_of_scope:
   - Creating, editing, or closing issues from the tree view (read-only display)

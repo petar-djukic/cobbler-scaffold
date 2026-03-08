@@ -32,6 +32,9 @@ type AnalyzeResult struct {
 	BrokenStructRefs               []string // struct_refs pointing to non-existent PRD or requirement group
 	ComponentDepViolations         []string // depends_on entries not reflected in component_dependencies
 	SemanticModelErrors            []string // semantic model validation errors (SM1, SM3, SM7)
+	UncoveredRItems                []string // R-items not covered by any acceptance criterion
+	UncoveredACs                   []string // ACs not covered by any test case (warning)
+	UntracedSuccessCriteria        []string // S-items with no AC traces (warning)
 }
 
 // AnalyzeCounts holds the artifact counts discovered during analysis.
@@ -67,6 +70,8 @@ func CollectAnalyzeResult(deps AnalyzeDeps) (AnalyzeResult, AnalyzeCounts, error
 	prdExports := make(map[string]map[string]bool)       // PRD ID -> set of exported symbol names
 	prdDependsOn := make(map[string][]PRDDependsOn)      // PRD ID -> depends_on entries
 	prdStructRefs := make(map[string][]PRDStructRef)     // PRD ID -> struct_refs entries
+	prdACs := make(map[string][]AcceptanceCriterion)     // PRD ID -> acceptance criteria
+	prdRItems := make(map[string][]string)               // PRD ID -> all R-item IDs (R1.1, R1.2, etc.)
 	for _, path := range prdFiles {
 		id := ExtractID(path)
 		if id != "" {
@@ -74,10 +79,18 @@ func CollectAnalyzeResult(deps AnalyzeDeps) (AnalyzeResult, AnalyzeCounts, error
 		}
 		if prd := loadYAML[PRDDoc](path); prd != nil {
 			groups := make(map[string]bool)
-			for groupKey := range prd.Requirements {
+			for groupKey, group := range prd.Requirements {
 				groups[groupKey] = true
+				for _, item := range group.Items {
+					for itemKey := range item {
+						prdRItems[id] = append(prdRItems[id], itemKey)
+					}
+				}
 			}
 			prdReqGroups[id] = groups
+			if len(prd.AcceptanceCriteria) > 0 {
+				prdACs[id] = prd.AcceptanceCriteria
+			}
 			if prd.PackageContract != nil {
 				exports := make(map[string]bool)
 				for _, e := range prd.PackageContract.Exports {
@@ -112,6 +125,7 @@ func CollectAnalyzeResult(deps AnalyzeDeps) (AnalyzeResult, AnalyzeCounts, error
 	ucIDs := make(map[string]bool)
 	ucToPRDs := make(map[string][]string)      // use case ID -> PRD IDs from touchpoints
 	ucTouchpoints := make(map[string][]string) // use case ID -> raw touchpoint strings
+	ucSuccessCriteria := make(map[string][]SuccessCriterion) // use case ID -> success criteria
 	prdToReleases := make(map[string]map[string]bool) // PRD ID -> set of releases that reference it
 	for _, path := range ucFiles {
 		uc, err := LoadUseCase(path)
@@ -122,6 +136,9 @@ func CollectAnalyzeResult(deps AnalyzeDeps) (AnalyzeResult, AnalyzeCounts, error
 		ucIDs[uc.ID] = true
 		ucToPRDs[uc.ID] = ExtractPRDsFromTouchpoints(uc.Touchpoints)
 		ucTouchpoints[uc.ID] = uc.Touchpoints
+		if len(uc.SuccessCriteria) > 0 {
+			ucSuccessCriteria[uc.ID] = uc.SuccessCriteria
+		}
 		release := ExtractFileRelease(path)
 		if release != "" {
 			for _, prdID := range ucToPRDs[uc.ID] {
@@ -141,6 +158,7 @@ func CollectAnalyzeResult(deps AnalyzeDeps) (AnalyzeResult, AnalyzeCounts, error
 	}
 	testSuiteIDs := make(map[string]bool)
 	testSuiteToUCs := make(map[string][]string) // test suite ID -> use case IDs from traces
+	allTestCaseTraces := make(map[string]bool)  // set of all test case trace strings (e.g. "prd001-core AC1")
 	for _, path := range testFiles {
 		ts, err := LoadTestSuite(path)
 		if err != nil {
@@ -149,6 +167,11 @@ func CollectAnalyzeResult(deps AnalyzeDeps) (AnalyzeResult, AnalyzeCounts, error
 		}
 		testSuiteIDs[ts.ID] = true
 		testSuiteToUCs[ts.ID] = ExtractUseCaseIDsFromTraces(ts.Traces)
+		for _, tc := range ts.TestCases {
+			for _, trace := range tc.Traces {
+				allTestCaseTraces[trace] = true
+			}
+		}
 	}
 	deps.Log("analyze: found %d test suites", len(testSuiteIDs))
 
@@ -354,6 +377,62 @@ func CollectAnalyzeResult(deps AnalyzeDeps) (AnalyzeResult, AnalyzeCounts, error
 	sort.Strings(result.ComponentDepViolations)
 	deps.Log("analyze: component_dep violations found %d", len(result.ComponentDepViolations))
 
+	// Check 15: R-item coverage by acceptance criteria.
+	// Every R-item in a PRD should appear in at least one AC's traces list.
+	for prdID, rItems := range prdRItems {
+		acs := prdACs[prdID]
+		acTraced := make(map[string]bool)
+		for _, ac := range acs {
+			for _, tr := range ac.Traces {
+				acTraced[tr] = true
+			}
+		}
+		for _, rItem := range rItems {
+			if !acTraced[rItem] {
+				result.UncoveredRItems = append(result.UncoveredRItems,
+					fmt.Sprintf("%s: R-item %s not covered by any acceptance criterion", prdID, rItem))
+			}
+		}
+	}
+	sort.Strings(result.UncoveredRItems)
+	deps.Log("analyze: uncovered R-items found %d", len(result.UncoveredRItems))
+
+	// Check 16: AC coverage by test cases (warning).
+	// Every PRD AC should be traced by at least one test case.
+	for prdID, acs := range prdACs {
+		for _, ac := range acs {
+			traceKey := fmt.Sprintf("%s %s", prdID, ac.ID)
+			if !allTestCaseTraces[traceKey] {
+				result.UncoveredACs = append(result.UncoveredACs,
+					fmt.Sprintf("%s %s: not covered by any test case", prdID, ac.ID))
+			}
+		}
+	}
+	sort.Strings(result.UncoveredACs)
+	deps.Log("analyze: uncovered ACs found %d (warning)", len(result.UncoveredACs))
+
+	// Check 17: S-item traces to AC (warning).
+	// Every UC success criterion should trace to at least one valid PRD AC.
+	for ucID, scs := range ucSuccessCriteria {
+		for _, sc := range scs {
+			hasACTrace := false
+			for _, tr := range sc.Traces {
+				// Trace format: "prdNNN-name ACN"
+				parts := strings.Fields(tr)
+				if len(parts) >= 2 && strings.HasPrefix(parts[0], "prd") && strings.HasPrefix(parts[1], "AC") {
+					hasACTrace = true
+					break
+				}
+			}
+			if !hasACTrace {
+				result.UntracedSuccessCriteria = append(result.UntracedSuccessCriteria,
+					fmt.Sprintf("%s %s: no AC trace found", ucID, sc.ID))
+			}
+		}
+	}
+	sort.Strings(result.UntracedSuccessCriteria)
+	deps.Log("analyze: untraced success criteria found %d (warning)", len(result.UntracedSuccessCriteria))
+
 	// Check 7: YAML schema validation.
 	result.SchemaErrors = deps.ValidateDocSchemas()
 	deps.Log("analyze: schema validation found %d error(s)", len(result.SchemaErrors))
@@ -415,6 +494,9 @@ func (r AnalyzeResult) PrintReport(prdCount, ucCount, tsCount, smCount int) erro
 	hasIssues = PrintSection("Broken struct_refs (prd_id or requirement group not found)", r.BrokenStructRefs) || hasIssues
 	hasIssues = PrintSection("component_dependencies gaps (depends_on entries missing from component_dependencies)", r.ComponentDepViolations) || hasIssues
 	hasIssues = PrintSection("Semantic model errors (SM1 sections, SM3 traceability, SM7 naming)", r.SemanticModelErrors) || hasIssues
+	hasIssues = PrintSection("Uncovered R-items (R-item not traced by any acceptance criterion)", r.UncoveredRItems) || hasIssues
+	PrintSection("Uncovered ACs (AC not covered by any test case — warning)", r.UncoveredACs)
+	PrintSection("Untraced success criteria (S-item with no AC trace — warning)", r.UntracedSuccessCriteria)
 
 	if !hasIssues {
 		fmt.Printf("\n✅ All consistency checks passed\n")
@@ -430,15 +512,25 @@ func (r AnalyzeResult) PrintReport(prdCount, ucCount, tsCount, smCount int) erro
 // AnalyzeUseCase holds the fields extracted from a use case file
 // that are needed for cross-artifact consistency checks.
 type AnalyzeUseCase struct {
-	ID          string
-	Touchpoints []string
+	ID              string
+	Touchpoints     []string
+	SuccessCriteria []SuccessCriterion
 }
 
 // AnalyzeTestSuite holds the fields extracted from a test suite file
 // that are needed for cross-artifact consistency checks.
 type AnalyzeTestSuite struct {
-	ID     string   `yaml:"id"`
-	Traces []string `yaml:"traces"`
+	ID        string              `yaml:"id"`
+	Traces    []string            `yaml:"traces"`
+	TestCases []AnalyzeTestCase   `yaml:"test_cases"`
+}
+
+// AnalyzeTestCase holds the fields of a single test case within a
+// test suite that are relevant for traceability checks.
+type AnalyzeTestCase struct {
+	UseCase string   `yaml:"use_case"`
+	Name    string   `yaml:"name"`
+	Traces  []string `yaml:"traces"`
 }
 
 // ExtractID extracts the ID from a file path like
@@ -457,8 +549,9 @@ func LoadUseCase(path string) (*AnalyzeUseCase, error) {
 	}
 
 	var raw struct {
-		ID          string              `yaml:"id"`
-		Touchpoints []map[string]string `yaml:"touchpoints"`
+		ID              string              `yaml:"id"`
+		Touchpoints     []map[string]string `yaml:"touchpoints"`
+		SuccessCriteria []SuccessCriterion  `yaml:"success_criteria"`
 	}
 	if err := yaml.Unmarshal(data, &raw); err != nil {
 		return nil, err
@@ -472,8 +565,9 @@ func LoadUseCase(path string) (*AnalyzeUseCase, error) {
 	}
 
 	return &AnalyzeUseCase{
-		ID:          raw.ID,
-		Touchpoints: touchpointStrings,
+		ID:              raw.ID,
+		Touchpoints:     touchpointStrings,
+		SuccessCriteria: raw.SuccessCriteria,
 	}, nil
 }
 

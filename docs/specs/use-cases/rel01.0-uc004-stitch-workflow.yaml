@@ -34,13 +34,35 @@ touchpoints:
   - T5: "InvocationRecord: prd005-metrics-collection R1"
 
 success_criteria:
-  - S1: Ready tasks are picked and claimed one at a time
-  - S2: Each task runs in its own isolated worktree
-  - S3: Task branches are merged back to the base branch after completion
-  - S4: Worktrees and task branches are cleaned up after merge
-  - S5: Token usage and diff stats are recorded in history
-  - S6: GitHub issues are closed after successful execution
-  - S7: Stitch stops when no ready tasks remain or MaxIssues is reached
+  - id: S1
+    criterion: Ready tasks are picked and claimed one at a time
+    traces:
+      - prd003-cobbler-workflows AC2
+  - id: S2
+    criterion: Each task runs in its own isolated worktree
+    traces:
+      - prd003-cobbler-workflows AC2
+  - id: S3
+    criterion: Task branches are merged back to the base branch after completion
+    traces:
+      - prd003-cobbler-workflows AC2
+  - id: S4
+    criterion: Worktrees and task branches are cleaned up after merge
+    traces:
+      - prd003-cobbler-workflows AC2
+  - id: S5
+    criterion: Token usage and diff stats are recorded in history
+    traces:
+      - prd005-metrics-collection AC1
+      - prd005-metrics-collection AC5
+  - id: S6
+    criterion: GitHub issues are closed after successful execution
+    traces:
+      - prd003-cobbler-workflows AC2
+  - id: S7
+    criterion: Stitch stops when no ready tasks remain or MaxIssues is reached
+    traces:
+      - prd003-cobbler-workflows AC2
 
 out_of_scope:
   - Claude behavior and code quality (we test the workflow, not Claude output)

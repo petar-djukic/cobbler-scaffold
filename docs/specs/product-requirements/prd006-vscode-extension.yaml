@@ -134,24 +134,127 @@ non_goals:
   - This PRD does not define automated test execution from the extension
 
 acceptance_criteria:
-  - All six lifecycle commands (start, run, resume, stop, reset, switch) execute the correct mage target in an integrated terminal
-  - Generation browser lists all generations with correct lifecycle state derived from git tags
-  - Tag-to-tag comparison opens a file summary with clickable entries that launch VS Code diff editors
-  - Generation-to-generation comparison resolves branches and shows the same file summary
-  - Issue tracker fetches GitHub issues and displays them grouped by status
-  - InvocationRecord metrics appear as formatted child nodes under each issue
-  - Metrics dashboard aggregates and displays token usage, LOC progression, and diff stats
-  - All views refresh automatically when underlying data changes
-  - Extension activates only when configuration.yaml is present in the workspace
-  - Extension handles missing data files without errors
-  - Specification browser lists use cases, PRDs, and test suites from docs/specs/ with expandable nodes showing touchpoints and implementing source files
-  - Clicking a spec node opens the YAML file; clicking a source node opens the Go file
-  - "CodeLens appears above // prd: and // uc: comments in Go files, linking to the referenced specification YAML"
-  - mage vscode:push compiles TypeScript, packages a .vsix, and installs the extension into VS Code in a single invocation
-  - mage vscode:push aborts with a clear error when npm or the code CLI is not found on PATH
-  - mage vscode:pop uninstalls the extension from VS Code and reports the outcome
-  - "mage vscode:push GO installs the extension into the GO profile; mage vscode:pop GO removes it from the GO profile"
-  - "mage vscode:push with no profile installs to the default profile and logs how to specify a profile"
+  - id: AC1
+    criterion: All six lifecycle commands (start, run, resume, stop, reset, switch) execute the correct mage target in an integrated terminal
+    traces:
+      - R1.1
+      - R1.2
+      - R1.3
+      - R1.4
+      - R1.5
+      - R1.6
+  - id: AC2
+    criterion: Generation browser lists all generations with correct lifecycle state derived from git tags
+    traces:
+      - R2.1
+      - R2.2
+      - R2.3
+      - R2.4
+      - R2.5
+      - R2.6
+      - R2.7
+      - R2.8
+      - R2.9
+  - id: AC3
+    criterion: Tag-to-tag comparison opens a file summary with clickable entries that launch VS Code diff editors
+    traces:
+      - R3.1
+      - R3.2
+      - R3.3
+      - R3.4
+  - id: AC4
+    criterion: Generation-to-generation comparison resolves branches and shows the same file summary
+    traces:
+      - R3.5
+      - R3.6
+  - id: AC5
+    criterion: Issue tracker fetches GitHub issues and displays them grouped by status
+    traces:
+      - R4.1
+      - R4.2
+      - R4.3
+      - R4.4
+      - R4.5
+  - id: AC6
+    criterion: InvocationRecord metrics appear as formatted child nodes under each issue
+    traces:
+      - R4.6
+      - R4.7
+      - R4.8
+  - id: AC7
+    criterion: Metrics dashboard aggregates and displays token usage, LOC progression, and diff stats
+    traces:
+      - R5.1
+      - R5.2
+      - R5.3
+      - R5.4
+      - R5.5
+      - R5.6
+      - R5.7
+      - R5.8
+  - id: AC8
+    criterion: Configuration view opens configuration.yaml and displays active settings in the status tree
+    traces:
+      - R6.1
+      - R6.2
+      - R6.3
+  - id: AC9
+    criterion: All views refresh automatically when underlying data changes
+    traces:
+      - R2.9
+      - R4.7
+      - R5.8
+      - R7.2
+      - R8.7
+  - id: AC10
+    criterion: Extension activates only when configuration.yaml is present in the workspace
+    traces:
+      - R7.1
+  - id: AC11
+    criterion: Extension handles missing data files without errors
+    traces:
+      - R7.4
+      - R7.5
+  - id: AC12
+    criterion: Extension infrastructure registers all commands, views, and disposes resources on deactivation
+    traces:
+      - R7.3
+      - R7.6
+      - R7.7
+  - id: AC13
+    criterion: Specification browser lists use cases, PRDs, and test suites from docs/specs/ with expandable nodes showing touchpoints and implementing source files
+    traces:
+      - R8.1
+      - R8.2
+      - R8.3
+      - R8.4
+      - R8.5
+      - R8.6
+      - R8.7
+  - id: AC14
+    criterion: CodeLens appears above prd and uc comments in Go files, linking to the referenced specification YAML
+    traces:
+      - R9.1
+      - R9.2
+      - R9.3
+      - R9.4
+      - R9.5
+  - id: AC15
+    criterion: mage vscode:push compiles TypeScript, packages a .vsix, and installs the extension into VS Code in a single invocation
+    traces:
+      - R10.1
+      - R10.2
+      - R10.3
+      - R10.5
+  - id: AC16
+    criterion: mage vscode:pop uninstalls the extension from VS Code and reports the outcome
+    traces:
+      - R10.4
+  - id: AC17
+    criterion: Profile-aware installation targets a specified VS Code profile or defaults to the default profile
+    traces:
+      - R10.6
+      - R10.7
 
 references:
   - prd001-orchestrator-core

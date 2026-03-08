@@ -128,12 +128,28 @@ document_types:
       - goals (G1, G2, ...)
       - requirements (R1.1, R1.2, ..., grouped by R1, R2, ...)
       - non_goals
-      - acceptance_criteria
+      - acceptance_criteria (list of objects with id, criterion, traces)
     numbering:
       goals: "G1, G2, G3, ..."
       requirement_groups: "R1, R2, R3, ..."
       requirement_items: "R1.1, R1.2, R2.1, ..."
       requirement_id_format: "R{group}.{item} — numeric dotted only (e.g., R1.1, R2.3). Letter suffixes (R2a) are not valid and are flagged by mage analyze."
+      acceptance_criteria_ids: "AC1, AC2, AC3, ... (sequential within each PRD)"
+    acceptance_criteria_schema:
+      description: |
+        Each acceptance criterion is a structured object linking a checkable
+        statement to the requirement items it validates. Every R-item in the
+        PRD must appear in at least one AC's traces list.
+      fields:
+        - id: "AC1, AC2, ... (sequential)"
+        - criterion: "Checkable statement (the prose text)"
+        - traces: "List of R-item IDs this AC validates (e.g., [R1.1, R1.2])"
+      example: |
+        acceptance_criteria:
+          - id: AC1
+            criterion: Config struct includes all fields listed in R1 with YAML struct tags
+            traces: [R1.1, R1.2, R1.3]
+      completeness_rule: "Every R-item must appear in at least one AC's traces list"
     purpose: |
       Defines product requirements with numbered goals and requirements. Each
       requirement starts with "must" or "must not" or a concrete verb. No scope
@@ -150,12 +166,27 @@ document_types:
       - trigger
       - flow (F1, F2, ..., end-to-end steps)
       - touchpoints (T1, T2, ..., architecture elements exercised)
-      - success_criteria (S1, S2, ..., checkable outcomes)
+      - success_criteria (list of objects with id, criterion, traces)
       - out_of_scope
     numbering:
       flow_steps: "F1, F2, F3, ..."
       touchpoints: "T1, T2, T3, ..."
       success_criteria: "S1, S2, S3, ..."
+    success_criteria_schema:
+      description: |
+        Each success criterion is a structured object linking a checkable
+        outcome to the PRD acceptance criteria it exercises. The traces field
+        references PRD AC IDs using the format prdNNN-name ACN.
+      fields:
+        - id: "S1, S2, ... (sequential)"
+        - criterion: "Checkable outcome statement"
+        - traces: "List of PRD AC IDs (e.g., [prd001-orchestrator-core AC1])"
+      example: |
+        success_criteria:
+          - id: S1
+            criterion: New(config) returns a non-nil *Orchestrator
+            traces:
+              - prd001-orchestrator-core AC2
     purpose: |
       Describes a concrete usage of the architecture. One end-to-end path
       (tracer bullet) through the system. Leads to a proof-of-concept or demo.
@@ -170,6 +201,11 @@ document_types:
       - release (release ID this suite covers)
       - traces (list of use case IDs covered by this suite)
       - test_cases (list organized by use case sub-sections, each with name, inputs, expected outputs)
+    traces_format: |
+      The traces field in test_cases can reference three kinds of IDs:
+        - PRD R-item IDs: prdNNN-name RN.N (e.g., prd001-orchestrator-core R1.1)
+        - PRD AC IDs: prdNNN-name ACN (e.g., prd001-orchestrator-core AC1)
+        - UC S-item IDs: relNN.N-ucNNN-name SN (e.g., rel01.0-uc001-orchestrator-initialization S1)
     purpose: |
       Groups test cases for a full release. Each use case in the release appears
       as a sub-section within the suite. The YAML provides quick human/Claude
@@ -301,14 +337,15 @@ completeness_checklists:
     - requirements are grouped (R1, R2, ...) with numbered items (R1.1, R1.2, ...)
     - Each requirement is specific and actionable
     - non_goals define what is out of scope
-    - acceptance_criteria are checkable without ambiguity
+    - acceptance_criteria are structured objects with id, criterion, and traces
+    - Every R-item appears in at least one AC's traces list
     - File saved as prd[NNN]-[feature-name].yaml
 
   use_case:
     - id matches filename without extension
     - flow steps are numbered (F1, F2, ...), end-to-end, map to real components
     - touchpoints are numbered (T1, T2, ...) and list interfaces, components, protocols
-    - success_criteria are numbered (S1, S2, ...) and checkable without ambiguity
+    - success_criteria are structured objects with id, criterion, and traces to PRD AC IDs
     - test_suite references a corresponding test suite ID
     - Test suite YAML exists and traces back to this use case
     - Use case added to appropriate release in road-map.yaml

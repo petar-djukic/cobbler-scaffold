@@ -28,9 +28,19 @@ touchpoints:
   - T3: "Config limits: prd001-orchestrator-core R1"
 
 success_criteria:
-  - S1: Benchmarks complete without error for each limit value
-  - S2: Wall-clock time and issue counts are reported per sub-benchmark
-  - S3: Benchmarks are isolated from functional tests (run via separate mage target)
+  - id: S1
+    criterion: Benchmarks complete without error for each limit value
+    traces:
+      - prd003-cobbler-workflows AC1
+      - prd003-cobbler-workflows AC2
+  - id: S2
+    criterion: Wall-clock time and issue counts are reported per sub-benchmark
+    traces:
+      - prd005-metrics-collection AC1
+  - id: S3
+    criterion: Benchmarks are isolated from functional tests (run via separate mage target)
+    traces:
+      - prd003-cobbler-workflows AC1
 
 out_of_scope:
   - Functional correctness of measure or stitch (covered by UC003, UC004)

@@ -40,10 +40,27 @@ type RoadmapUseCase struct {
 // PRDDoc corresponds to docs/specs/product-requirements/prd*.yaml
 // (analysis-relevant fields).
 type PRDDoc struct {
-	Requirements    map[string]PRDRequirementGroup `yaml:"requirements"`
-	PackageContract *PRDPackageContract            `yaml:"package_contract,omitempty"`
-	DependsOn       []PRDDependsOn                 `yaml:"depends_on,omitempty"`
-	StructRefs      []PRDStructRef                 `yaml:"struct_refs,omitempty"`
+	Requirements       map[string]PRDRequirementGroup `yaml:"requirements"`
+	AcceptanceCriteria []AcceptanceCriterion          `yaml:"acceptance_criteria"`
+	PackageContract    *PRDPackageContract            `yaml:"package_contract,omitempty"`
+	DependsOn          []PRDDependsOn                 `yaml:"depends_on,omitempty"`
+	StructRefs         []PRDStructRef                 `yaml:"struct_refs,omitempty"`
+}
+
+// AcceptanceCriterion is a structured acceptance criterion with an ID,
+// description, and traceability links to requirement items.
+type AcceptanceCriterion struct {
+	ID        string   `yaml:"id"`
+	Criterion string   `yaml:"criterion"`
+	Traces    []string `yaml:"traces"`
+}
+
+// SuccessCriterion is a structured success criterion from a use case,
+// with an ID, description, and traceability links to PRD ACs.
+type SuccessCriterion struct {
+	ID        string   `yaml:"id"`
+	Criterion string   `yaml:"criterion"`
+	Traces    []string `yaml:"traces"`
 }
 
 // PRDRequirementGroup is a requirement section within a PRD.
