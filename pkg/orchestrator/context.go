@@ -19,6 +19,7 @@ import (
 	"sort"
 	"strings"
 
+	gh "github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/github"
 	"gopkg.in/yaml.v3"
 )
 
@@ -846,15 +847,8 @@ type Risk struct {
 	Mitigation string `yaml:"mitigation"`
 }
 
-// ContextIssue represents an issue tracker entry in the project context.
-// It captures the fields needed for Claude to avoid creating duplicate
-// issues during measure.
-type ContextIssue struct {
-	ID     string `yaml:"id"     json:"id"`
-	Title  string `yaml:"title"  json:"title"`
-	Status string `yaml:"status" json:"status"`
-	Type   string `yaml:"type"   json:"type"`
-}
+// ContextIssue is a type alias for the github sub-package's ContextIssue.
+type ContextIssue = gh.ContextIssue
 
 // NamedDoc wraps project-specific YAML files that don't have a fixed
 // schema (e.g., utilities.yaml, sources.yaml). Content is stored as a

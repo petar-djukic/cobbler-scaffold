@@ -553,12 +553,7 @@ func filterImplementedRelease(release string) string {
 	return release
 }
 
-type proposedIssue struct {
-	Index       int    `yaml:"index"`
-	Title       string `yaml:"title"`
-	Description string `yaml:"description"`
-	Dependency  int    `yaml:"dependency"`
-}
+// proposedIssue is aliased from internal/github in issues_gh.go.
 
 // importIssues imports proposed issues from a YAML file into GitHub. It returns
 // the created issue IDs, any validation error strings (for retry feedback), and
