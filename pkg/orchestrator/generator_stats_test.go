@@ -91,6 +91,51 @@ func TestParseStitchComment_NoMatch(t *testing.T) {
 	}
 }
 
+func TestParseStitchComment_PromptBytes(t *testing.T) {
+	t.Parallel()
+	body := "Stitch started. Branch: `generation-main`, prompt: 524288 bytes."
+	d := parseStitchComment(body)
+	if d.promptBytes != 524288 {
+		t.Errorf("promptBytes = %d, want 524288", d.promptBytes)
+	}
+}
+
+func TestParseStitchComment_PromptBytes_NoMatch(t *testing.T) {
+	t.Parallel()
+	body := "Stitch completed in 5m 32s. LOC delta: +45 prod, +17 test. Cost: $0.42."
+	d := parseStitchComment(body)
+	if d.promptBytes != 0 {
+		t.Errorf("promptBytes = %d, want 0", d.promptBytes)
+	}
+}
+
+// --- formatBytes (GH-1116) ---
+
+func TestFormatBytes(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name  string
+		bytes int
+		want  string
+	}{
+		{"megabytes", 1_500_000, "1.5M"},
+		{"exactly 1M", 1_000_000, "1.0M"},
+		{"kilobytes", 524288, "524K"},
+		{"small kilobytes", 1000, "1K"},
+		{"bytes", 999, "999B"},
+		{"zero", 0, "0B"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := formatBytes(tc.bytes)
+			if got != tc.want {
+				t.Errorf("formatBytes(%d) = %q, want %q", tc.bytes, got, tc.want)
+			}
+		})
+	}
+}
+
 // --- extractRelease (GH-1025) ---
 
 func TestExtractRelease(t *testing.T) {

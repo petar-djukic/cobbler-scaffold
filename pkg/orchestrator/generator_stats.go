@@ -26,6 +26,7 @@ type generatorIssueStats struct {
 	locDeltaProd int
 	locDeltaTest int
 	numReqs      int // number of requirements in the task description
+	promptBytes  int // prompt size in bytes from "Stitch started" comment
 	prds         []string
 	release      string // roadmap release version, e.g. "01.0"
 }
@@ -63,7 +64,7 @@ func (o *Orchestrator) GeneratorStats() error {
 	// Collect per-issue stats.
 	rows := make([]generatorIssueStats, 0, len(issues))
 	var totalCost float64
-	var totalTurns, totalLocProd, totalLocTest, totalReqs int
+	var totalTurns, totalLocProd, totalLocTest, totalReqs, totalPromptBytes int
 	var nDone, nFailed, nInProgress, nPending int
 	prdStatus := make(map[string]string) // prd name → highest-priority status
 	prdReleaseMap := buildPRDReleaseMap()
@@ -101,11 +102,15 @@ func (o *Orchestrator) GeneratorStats() error {
 			}
 			s.locDeltaProd += p.locDeltaProd
 			s.locDeltaTest += p.locDeltaTest
+			if p.promptBytes > 0 {
+				s.promptBytes = p.promptBytes
+			}
 		}
 		totalCost += s.costUSD
 		totalTurns += s.numTurns
 		totalLocProd += s.locDeltaProd
 		totalLocTest += s.locDeltaTest
+		totalPromptBytes += s.promptBytes
 
 		s.numReqs = countDescriptionReqs(iss.Description)
 		totalReqs += s.numReqs
@@ -152,6 +157,9 @@ func (o *Orchestrator) GeneratorStats() error {
 	fmt.Printf("Total cost: $%.2f, %d turns\n", totalCost, totalTurns)
 	fmt.Printf("LOC created: %+d prod, %+d test\n", totalLocProd, totalLocTest)
 	fmt.Printf("Requirements: %d total in tasks\n", totalReqs)
+	if totalPromptBytes > 0 {
+		fmt.Printf("Prompt total: %s\n", formatBytes(totalPromptBytes))
+	}
 
 	// Per-release breakdown.
 	type relCounts struct{ done, inProgress, pending, failed int }
@@ -196,8 +204,12 @@ func (o *Orchestrator) GeneratorStats() error {
 
 	// Issue table.
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "#\tStatus\tRel\tReqs\tCost\tDuration\tTurns\tProd\tTest\tTitle")
+	fmt.Fprintln(w, "#\tStatus\tRel\tReqs\tPrompt\tCost\tDuration\tTurns\tProd\tTest\tTitle")
 	for _, r := range rows {
+		prompt := "-"
+		if r.promptBytes > 0 {
+			prompt = formatBytes(r.promptBytes)
+		}
 		cost := "-"
 		if r.costUSD > 0 {
 			cost = fmt.Sprintf("$%.2f", r.costUSD)
@@ -230,8 +242,8 @@ func (o *Orchestrator) GeneratorStats() error {
 		if len(title) > 48 {
 			title = title[:45] + "..."
 		}
-		fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-			r.Number, r.status, rel, reqs, cost, dur, turns, prod, test, title)
+		fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			r.Number, r.status, rel, reqs, prompt, cost, dur, turns, prod, test, title)
 	}
 	if err := w.Flush(); err != nil {
 		return err
@@ -282,6 +294,7 @@ type stitchCommentData struct {
 	numTurns     int
 	locDeltaProd int
 	locDeltaTest int
+	promptBytes  int
 }
 
 // parseStitchComment extracts cost and duration from a stitch progress comment
@@ -321,6 +334,17 @@ func parseStitchComment(body string) stitchCommentData {
 		turnsStr = strings.TrimRight(turnsStr, ".,;")
 		if v, err := strconv.Atoi(turnsStr); err == nil {
 			d.numTurns = v
+		}
+	}
+
+	// Parse "prompt: N bytes" from Stitch started comment.
+	if i := strings.Index(body, "prompt: "); i >= 0 {
+		rest := body[i+8:]
+		var bytesStr string
+		fmt.Sscanf(rest, "%s", &bytesStr)
+		bytesStr = strings.TrimRight(bytesStr, ".,;")
+		if v, err := strconv.Atoi(bytesStr); err == nil {
+			d.promptBytes = v
 		}
 	}
 
@@ -448,6 +472,18 @@ func extractRelease(text string) string {
 		return ""
 	}
 	return m[1]
+}
+
+// formatBytes returns a human-readable byte size, e.g. "125K" or "1.2M".
+func formatBytes(b int) string {
+	switch {
+	case b >= 1_000_000:
+		return fmt.Sprintf("%.1fM", float64(b)/1_000_000)
+	case b >= 1_000:
+		return fmt.Sprintf("%dK", b/1_000)
+	default:
+		return fmt.Sprintf("%dB", b)
+	}
 }
 
 // extractPRDRefs returns deduplicated prd-* tokens found in text.
