@@ -1,0 +1,2112 @@
+// Copyright (c) 2026 Petar Djukic. All rights reserved.
+// SPDX-License-Identifier: MIT
+
+// Package context assembles project documentation, source code, and
+// configuration into structured context objects for injection into
+// measure and stitch prompts.
+package context
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/printer"
+	"go/token"
+	"io/fs"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"regexp"
+	"sort"
+	"strings"
+
+	gh "github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/github"
+	"gopkg.in/yaml.v3"
+)
+
+// ---------------------------------------------------------------------------
+// Injected dependencies
+// ---------------------------------------------------------------------------
+
+// Logger is a function that formats and emits log messages.
+type Logger func(format string, args ...any)
+
+// Log is the package-level logger. The parent package sets this
+// at init time; defaults to a no-op.
+var Log Logger = func(string, ...any) {}
+
+// LoadAnalysisDocFn loads an AnalysisDoc from a cobbler directory.
+// Set by the parent package to break the circular dependency.
+var LoadAnalysisDocFn func(cobblerDir string) any
+
+// ---------------------------------------------------------------------------
+// ContextConfig: fields needed from ProjectConfig
+// ---------------------------------------------------------------------------
+
+// ContextConfig holds the project configuration fields needed for
+// context assembly. The parent package maps its ProjectConfig to this.
+type ContextConfig struct {
+	ContextInclude string
+	ContextExclude string
+	ContextSources string
+	Releases       []string
+	Release        string
+	GoSourceDirs   []string
+}
+
+// ---------------------------------------------------------------------------
+// PhaseContext: per-phase context overrides (prd003 R9)
+// ---------------------------------------------------------------------------
+
+// PhaseContext holds per-phase context specification that overrides
+// ProjectConfig fields when loaded from measure_context.yaml or
+// stitch_context.yaml. See eng08-phase-context-files for design.
+type PhaseContext struct {
+	Include string `yaml:"include"`
+	Exclude string `yaml:"exclude"`
+	Sources string `yaml:"sources"`
+	Release string `yaml:"release"`
+	// ExcludeSource excludes all Go source code from the prompt context
+	// when true. Specs are always included (GH-565).
+	ExcludeSource bool `yaml:"exclude_source"`
+	// SourcePatterns is a newline-delimited list of glob patterns.
+	// When non-empty, only matching source files are included (GH-565).
+	SourcePatterns string `yaml:"source_patterns"`
+	// ExcludeTests excludes *_test.go files from the source code included
+	// in the prompt context. Measure prompt only — stitch needs test files
+	// to write compatible tests (GH-616).
+	ExcludeTests bool `yaml:"exclude_tests"`
+	// SourceMode overrides CobblerConfig.MeasureSourceMode for this
+	// invocation. Valid values: "full", "headers", "custom". Empty means
+	// use the config value. Measure prompt only — stitch ignores this
+	// field and always uses full source (GH-617, prd003 R12.6).
+	SourceMode string `yaml:"source_mode"`
+	// SummarizeCommand overrides CobblerConfig.MeasureSummarizeCommand
+	// for this invocation. Used when SourceMode is "custom" (GH-617).
+	SummarizeCommand string `yaml:"summarize_command"`
+}
+
+// LoadPhaseContext reads a phase context YAML file. Returns (nil, nil)
+// when the file does not exist (caller falls back to Config). Returns
+// an error when the file exists but is malformed.
+func LoadPhaseContext(path string) (*PhaseContext, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("reading phase context %s: %w", path, err)
+	}
+	var pc PhaseContext
+	if err := yaml.Unmarshal(data, &pc); err != nil {
+		return nil, fmt.Errorf("parsing phase context %s: %w", path, err)
+	}
+	return &pc, nil
+}
+
+// DefaultMeasureContext is the scaffold template for measure_context.yaml.
+const DefaultMeasureContext = `# Phase context for the measure workflow.
+# Fields override the corresponding configuration.yaml settings when present.
+# Remove or leave fields empty to use configuration.yaml defaults.
+# See docs/engineering/eng08-phase-context-files.yaml for schema details.
+
+# include: |
+#   docs/VISION.yaml
+#   docs/ARCHITECTURE.yaml
+#   docs/specs/**/*.yaml
+
+# exclude: |
+#   docs/engineering/*
+
+# sources: |
+#   docs/constitutions/*.yaml
+
+# release: "01.0"
+`
+
+// DefaultStitchContext is the scaffold template for stitch_context.yaml.
+const DefaultStitchContext = `# Phase context for the stitch workflow.
+# Fields override the corresponding configuration.yaml settings when present.
+# Remove or leave fields empty to use configuration.yaml defaults.
+# See docs/engineering/eng08-phase-context-files.yaml for schema details.
+
+# include: |
+#   docs/ARCHITECTURE.yaml
+#   docs/specs/product-requirements/prd*.yaml
+
+# exclude: |
+#   docs/engineering/*
+
+# sources: |
+#   docs/constitutions/*.yaml
+
+# release: "01.0"
+`
+
+// ---------------------------------------------------------------------------
+// ProjectContext: top-level container
+// ---------------------------------------------------------------------------
+
+// ProjectContext assembles all project documentation into a single
+// structured document for injection into the measure prompt.
+type ProjectContext struct {
+	Vision         *VisionDoc         `yaml:"vision,omitempty"`
+	Architecture   *ArchitectureDoc   `yaml:"architecture,omitempty"`
+	Specifications *SpecificationsDoc `yaml:"specifications,omitempty"`
+	Roadmap        *RoadmapDoc        `yaml:"roadmap,omitempty"`
+	Specs          *SpecsCollection   `yaml:"specs,omitempty"`
+	Engineering    []*EngineeringDoc  `yaml:"engineering,omitempty"`
+	Analysis       any                `yaml:"analysis,omitempty"`
+	SourceCode     []SourceFile       `yaml:"source_code,omitempty"`
+	Issues         []ContextIssue     `yaml:"issues,omitempty"`
+	CompletedWork  []string           `yaml:"completed_work,omitempty"`
+	Extra          []*NamedDoc        `yaml:"extra,omitempty"`
+}
+
+// SourceFile holds a source file for inclusion in the project context.
+// Lines are formatted as "{number} | {content}", with blank lines omitted.
+type SourceFile struct {
+	File  string `yaml:"file"`
+	Lines string `yaml:"lines"`
+}
+
+// ---------------------------------------------------------------------------
+// Vision
+// ---------------------------------------------------------------------------
+
+// VisionDoc corresponds to docs/VISION.yaml.
+type VisionDoc struct {
+	File                 string            `yaml:"file,omitempty"`
+	ID                   string            `yaml:"id"`
+	Title                string            `yaml:"title"`
+	ExecutiveSummary     string            `yaml:"executive_summary"`
+	Problem              string            `yaml:"problem"`
+	WhatThisDoes         string            `yaml:"what_this_does"`
+	WhyWeBuildThis       string            `yaml:"why_we_build_this"`
+	RelatedProjects      []RelatedProject  `yaml:"related_projects,omitempty"`
+	SuccessCriteria      map[string]string `yaml:"success_criteria"`
+	ImplementationPhases []Phase           `yaml:"implementation_phases"`
+	Risks                []Risk            `yaml:"risks"`
+	Not                  []string          `yaml:"not"`
+}
+
+// RelatedProject describes a project related to this one.
+type RelatedProject struct {
+	Project string `yaml:"project"`
+	Role    string `yaml:"role"`
+}
+
+// ---------------------------------------------------------------------------
+// Architecture
+// ---------------------------------------------------------------------------
+
+// ArchitectureDoc corresponds to docs/ARCHITECTURE.yaml.
+type ArchitectureDoc struct {
+	File                   string                    `yaml:"file,omitempty"`
+	ID                     string                    `yaml:"id"`
+	Title                  string                    `yaml:"title"`
+	Overview               ArchOverview              `yaml:"overview"`
+	Interfaces             []ArchInterface           `yaml:"interfaces"`
+	Components             []ArchComponent           `yaml:"components"`
+	DesignDecisions        []ArchDecision            `yaml:"design_decisions"`
+	TechnologyChoices      []ArchTech                `yaml:"technology_choices"`
+	ProjectStructure       []ArchPathRole            `yaml:"project_structure"`
+	ImplementationStatus   ArchImplStatus            `yaml:"implementation_status"`
+	RelatedDocuments       []ArchReference           `yaml:"related_documents"`
+	Figures                []ArchFigure              `yaml:"figures,omitempty"`
+	DependencyRules        []ArchDependencyRule      `yaml:"dependency_rules,omitempty"`
+	SharedProtocols        []ArchSharedProtocol      `yaml:"shared_protocols,omitempty"`
+	ComponentDependencies  []ArchComponentDependency `yaml:"component_dependencies,omitempty"`
+}
+
+type ArchOverview struct {
+	Summary             string `yaml:"summary"`
+	Lifecycle           string `yaml:"lifecycle"`
+	CoordinationPattern string `yaml:"coordination_pattern"`
+}
+
+// ArchInterface describes a named interface grouping with its
+// data structures and operations.
+type ArchInterface struct {
+	Name           string   `yaml:"name"`
+	Summary        string   `yaml:"summary"`
+	DataStructures []string `yaml:"data_structures,omitempty"`
+	Operations     []string `yaml:"operations,omitempty"`
+}
+
+type ArchComponent struct {
+	Name           string   `yaml:"name"`
+	ProvidedBy     string   `yaml:"provided_by,omitempty"`
+	Responsibility string   `yaml:"responsibility"`
+	Capabilities   []string `yaml:"capabilities"`
+	References     []string `yaml:"references,omitempty"`
+}
+
+type ArchDecision struct {
+	ID                   int      `yaml:"id"`
+	Title                string   `yaml:"title"`
+	Decision             string   `yaml:"decision"`
+	Benefits             []string `yaml:"benefits"`
+	AlternativesRejected []string `yaml:"alternatives_rejected"`
+}
+
+type ArchTech struct {
+	Component  string `yaml:"component"`
+	Technology string `yaml:"technology"`
+	Purpose    string `yaml:"purpose"`
+}
+
+type ArchPathRole struct {
+	Path string `yaml:"path"`
+	Role string `yaml:"role"`
+}
+
+type ArchImplStatus struct {
+	CurrentFocus string              `yaml:"current_focus"`
+	Progress     []map[string]string `yaml:"progress"`
+}
+
+// ArchReference is a related-document entry in ARCHITECTURE.yaml.
+type ArchReference struct {
+	Doc     string `yaml:"doc"`
+	Purpose string `yaml:"purpose"`
+}
+
+// ArchFigure is an architecture diagram reference.
+type ArchFigure struct {
+	Path    string `yaml:"path"`
+	Caption string `yaml:"caption"`
+}
+
+// ArchDependencyRule encodes a layering constraint between package groups.
+// Allowed=false means From must not import To.
+type ArchDependencyRule struct {
+	Description string `yaml:"description"`
+	From        string `yaml:"from"`
+	To          string `yaml:"to"`
+	Allowed     bool   `yaml:"allowed"`
+}
+
+// ArchSharedProtocol describes a cross-cutting pattern all commands must follow.
+type ArchSharedProtocol struct {
+	Name        string `yaml:"name"`
+	Description string `yaml:"description"`
+	Pattern     string `yaml:"pattern,omitempty"`
+}
+
+// ArchComponentDependency is one directed edge in the package-level import graph.
+type ArchComponentDependency struct {
+	From string `yaml:"from"`
+	To   string `yaml:"to"`
+}
+
+// ---------------------------------------------------------------------------
+// Specifications
+// ---------------------------------------------------------------------------
+
+// SpecificationsDoc corresponds to docs/SPECIFICATIONS.yaml.
+type SpecificationsDoc struct {
+	File                 string          `yaml:"file,omitempty"`
+	ID                   string          `yaml:"id"`
+	Title                string          `yaml:"title"`
+	Overview             string          `yaml:"overview"`
+	RoadmapSummary       []SpecRelease   `yaml:"roadmap_summary"`
+	PRDIndex             []SpecIndex     `yaml:"prd_index"`
+	UseCaseIndex         []SpecIndex     `yaml:"use_case_index"`
+	TestSuiteIndex       []TestSuiteRef  `yaml:"test_suite_index"`
+	PRDToUseCaseMapping  []PRDUseCaseMap `yaml:"prd_to_use_case_mapping"`
+	TraceabilityDiagram  string          `yaml:"traceability_diagram,omitempty"`
+	CoverageGaps         string          `yaml:"coverage_gaps"`
+	References           []string        `yaml:"references,omitempty"`
+}
+
+type SpecRelease struct {
+	Version       string `yaml:"version"`
+	Name          string `yaml:"name"`
+	UseCasesDone  int    `yaml:"use_cases_done"`
+	UseCasesTotal int    `yaml:"use_cases_total"`
+	Status        string `yaml:"status"`
+}
+
+type SpecIndex struct {
+	ID        string `yaml:"id"`
+	Title     string `yaml:"title"`
+	Summary   string `yaml:"summary,omitempty"`
+	Release   string `yaml:"release,omitempty"`
+	Status    string `yaml:"status,omitempty"`
+	TestSuite string `yaml:"test_suite,omitempty"`
+	Path      string `yaml:"path,omitempty"`
+}
+
+type TestSuiteRef struct {
+	ID            string   `yaml:"id"`
+	Title         string   `yaml:"title"`
+	Release       string   `yaml:"release"`
+	Traces        []string `yaml:"traces"`
+	TestCaseCount int      `yaml:"test_case_count"`
+	Path          string   `yaml:"path"`
+}
+
+type PRDUseCaseMap struct {
+	UseCase     string `yaml:"use_case"`
+	PRD         string `yaml:"prd"`
+	WhyRequired string `yaml:"why_required"`
+	Coverage    string `yaml:"coverage"`
+}
+
+// ---------------------------------------------------------------------------
+// Roadmap
+// ---------------------------------------------------------------------------
+
+// RoadmapDoc corresponds to docs/road-map.yaml.
+type RoadmapDoc struct {
+	File           string           `yaml:"file,omitempty"`
+	ID             string           `yaml:"id"`
+	Title          string           `yaml:"title"`
+	Releases       []RoadmapRelease `yaml:"releases"`
+	Prioritization []string         `yaml:"prioritization,omitempty"`
+}
+
+type RoadmapRelease struct {
+	Version     string           `yaml:"version"`
+	Name        string           `yaml:"name"`
+	Status      string           `yaml:"status"`
+	Description string           `yaml:"description,omitempty"`
+	UseCases    []RoadmapUseCase `yaml:"use_cases"`
+}
+
+type RoadmapUseCase struct {
+	ID      string `yaml:"id"`
+	Summary string `yaml:"summary,omitempty"`
+	Status  string `yaml:"status"`
+}
+
+// ---------------------------------------------------------------------------
+// Specs collection
+// ---------------------------------------------------------------------------
+
+// SpecsCollection groups product requirements, use cases, test suites,
+// and supporting specs from docs/specs/.
+type SpecsCollection struct {
+	ProductRequirements []*PRDDoc       `yaml:"product_requirements,omitempty"`
+	UseCases            []*UseCaseDoc   `yaml:"use_cases,omitempty"`
+	TestSuites          []*TestSuiteDoc `yaml:"test_suites,omitempty"`
+	DependencyMap       *NamedDoc       `yaml:"dependency_map,omitempty"`
+	Sources             *NamedDoc       `yaml:"sources,omitempty"`
+}
+
+// ---------------------------------------------------------------------------
+// PRD
+// ---------------------------------------------------------------------------
+
+// PRDDoc corresponds to docs/specs/product-requirements/prd*.yaml.
+// Goals use "- G1: text" format (list of single-key maps).
+// Requirements use a map keyed by group ID (R1, R2, ...).
+// AcceptanceCriteria are plain strings.
+type PRDDoc struct {
+	File               string                         `yaml:"file,omitempty"`
+	ID                 string                         `yaml:"id"`
+	Title              string                         `yaml:"title"`
+	Problem            string                         `yaml:"problem"`
+	Goals              []map[string]string            `yaml:"goals"`
+	Requirements       map[string]PRDRequirementGroup `yaml:"requirements"`
+	NonGoals           []string                       `yaml:"non_goals"`
+	AcceptanceCriteria []string                       `yaml:"acceptance_criteria"`
+	References         []string                       `yaml:"references,omitempty"`
+	PackageContract    *PRDPackageContract            `yaml:"package_contract,omitempty"`
+	DependsOn          []PRDDependsOn                 `yaml:"depends_on,omitempty"`
+	StructRefs         []PRDStructRef                 `yaml:"struct_refs,omitempty"`
+	SemanticModel      *yaml.Node                     `yaml:"semantic_model,omitempty"`
+}
+
+// PRDRequirementGroup is a requirement section within a PRD.
+// Items use "- R1.1: text" format (list of single-key maps).
+type PRDRequirementGroup struct {
+	Title string              `yaml:"title"`
+	Items []map[string]string `yaml:"items"`
+}
+
+// PRDPackageContract describes the public API surface of a pkg/ package.
+type PRDPackageContract struct {
+	Exports           []PRDExport `yaml:"exports,omitempty"`
+	Imports           []string    `yaml:"imports,omitempty"`
+	ImportConstraints []string    `yaml:"import_constraints,omitempty"`
+}
+
+// PRDExport is a single exported symbol with its signature.
+type PRDExport struct {
+	Name      string `yaml:"name"`
+	Signature string `yaml:"signature,omitempty"`
+}
+
+// PRDDependsOn declares that a cmd/ PRD depends on a pkg/ PRD,
+// listing the specific symbols consumed.
+type PRDDependsOn struct {
+	PRDID       string   `yaml:"prd_id"`
+	SymbolsUsed []string `yaml:"symbols_used,omitempty"`
+}
+
+// PRDStructRef cross-references a type definition in another PRD
+// to avoid inline duplication.
+type PRDStructRef struct {
+	PRDID       string `yaml:"prd_id"`
+	Requirement string `yaml:"requirement"`
+}
+
+// ---------------------------------------------------------------------------
+// Use case
+// ---------------------------------------------------------------------------
+
+// UseCaseDoc corresponds to docs/specs/use-cases/rel*.yaml.
+// Flow, touchpoints, and success_criteria use "- KEY: text" format.
+type UseCaseDoc struct {
+	File                string               `yaml:"file,omitempty"`
+	ID                  string               `yaml:"id"`
+	Title               string               `yaml:"title"`
+	Summary             string               `yaml:"summary"`
+	Actor               string               `yaml:"actor"`
+	Trigger             string               `yaml:"trigger"`
+	Flow                []map[string]string  `yaml:"flow"`
+	Touchpoints         []map[string]string  `yaml:"touchpoints"`
+	SuccessCriteria     []map[string]string  `yaml:"success_criteria"`
+	Dependencies        []map[string]string  `yaml:"dependencies,omitempty"`
+	Risks               []map[string]string  `yaml:"risks,omitempty"`
+	OutOfScope          []string             `yaml:"out_of_scope"`
+	TestSuite           string               `yaml:"test_suite,omitempty"`
+	InteractionSequence []UCInteractionStep  `yaml:"interaction_sequence,omitempty"`
+}
+
+// UCInteractionStep is one structured caller/callee/step tuple in an
+// interaction_sequence, replacing prose descriptions in flow entries.
+type UCInteractionStep struct {
+	Caller string `yaml:"caller"`
+	Callee string `yaml:"callee"`
+	Step   string `yaml:"step"`
+}
+
+// ---------------------------------------------------------------------------
+// OOD prompt context helpers
+// ---------------------------------------------------------------------------
+
+// OODPackageContractRef bundles a PRD ID with its package_contract for
+// injection into measure and stitch prompts as structured API context.
+type OODPackageContractRef struct {
+	PRDID    string             `yaml:"prd_id"`
+	Contract PRDPackageContract `yaml:"contract"`
+}
+
+// LoadOODPromptContext reads all PRDs under docs/specs/product-requirements/
+// and returns:
+//   - contracts: one OODPackageContractRef per PRD that has a non-empty
+//     package_contract (used in both measure and stitch prompts).
+//   - sharedProtocols: the shared_protocols from docs/ARCHITECTURE.yaml
+//     (used in the stitch prompt only).
+//
+// Missing files and parse errors are silently skipped; the function
+// always returns non-nil slices.
+func LoadOODPromptContext() (contracts []OODPackageContractRef, sharedProtocols []ArchSharedProtocol) {
+	contracts = []OODPackageContractRef{}
+	sharedProtocols = []ArchSharedProtocol{}
+
+	prdFiles, _ := filepath.Glob("docs/specs/product-requirements/prd*.yaml")
+	for _, path := range prdFiles {
+		prd := LoadYAML[PRDDoc](path)
+		if prd == nil || prd.PackageContract == nil || len(prd.PackageContract.Exports) == 0 {
+			continue
+		}
+		contracts = append(contracts, OODPackageContractRef{
+			PRDID:    prd.ID,
+			Contract: *prd.PackageContract,
+		})
+	}
+
+	if data, err := os.ReadFile("docs/ARCHITECTURE.yaml"); err == nil {
+		var arch ArchitectureDoc
+		if yaml.Unmarshal(data, &arch) == nil {
+			sharedProtocols = arch.SharedProtocols
+		}
+	}
+	return contracts, sharedProtocols
+}
+
+// ---------------------------------------------------------------------------
+// Test suite
+// ---------------------------------------------------------------------------
+
+// TestSuiteDoc corresponds to docs/specs/test-suites/test-rel*.yaml.
+type TestSuiteDoc struct {
+	File          string     `yaml:"file,omitempty"`
+	ID            string     `yaml:"id"`
+	Title         string     `yaml:"title"`
+	Release       string     `yaml:"release"`
+	Traces        []string   `yaml:"traces"`
+	Tags          []string   `yaml:"tags,omitempty"`
+	Preconditions []string   `yaml:"preconditions"`
+	TestCases     []TestCase `yaml:"test_cases"`
+	Cleanup       []string   `yaml:"cleanup,omitempty"`
+}
+
+// TestCase uses yaml.Node for Inputs and Expected because test suites
+// across releases have different field schemas (CLI tests vs UI tests).
+type TestCase struct {
+	UseCase       string    `yaml:"use_case,omitempty"`
+	Name          string    `yaml:"name"`
+	GoTest        string    `yaml:"go_test,omitempty"`
+	CoveredBy     string    `yaml:"covered_by,omitempty"`
+	Description   string    `yaml:"description,omitempty"`
+	Inputs        yaml.Node `yaml:"inputs"`
+	Normalization string    `yaml:"normalization,omitempty"`
+	Expected      yaml.Node `yaml:"expected"`
+	Traces        []string  `yaml:"traces,omitempty"`
+}
+
+// ---------------------------------------------------------------------------
+// Engineering
+// ---------------------------------------------------------------------------
+
+// EngineeringDoc corresponds to docs/engineering/eng*.yaml.
+// References are plain strings (file paths or document IDs).
+type EngineeringDoc struct {
+	File         string       `yaml:"file,omitempty"`
+	ID           string       `yaml:"id"`
+	Title        string       `yaml:"title"`
+	Introduction string       `yaml:"introduction"`
+	Sections     []DocSection `yaml:"sections"`
+	References   []string     `yaml:"references,omitempty"`
+}
+
+type DocSection struct {
+	Title   string `yaml:"title"`
+	Content string `yaml:"content"`
+}
+
+// ---------------------------------------------------------------------------
+// Go style (used by analyze.go validateYAMLStrict)
+// ---------------------------------------------------------------------------
+
+// GoStyleDoc corresponds to docs/constitutions/go-style.yaml.
+// It provides typed schema enforcement for the Go coding standards
+// constitution via validateYAMLStrict.
+type GoStyleDoc struct {
+	CopyrightHeader         string                `yaml:"copyright_header"`
+	Duplication             string                `yaml:"duplication"`
+	DesignPatterns          []GoStylePattern      `yaml:"design_patterns"`
+	Interfaces              string                `yaml:"interfaces"`
+	StructAndFunctionDesign string                `yaml:"struct_and_function_design"`
+	ReceiverConventions     string                `yaml:"receiver_conventions"`
+	ErrorHandling           string                `yaml:"error_handling"`
+	PanicVsError            string                `yaml:"panic_vs_error"`
+	InitFunctions           string                `yaml:"init_functions"`
+	NoMagicStrings          string                `yaml:"no_magic_strings"`
+	ConfigurationViaYAML    string                `yaml:"configuration_via_yaml"`
+	Constants               string                `yaml:"constants"`
+	ProjectStructure        string                `yaml:"project_structure"`
+	FileOrganization        string                `yaml:"file_organization"`
+	ImportOrganization      string                `yaml:"import_organization"`
+	StandardPackages        []string              `yaml:"standard_packages"`
+	StructEmbedding         string                `yaml:"struct_embedding"`
+	NamingConventions       []string              `yaml:"naming_conventions"`
+	CommentStyle            string                `yaml:"comment_style"`
+	Concurrency             string                `yaml:"concurrency"`
+	Testing                 string                `yaml:"testing"`
+	CodeReviewChecklist     []string              `yaml:"code_review_checklist"`
+	Sections                []ConstitutionSection `yaml:"sections,omitempty"`
+}
+
+// GoStylePattern represents a single design pattern entry in the Go style
+// constitution. Symptoms is optional (not all patterns list symptoms).
+type GoStylePattern struct {
+	Name        string `yaml:"name"`
+	Description string `yaml:"description"`
+	Symptoms    string `yaml:"symptoms,omitempty"`
+}
+
+// ---------------------------------------------------------------------------
+// Design constitution (docs/constitutions/design.yaml)
+// ---------------------------------------------------------------------------
+
+// ConstitutionArticle is a single article entry shared by all constitution
+// files that use the articles list pattern.
+type ConstitutionArticle struct {
+	ID    string `yaml:"id"`
+	Title string `yaml:"title"`
+	Rule  string `yaml:"rule"`
+}
+
+// ConstitutionSection is a tagged, titled, prose section within a constitution
+// file. The sections list provides a markdown-renderable view of each top-level
+// key in the constitution: tag is the machine-readable identifier (matches the
+// YAML key name), title is a human-readable heading, and content is a concise
+// prose summary of that section's purpose.
+type ConstitutionSection struct {
+	Tag     string `yaml:"tag"`
+	Title   string `yaml:"title"`
+	Content string `yaml:"content"`
+}
+
+// DesignDoc corresponds to docs/constitutions/design.yaml.
+type DesignDoc struct {
+	Articles               []ConstitutionArticle    `yaml:"articles"`
+	DocumentationStandards DesignStandards          `yaml:"documentation_standards"`
+	DocumentTypes          map[string]DesignDocType `yaml:"document_types"`
+	NamingConventions      map[string]string        `yaml:"naming_conventions"`
+	WritingGuidelines      map[string]string        `yaml:"writing_guidelines"`
+	TraceabilityModel      map[string]string        `yaml:"traceability_model"`
+	CompletenessChecklists map[string][]string      `yaml:"completeness_checklists"`
+	Sections               []ConstitutionSection    `yaml:"sections,omitempty"`
+}
+
+// DesignStandards holds the documentation_standards section.
+type DesignStandards struct {
+	Style              string           `yaml:"style"`
+	Voice              string           `yaml:"voice"`
+	ForbiddenTerms     []string         `yaml:"forbidden_terms"`
+	Formatting         DesignFormatting `yaml:"formatting"`
+	FiguresAndDiagrams string           `yaml:"figures_and_diagrams"`
+}
+
+// DesignFormatting holds paragraph, list, and abbreviation rules.
+type DesignFormatting struct {
+	Paragraphs     string `yaml:"paragraphs"`
+	ListsAndTables string `yaml:"lists_and_tables"`
+	Abbreviations  string `yaml:"abbreviations"`
+}
+
+// DesignDocType describes one entry in the document_types map.
+type DesignDocType struct {
+	Location       string            `yaml:"location,omitempty"`
+	FormatRule     string            `yaml:"format_rule,omitempty"`
+	RequiredFields []string          `yaml:"required_fields,omitempty"`
+	OptionalFields []string          `yaml:"optional_fields,omitempty"`
+	Numbering      map[string]string `yaml:"numbering,omitempty"`
+	Purpose        string            `yaml:"purpose,omitempty"`
+}
+
+// ---------------------------------------------------------------------------
+// Execution constitution (docs/constitutions/execution.yaml)
+// ---------------------------------------------------------------------------
+
+// ExecutionDoc corresponds to docs/constitutions/execution.yaml.
+type ExecutionDoc struct {
+	Articles          []ConstitutionArticle `yaml:"articles"`
+	CodingStandards   ExecCodingStandards   `yaml:"coding_standards"`
+	Traceability      ExecTraceability      `yaml:"traceability"`
+	SessionCompletion ExecSessionCompletion `yaml:"session_completion"`
+	Technology        ExecTechnology        `yaml:"technology"`
+	GitConventions    ExecGitConventions    `yaml:"git_conventions"`
+	Sections          []ConstitutionSection `yaml:"sections,omitempty"`
+}
+
+// ExecCodingStandards holds the coding_standards section.
+type ExecCodingStandards struct {
+	CopyrightHeader         string               `yaml:"copyright_header"`
+	NeverDuplicateCode      string               `yaml:"never_duplicate_code"`
+	DesignPatterns          []map[string]string   `yaml:"design_patterns"`
+	Interfaces              string               `yaml:"interfaces"`
+	StructAndFunctionDesign string               `yaml:"struct_and_function_design"`
+	ErrorHandling           string               `yaml:"error_handling"`
+	NoMagicStrings          string               `yaml:"no_magic_strings"`
+	ProjectStructure        string               `yaml:"project_structure"`
+	StandardPackages        []string             `yaml:"standard_packages"`
+	NamingConventions       ExecNamingConventions `yaml:"naming_conventions"`
+	Concurrency             string               `yaml:"concurrency"`
+	Testing                 string               `yaml:"testing"`
+}
+
+// ExecNamingConventions holds the naming convention entries.
+type ExecNamingConventions struct {
+	Exported        string `yaml:"exported"`
+	Unexported      string `yaml:"unexported"`
+	CLIFlags        string `yaml:"cli_flags"`
+	BinaryConstants string `yaml:"binary_constants"`
+	Factories       string `yaml:"factories"`
+	Interfaces      string `yaml:"interfaces"`
+}
+
+// ExecTraceability holds the traceability section.
+type ExecTraceability struct {
+	BeforeImplementing []string `yaml:"before_implementing"`
+	CommitMessage      string   `yaml:"commit_message"`
+	CodeComments       string   `yaml:"code_comments"`
+	ReferencePaths     []string `yaml:"reference_paths"`
+}
+
+// ExecSessionCompletion holds the session_completion section.
+type ExecSessionCompletion struct {
+	GitManagedExternally bool     `yaml:"git_managed_externally"`
+	TokenTracking        bool     `yaml:"token_tracking"`
+	Workflow             []string `yaml:"workflow"`
+	CriticalRules        []string `yaml:"critical_rules"`
+}
+
+// ExecTechnology holds the technology section.
+type ExecTechnology struct {
+	PrimaryLanguage string `yaml:"primary_language"`
+	PythonManager   string `yaml:"python_manager"`
+	CLIFramework    string `yaml:"cli_framework"`
+	BuildSystem     string `yaml:"build_system"`
+	YAMLLibrary     string `yaml:"yaml_library"`
+	IssueTracker    string `yaml:"issue_tracker"`
+}
+
+// ExecGitConventions holds the git_conventions section.
+type ExecGitConventions struct {
+	Note string `yaml:"note"`
+}
+
+// ---------------------------------------------------------------------------
+// Planning constitution (docs/constitutions/planning.yaml)
+// ---------------------------------------------------------------------------
+
+// PlanningDoc corresponds to docs/constitutions/planning.yaml.
+type PlanningDoc struct {
+	Articles                  []ConstitutionArticle  `yaml:"articles"`
+	IssueStructure            PlanningIssueStructure `yaml:"issue_structure"`
+	ExampleDocumentationIssue string                 `yaml:"example_documentation_issue"`
+	ExampleCodeIssue          string                 `yaml:"example_code_issue"`
+	Sections                  []ConstitutionSection  `yaml:"sections,omitempty"`
+}
+
+// PlanningIssueStructure holds the issue_structure section.
+type PlanningIssueStructure struct {
+	CommonFields        map[string]PlanningFieldDef `yaml:"common_fields"`
+	DocumentationIssues PlanningDocIssues           `yaml:"documentation_issues"`
+	YAMLQuality         []string                   `yaml:"yaml_quality"`
+	CodeIssues          PlanningCodeIssues          `yaml:"code_issues"`
+}
+
+// PlanningFieldDef describes a single field in the issue schema.
+type PlanningFieldDef struct {
+	Required    bool     `yaml:"required"`
+	Values      []string `yaml:"values,omitempty"`
+	Description string   `yaml:"description"`
+}
+
+// PlanningDocIssues holds the documentation_issues sub-section.
+type PlanningDocIssues struct {
+	AdditionalFields map[string]PlanningFieldDef `yaml:"additional_fields"`
+	DeliverableTypes []PlanningDeliverableType   `yaml:"deliverable_types"`
+}
+
+// PlanningDeliverableType describes a documentation deliverable type.
+type PlanningDeliverableType struct {
+	Type       string `yaml:"type"`
+	Location   string `yaml:"location"`
+	FormatRule string `yaml:"format_rule"`
+	When       string `yaml:"when"`
+}
+
+// PlanningCodeIssues holds the code_issues sub-section.
+type PlanningCodeIssues struct {
+	Rules []string `yaml:"rules"`
+}
+
+// ---------------------------------------------------------------------------
+// Testing constitution (docs/constitutions/testing.yaml)
+// ---------------------------------------------------------------------------
+
+// TestingDoc corresponds to docs/constitutions/testing.yaml.
+type TestingDoc struct {
+	Articles []ConstitutionArticle `yaml:"articles"`
+	Sections []ConstitutionSection `yaml:"sections,omitempty"`
+}
+
+// ---------------------------------------------------------------------------
+// Semantic model constitution (docs/constitutions/semantic-model.yaml)
+// ---------------------------------------------------------------------------
+
+// SemanticModelDoc corresponds to docs/constitutions/semantic-model.yaml.
+// The constitution only defines articles and sections — no additional sections.
+type SemanticModelDoc struct {
+	Articles []ConstitutionArticle `yaml:"articles"`
+	Sections []ConstitutionSection `yaml:"sections,omitempty"`
+}
+
+// ---------------------------------------------------------------------------
+// Issue format constitution (pkg/orchestrator/constitutions/issue-format.yaml)
+// ---------------------------------------------------------------------------
+
+// IssueFormatDoc corresponds to pkg/orchestrator/constitutions/issue-format.yaml.
+type IssueFormatDoc struct {
+	Schema     IssueFormatSchema           `yaml:"schema"`
+	YAMLRules  []IssueFormatRule           `yaml:"yaml_rules"`
+	FieldSpecs map[string]IssueFormatField `yaml:"field_specs"`
+	Examples   map[string]string           `yaml:"examples"`
+	Sections   []ConstitutionSection       `yaml:"sections,omitempty"`
+}
+
+// IssueFormatSchema holds the schema section.
+type IssueFormatSchema struct {
+	Description    string   `yaml:"description"`
+	RequiredFields []string `yaml:"required_fields"`
+	OptionalFields []string `yaml:"optional_fields"`
+}
+
+// IssueFormatRule holds a single YAML formatting rule with examples.
+type IssueFormatRule struct {
+	Rule        string `yaml:"rule"`
+	ExampleBad  string `yaml:"example_bad"`
+	ExampleGood string `yaml:"example_good"`
+}
+
+// IssueFormatField describes a single field in the issue format spec.
+type IssueFormatField struct {
+	Type        string                      `yaml:"type"`
+	Values      []string                    `yaml:"values,omitempty"`
+	Required    bool                        `yaml:"required"`
+	Description string                      `yaml:"description"`
+	SubFields   map[string]IssueFormatField `yaml:"sub_fields,omitempty"`
+}
+
+// ---------------------------------------------------------------------------
+// Shared field types
+// ---------------------------------------------------------------------------
+
+// Phase represents an implementation phase in the vision document.
+// Phase ID is a string (e.g. "1") and Deliverables is a scalar string.
+type Phase struct {
+	Phase        string `yaml:"phase"`
+	Focus        string `yaml:"focus"`
+	Deliverables string `yaml:"deliverables"`
+}
+
+type Risk struct {
+	ID         string `yaml:"id,omitempty"`
+	Risk       string `yaml:"risk"`
+	Impact     string `yaml:"impact"`
+	Likelihood string `yaml:"likelihood"`
+	Mitigation string `yaml:"mitigation"`
+}
+
+// ContextIssue is a type alias for the github sub-package's ContextIssue.
+type ContextIssue = gh.ContextIssue
+
+// NamedDoc wraps project-specific YAML files that don't have a fixed
+// schema (e.g., utilities.yaml, sources.yaml). Content is stored as a
+// yaml.Node to preserve the original structure.
+type NamedDoc struct {
+	File    string    `yaml:"file,omitempty"`
+	Name    string    `yaml:"name"`
+	Content yaml.Node `yaml:"content"`
+}
+
+// ---------------------------------------------------------------------------
+// Source file filtering (selective stitch context, eng05 rec D)
+// ---------------------------------------------------------------------------
+
+// StripParenthetical removes a trailing parenthetical note from a path.
+// "pkg/types/cupboard.go (CrumbTable interface)" becomes "pkg/types/cupboard.go".
+func StripParenthetical(s string) string {
+	s = strings.TrimSpace(s)
+	if idx := strings.LastIndex(s, "("); idx > 0 {
+		return strings.TrimSpace(s[:idx])
+	}
+	return s
+}
+
+// SourceFileMatchesAny returns true if the source file's path ends with
+// any of the given suffixes. Used by both FilterSourceFiles and
+// ApplyContextBudget for consistent suffix matching.
+func SourceFileMatchesAny(sf SourceFile, suffixes []string) bool {
+	for _, s := range suffixes {
+		if strings.HasSuffix(sf.File, s) {
+			return true
+		}
+	}
+	return false
+}
+
+// FilterSourceFiles returns only the source files whose paths match any of
+// the requiredPaths using suffix matching. A required path matches if any
+// SourceFile.File ends with it. If requiredPaths is empty, all source files
+// are returned (backward-compatible fallback).
+func FilterSourceFiles(sources []SourceFile, requiredPaths []string) []SourceFile {
+	if len(requiredPaths) == 0 {
+		return sources
+	}
+
+	var filtered []SourceFile
+	for _, src := range sources {
+		if SourceFileMatchesAny(src, requiredPaths) {
+			filtered = append(filtered, src)
+		}
+	}
+	return filtered
+}
+
+// DefaultMaxContextBytes is the fallback budget when MaxContextBytes is not
+// configured. 200KB is approximately 50K tokens at 4 bytes/token, leaving
+// room for the rest of the stitch prompt (constitutions, task description).
+const DefaultMaxContextBytes = 200_000
+
+// ApplyContextBudget measures the YAML-serialized size of ctx and, if it
+// exceeds budget, progressively removes SourceCode entries not in
+// requiredPaths until within budget. Files are removed in reverse order
+// (last loaded first) to preserve files closer to the top of the directory
+// tree. When budget is 0, the default of 200KB is used. A negative budget
+// disables enforcement entirely.
+func ApplyContextBudget(ctx *ProjectContext, budget int, requiredPaths []string) {
+	if ctx == nil || budget < 0 {
+		return
+	}
+	if budget == 0 {
+		budget = DefaultMaxContextBytes
+	}
+
+	data, err := yaml.Marshal(ctx)
+	if err != nil {
+		Log("applyContextBudget: marshal error: %v", err)
+		return
+	}
+	before := len(data)
+	if before <= budget {
+		Log("applyContextBudget: context size %d <= budget %d, no truncation needed", before, budget)
+		return
+	}
+
+	removed := 0
+	for len(ctx.SourceCode) > 0 && len(data) > budget {
+		// Find the last non-required source file.
+		idx := -1
+		for i := len(ctx.SourceCode) - 1; i >= 0; i-- {
+			if !SourceFileMatchesAny(ctx.SourceCode[i], requiredPaths) {
+				idx = i
+				break
+			}
+		}
+		if idx < 0 {
+			break // all remaining files are required
+		}
+		ctx.SourceCode = append(ctx.SourceCode[:idx], ctx.SourceCode[idx+1:]...)
+		removed++
+
+		data, err = yaml.Marshal(ctx)
+		if err != nil {
+			Log("applyContextBudget: re-marshal error: %v", err)
+			return
+		}
+	}
+
+	Log("applyContextBudget: context size %d -> %d, removed %d source file(s)", before, len(data), removed)
+}
+
+// ---------------------------------------------------------------------------
+// Helper functions
+// ---------------------------------------------------------------------------
+
+// LoadYAML reads a YAML file and unmarshals it into T.
+// Returns nil if the file does not exist or cannot be parsed.
+func LoadYAML[T any](path string) *T {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	var v T
+	if err := yaml.Unmarshal(data, &v); err != nil {
+		Log("loadYAML: parse error for %s: %v", path, err)
+		return nil
+	}
+	return &v
+}
+
+// LoadNamedDoc reads a YAML file into a NamedDoc, using the filename
+// stem (without extension) as the Name.
+func LoadNamedDoc(path string) *NamedDoc {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	name := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+
+	var content yaml.Node
+	if err := yaml.Unmarshal(data, &content); err != nil {
+		// Non-YAML files (markdown, text) are loaded as a scalar node
+		// containing the raw file content, instead of being silently dropped.
+		ext := filepath.Ext(path)
+		if ext == ".md" || ext == ".txt" || ext == ".json" {
+			return &NamedDoc{
+				Name: name,
+				Content: yaml.Node{
+					Kind:  yaml.ScalarNode,
+					Tag:   "!!str",
+					Value: string(data),
+				},
+			}
+		}
+		Log("loadNamedDoc: parse error for %s: %v", path, err)
+		return nil
+	}
+	node := &content
+	if content.Kind == yaml.DocumentNode && len(content.Content) > 0 {
+		node = content.Content[0]
+	}
+	return &NamedDoc{Name: name, Content: *node}
+}
+
+// ParseIssuesJSON converts a JSON array of issue tracker entries into typed
+// ContextIssue values for inclusion in the project context.
+func ParseIssuesJSON(jsonStr string) []ContextIssue {
+	if jsonStr == "" || jsonStr == "[]" {
+		return nil
+	}
+	var issues []ContextIssue
+	if err := json.Unmarshal([]byte(jsonStr), &issues); err != nil {
+		preview := jsonStr
+		if len(preview) > 80 {
+			preview = preview[:80]
+		}
+		Log("WARN parseIssuesJSON: unmarshal failed (%v); input preview: %q", err, preview)
+		return nil
+	}
+	return issues
+}
+
+// NumberLines formats source file content as a single string of
+// "{number} | {line}" entries joined by newlines. Blank lines are omitted;
+// gaps in numbering indicate their positions. yaml.v3 renders the result
+// as a block scalar, saving tokens compared to a YAML list.
+func NumberLines(content string) string {
+	lines := strings.Split(content, "\n")
+	var result []string
+	for i, line := range lines {
+		if i == len(lines)-1 && line == "" {
+			break // trailing newline from Split
+		}
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		result = append(result, fmt.Sprintf("%d | %s", i+1, line))
+	}
+	return strings.Join(result, "\n")
+}
+
+// ---------------------------------------------------------------------------
+// Source summarization (GH-617, prd003 R12)
+// ---------------------------------------------------------------------------
+
+// SummarizeGoHeaders parses a Go source file and returns a headers-only
+// version: package declaration, import block, and exported type/func/const/var
+// declarations with doc comments but without function bodies (prd003 R12.3).
+// Returns full content unchanged if parsing fails.
+func SummarizeGoHeaders(content string) string {
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, "", content, parser.ParseComments)
+	if err != nil {
+		return content
+	}
+
+	var kept []ast.Decl
+	for _, decl := range f.Decls {
+		switch d := decl.(type) {
+		case *ast.FuncDecl:
+			if !d.Name.IsExported() {
+				continue
+			}
+			// Nil the body — go/printer omits it from the output.
+			d.Body = nil
+			kept = append(kept, d)
+		case *ast.GenDecl:
+			if d.Tok == token.IMPORT {
+				// Always keep the import block; exported types reference it.
+				kept = append(kept, d)
+				continue
+			}
+			var exportedSpecs []ast.Spec
+			for _, spec := range d.Specs {
+				switch s := spec.(type) {
+				case *ast.TypeSpec:
+					if s.Name.IsExported() {
+						exportedSpecs = append(exportedSpecs, s)
+					}
+				case *ast.ValueSpec:
+					// Keep the entire ValueSpec when at least one name is exported.
+					for _, name := range s.Names {
+						if name.IsExported() {
+							exportedSpecs = append(exportedSpecs, s)
+							break
+						}
+					}
+				}
+			}
+			if len(exportedSpecs) > 0 {
+				d.Specs = exportedSpecs
+				kept = append(kept, d)
+			}
+		}
+	}
+	f.Decls = kept
+
+	var buf bytes.Buffer
+	if err := printer.Fprint(&buf, fset, f); err != nil {
+		return content
+	}
+	return buf.String()
+}
+
+// SummarizeCustom runs command with filePath appended as the last argument
+// and returns stdout as the summarized content (prd003 R12.4). Falls back to
+// fullContent when the command exits non-zero or produces empty output.
+func SummarizeCustom(command, filePath, fullContent string) string {
+	if command == "" {
+		return fullContent
+	}
+	parts := strings.Fields(command)
+	parts = append(parts, filePath)
+	out, err := exec.Command(parts[0], parts[1:]...).Output() //nolint:gosec
+	if err != nil || len(strings.TrimSpace(string(out))) == 0 {
+		Log("summarizeCustom: command %q failed for %s (%v), using full content", command, filePath, err)
+		return fullContent
+	}
+	return string(out)
+}
+
+// LoadSourceFiles walks the given directories and reads all .go files,
+// returning them sorted by path for deterministic prompt output.
+func LoadSourceFiles(dirs []string) []SourceFile {
+	var files []SourceFile
+	for _, dir := range dirs {
+		err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return nil
+			}
+			if info.IsDir() {
+				return nil
+			}
+			if !strings.HasSuffix(path, ".go") {
+				return nil
+			}
+			data, readErr := os.ReadFile(path)
+			if readErr != nil {
+				Log("loadSourceFiles: read error for %s: %v", path, readErr)
+				return nil
+			}
+			files = append(files, SourceFile{
+				File:  path,
+				Lines: NumberLines(string(data)),
+			})
+			return nil
+		})
+		if err != nil {
+			Log("loadSourceFiles: walk error for %s: %v", dir, err)
+		}
+	}
+	sort.Slice(files, func(i, j int) bool { return files[i].File < files[j].File })
+	Log("loadSourceFiles: %d file(s) from %d dir(s)", len(files), len(dirs))
+	return files
+}
+
+// ---------------------------------------------------------------------------
+// Context source resolution
+// ---------------------------------------------------------------------------
+
+// ParseContextSources splits a newline-delimited text block into
+// individual glob patterns, trimming whitespace and skipping blanks
+// and comment lines (starting with #).
+func ParseContextSources(text string) []string {
+	var patterns []string
+	for _, line := range strings.Split(text, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		patterns = append(patterns, line)
+	}
+	return patterns
+}
+
+// ResolveContextSources expands glob patterns from ContextSources into
+// a deduplicated, sorted list of real file paths. Duplicate files
+// (matched by multiple patterns) are logged and removed.
+func ResolveContextSources(sources string) []string {
+	patterns := ParseContextSources(sources)
+	seen := make(map[string]string) // path -> first pattern that matched
+	var files []string
+
+	for _, pattern := range patterns {
+		matches, err := filepath.Glob(pattern)
+		if err != nil {
+			Log("resolveContextSources: bad glob %q: %v", pattern, err)
+			continue
+		}
+		for _, path := range matches {
+			if _, err := os.Stat(path); err != nil {
+				continue
+			}
+			if prev, dup := seen[path]; dup {
+				Log("resolveContextSources: duplicate %s (matched by %q and %q)", path, prev, pattern)
+				continue
+			}
+			seen[path] = pattern
+			files = append(files, path)
+		}
+	}
+
+	sort.Strings(files)
+	Log("resolveContextSources: %d pattern(s) -> %d file(s)", len(patterns), len(files))
+	return files
+}
+
+// ResolveFileSet expands newline-delimited glob patterns into a set of
+// file paths. Directory matches are walked recursively so that excluding
+// a directory excludes all files underneath it.
+func ResolveFileSet(text string) map[string]bool {
+	patterns := ParseContextSources(text)
+	set := make(map[string]bool)
+	for _, pattern := range patterns {
+		matches, err := filepath.Glob(pattern)
+		if err != nil {
+			Log("resolveFileSet: bad glob %q: %v", pattern, err)
+			continue
+		}
+		for _, m := range matches {
+			info, err := os.Stat(m)
+			if err != nil {
+				continue
+			}
+			if info.IsDir() {
+				filepath.WalkDir(m, func(p string, d fs.DirEntry, err error) error {
+					if err == nil && !d.IsDir() {
+						set[p] = true
+					}
+					return nil
+				})
+			} else {
+				set[m] = true
+			}
+		}
+	}
+	Log("resolveFileSet: %d pattern(s) -> %d file(s)", len(patterns), len(set))
+	return set
+}
+
+// ClassifyContextFile determines how a file should be loaded based on
+// its path. Returns a category string used by BuildProjectContext to
+// dispatch to the appropriate typed loader.
+func ClassifyContextFile(path string) string {
+	dir := filepath.Dir(path)
+	base := filepath.Base(path)
+
+	switch {
+	case dir == "docs" && base == "VISION.yaml":
+		return "vision"
+	case dir == "docs" && base == "ARCHITECTURE.yaml":
+		return "architecture"
+	case dir == "docs" && base == "SPECIFICATIONS.yaml":
+		return "specifications"
+	case dir == "docs" && base == "road-map.yaml":
+		return "roadmap"
+	case dir == filepath.Join("docs", "specs", "product-requirements"):
+		return "prd"
+	case dir == filepath.Join("docs", "specs", "use-cases"):
+		return "use_case"
+	case dir == filepath.Join("docs", "specs", "test-suites"):
+		return "test_suite"
+	case dir == filepath.Join("docs", "specs"):
+		return "spec_aux"
+	case dir == filepath.Join("docs", "engineering"):
+		return "engineering"
+	case dir == filepath.Join("docs", "constitutions"):
+		return "constitution"
+	default:
+		return "extra"
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Standard document structure
+// ---------------------------------------------------------------------------
+
+// StandardContextPatterns lists the glob patterns for the standard
+// documentation structure. These are loaded automatically by
+// ResolveStandardFiles. Does NOT include docs/constitutions/*.yaml
+// (constitutions are injected separately as top-level prompt keys)
+// or docs/*.yaml (catchall that pulled in utilities.yaml).
+var StandardContextPatterns = []string{
+	"docs/VISION.yaml",
+	"docs/ARCHITECTURE.yaml",
+	"docs/SPECIFICATIONS.yaml",
+	"docs/road-map.yaml",
+	"docs/specs/product-requirements/prd*.yaml",
+	"docs/specs/use-cases/rel*.yaml",
+	"docs/specs/test-suites/test-rel*.yaml",
+	"docs/specs/dependency-map.yaml",
+	"docs/specs/sources.yaml",
+}
+
+// TypedDocPaths lists documents that must always be loaded through their
+// dedicated typed parsers (VisionDoc, ArchitectureDoc, etc.), even when
+// context_include replaces the standard discovery. If context_include
+// patterns don't cover these paths but the files exist on disk, they are
+// added to the resolved set so ClassifyContextFile routes them correctly.
+var TypedDocPaths = []string{
+	"docs/VISION.yaml",
+	"docs/ARCHITECTURE.yaml",
+	"docs/SPECIFICATIONS.yaml",
+	"docs/road-map.yaml",
+}
+
+// EnsureTypedDocs merges the always-load typed document paths into the
+// file list if they exist on disk but are not already present.
+func EnsureTypedDocs(files []string) []string {
+	present := make(map[string]bool, len(files))
+	for _, f := range files {
+		present[f] = true
+	}
+	for _, path := range TypedDocPaths {
+		if present[path] {
+			continue
+		}
+		if _, err := os.Stat(path); err == nil {
+			files = append(files, path)
+			Log("ensureTypedDocs: added missing typed doc %s", path)
+		}
+	}
+	return files
+}
+
+// ResolveStandardFiles expands StandardContextPatterns into a
+// deduplicated, sorted list of real file paths.
+func ResolveStandardFiles() []string {
+	seen := make(map[string]bool)
+	var files []string
+	for _, pattern := range StandardContextPatterns {
+		matches, err := filepath.Glob(pattern)
+		if err != nil {
+			Log("resolveStandardFiles: bad glob %q: %v", pattern, err)
+			continue
+		}
+		for _, path := range matches {
+			if _, err := os.Stat(path); err != nil {
+				continue
+			}
+			if seen[path] {
+				continue
+			}
+			seen[path] = true
+			files = append(files, path)
+		}
+	}
+	sort.Strings(files)
+	Log("resolveStandardFiles: %d pattern(s) -> %d file(s)", len(StandardContextPatterns), len(files))
+	return files
+}
+
+// ReleaseFilter controls which use-case and test-suite files are included
+// based on their release version. When ReleaseSet is non-nil, only files
+// whose extracted release is in the set pass. When ReleaseSet is nil but
+// MaxRelease is non-empty, the legacy <= comparison is used. When both are
+// empty/nil, all files pass (no filtering).
+type ReleaseFilter struct {
+	ReleaseSet map[string]bool // explicit set of in-scope releases
+	MaxRelease string          // legacy: include files with release <= this value
+}
+
+// NewReleaseFilter builds a ReleaseFilter from the effective config fields.
+// Releases (list) takes precedence over Release (single string).
+func NewReleaseFilter(releases []string, release string) ReleaseFilter {
+	if len(releases) > 0 {
+		set := make(map[string]bool, len(releases))
+		for _, r := range releases {
+			set[r] = true
+		}
+		return ReleaseFilter{ReleaseSet: set}
+	}
+	return ReleaseFilter{MaxRelease: release}
+}
+
+// Active reports whether any release filtering is in effect.
+func (rf ReleaseFilter) Active() bool {
+	return len(rf.ReleaseSet) > 0 || rf.MaxRelease != ""
+}
+
+// ExtractFileRelease extracts the release version from a use-case or
+// test-suite filename. Returns "" if the release cannot be determined.
+func ExtractFileRelease(path string) string {
+	base := filepath.Base(path)
+	switch {
+	case strings.HasPrefix(base, "rel"):
+		// rel01.0-uc001-... -> extract "01.0"
+		rest := strings.TrimPrefix(base, "rel")
+		if idx := strings.Index(rest, "-"); idx > 0 {
+			return rest[:idx]
+		}
+	case strings.HasPrefix(base, "test-rel"):
+		// test-rel01.0.yaml -> extract "01.0"
+		rest := strings.TrimPrefix(base, "test-rel")
+		return strings.TrimSuffix(rest, ".yaml")
+	}
+	return ""
+}
+
+// FileMatchesRelease returns true if the file's release passes the filter.
+// Returns true if no filter is active or if the file's release cannot be
+// determined. String comparison works for the zero-padded "NN.N" format.
+func FileMatchesRelease(path string, rf ReleaseFilter) bool {
+	if !rf.Active() {
+		return true
+	}
+	fileRelease := ExtractFileRelease(path)
+	if fileRelease == "" {
+		return true
+	}
+	if rf.ReleaseSet != nil {
+		return rf.ReleaseSet[fileRelease]
+	}
+	return fileRelease <= rf.MaxRelease
+}
+
+// PRDIDsFromUseCases extracts PRD IDs referenced by touchpoints in the
+// given use cases. Returns a set of PRD filename stems (e.g., "prd001-feature").
+func PRDIDsFromUseCases(useCases []*UseCaseDoc) map[string]bool {
+	if len(useCases) == 0 {
+		return nil
+	}
+	ids := make(map[string]bool)
+	for _, uc := range useCases {
+		for _, tp := range uc.Touchpoints {
+			for _, text := range tp {
+				for _, word := range strings.Fields(text) {
+					word = strings.TrimSuffix(strings.TrimPrefix(word, "("), ")")
+					if strings.HasPrefix(word, "prd") {
+						ids[word] = true
+					}
+				}
+			}
+		}
+	}
+	return ids
+}
+
+// ---------------------------------------------------------------------------
+// Road-map-driven source selection (GH-534)
+// ---------------------------------------------------------------------------
+
+// UCStatusDone reports whether a road-map use-case status value means the use
+// case is complete and should not be proposed for new work. Both "done" and
+// "implemented" are treated as complete: "implemented" means code already
+// exists; "done" means the full lifecycle (code + tests + review) is finished.
+func UCStatusDone(status string) bool {
+	return strings.EqualFold(status, "done") || strings.EqualFold(status, "implemented")
+}
+
+// SelectNextPendingUseCase reads docs/road-map.yaml and returns the first
+// use case whose status is neither "done" nor "implemented". When a release
+// filter is configured in cfg (via Releases or Release), only releases in
+// scope are considered.
+//
+// Release-level status is checked in addition to per-use-case status: a
+// release with status "implemented" or "done" is skipped entirely, even if
+// individual use cases within it are not explicitly marked done. This prevents
+// stale releases config values from causing re-implementation proposals.
+//
+// When a filter is active and all matching releases are already implemented,
+// the function falls back to scanning all releases without the filter and
+// returns the first pending use case found. The caller can detect this
+// auto-advance by comparing the returned UC's release to the configured scope.
+//
+// Returns (nil, nil) when all use cases are done or the road-map is absent.
+func SelectNextPendingUseCase(cfg ContextConfig) (*UseCaseDoc, error) {
+	rm := LoadYAML[RoadmapDoc]("docs/road-map.yaml")
+	if rm == nil {
+		Log("selectNextPendingUseCase: docs/road-map.yaml not found or empty")
+		return nil, nil
+	}
+
+	rf := NewReleaseFilter(cfg.Releases, cfg.Release)
+
+	// firstPendingUC scans releases (optionally restricted by rf) and returns
+	// the first use case not yet done. Release-level implemented status is
+	// always respected regardless of filter.
+	firstPendingUC := func(filter ReleaseFilter) (*UseCaseDoc, error) {
+		for i := range rm.Releases {
+			rel := &rm.Releases[i]
+			if filter.Active() {
+				if filter.ReleaseSet != nil && !filter.ReleaseSet[rel.Version] {
+					continue
+				}
+				if filter.ReleaseSet == nil && rel.Version > filter.MaxRelease {
+					continue
+				}
+			}
+			// Skip entire releases already marked as implemented at release level.
+			if UCStatusDone(rel.Status) {
+				Log("selectNextPendingUseCase: skipping release %s (status=%s)", rel.Version, rel.Status)
+				continue
+			}
+			for _, uc := range rel.UseCases {
+				if UCStatusDone(uc.Status) {
+					continue
+				}
+				path := filepath.Join("docs", "specs", "use-cases", uc.ID+".yaml")
+				doc := LoadYAML[UseCaseDoc](path)
+				if doc == nil {
+					Log("selectNextPendingUseCase: use case file not found: %s", path)
+					return nil, nil
+				}
+				doc.File = path
+				Log("selectNextPendingUseCase: next pending UC=%s status=%s", uc.ID, uc.Status)
+				return doc, nil
+			}
+		}
+		return nil, nil
+	}
+
+	doc, err := firstPendingUC(rf)
+	if err != nil || doc != nil {
+		return doc, err
+	}
+
+	// When a filter was active but yielded nothing, check whether all
+	// filtered releases carry status "implemented". If so, the config is
+	// stale: auto-advance past the configured scope to find the next pending
+	// UC from any release. We use the strict "implemented" check (not the
+	// broader UCStatusDone that also matches "done") so that a release
+	// filtered to a "done"-but-not-yet-implemented release does not trigger
+	// unintended auto-advance (GH-847).
+	if rf.Active() {
+		allImplemented := true
+		filteredAny := false
+		for i := range rm.Releases {
+			rel := &rm.Releases[i]
+			if rf.ReleaseSet != nil && !rf.ReleaseSet[rel.Version] {
+				continue
+			}
+			if rf.ReleaseSet == nil && rel.Version > rf.MaxRelease {
+				continue
+			}
+			filteredAny = true
+			if !strings.EqualFold(rel.Status, "implemented") {
+				allImplemented = false
+				break
+			}
+		}
+		if filteredAny && allImplemented {
+			Log("selectNextPendingUseCase: all configured releases implemented; scanning all releases for next pending UC")
+			doc, err = firstPendingUC(ReleaseFilter{})
+			if err != nil || doc != nil {
+				return doc, err
+			}
+		}
+	}
+
+	Log("selectNextPendingUseCase: all use cases done")
+	return nil, nil
+}
+
+// ParseTouchpointPackages extracts Go package directory paths from a use
+// case's touchpoints. Each touchpoint value is expected to use the format:
+//
+//	"<pkg-path> — <prd-id> R1, R2"   (em-dash U+2014 or en-dash U+2013)
+//
+// where <pkg-path> may be a single directory or a comma-separated list.
+// Only segments that contain a "/" are treated as paths; others are ignored.
+// The returned list is deduplicated and sorted.
+func ParseTouchpointPackages(touchpoints []map[string]string) []string {
+	seen := make(map[string]bool)
+	for _, m := range touchpoints {
+		for _, val := range m {
+			// Split on em-dash (U+2014) or en-dash (U+2013), with any surrounding
+			// whitespace. Take the left-hand side as the potential package path(s).
+			var left string
+			if idx := strings.Index(val, "\u2014"); idx >= 0 {
+				left = strings.TrimSpace(val[:idx])
+			} else if idx := strings.Index(val, "\u2013"); idx >= 0 {
+				left = strings.TrimSpace(val[:idx])
+			} else {
+				continue
+			}
+			// left may be comma-separated (e.g., "cmd/cp, cmd/mv").
+			for _, part := range strings.Split(left, ",") {
+				part = strings.TrimSpace(part)
+				// Only accept path-like segments (must contain "/").
+				if part == "" || !strings.Contains(part, "/") {
+					continue
+				}
+				seen[strings.TrimSuffix(part, "/")] = true
+			}
+		}
+	}
+	if len(seen) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(seen))
+	for p := range seen {
+		out = append(out, p)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// LoadContextFileInto loads a single file into the appropriate field
+// of ctx based on its classified category. Applies release filtering
+// for use_case and test_suite categories. Does not handle constitution
+// or extra categories.
+func LoadContextFileInto(ctx *ProjectContext, path string, rf ReleaseFilter) {
+	switch ClassifyContextFile(path) {
+	case "vision":
+		if v := LoadYAML[VisionDoc](path); v != nil {
+			v.File = path
+			ctx.Vision = v
+		}
+	case "architecture":
+		if v := LoadYAML[ArchitectureDoc](path); v != nil {
+			v.File = path
+			ctx.Architecture = v
+		}
+	case "specifications":
+		if v := LoadYAML[SpecificationsDoc](path); v != nil {
+			v.File = path
+			ctx.Specifications = v
+		}
+	case "roadmap":
+		if v := LoadYAML[RoadmapDoc](path); v != nil {
+			v.File = path
+			ctx.Roadmap = v
+		}
+	case "use_case":
+		if !FileMatchesRelease(path, rf) {
+			return
+		}
+		if v := LoadYAML[UseCaseDoc](path); v != nil {
+			v.File = path
+			ctx.Specs.UseCases = append(ctx.Specs.UseCases, v)
+		}
+	case "test_suite":
+		if !FileMatchesRelease(path, rf) {
+			return
+		}
+		if v := LoadYAML[TestSuiteDoc](path); v != nil {
+			v.File = path
+			ctx.Specs.TestSuites = append(ctx.Specs.TestSuites, v)
+		}
+	case "spec_aux":
+		if v := LoadNamedDoc(path); v != nil {
+			v.File = path
+			switch filepath.Base(path) {
+			case "dependency-map.yaml":
+				ctx.Specs.DependencyMap = v
+			case "sources.yaml":
+				ctx.Specs.Sources = v
+			default:
+				ctx.Extra = append(ctx.Extra, v)
+			}
+		}
+	case "engineering":
+		if v := LoadYAML[EngineeringDoc](path); v != nil {
+			v.File = path
+			ctx.Engineering = append(ctx.Engineering, v)
+		}
+	case "extra":
+		if v := LoadNamedDoc(path); v != nil {
+			v.File = path
+			ctx.Extra = append(ctx.Extra, v)
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Assembly
+// ---------------------------------------------------------------------------
+
+// BuildProjectContext resolves the standard document structure and any
+// extra context sources, reads all matching files and source code, parses
+// existing issues, and assembles them into a ProjectContext struct.
+// The project config controls include/exclude filtering and release scoping.
+// When phaseCtx is non-nil, its non-empty fields override the corresponding
+// ContextConfig fields (prd003 R9.5-R9.7).
+// The cobblerDir parameter is the path to the .cobbler scratch directory.
+func BuildProjectContext(existingIssuesJSON string, project ContextConfig, phaseCtx *PhaseContext, cobblerDir string) (*ProjectContext, error) {
+	ctx := &ProjectContext{}
+	ctx.Specs = &SpecsCollection{}
+
+	// Resolve effective settings: PhaseContext overrides when present.
+	ctxInclude := project.ContextInclude
+	ctxExclude := project.ContextExclude
+	ctxSources := project.ContextSources
+	releases := project.Releases
+	release := project.Release
+	if phaseCtx != nil {
+		if phaseCtx.Include != "" {
+			ctxInclude = phaseCtx.Include
+		}
+		if phaseCtx.Exclude != "" {
+			ctxExclude = phaseCtx.Exclude
+		}
+		if phaseCtx.Sources != "" {
+			ctxSources = phaseCtx.Sources
+		}
+		if phaseCtx.Release != "" {
+			// PhaseContext single release overrides both Releases and Release.
+			releases = nil
+			release = phaseCtx.Release
+		}
+	}
+	rf := NewReleaseFilter(releases, release)
+
+	// Compute exclude set when configured.
+	var excludeSet map[string]bool
+	if strings.TrimSpace(ctxExclude) != "" {
+		excludeSet = ResolveFileSet(ctxExclude)
+		Log("buildProjectContext: exclude set has %d file(s)", len(excludeSet))
+	}
+
+	// Resolve document files: use ContextInclude when set, otherwise
+	// fall back to the standard document discovery.
+	var docFiles []string
+	if strings.TrimSpace(ctxInclude) != "" {
+		docFiles = ResolveContextSources(ctxInclude)
+		// Ensure core typed documents (Vision, Architecture, Roadmap) are
+		// always present so they go through dedicated parsers rather than
+		// falling into the generic LoadNamedDoc path.
+		docFiles = EnsureTypedDocs(docFiles)
+		Log("buildProjectContext: using context_include (%d file(s))", len(docFiles))
+	} else {
+		docFiles = ResolveStandardFiles()
+	}
+
+	// Filter through exclude set.
+	if excludeSet != nil {
+		var filtered []string
+		for _, f := range docFiles {
+			if !excludeSet[f] {
+				filtered = append(filtered, f)
+			}
+		}
+		docFiles = filtered
+	}
+
+	standardSet := make(map[string]bool, len(docFiles))
+	var prdPaths []string
+
+	for _, path := range docFiles {
+		standardSet[path] = true
+		if ClassifyContextFile(path) == "prd" {
+			prdPaths = append(prdPaths, path)
+			continue
+		}
+		LoadContextFileInto(ctx, path, rf)
+	}
+
+	// Load PRDs filtered by release: when a release filter is active, only
+	// include PRDs referenced by the loaded (release-scoped) use cases.
+	if !rf.Active() {
+		for _, path := range prdPaths {
+			if v := LoadYAML[PRDDoc](path); v != nil {
+				v.File = path
+				ctx.Specs.ProductRequirements = append(ctx.Specs.ProductRequirements, v)
+			}
+		}
+	} else {
+		referencedPRDs := PRDIDsFromUseCases(ctx.Specs.UseCases)
+		for _, path := range prdPaths {
+			stem := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+			if referencedPRDs[stem] {
+				if v := LoadYAML[PRDDoc](path); v != nil {
+					v.File = path
+					ctx.Specs.ProductRequirements = append(ctx.Specs.ProductRequirements, v)
+				}
+			}
+		}
+	}
+
+	// Load extras from contextSources (if non-empty), skipping files
+	// already in the standard set and files in the exclude set.
+	if ctxSources != "" {
+		extras := ResolveContextSources(ctxSources)
+		for _, path := range extras {
+			if standardSet[path] {
+				continue
+			}
+			if excludeSet != nil && excludeSet[path] {
+				continue
+			}
+			if v := LoadNamedDoc(path); v != nil {
+				v.File = path
+				ctx.Extra = append(ctx.Extra, v)
+			}
+		}
+	}
+
+	// Omit empty collections.
+	if ctx.Specs.ProductRequirements == nil && ctx.Specs.UseCases == nil &&
+		ctx.Specs.TestSuites == nil && ctx.Specs.DependencyMap == nil &&
+		ctx.Specs.Sources == nil {
+		ctx.Specs = nil
+	}
+
+	// Load source code — skipped entirely when ExcludeSource is set (GH-565).
+	excludeSource := phaseCtx != nil && phaseCtx.ExcludeSource
+	if excludeSource {
+		Log("buildProjectContext: source excluded (exclude_source=true)")
+	} else {
+		ctx.SourceCode = LoadSourceFiles(project.GoSourceDirs)
+
+		// Apply glob-pattern source filter when SourcePatterns is set (GH-565).
+		if phaseCtx != nil && phaseCtx.SourcePatterns != "" {
+			allowSet := ResolveFileSet(phaseCtx.SourcePatterns)
+			Log("buildProjectContext: source_patterns allow set has %d file(s)", len(allowSet))
+			var filtered []SourceFile
+			for _, sf := range ctx.SourceCode {
+				if allowSet[sf.File] {
+					filtered = append(filtered, sf)
+				}
+			}
+			ctx.SourceCode = filtered
+		}
+
+		// Filter through the context exclude set.
+		if excludeSet != nil {
+			var filtered []SourceFile
+			for _, sf := range ctx.SourceCode {
+				if !excludeSet[sf.File] {
+					filtered = append(filtered, sf)
+				}
+			}
+			ctx.SourceCode = filtered
+		}
+
+		// Exclude *_test.go files from the measure prompt when requested (GH-616).
+		// Test files are consumers of the API; the measure agent needs to know
+		// what is tested but not how tests are implemented.
+		if phaseCtx != nil && phaseCtx.ExcludeTests {
+			var filtered []SourceFile
+			for _, sf := range ctx.SourceCode {
+				if !strings.HasSuffix(sf.File, "_test.go") {
+					filtered = append(filtered, sf)
+				}
+			}
+			Log("buildProjectContext: excluded %d _test.go file(s) from source context",
+				len(ctx.SourceCode)-len(filtered))
+			ctx.SourceCode = filtered
+		}
+
+		// Apply source summarization mode (GH-617, prd003 R12). Re-read raw
+		// file content from disk to feed the summarizer; re-apply NumberLines
+		// so the SourceFile.Lines format is consistent. Stitch never sets
+		// SourceMode so this block only runs for measure prompts.
+		if phaseCtx != nil && phaseCtx.SourceMode != "" && phaseCtx.SourceMode != "full" {
+			var summarized []SourceFile
+			for _, sf := range ctx.SourceCode {
+				raw, readErr := os.ReadFile(sf.File)
+				if readErr != nil {
+					Log("buildProjectContext: cannot re-read %s for summarization: %v, using full", sf.File, readErr)
+					summarized = append(summarized, sf)
+					continue
+				}
+				var content string
+				switch phaseCtx.SourceMode {
+				case "headers":
+					content = SummarizeGoHeaders(string(raw))
+				case "custom":
+					content = SummarizeCustom(phaseCtx.SummarizeCommand, sf.File, string(raw))
+				default:
+					Log("buildProjectContext: unknown source_mode %q for %s, using full", phaseCtx.SourceMode, sf.File)
+					summarized = append(summarized, sf)
+					continue
+				}
+				summarized = append(summarized, SourceFile{
+					File:  sf.File,
+					Lines: NumberLines(content),
+				})
+			}
+			Log("buildProjectContext: applied source_mode=%q to %d file(s)", phaseCtx.SourceMode, len(summarized))
+			ctx.SourceCode = summarized
+		}
+	}
+
+	ctx.Issues = ParseIssuesJSON(existingIssuesJSON)
+
+	// Load pre-cycle analysis results if present in the scratch directory.
+	if LoadAnalysisDocFn != nil {
+		ctx.Analysis = LoadAnalysisDocFn(cobblerDir)
+	}
+
+	Log("buildProjectContext: vision=%v arch=%v roadmap=%v specs=%v eng=%d analysis=%v issues=%d extra=%d src=%d files=%d",
+		ctx.Vision != nil,
+		ctx.Architecture != nil,
+		ctx.Roadmap != nil,
+		ctx.Specs != nil,
+		len(ctx.Engineering),
+		ctx.Analysis != nil,
+		len(ctx.Issues),
+		len(ctx.Extra),
+		len(ctx.SourceCode),
+		len(docFiles),
+	)
+	return ctx, nil
+}
+
+// ---------------------------------------------------------------------------
+// Required-field validation
+//
+// Each document type that participates in required-field checking implements
+// Validate() []string. Validate returns human-readable error strings (without
+// the file path) for any empty required field. The caller (validateYAMLStrict
+// in analyze.go) prepends the file path to each error.
+// ---------------------------------------------------------------------------
+
+// Validate checks that all required fields in VisionDoc are non-empty.
+func (d *VisionDoc) Validate() []string {
+	var errs []string
+	if d.ID == "" {
+		errs = append(errs, "id is required")
+	}
+	if d.Title == "" {
+		errs = append(errs, "title is required")
+	}
+	if d.ExecutiveSummary == "" {
+		errs = append(errs, "executive_summary is required")
+	}
+	if d.Problem == "" {
+		errs = append(errs, "problem is required")
+	}
+	if d.WhatThisDoes == "" {
+		errs = append(errs, "what_this_does is required")
+	}
+	if d.WhyWeBuildThis == "" {
+		errs = append(errs, "why_we_build_this is required")
+	}
+	return errs
+}
+
+// Validate checks that all required fields in ArchitectureDoc are non-empty.
+func (d *ArchitectureDoc) Validate() []string {
+	var errs []string
+	if d.ID == "" {
+		errs = append(errs, "id is required")
+	}
+	if d.Title == "" {
+		errs = append(errs, "title is required")
+	}
+	return errs
+}
+
+// Validate checks that all required fields in SpecificationsDoc are non-empty.
+func (d *SpecificationsDoc) Validate() []string {
+	var errs []string
+	if d.ID == "" {
+		errs = append(errs, "id is required")
+	}
+	if d.Title == "" {
+		errs = append(errs, "title is required")
+	}
+	if d.Overview == "" {
+		errs = append(errs, "overview is required")
+	}
+	return errs
+}
+
+// Validate checks that all required fields in RoadmapDoc are non-empty.
+func (d *RoadmapDoc) Validate() []string {
+	var errs []string
+	if d.ID == "" {
+		errs = append(errs, "id is required")
+	}
+	if d.Title == "" {
+		errs = append(errs, "title is required")
+	}
+	return errs
+}
+
+// prdItemIDRe matches valid PRD requirement item IDs: R{group}.{item} (e.g., R1.1, R2.3).
+// Letter suffixes like R2a are not valid (GH-536).
+var prdItemIDRe = regexp.MustCompile(`^R\d+\.\d+$`)
+
+// Validate checks that all required fields in PRDDoc are non-empty, including
+// each requirement group's title, items, and item ID format (GH-536).
+func (d *PRDDoc) Validate() []string {
+	var errs []string
+	if d.ID == "" {
+		errs = append(errs, "id is required")
+	}
+	if d.Title == "" {
+		errs = append(errs, "title is required")
+	}
+	if d.Problem == "" {
+		errs = append(errs, "problem is required")
+	}
+	keys := make([]string, 0, len(d.Requirements))
+	for k := range d.Requirements {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		g := d.Requirements[k]
+		if g.Title == "" {
+			errs = append(errs, fmt.Sprintf("requirements.%s.title is required", k))
+		}
+		if len(g.Items) == 0 {
+			errs = append(errs, fmt.Sprintf("requirements.%s.items is required", k))
+		}
+		for _, item := range g.Items {
+			for itemKey := range item {
+				if !prdItemIDRe.MatchString(itemKey) {
+					errs = append(errs, fmt.Sprintf("requirements.%s: item ID %q must use numeric dotted format (e.g., R1.1)", k, itemKey))
+				}
+			}
+		}
+	}
+	return errs
+}
+
+// Validate checks that all required fields in UseCaseDoc are non-empty.
+func (d *UseCaseDoc) Validate() []string {
+	var errs []string
+	if d.ID == "" {
+		errs = append(errs, "id is required")
+	}
+	if d.Title == "" {
+		errs = append(errs, "title is required")
+	}
+	if d.Summary == "" {
+		errs = append(errs, "summary is required")
+	}
+	if d.Actor == "" {
+		errs = append(errs, "actor is required")
+	}
+	if d.Trigger == "" {
+		errs = append(errs, "trigger is required")
+	}
+	return errs
+}
+
+// Validate checks that all required fields in TestSuiteDoc are non-empty.
+func (d *TestSuiteDoc) Validate() []string {
+	var errs []string
+	if d.ID == "" {
+		errs = append(errs, "id is required")
+	}
+	if d.Title == "" {
+		errs = append(errs, "title is required")
+	}
+	if d.Release == "" {
+		errs = append(errs, "release is required")
+	}
+	return errs
+}
+
+// Validate checks that all required fields in EngineeringDoc are non-empty,
+// including each section's title and content.
+func (d *EngineeringDoc) Validate() []string {
+	var errs []string
+	if d.ID == "" {
+		errs = append(errs, "id is required")
+	}
+	if d.Title == "" {
+		errs = append(errs, "title is required")
+	}
+	if d.Introduction == "" {
+		errs = append(errs, "introduction is required")
+	}
+	for i, s := range d.Sections {
+		if s.Title == "" {
+			errs = append(errs, fmt.Sprintf("sections[%d].title is required", i))
+		}
+		if s.Content == "" {
+			errs = append(errs, fmt.Sprintf("sections[%d].content is required", i))
+		}
+	}
+	return errs
+}

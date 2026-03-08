@@ -321,7 +321,7 @@ func TestNewReleaseFilter(t *testing.T) {
 
 	// Both empty → no filtering.
 	rf3 := newReleaseFilter(nil, "")
-	if rf3.active() {
+	if rf3.Active() {
 		t.Error("expected inactive filter when both are empty")
 	}
 }
