@@ -16,7 +16,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -656,9 +655,9 @@ func (t *IdleTrackingWriter) Write(p []byte) (int, error) {
 // RunClaude
 // ---------------------------------------------------------------------------
 
-// RunClaude executes Claude and returns token usage. In SDK mode it calls
-// RunClaudeSDK; in CLI mode it runs the binary directly; in podman mode it
-// runs via a container. The process is killed if the timeout is exceeded.
+// RunClaude executes Claude and returns token usage. It performs shared
+// pre-flight (logging, credential refresh, workDir resolution, timeout
+// context) and delegates to a mode-specific Runner created via NewRunner.
 func RunClaude(deps RunClaudeDeps, prompt, dir string, silence bool, extraClaudeArgs ...string) (ClaudeResult, error) {
 	Log("runClaude: promptLen=%d dir=%q silence=%v", len(prompt), dir, silence)
 
@@ -686,83 +685,8 @@ func RunClaude(deps RunClaudeDeps, prompt, dir string, silence bool, extraClaude
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	if deps.EffectiveMode == "sdk" {
-		return RunClaudeSDK(deps, ctx, prompt, workDir, silence, extraClaudeArgs...)
-	}
-
-	var cmd *exec.Cmd
-	if deps.EffectiveMode == "cli" {
-		cmd = BuildDirectCmd(ctx, workDir, deps.ClaudeArgs, extraClaudeArgs...)
-	} else {
-		cmd = deps.BuildPodmanCmdFn(ctx, workDir, extraClaudeArgs...)
-	}
-
-	cmd.Stdin = strings.NewReader(prompt)
-
-	var idleAt atomic.Int64
-	idleAt.Store(time.Now().UnixNano())
-
-	var stdoutBuf bytes.Buffer
-	var outputWriter io.Writer
-	var pw *ProgressWriter
-	if silence {
-		pw = NewProgressWriter(&stdoutBuf, time.Now())
-		outputWriter = pw
-	} else {
-		outputWriter = io.MultiWriter(os.Stdout, &stdoutBuf)
-		cmd.Stderr = os.Stderr
-	}
-	cmd.Stdout = &IdleTrackingWriter{W: outputWriter, LastWrite: &idleAt}
-
-	idleDur := time.Duration(deps.IdleTimeoutS) * time.Second
-	if idleDur > 0 {
-		go func() {
-			ticker := time.NewTicker(time.Second)
-			defer ticker.Stop()
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case <-ticker.C:
-					last := time.Unix(0, idleAt.Load())
-					if time.Since(last) >= idleDur {
-						Log("runClaude: idle watchdog triggered after %s with no output — cancelling session",
-							time.Since(last).Round(time.Second))
-						cancel()
-						return
-					}
-				}
-			}
-		}()
-	}
-
-	start := time.Now()
-	err := cmd.Run()
-
-	if ctx.Err() == context.DeadlineExceeded {
-		elapsed := time.Since(start).Round(time.Second)
-		last := time.Unix(0, idleAt.Load())
-		idleElapsed := time.Since(last).Round(time.Second)
-		if idleDur > 0 && idleElapsed >= idleDur {
-			Log("runClaude: idle timeout after %s with no output (session ran %s)", idleElapsed, elapsed)
-			return ClaudeResult{}, fmt.Errorf("claude idle timeout: no output for %s", idleElapsed)
-		}
-		Log("runClaude: killed after %s (max time %s exceeded)", elapsed, timeout)
-		return ClaudeResult{}, fmt.Errorf("claude max time exceeded (%s)", timeout)
-	}
-
-	rawOutput := stdoutBuf.Bytes()
-	result := ParseClaudeTokens(rawOutput)
-	if pw != nil {
-		result.NumTurns = pw.Turn
-	}
-	result.RawOutput = make([]byte, len(rawOutput))
-	copy(result.RawOutput, rawOutput)
-	Log("runClaude: finished in %s in=%d (cache_create=%d cache_read=%d) out=%d cost=$%.4f (err=%v)",
-		time.Since(start).Round(time.Second), result.InputTokens,
-		result.CacheCreationTokens, result.CacheReadTokens,
-		result.OutputTokens, result.CostUSD, err)
-	return result, err
+	runner := NewRunner(deps)
+	return runner.Run(ctx, prompt, workDir, silence, extraClaudeArgs...)
 }
 
 // BuildDirectCmd constructs the exec.Cmd for running the claude binary
@@ -784,109 +708,11 @@ func BuildDirectCmd(ctx context.Context, workDir string, claudeArgs []string, ex
 	return cmd
 }
 
-// RunClaudeSDK executes Claude via the Go Agent SDK and returns token usage.
+// RunClaudeSDK delegates to SDKRunner.Run. It is kept for backward
+// compatibility with callers that construct a RunClaudeDeps directly.
 func RunClaudeSDK(deps RunClaudeDeps, ctx context.Context, prompt, workDir string, silence bool, extraClaudeArgs ...string) (ClaudeResult, error) {
-	opts := claudetypes.NewClaudeAgentOptions()
-	opts.CWD = &workDir
-	opts.DangerouslySkipPermissions = true
-	opts.AllowDangerouslySkipPermissions = true
-
-	opts = opts.WithSystemPromptPreset(claudetypes.SystemPromptPreset{
-		Type:   "preset",
-		Preset: "claude_code",
-	})
-
-	for i := 0; i+1 < len(extraClaudeArgs); i++ {
-		if extraClaudeArgs[i] == "--max-turns" {
-			if n, err := strconv.Atoi(extraClaudeArgs[i+1]); err == nil {
-				opts = opts.WithMaxTurns(n)
-			}
-			i++
-		}
-	}
-
-	start := time.Now()
-
-	sdkStderrMu.Lock()
-	origStderr := os.Stderr
-	pr, pw, pipeErr := os.Pipe()
-	if pipeErr == nil {
-		os.Stderr = pw
-	}
-	stderrDone := make(chan struct{})
-	if pipeErr == nil {
-		go FilterSDKStderr(pr, origStderr, stderrDone)
-	}
-	Log("runClaude: SDK query workDir=%q (timeout=%s)", workDir, deps.ClaudeTimeout)
-
-	defer func() {
-		if pipeErr == nil {
-			pw.Close()
-			<-stderrDone
-			os.Stderr = origStderr
-		}
-		sdkStderrMu.Unlock()
-	}()
-
-	sdkEnvMu.Lock()
-	oldVal, hadVal := os.LookupEnv("CLAUDECODE")
-	_ = os.Unsetenv("CLAUDECODE")
-
-	msgChan, err := deps.SdkQueryFn(ctx, prompt, opts)
-
-	if hadVal {
-		_ = os.Setenv("CLAUDECODE", oldVal)
-	}
-	sdkEnvMu.Unlock()
-
-	if err != nil {
-		return ClaudeResult{}, fmt.Errorf("claude SDK query: %w", err)
-	}
-
-	var result ClaudeResult
-	var textBuf strings.Builder
-	var gotResult bool
-
-	for msg := range msgChan {
-		switch m := msg.(type) {
-		case *claudetypes.AssistantMessage:
-			for _, block := range m.Content {
-				switch b := block.(type) {
-				case *claudetypes.TextBlock:
-					if !silence {
-						fmt.Print(b.Text)
-					}
-					textBuf.WriteString(b.Text)
-				}
-			}
-		case *claudetypes.ResultMessage:
-			gotResult = true
-			if m.TotalCostUSD != nil {
-				result.CostUSD = *m.TotalCostUSD
-			}
-			result.InputTokens = IntFromUsage(m.Usage, "input_tokens")
-			result.OutputTokens = IntFromUsage(m.Usage, "output_tokens")
-			result.CacheCreationTokens = IntFromUsage(m.Usage, "cache_creation_input_tokens")
-			result.CacheReadTokens = IntFromUsage(m.Usage, "cache_read_input_tokens")
-			result.NumTurns = m.NumTurns
-			result.DurationAPIMs = m.DurationAPIMs
-			result.SessionID = m.SessionID
-			if m.IsError {
-				return result, fmt.Errorf("claude SDK session returned error result")
-			}
-		}
-	}
-
-	if !gotResult {
-		return ClaudeResult{}, fmt.Errorf("claude SDK session produced no result (subprocess may have exited early)")
-	}
-
-	result.RawOutput = []byte(textBuf.String())
-	Log("runClaude: SDK finished in %s in=%d (cache_create=%d cache_read=%d) out=%d cost=$%.4f",
-		time.Since(start).Round(time.Second),
-		result.InputTokens, result.CacheCreationTokens, result.CacheReadTokens,
-		result.OutputTokens, result.CostUSD)
-	return result, nil
+	r := &SDKRunner{queryFn: deps.SdkQueryFn, claudeTimeout: deps.ClaudeTimeout}
+	return r.Run(ctx, prompt, workDir, silence, extraClaudeArgs...)
 }
 
 // ---------------------------------------------------------------------------

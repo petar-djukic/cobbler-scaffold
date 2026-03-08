@@ -29,6 +29,18 @@ func init() {
 // Type aliases for backward compatibility
 // ---------------------------------------------------------------------------
 
+// Runner executes Claude in a specific mode (CLI, Podman, or SDK).
+type Runner = claude.Runner
+
+// CLIRunner executes Claude by running the claude binary directly.
+type CLIRunner = claude.CLIRunner
+
+// PodmanRunner executes Claude inside a podman container.
+type PodmanRunner = claude.PodmanRunner
+
+// SDKRunner executes Claude via the Go Agent SDK.
+type SDKRunner = claude.SDKRunner
+
 // ClaudeResult holds token usage from a Claude invocation.
 type ClaudeResult = claude.ClaudeResult
 
@@ -136,6 +148,11 @@ func (o *Orchestrator) logConfig(target string) {
 		GenerationBranch:        o.cfg.Generation.Branch,
 		UserPrompt:              o.cfg.Cobbler.UserPrompt,
 	})
+}
+
+// runner returns a Runner for the configured execution mode.
+func (o *Orchestrator) runner() Runner {
+	return claude.NewRunner(o.runClaudeDeps())
 }
 
 // runClaude executes Claude and returns token usage.
