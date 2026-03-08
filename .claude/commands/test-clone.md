@@ -52,7 +52,6 @@ ORCH_DIRTY_BEFORE=$(git status --porcelain)
 ### 3. Verify preconditions
 
 - On main branch with clean working tree
-- `bd` CLI available on PATH: `which bd`
 - `mage` available: `which mage`
 - `configuration.yaml` present (created by scaffold)
 

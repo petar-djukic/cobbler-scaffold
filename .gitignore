@@ -45,3 +45,6 @@ magefiles/configuration.yaml
 
 # Beads daemon runtime artifacts
 .beads/
+
+# macOS
+.DS_Store
