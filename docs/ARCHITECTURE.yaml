@@ -143,7 +143,7 @@ interfaces:
       containing all docs, specs, source code, and existing issues.
     data_structures:
       - "MeasurePromptDoc: Role (string), ProjectContext (*ProjectContext), PlanningConstitution (*yaml.Node), IssueFormatConstitution (*yaml.Node), Task (string), Constraints (string), OutputFormat (string), GoldenExample (string), AdditionalContext (string), ValidationErrors ([]string), PackageContracts ([]OODPackageContractRef)"
-      - "StitchPromptDoc: Role (string), RepositoryFiles ([]string), ProjectContext (*ProjectContext), Context (string), ExecutionConstitution (*yaml.Node), GoStyleConstitution (*yaml.Node), Task (string), Constraints (string), Description (string), SharedProtocols ([]ArchSharedProtocol), PackageContracts ([]OODPackageContractRef)"
+      - "StitchPromptDoc: Role (string), RepositoryFiles ([]string), ProjectContext (*ProjectContext), Context (string), ExecutionConstitution (*yaml.Node), GoStyleConstitution (*yaml.Node), Task (string), Constraints (string), Description (string), SemanticModel (*yaml.Node), SharedProtocols ([]ArchSharedProtocol), PackageContracts ([]OODPackageContractRef)"
 
 components:
   - name: Orchestrator
@@ -234,14 +234,31 @@ components:
     references:
       - prd001-orchestrator-core
 
+  - name: GitOps
+    responsibility: |
+      Defines a GitOps interface that abstracts all git operations (checkout, branch
+      creation, tagging, pushing, committing, worktree management, diff stats). The
+      ShellGitOps implementation executes git commands via exec.Command. The interface
+      enables testing with mock implementations and future non-shell backends.
+    capabilities:
+      - "GitOps interface: 50+ git operations (Checkout, CreateBranch, DeleteBranch, Tag, Push, Commit, Merge, Worktree, DiffStat, etc.)"
+      - "ShellGitOps: implements GitOps using exec.Command"
+      - "DiffStat: parsed output from git diff --shortstat (FilesChanged, Insertions, Deletions)"
+      - "FileChange: per-file diff information"
+    references:
+      - prd001-orchestrator-core
+
   - name: GitHub Issues
     responsibility: |
-      Manages GitHub Issues as the task tracker for cobbler workflows. Provides issue
-      CRUD operations (create, list, close), label management (cobbler-ready,
-      cobbler-in-progress, cobbler-gen-* generation labels), DAG-based promotion of
-      ready issues, and garbage collection of stale generation issues whose branches
-      no longer exist locally.
+      Manages GitHub Issues as the task tracker for cobbler workflows. Defines a
+      WorkTracker interface that abstracts all issue-tracking operations (create, list,
+      close, label, promote, GC). GitHubTracker implements WorkTracker using the gh CLI
+      and GitHub REST API. The interface enables future alternative implementations
+      (e.g., crumbs/trails). Provides DAG-based promotion of ready issues and garbage
+      collection of stale generation issues whose branches no longer exist locally.
     capabilities:
+      - "WorkTracker interface: DetectGitHubRepo, EnsureCobblerLabels, CreateCobblerIssue, ListOpenIssues, PromoteReadyIssues, PickReadyIssue, CloseIssue, GarbageCollect, FileDefect"
+      - "GitHubTracker: implements WorkTracker using gh CLI and REST API"
       - "Create cobbler issues with YAML front-matter (generation, index, dependency) and [measure] title prefix"
       - List open issues filtered by generation label via REST API
       - Promote unblocked issues to cobbler-ready based on dependency DAG
@@ -270,6 +287,8 @@ components:
       Cross-artifact consistency checking. Validates that PRDs, use cases, and test suites
       are properly linked and complete. Reports orphaned PRDs, missing test suites, broken
       touchpoints, use cases not in the roadmap, schema drift, and semantic model violations.
+      Validates structured traceability chains: R-items covered by acceptance criteria (ACs),
+      ACs covered by test cases, and use case success criteria (S-items) traced to PRD ACs.
     capabilities:
       - Load and index all PRDs, use cases, test suites, and roadmap entries
       - Check PRD-to-use-case traceability via touchpoints
@@ -278,6 +297,9 @@ components:
       - Validate YAML schemas against typed structs (strict field checking)
       - Detect constitution drift between docs/constitutions/ and embedded copies
       - Validate semantic models — SM1 (four required sections), SM3 (feature source traceability), SM7 (name/semver) — in standalone files, PRD shorthand, and prompt full-format
+      - "Validate structured acceptance criteria: AcceptanceCriterion (id, criterion, traces) in PRDs"
+      - "Validate structured success criteria: SuccessCriterion (id, criterion, traces) in use cases"
+      - "Check R-item coverage by ACs, AC coverage by test cases, S-item trace validity"
       - Generate detailed consistency report with artifact counts
     references:
       - Similar to spec-kit analyze functionality
@@ -333,6 +355,7 @@ components:
       - Parse existing GitHub issues into structured format
       - Assemble all components into a single YAML string for prompt injection
       - Load per-phase context override files (PhaseContext) at invocation time
+      - "LoadPRDSemanticModel: scan PRD files for semantic_model field, return as raw YAML node for stitch prompt injection"
     references:
       - prd003-cobbler-workflows (prompt building, R9 phase context)
       - eng08-phase-context-files
@@ -748,6 +771,30 @@ project_structure:
     role: Release lifecycle management — ReleaseUpdate sets UC statuses to implemented and removes a release from configuration.yaml; ReleaseClear reverses it (release:update/clear targets)
   - path: pkg/orchestrator/token_stats.go
     role: Token statistics — enumerate context files by category with byte sizes, optional Anthropic Token Counting API for exact prompt token counts
+  - path: pkg/orchestrator/internal/
+    role: Internal packages — implementation extracted from top-level delegate files
+  - path: pkg/orchestrator/internal/analysis/
+    role: Cross-artifact consistency checking, code status, pre-cycle analysis, structured criteria types (AcceptanceCriterion, SuccessCriterion)
+  - path: pkg/orchestrator/internal/build/
+    role: Go build, scaffold, Docker image management
+  - path: pkg/orchestrator/internal/claude/
+    role: Claude invocation dispatch (podman, CLI, SDK) and runner implementation
+  - path: pkg/orchestrator/internal/compare/
+    role: Differential comparison and test case loader
+  - path: pkg/orchestrator/internal/context/
+    role: ProjectContext assembly, prompt document types, constitution markdown, LoadPRDSemanticModel
+  - path: pkg/orchestrator/internal/generate/
+    role: Generation lifecycle, measure orchestration, stitch orchestration
+  - path: pkg/orchestrator/internal/github/
+    role: WorkTracker interface, GitHubTracker implementation, issue CRUD via gh CLI
+  - path: pkg/orchestrator/internal/gitops/
+    role: GitOps interface and ShellGitOps implementation for all git operations
+  - path: pkg/orchestrator/internal/release/
+    role: Release lifecycle (update/clear), tagging, version management
+  - path: pkg/orchestrator/internal/stats/
+    role: LOC metrics, generator stats, release stats, outcomes, token stats
+  - path: pkg/orchestrator/internal/vscode/
+    role: VS Code extension build, package, install
   - path: pkg/orchestrator/Dockerfile.claude
     role: Embedded Dockerfile for Claude container
   - path: pkg/orchestrator/prompts/
@@ -781,6 +828,11 @@ implementation_status:
     - done: VS Code extension — lifecycle commands, generation browser, branch comparison, issue tracker, metrics dashboard, specification browser
     - done: Semantic model validation in mage analyze (SM1 sections, SM3 traceability, SM7 naming/semver)
     - done: Release lifecycle management (ReleaseUpdate/ReleaseClear — road-map.yaml and configuration.yaml mutation)
+    - done: Internal package extraction — implementation split into 10 internal packages for testability and separation of concerns
+    - done: GitOps interface and ShellGitOps implementation for all git operations
+    - done: WorkTracker interface and GitHubTracker implementation for issue tracking abstraction
+    - done: Structured traceability — AcceptanceCriterion and SuccessCriterion types with id/criterion/traces fields
+    - done: Semantic model injection into stitch prompts via LoadPRDSemanticModel and StitchPromptDoc.SemanticModel
 
 related_documents:
   - doc: docs/VISION.yaml
@@ -809,6 +861,10 @@ related_documents:
     purpose: Design decisions and loading semantics for per-phase context override files
   - doc: docs/specs/product-requirements/prd006-vscode-extension.yaml
     purpose: VS Code extension requirements for lifecycle, browsing, comparison, metrics, and traceability
+  - doc: docs/engineering/eng09-specification-as-semantic-model.yaml
+    purpose: Specification-as-semantic-model analogy, limits, and integration with generation pipeline
+  - doc: docs/constitutions/semantic-model.yaml
+    purpose: Ten principles governing semantic model authoring (SM1-SM10)
 
 figures:
   - path: docs/ARCHITECTURE-diagrams.md
