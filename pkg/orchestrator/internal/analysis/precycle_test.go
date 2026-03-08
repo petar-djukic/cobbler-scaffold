@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Petar Djukic. All rights reserved.
 // SPDX-License-Identifier: MIT
 
-package orchestrator
+package analysis
 
 import (
 	"os"
@@ -10,19 +10,19 @@ import (
 	"testing"
 )
 
-// --- totalIssues ---
+// --- TotalIssues ---
 
 func TestTotalIssues_Zero(t *testing.T) {
 	doc := AnalysisDoc{}
 	if got := doc.TotalIssues(); got != 0 {
-		t.Errorf("totalIssues() = %d, want 0", got)
+		t.Errorf("TotalIssues() = %d, want 0", got)
 	}
 }
 
 func TestTotalIssues_ConsistencyOnly(t *testing.T) {
 	doc := AnalysisDoc{ConsistencyErrors: 3}
 	if got := doc.TotalIssues(); got != 3 {
-		t.Errorf("totalIssues() = %d, want 3", got)
+		t.Errorf("TotalIssues() = %d, want 3", got)
 	}
 }
 
@@ -33,7 +33,7 @@ func TestTotalIssues_GapsOnly(t *testing.T) {
 		},
 	}
 	if got := doc.TotalIssues(); got != 2 {
-		t.Errorf("totalIssues() = %d, want 2", got)
+		t.Errorf("TotalIssues() = %d, want 2", got)
 	}
 }
 
@@ -45,15 +45,15 @@ func TestTotalIssues_Combined(t *testing.T) {
 		},
 	}
 	if got := doc.TotalIssues(); got != 8 {
-		t.Errorf("totalIssues() = %d, want 8", got)
+		t.Errorf("TotalIssues() = %d, want 8", got)
 	}
 }
 
-// --- collectConsistencyDetails ---
+// --- CollectConsistencyDetails ---
 
 func TestCollectConsistencyDetails_Empty(t *testing.T) {
 	r := &AnalyzeResult{}
-	details := collectConsistencyDetails(r)
+	details := CollectConsistencyDetails(r)
 	if len(details) != 0 {
 		t.Errorf("got %d details, want 0", len(details))
 	}
@@ -70,14 +70,12 @@ func TestCollectConsistencyDetails_AllFields(t *testing.T) {
 		ConstitutionDrift:         []string{"design.yaml"},      // excluded from details
 		BrokenCitations:           []string{"uc001->prd001:R99"},
 	}
-	details := collectConsistencyDetails(r)
+	details := CollectConsistencyDetails(r)
 
-	// SchemaErrors and ConstitutionDrift are excluded (prd003 R11.2).
 	if len(details) != 6 {
 		t.Fatalf("got %d details, want 6", len(details))
 	}
 
-	// Verify prefixes to ensure correct categorization.
 	prefixes := []string{
 		"orphaned PRD:",
 		"release without test suite:",
@@ -99,18 +97,17 @@ func TestCollectConsistencyDetails_MultiplePerField(t *testing.T) {
 		SchemaErrors:    []string{"err1", "err2", "err3"}, // excluded from details
 		BrokenCitations: []string{"cite1"},
 	}
-	details := collectConsistencyDetails(r)
-	// SchemaErrors excluded; 2 orphaned + 1 citation = 3 (prd003 R11.2).
+	details := CollectConsistencyDetails(r)
 	if len(details) != 3 {
 		t.Errorf("got %d details, want 3", len(details))
 	}
 }
 
-// --- collectDefects ---
+// --- CollectDefects ---
 
 func TestCollectDefects_Empty(t *testing.T) {
 	r := &AnalyzeResult{}
-	defects := collectDefects(r)
+	defects := CollectDefects(r)
 	if len(defects) != 0 {
 		t.Errorf("got %d defects, want 0", len(defects))
 	}
@@ -122,7 +119,7 @@ func TestCollectDefects_SchemaAndDrift(t *testing.T) {
 		ConstitutionDrift: []string{"design.yaml"},
 		OrphanedPRDs:      []string{"prd-x"}, // must NOT appear in defects
 	}
-	defects := collectDefects(r)
+	defects := CollectDefects(r)
 
 	if len(defects) != 2 {
 		t.Fatalf("got %d defects, want 2", len(defects))
@@ -136,13 +133,12 @@ func TestCollectDefects_SchemaAndDrift(t *testing.T) {
 }
 
 func TestCollectDefects_ExcludedFromConsistencyDetails(t *testing.T) {
-	// Schema errors and constitution drift must not appear in ConsistencyDetails.
 	r := &AnalyzeResult{
 		SchemaErrors:      []string{"docs/VISION.yaml: err"},
 		ConstitutionDrift: []string{"design.yaml"},
 	}
-	details := collectConsistencyDetails(r)
-	defects := collectDefects(r)
+	details := CollectConsistencyDetails(r)
+	defects := CollectDefects(r)
 
 	if len(details) != 0 {
 		t.Errorf("ConsistencyDetails should be empty, got %v", details)
@@ -157,18 +153,18 @@ func TestAnalysisDocDefectsRoundTrip(t *testing.T) {
 	path := filepath.Join(dir, "analysis.yaml")
 
 	doc := &AnalysisDoc{
-		ConsistencyErrors: 1,
+		ConsistencyErrors:  1,
 		ConsistencyDetails: []string{"orphaned PRD: prd-x"},
-		Defects:           []string{"schema error: docs/VISION.yaml: bad field"},
+		Defects:            []string{"schema error: docs/VISION.yaml: bad field"},
 	}
 
-	if err := writeAnalysisDoc(doc, path); err != nil {
-		t.Fatalf("writeAnalysisDoc: %v", err)
+	if err := WriteAnalysisDoc(doc, path); err != nil {
+		t.Fatalf("WriteAnalysisDoc: %v", err)
 	}
 
-	loaded := loadAnalysisDoc(dir)
+	loaded := LoadAnalysisDoc(dir)
 	if loaded == nil {
-		t.Fatal("loadAnalysisDoc returned nil")
+		t.Fatal("LoadAnalysisDoc returned nil")
 	}
 	if len(loaded.Defects) != 1 {
 		t.Errorf("Defects len = %d, want 1", len(loaded.Defects))
@@ -181,7 +177,7 @@ func TestAnalysisDocDefectsRoundTrip(t *testing.T) {
 	}
 }
 
-// --- writeAnalysisDoc / loadAnalysisDoc ---
+// --- WriteAnalysisDoc / LoadAnalysisDoc ---
 
 func TestWriteAndLoadAnalysisDoc(t *testing.T) {
 	dir := t.TempDir()
@@ -201,19 +197,17 @@ func TestWriteAndLoadAnalysisDoc(t *testing.T) {
 		},
 	}
 
-	if err := writeAnalysisDoc(doc, path); err != nil {
-		t.Fatalf("writeAnalysisDoc: %v", err)
+	if err := WriteAnalysisDoc(doc, path); err != nil {
+		t.Fatalf("WriteAnalysisDoc: %v", err)
 	}
 
-	// Verify file was created.
 	if _, err := os.Stat(path); err != nil {
 		t.Fatalf("file not created: %v", err)
 	}
 
-	// Load it back.
-	loaded := loadAnalysisDoc(dir)
+	loaded := LoadAnalysisDoc(dir)
 	if loaded == nil {
-		t.Fatal("loadAnalysisDoc returned nil")
+		t.Fatal("LoadAnalysisDoc returned nil")
 	}
 	if loaded.ConsistencyErrors != 2 {
 		t.Errorf("ConsistencyErrors = %d, want 2", loaded.ConsistencyErrors)
@@ -234,8 +228,8 @@ func TestWriteAnalysisDoc_CreatesDirectory(t *testing.T) {
 	nested := filepath.Join(dir, "sub", "dir", "analysis.yaml")
 
 	doc := &AnalysisDoc{ConsistencyErrors: 1}
-	if err := writeAnalysisDoc(doc, nested); err != nil {
-		t.Fatalf("writeAnalysisDoc: %v", err)
+	if err := WriteAnalysisDoc(doc, nested); err != nil {
+		t.Fatalf("WriteAnalysisDoc: %v", err)
 	}
 	if _, err := os.Stat(nested); err != nil {
 		t.Fatalf("file not created in nested directory: %v", err)
@@ -247,13 +241,13 @@ func TestWriteAnalysisDoc_EmptyDoc(t *testing.T) {
 	path := filepath.Join(dir, "analysis.yaml")
 
 	doc := &AnalysisDoc{}
-	if err := writeAnalysisDoc(doc, path); err != nil {
-		t.Fatalf("writeAnalysisDoc: %v", err)
+	if err := WriteAnalysisDoc(doc, path); err != nil {
+		t.Fatalf("WriteAnalysisDoc: %v", err)
 	}
 
-	loaded := loadAnalysisDoc(dir)
+	loaded := LoadAnalysisDoc(dir)
 	if loaded == nil {
-		t.Fatal("loadAnalysisDoc returned nil")
+		t.Fatal("LoadAnalysisDoc returned nil")
 	}
 	if loaded.ConsistencyErrors != 0 {
 		t.Errorf("ConsistencyErrors = %d, want 0", loaded.ConsistencyErrors)
@@ -265,7 +259,7 @@ func TestWriteAnalysisDoc_EmptyDoc(t *testing.T) {
 
 func TestLoadAnalysisDoc_NoFile(t *testing.T) {
 	dir := t.TempDir()
-	loaded := loadAnalysisDoc(dir)
+	loaded := LoadAnalysisDoc(dir)
 	if loaded != nil {
 		t.Errorf("expected nil for missing file, got %+v", loaded)
 	}
@@ -273,10 +267,10 @@ func TestLoadAnalysisDoc_NoFile(t *testing.T) {
 
 func TestLoadAnalysisDoc_InvalidYAML(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, analysisFileName)
+	path := filepath.Join(dir, AnalysisFileName)
 	os.WriteFile(path, []byte("{{invalid yaml"), 0o644)
 
-	loaded := loadAnalysisDoc(dir)
+	loaded := LoadAnalysisDoc(dir)
 	if loaded != nil {
 		t.Errorf("expected nil for invalid YAML, got %+v", loaded)
 	}
@@ -285,13 +279,11 @@ func TestLoadAnalysisDoc_InvalidYAML(t *testing.T) {
 // --- RunPreCycleAnalysis ---
 
 func TestRunPreCycleAnalysis_WritesFile(t *testing.T) {
-	// Not parallel: uses os.Chdir.
 	dir := t.TempDir()
 	orig, _ := os.Getwd()
 	os.Chdir(dir)
 	t.Cleanup(func() { os.Chdir(orig) })
 
-	// Minimal doc set.
 	os.MkdirAll("docs/specs/product-requirements", 0o755)
 	os.MkdirAll("docs/specs/use-cases", 0o755)
 	os.MkdirAll("docs/specs/test-suites", 0o755)
@@ -304,12 +296,20 @@ func TestRunPreCycleAnalysis_WritesFile(t *testing.T) {
 		[]byte("id: test-rel01.0\ntitle: Tests\nrelease: rel01.0\ntraces:\n  - rel01.0-uc001-init\n"), 0o644)
 
 	scratchDir := filepath.Join(dir, ".cobbler")
-	o := &Orchestrator{cfg: Config{Cobbler: CobblerConfig{Dir: scratchDir}}}
-	o.RunPreCycleAnalysis()
+	deps := PreCycleDeps{
+		Log:        func(string, ...any) {},
+		CobblerDir: scratchDir,
+		AnalyzeDeps: AnalyzeDeps{
+			Log:                    func(string, ...any) {},
+			ValidateDocSchemas:     func() []string { return nil },
+			ValidatePromptTemplate: func(string) []string { return nil },
+		},
+	}
+	RunPreCycleAnalysis(deps)
 
-	outPath := filepath.Join(scratchDir, analysisFileName)
+	outPath := filepath.Join(scratchDir, AnalysisFileName)
 	if _, err := os.Stat(outPath); os.IsNotExist(err) {
-		t.Fatalf("expected %s to exist after RunPreCycleAnalysis", analysisFileName)
+		t.Fatalf("expected %s to exist after RunPreCycleAnalysis", AnalysisFileName)
 	}
 	data, err := os.ReadFile(outPath)
 	if err != nil {
@@ -322,21 +322,25 @@ func TestRunPreCycleAnalysis_WritesFile(t *testing.T) {
 }
 
 func TestRunPreCycleAnalysis_NoRoadmap(t *testing.T) {
-	// Not parallel: uses os.Chdir.
 	dir := t.TempDir()
 	orig, _ := os.Getwd()
 	os.Chdir(dir)
 	t.Cleanup(func() { os.Chdir(orig) })
 
-	// No docs at all — collectAnalyzeResult will fail but RunPreCycleAnalysis
-	// should not panic.
 	scratchDir := filepath.Join(dir, ".cobbler")
-	o := &Orchestrator{cfg: Config{Cobbler: CobblerConfig{Dir: scratchDir}}}
-	o.RunPreCycleAnalysis()
+	deps := PreCycleDeps{
+		Log:        func(string, ...any) {},
+		CobblerDir: scratchDir,
+		AnalyzeDeps: AnalyzeDeps{
+			Log:                    func(string, ...any) {},
+			ValidateDocSchemas:     func() []string { return nil },
+			ValidatePromptTemplate: func(string) []string { return nil },
+		},
+	}
+	RunPreCycleAnalysis(deps)
 
-	// Should still write a file even if analysis had errors.
-	outPath := filepath.Join(scratchDir, analysisFileName)
+	outPath := filepath.Join(scratchDir, AnalysisFileName)
 	if _, err := os.Stat(outPath); os.IsNotExist(err) {
-		t.Fatalf("expected %s even with empty docs", analysisFileName)
+		t.Fatalf("expected %s even with empty docs", AnalysisFileName)
 	}
 }

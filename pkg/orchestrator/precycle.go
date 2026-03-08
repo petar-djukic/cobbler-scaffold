@@ -4,152 +4,30 @@
 package orchestrator
 
 import (
-	"fmt"
-	"os"
-	"path/filepath"
-
-	"gopkg.in/yaml.v3"
+	an "github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/analysis"
 )
 
-const analysisFileName = "analysis.yaml"
-
-// AnalysisDoc holds the combined results of cross-artifact consistency
-// checks and code implementation status. It is written to the cobbler
-// scratch directory before each measure/stitch cycle and loaded into
-// ProjectContext so Claude sees the current project state.
-type AnalysisDoc struct {
-	// ConsistencyErrors is the total count of cross-artifact issues found.
-	ConsistencyErrors int `yaml:"consistency_errors"`
-
-	// ConsistencyDetails lists individual consistency issues (orphaned PRDs,
-	// broken touchpoints, etc.). Schema errors and constitution drift are
-	// excluded — they appear in Defects instead (prd003 R11).
-	ConsistencyDetails []string `yaml:"consistency_details,omitempty"`
-
-	// Defects holds schema errors and constitution drift findings from
-	// AnalyzeResult. These are bugs in the target repo's own files, not
-	// orchestrator workflow issues. RunMeasure routes them to the target
-	// repo's GitHub issue tracker and excludes them from the measure prompt
-	// (prd003 R11.1, R11.7).
-	Defects []string `yaml:"defects,omitempty"`
-
-	// CodeStatus holds per-release and per-use-case implementation status.
-	CodeStatus *CodeStatusReport `yaml:"code_status,omitempty"`
-}
-
-// totalIssues returns the total count of consistency errors and code gaps.
-func (a *AnalysisDoc) totalIssues() int {
-	n := a.ConsistencyErrors
-	if a.CodeStatus != nil {
-		n += len(a.CodeStatus.Gaps)
-	}
-	return n
-}
-
-// collectConsistencyDetails flattens an AnalyzeResult into a single list
-// of human-readable issue strings for Claude's project context. Schema errors
-// and constitution drift are excluded — they are routed to the target repo as
-// defects via collectDefects (prd003 R11.2, R11.7).
-func collectConsistencyDetails(r *AnalyzeResult) []string {
-	var details []string
-	for _, v := range r.OrphanedPRDs {
-		details = append(details, "orphaned PRD: "+v)
-	}
-	for _, v := range r.ReleasesWithoutTestSuites {
-		details = append(details, "release without test suite: "+v)
-	}
-	for _, v := range r.OrphanedTestSuites {
-		details = append(details, "orphaned test suite: "+v)
-	}
-	for _, v := range r.BrokenTouchpoints {
-		details = append(details, "broken touchpoint: "+v)
-	}
-	for _, v := range r.UseCasesNotInRoadmap {
-		details = append(details, "use case not in roadmap: "+v)
-	}
-	for _, v := range r.BrokenCitations {
-		details = append(details, "broken citation: "+v)
-	}
-	for _, v := range r.InvalidReleases {
-		details = append(details, "invalid release: "+v)
-	}
-	return details
-}
-
-// collectDefects extracts schema errors and constitution drift from an
-// AnalyzeResult and returns them as labeled defect strings. These are bugs
-// in the target repo's own files and are filed as GitHub issues in the
-// target repo rather than injected into the measure prompt (prd003 R11.1).
-func collectDefects(r *AnalyzeResult) []string {
-	var defects []string
-	for _, v := range r.SchemaErrors {
-		defects = append(defects, "schema error: "+v)
-	}
-	for _, v := range r.ConstitutionDrift {
-		defects = append(defects, "constitution drift: "+v)
-	}
-	return defects
-}
+// Type aliases for backward-compatible re-exports.
+type AnalysisDoc = an.AnalysisDoc
 
 // RunPreCycleAnalysis performs cross-artifact consistency checks and code
 // status detection, writes the combined result to {ScratchDir}/analysis.yaml,
-// and logs a summary. Errors are logged but do not fail the caller — the
-// analysis is advisory, not blocking.
+// and logs a summary.
 func (o *Orchestrator) RunPreCycleAnalysis() {
-	logf("precycle: running pre-cycle analysis")
-
-	doc := AnalysisDoc{}
-
-	// Cross-artifact consistency checks.
-	result, _, err := o.collectAnalyzeResult()
-	if err != nil {
-		logf("precycle: consistency check error: %v", err)
-	} else {
-		details := collectConsistencyDetails(&result)
-		doc.ConsistencyErrors = len(details)
-		doc.ConsistencyDetails = details
-		defects := collectDefects(&result)
-		doc.Defects = defects
-		if len(defects) > 0 {
-			logf("precycle: %d defect(s) routed to target repo (excluded from measure prompt)", len(defects))
-		}
-	}
-
-	// Code implementation status.
-	roadmap := loadYAML[RoadmapDoc]("docs/road-map.yaml")
-	if roadmap != nil {
-		testScan := scanTestDirectories("tests")
-		report := computeCodeStatus(roadmap, testScan)
-		report.Gaps = detectSpecCodeGaps(&report)
-		doc.CodeStatus = &report
-	} else {
-		logf("precycle: cannot load road-map.yaml, skipping code status")
-	}
-
-	// Write to scratch directory.
-	outPath := filepath.Join(o.cfg.Cobbler.Dir, analysisFileName)
-	if err := writeAnalysisDoc(&doc, outPath); err != nil {
-		logf("precycle: failed to write %s: %v", outPath, err)
-		return
-	}
-
-	logf("precycle: wrote %s (total_issues=%d)", outPath, doc.totalIssues())
-}
-
-// writeAnalysisDoc marshals an AnalysisDoc to YAML and writes it to path.
-func writeAnalysisDoc(doc *AnalysisDoc, path string) error {
-	data, err := yaml.Marshal(doc)
-	if err != nil {
-		return fmt.Errorf("marshaling analysis: %w", err)
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return fmt.Errorf("creating directory: %w", err)
-	}
-	return os.WriteFile(path, data, 0o644)
+	an.RunPreCycleAnalysis(an.PreCycleDeps{
+		Log:        logf,
+		CobblerDir: o.cfg.Cobbler.Dir,
+		AnalyzeDeps: an.AnalyzeDeps{
+			Log:                    logf,
+			Releases:               o.cfg.Project.Releases,
+			ValidateDocSchemas:     o.validateDocSchemas,
+			ValidatePromptTemplate: validatePromptTemplate,
+		},
+	})
 }
 
 // loadAnalysisDoc loads an AnalysisDoc from {cobblerDir}/analysis.yaml.
 // Returns nil if the file does not exist or cannot be parsed.
 func loadAnalysisDoc(cobblerDir string) *AnalysisDoc {
-	return loadYAML[AnalysisDoc](filepath.Join(cobblerDir, analysisFileName))
+	return an.LoadAnalysisDoc(cobblerDir)
 }
