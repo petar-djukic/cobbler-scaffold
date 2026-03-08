@@ -32,6 +32,7 @@ func (o *Orchestrator) GeneratorStats() error {
 		FetchIssueComments: func(repo string, number int) ([]string, error) {
 			return fetchIssueComments(repo, number)
 		},
+		HistoryDir: o.historyDir(),
 	})
 }
 

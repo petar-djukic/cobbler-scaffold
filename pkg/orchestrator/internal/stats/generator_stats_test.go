@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	gh "github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/github"
 )
 
 // --- ParseStitchComment ---
@@ -513,5 +515,282 @@ out_of_scope: []
 	m := BuildPRDReleaseMap()
 	if len(m) != 0 {
 		t.Errorf("expected empty map for non-numeric PRD refs, got %v", m)
+	}
+}
+
+// --- LoadHistoryStats ---
+
+func TestLoadHistoryStats_EmptyDir(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	stats, err := LoadHistoryStats(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(stats) != 0 {
+		t.Errorf("expected empty slice, got %d entries", len(stats))
+	}
+}
+
+func TestLoadHistoryStats_BlankPath(t *testing.T) {
+	t.Parallel()
+	stats, err := LoadHistoryStats("")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if stats != nil {
+		t.Errorf("expected nil, got %v", stats)
+	}
+}
+
+func TestLoadHistoryStats_NonExistentDir(t *testing.T) {
+	t.Parallel()
+	stats, err := LoadHistoryStats("/tmp/does-not-exist-xyz-12345")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if stats != nil {
+		t.Errorf("expected nil, got %v", stats)
+	}
+}
+
+func TestLoadHistoryStats_ParsesFiles(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	stitchYAML := `caller: stitch
+task_id: "42"
+task_title: "implement feature"
+status: done
+started_at: "2026-03-08T12:00:00Z"
+duration: "5m 32s"
+duration_s: 332
+tokens:
+  input: 125000
+  output: 5000
+  cache_creation: 0
+  cache_read: 0
+cost_usd: 0.42
+num_turns: 12
+`
+	measureYAML := `caller: measure
+started_at: "2026-03-08T12:05:00Z"
+duration: "1m 10s"
+duration_s: 70
+tokens:
+  input: 50000
+  output: 2000
+  cache_creation: 0
+  cache_read: 0
+cost_usd: 0.15
+num_turns: 3
+`
+	os.WriteFile(filepath.Join(dir, "2026-03-08-12-00-00-stitch-stats.yaml"), []byte(stitchYAML), 0o644)
+	os.WriteFile(filepath.Join(dir, "2026-03-08-12-05-00-measure-stats.yaml"), []byte(measureYAML), 0o644)
+	// Non-stats file should be ignored.
+	os.WriteFile(filepath.Join(dir, "2026-03-08-12-00-00-stitch-report.yaml"), []byte("ignored: true"), 0o644)
+
+	stats, err := LoadHistoryStats(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(stats) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(stats))
+	}
+
+	// Find stitch and measure entries.
+	var foundStitch, foundMeasure bool
+	for _, s := range stats {
+		switch s.Caller {
+		case "stitch":
+			foundStitch = true
+			if s.TaskID != "42" {
+				t.Errorf("stitch TaskID = %q, want %q", s.TaskID, "42")
+			}
+			if s.CostUSD != 0.42 {
+				t.Errorf("stitch CostUSD = %v, want 0.42", s.CostUSD)
+			}
+			if s.DurationS != 332 {
+				t.Errorf("stitch DurationS = %d, want 332", s.DurationS)
+			}
+			if s.NumTurns != 12 {
+				t.Errorf("stitch NumTurns = %d, want 12", s.NumTurns)
+			}
+			if s.Tokens.Input != 125000 {
+				t.Errorf("stitch Input = %d, want 125000", s.Tokens.Input)
+			}
+			if s.Tokens.Output != 5000 {
+				t.Errorf("stitch Output = %d, want 5000", s.Tokens.Output)
+			}
+		case "measure":
+			foundMeasure = true
+			if s.CostUSD != 0.15 {
+				t.Errorf("measure CostUSD = %v, want 0.15", s.CostUSD)
+			}
+		}
+	}
+	if !foundStitch {
+		t.Error("stitch entry not found")
+	}
+	if !foundMeasure {
+		t.Error("measure entry not found")
+	}
+}
+
+func TestLoadHistoryStats_SkipsInvalidYAML(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "bad-stats.yaml"), []byte("{{invalid yaml"), 0o644)
+	stats, err := LoadHistoryStats(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(stats) != 0 {
+		t.Errorf("expected empty slice for invalid YAML, got %d entries", len(stats))
+	}
+}
+
+// --- PrintGeneratorStats with history ---
+
+func TestPrintGeneratorStats_PrefersHistoryOverComments(t *testing.T) {
+	// Uses os.Chdir — do NOT use t.Parallel()
+	dir := t.TempDir()
+
+	// Create history dir with stitch stats.
+	histDir := filepath.Join(dir, "history")
+	os.MkdirAll(histDir, 0o755)
+	stitchYAML := `caller: stitch
+task_id: "100"
+task_title: "implement feature"
+status: done
+started_at: "2026-03-08T12:00:00Z"
+duration: "5m 32s"
+duration_s: 332
+tokens:
+  input: 125000
+  output: 5000
+  cache_creation: 0
+  cache_read: 0
+cost_usd: 1.50
+num_turns: 15
+`
+	os.WriteFile(filepath.Join(histDir, "2026-03-08-12-00-00-stitch-stats.yaml"), []byte(stitchYAML), 0o644)
+
+	// Set up minimal PRD/use-case dirs so BuildPRDReleaseMap doesn't fail.
+	orig, _ := os.Getwd()
+	t.Cleanup(func() { os.Chdir(orig) })
+	os.Chdir(dir)
+
+	commentCalled := false
+	deps := GeneratorStatsDeps{
+		Log: func(format string, args ...any) {},
+		ListGenerationBranches: func() []string { return []string{"generation-main"} },
+		GenerationBranch:       "generation-main",
+		DetectGitHubRepo:       func() (string, error) { return "owner/repo", nil },
+		ListAllIssues: func(repo, generation string) ([]gh.CobblerIssue, error) {
+			return []gh.CobblerIssue{
+				{Number: 100, Title: "implement feature", State: "closed", Labels: []string{"cobbler-task"}},
+			}, nil
+		},
+		FetchIssueComments: func(repo string, number int) ([]string, error) {
+			commentCalled = true
+			return []string{"Stitch completed in 1m 0s. Cost: $0.10. Turns: 2."}, nil
+		},
+		HistoryDir: histDir,
+	}
+
+	err := PrintGeneratorStats(deps)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if commentCalled {
+		t.Error("expected FetchIssueComments NOT to be called when history data exists for the task")
+	}
+}
+
+func TestPrintGeneratorStats_FallsBackToComments(t *testing.T) {
+	// Uses os.Chdir — do NOT use t.Parallel()
+	dir := t.TempDir()
+
+	// Empty history dir — no matching stats for any issue.
+	histDir := filepath.Join(dir, "history")
+	os.MkdirAll(histDir, 0o755)
+
+	orig, _ := os.Getwd()
+	t.Cleanup(func() { os.Chdir(orig) })
+	os.Chdir(dir)
+
+	commentCalled := false
+	deps := GeneratorStatsDeps{
+		Log: func(format string, args ...any) {},
+		ListGenerationBranches: func() []string { return []string{"generation-main"} },
+		GenerationBranch:       "generation-main",
+		DetectGitHubRepo:       func() (string, error) { return "owner/repo", nil },
+		ListAllIssues: func(repo, generation string) ([]gh.CobblerIssue, error) {
+			return []gh.CobblerIssue{
+				{Number: 200, Title: "other feature", State: "closed", Labels: []string{"cobbler-task"}},
+			}, nil
+		},
+		FetchIssueComments: func(repo string, number int) ([]string, error) {
+			commentCalled = true
+			return []string{"Stitch completed in 2m 0s. Cost: $0.30. Turns: 5."}, nil
+		},
+		HistoryDir: histDir,
+	}
+
+	err := PrintGeneratorStats(deps)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !commentCalled {
+		t.Error("expected FetchIssueComments to be called as fallback when no history data matches")
+	}
+}
+
+func TestPrintGeneratorStats_MeasureSummary(t *testing.T) {
+	// Uses os.Chdir — do NOT use t.Parallel()
+	dir := t.TempDir()
+
+	histDir := filepath.Join(dir, "history")
+	os.MkdirAll(histDir, 0o755)
+
+	measureYAML := `caller: measure
+started_at: "2026-03-08T12:05:00Z"
+duration: "1m 10s"
+duration_s: 70
+tokens:
+  input: 50000
+  output: 2000
+  cache_creation: 0
+  cache_read: 0
+cost_usd: 0.15
+num_turns: 3
+`
+	os.WriteFile(filepath.Join(histDir, "2026-03-08-12-05-00-measure-stats.yaml"), []byte(measureYAML), 0o644)
+
+	orig, _ := os.Getwd()
+	t.Cleanup(func() { os.Chdir(orig) })
+	os.Chdir(dir)
+
+	deps := GeneratorStatsDeps{
+		Log: func(format string, args ...any) {},
+		ListGenerationBranches: func() []string { return []string{"generation-main"} },
+		GenerationBranch:       "generation-main",
+		DetectGitHubRepo:       func() (string, error) { return "owner/repo", nil },
+		ListAllIssues: func(repo, generation string) ([]gh.CobblerIssue, error) {
+			return []gh.CobblerIssue{
+				{Number: 300, Title: "test task", State: "open", Labels: []string{"cobbler-task"}},
+			}, nil
+		},
+		FetchIssueComments: func(repo string, number int) ([]string, error) {
+			return nil, nil
+		},
+		HistoryDir: histDir,
+	}
+
+	// Just verify it doesn't error — measure output goes to stdout.
+	err := PrintGeneratorStats(deps)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
