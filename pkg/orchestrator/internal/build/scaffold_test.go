@@ -4,6 +4,7 @@
 package build
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -329,5 +330,123 @@ func TestCopyDir_PreservesContent(t *testing.T) {
 		} else if string(got) != tc.want {
 			t.Errorf("%s = %q, want %q", tc.name, got, tc.want)
 		}
+	}
+}
+
+// --- WriteScaffoldConfig ---
+
+func TestWriteScaffoldConfig_Success(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	marshalFn := func() ([]byte, error) {
+		return []byte("key: value\n"), nil
+	}
+	if err := WriteScaffoldConfig(path, marshalFn); err != nil {
+		t.Fatalf("WriteScaffoldConfig: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	content := string(data)
+	if !strings.Contains(content, "# Orchestrator configuration") {
+		t.Error("expected header comment in output")
+	}
+	if !strings.Contains(content, "key: value") {
+		t.Error("expected marshaled content in output")
+	}
+}
+
+func TestWriteScaffoldConfig_MarshalError(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	marshalFn := func() ([]byte, error) {
+		return nil, fmt.Errorf("marshal failed")
+	}
+	err := WriteScaffoldConfig(path, marshalFn)
+	if err == nil {
+		t.Fatal("expected error when marshal fails")
+	}
+	if !strings.Contains(err.Error(), "marshalling config") {
+		t.Errorf("error = %q, want to contain 'marshalling config'", err.Error())
+	}
+}
+
+// --- DiscoverCmdPackages edge cases ---
+
+func TestDiscoverCmdPackages_SkipsFiles(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	cmdDir := filepath.Join(dir, "cmd")
+	os.MkdirAll(cmdDir, 0o755)
+	// Create a regular file (not a directory) in cmd/
+	os.WriteFile(filepath.Join(cmdDir, "standalone.go"), []byte("package main\n"), 0o644)
+
+	pkgs, err := DiscoverCmdPackages(dir)
+	if err != nil {
+		t.Fatalf("DiscoverCmdPackages error = %v", err)
+	}
+	if len(pkgs) != 0 {
+		t.Errorf("expected 0 packages for files-only cmd/, got %v", pkgs)
+	}
+}
+
+// --- ClearMageGoFiles edge cases ---
+
+func TestClearMageGoFiles_SkipsSubdirectories(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	subDir := filepath.Join(dir, "subpkg")
+	os.MkdirAll(subDir, 0o755)
+	os.WriteFile(filepath.Join(dir, "main.go"), []byte("x"), 0o644)
+	os.WriteFile(filepath.Join(subDir, "nested.go"), []byte("y"), 0o644)
+
+	if err := ClearMageGoFiles(dir); err != nil {
+		t.Fatalf("ClearMageGoFiles: %v", err)
+	}
+	// main.go should be removed
+	if _, err := os.Stat(filepath.Join(dir, "main.go")); err == nil {
+		t.Error("main.go should have been removed")
+	}
+	// nested.go in subdirectory should remain (ClearMageGoFiles is not recursive)
+	if _, err := os.Stat(filepath.Join(subDir, "nested.go")); err != nil {
+		t.Error("nested.go in subdirectory should not be removed")
+	}
+}
+
+// --- CopyDir error path ---
+
+func TestCopyDir_NonExistentSrc(t *testing.T) {
+	t.Parallel()
+	dst := filepath.Join(t.TempDir(), "out")
+	err := CopyDir("/nonexistent/src/dir", dst)
+	if err == nil {
+		t.Error("expected error for nonexistent source directory")
+	}
+}
+
+// --- DetectBinaryName edge case ---
+
+func TestDetectBinaryName_TrailingSlash(t *testing.T) {
+	t.Parallel()
+	// strings.Split on "/" yields a trailing empty element
+	got := DetectBinaryName("github.com/org/repo/")
+	if got != "" {
+		t.Errorf("DetectBinaryName trailing slash = %q, want empty", got)
+	}
+}
+
+// --- ScaffoldSeedTemplate edge case ---
+
+func TestScaffoldSeedTemplate_MismatchedMainPkg(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	// When mainPkg does not start with modulePath+"/", relDir should be "."
+	destPath, _, err := ScaffoldSeedTemplate(dir, "github.com/org/a", "github.com/org/b/cmd/app", "magefiles")
+	if err != nil {
+		t.Fatalf("ScaffoldSeedTemplate: %v", err)
+	}
+	if destPath != "version.go" {
+		t.Errorf("destPath = %q, want version.go for mismatched module paths", destPath)
 	}
 }

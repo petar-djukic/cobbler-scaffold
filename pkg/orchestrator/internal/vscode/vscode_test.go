@@ -182,3 +182,110 @@ func TestSplitLines_TrailingNewline(t *testing.T) {
 		}
 	}
 }
+
+// --- VsixFilename edge cases ---
+
+func TestVsixFilename_EmptyVersion(t *testing.T) {
+	dir := t.TempDir()
+	content := `{"name": "ext-name", "version": ""}`
+	if err := os.WriteFile(filepath.Join(dir, "package.json"), []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := VsixFilename(dir)
+	if err == nil {
+		t.Fatal("VsixFilename: expected error for empty version, got nil")
+	}
+}
+
+func TestVsixFilename_BothFieldsEmpty(t *testing.T) {
+	dir := t.TempDir()
+	content := `{"name": "", "version": ""}`
+	if err := os.WriteFile(filepath.Join(dir, "package.json"), []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := VsixFilename(dir)
+	if err == nil {
+		t.Fatal("VsixFilename: expected error for both empty fields, got nil")
+	}
+}
+
+func TestVsixFilename_ExtraFields(t *testing.T) {
+	dir := t.TempDir()
+	content := `{"name": "my-ext", "version": "2.1.0", "description": "some desc", "publisher": "acme"}`
+	if err := os.WriteFile(filepath.Join(dir, "package.json"), []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+	got, err := VsixFilename(dir)
+	if err != nil {
+		t.Fatalf("VsixFilename: unexpected error: %v", err)
+	}
+	want := "my-ext-2.1.0.vsix"
+	if got != want {
+		t.Errorf("VsixFilename = %q, want %q", got, want)
+	}
+}
+
+func TestVsixFilename_EmptyJSONObject(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "package.json"), []byte("{}"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := VsixFilename(dir)
+	if err == nil {
+		t.Fatal("VsixFilename: expected error for empty JSON object, got nil")
+	}
+}
+
+// --- SplitLines edge cases ---
+
+func TestSplitLines_SingleLine(t *testing.T) {
+	got := SplitLines("hello")
+	if len(got) != 1 || got[0] != "hello" {
+		t.Errorf("SplitLines(single) = %v, want [hello]", got)
+	}
+}
+
+func TestSplitLines_WhitespaceOnly(t *testing.T) {
+	got := SplitLines("   \n\t\n  \t  ")
+	if len(got) != 0 {
+		t.Errorf("SplitLines(whitespace) = %v, want empty", got)
+	}
+}
+
+func TestSplitLines_TrimsPadding(t *testing.T) {
+	got := SplitLines("  alpha  \n  beta  ")
+	if len(got) != 2 || got[0] != "alpha" || got[1] != "beta" {
+		t.Errorf("SplitLines(padded) = %v, want [alpha beta]", got)
+	}
+}
+
+// --- PackageJSON ---
+
+func TestPackageJSON_Struct(t *testing.T) {
+	t.Parallel()
+	p := PackageJSON{Name: "test-ext", Version: "1.0.0"}
+	if p.Name != "test-ext" {
+		t.Errorf("Name = %q, want test-ext", p.Name)
+	}
+	if p.Version != "1.0.0" {
+		t.Errorf("Version = %q, want 1.0.0", p.Version)
+	}
+}
+
+// --- Constants ---
+
+func TestExtensionConstants(t *testing.T) {
+	t.Parallel()
+	if ExtensionDir != "vscode-extension" {
+		t.Errorf("ExtensionDir = %q, want vscode-extension", ExtensionDir)
+	}
+	if ExtensionID != "mesh-intelligence.mage-orchestrator" {
+		t.Errorf("ExtensionID = %q, want mesh-intelligence.mage-orchestrator", ExtensionID)
+	}
+	if BinNpm != "npm" {
+		t.Errorf("BinNpm = %q, want npm", BinNpm)
+	}
+	if BinCode != "code" {
+		t.Errorf("BinCode = %q, want code", BinCode)
+	}
+}

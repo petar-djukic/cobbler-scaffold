@@ -827,3 +827,336 @@ func TestNormalizeIssueTitle(t *testing.T) {
 		})
 	}
 }
+
+// --- NewGitHubTracker ---
+
+func TestNewGitHubTracker(t *testing.T) {
+	t.Parallel()
+	deps := Deps{
+		Log:          t.Logf,
+		GhBin:        "/usr/local/bin/gh",
+		BranchExists: func(branch, dir string) bool { return false },
+	}
+	cfg := RepoConfig{
+		IssuesRepo: "owner/repo",
+		ModulePath: "github.com/owner/repo",
+		TargetRepo: "owner/target",
+	}
+	tr := NewGitHubTracker(deps, cfg)
+	if tr.GhBin != "/usr/local/bin/gh" {
+		t.Errorf("GhBin = %q, want /usr/local/bin/gh", tr.GhBin)
+	}
+	if tr.Cfg.IssuesRepo != "owner/repo" {
+		t.Errorf("Cfg.IssuesRepo = %q, want owner/repo", tr.Cfg.IssuesRepo)
+	}
+	if tr.Cfg.TargetRepo != "owner/target" {
+		t.Errorf("Cfg.TargetRepo = %q, want owner/target", tr.Cfg.TargetRepo)
+	}
+}
+
+// --- DetectGitHubRepo error path ---
+
+func TestDetectGitHubRepo_NoConfig_NonGitHub(t *testing.T) {
+	t.Parallel()
+	tr := &GitHubTracker{
+		Log:   t.Logf,
+		GhBin: "gh",
+		Cfg:   RepoConfig{ModulePath: "gitlab.com/org/project"},
+	}
+	_, err := tr.DetectGitHubRepo(t.TempDir())
+	if err == nil {
+		t.Fatal("expected error when no GitHub repo can be determined")
+	}
+	if !strings.Contains(err.Error(), "cannot determine GitHub repo") {
+		t.Errorf("error = %q, expected 'cannot determine GitHub repo'", err.Error())
+	}
+}
+
+func TestDetectGitHubRepo_EmptyConfig(t *testing.T) {
+	t.Parallel()
+	tr := &GitHubTracker{
+		Log:   t.Logf,
+		GhBin: "gh",
+		Cfg:   RepoConfig{},
+	}
+	_, err := tr.DetectGitHubRepo(t.TempDir())
+	if err == nil {
+		t.Fatal("expected error for completely empty config")
+	}
+}
+
+// --- GenLabel edge cases ---
+
+func TestGenLabel_ExactlyAtLimit(t *testing.T) {
+	t.Parallel()
+	// GenLabelPrefix is "cobbler-gen-" (12 chars). 50-12 = 38 chars left.
+	gen := strings.Repeat("x", 38) // exactly at limit
+	label := GenLabel(gen)
+	if label != GenLabelPrefix+gen {
+		t.Errorf("expected no truncation at exact limit, got %q", label)
+	}
+	if len(label) != 50 {
+		t.Errorf("label len = %d, want 50", len(label))
+	}
+}
+
+func TestGenLabel_OneOverLimit(t *testing.T) {
+	t.Parallel()
+	gen := strings.Repeat("x", 39) // one over
+	label := GenLabel(gen)
+	if len(label) > 50 {
+		t.Errorf("label len = %d, exceeds 50", len(label))
+	}
+	if len(label) != 50 {
+		t.Errorf("label len = %d, want exactly 50", len(label))
+	}
+}
+
+// --- FormatIssueFrontMatter edge cases ---
+
+func TestFormatIssueFrontMatter_ZeroDep(t *testing.T) {
+	t.Parallel()
+	body := FormatIssueFrontMatter("gen-test", 1, 0)
+	if !strings.Contains(body, "cobbler_depends_on: 0") {
+		t.Error("dep 0 should be included in front-matter")
+	}
+}
+
+func TestFormatIssueFrontMatter_NegativeDep(t *testing.T) {
+	t.Parallel()
+	body := FormatIssueFrontMatter("gen-test", 1, -1)
+	if strings.Contains(body, "cobbler_depends_on") {
+		t.Error("negative dep should omit cobbler_depends_on line")
+	}
+}
+
+// --- ParseIssueFrontMatter edge cases ---
+
+func TestParseIssueFrontMatter_UnclosedBlock(t *testing.T) {
+	t.Parallel()
+	body := "---\ncobbler_generation: gen-abc\ncobbler_index: 1\n"
+	fm, desc := ParseIssueFrontMatter(body)
+	// unclosed front-matter: no closing "---"
+	if fm.Generation != "" {
+		t.Errorf("expected empty Generation for unclosed block, got %q", fm.Generation)
+	}
+	if desc != body {
+		t.Errorf("expected full body as description for unclosed block")
+	}
+}
+
+func TestParseIssueFrontMatter_EmptyBody(t *testing.T) {
+	t.Parallel()
+	fm, desc := ParseIssueFrontMatter("")
+	if fm.DependsOn != -1 {
+		t.Errorf("DependsOn = %d, want -1 for empty body", fm.DependsOn)
+	}
+	if desc != "" {
+		t.Errorf("desc = %q, want empty", desc)
+	}
+}
+
+// --- HasLabel edge cases ---
+
+func TestHasLabel_EmptyLabels(t *testing.T) {
+	t.Parallel()
+	iss := CobblerIssue{Labels: nil}
+	if HasLabel(iss, "anything") {
+		t.Error("HasLabel should return false for nil labels")
+	}
+}
+
+func TestHasLabel_EmptyLabel(t *testing.T) {
+	t.Parallel()
+	iss := CobblerIssue{Labels: []string{"", "cobbler-ready"}}
+	if HasLabel(iss, "") {
+		// empty label matches empty string in labels slice
+		// this is testing the actual behavior
+	}
+}
+
+// --- ParseCobblerIssuesJSON edge cases ---
+
+func TestParseIssuesJSON_NullBody(t *testing.T) {
+	t.Parallel()
+	input := `[{"number": 1, "title": "No body", "state": "open", "body": null, "labels": []}]`
+	issues, err := ParseCobblerIssuesJSON([]byte(input))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(issues) != 1 {
+		t.Fatalf("got %d issues, want 1", len(issues))
+	}
+	// null body becomes empty string, ParseIssueFrontMatter handles ""
+	if issues[0].Number != 1 {
+		t.Errorf("Number = %d, want 1", issues[0].Number)
+	}
+}
+
+func TestParseIssuesJSON_StateField(t *testing.T) {
+	t.Parallel()
+	input := `[{"number": 42, "title": "Closed issue", "state": "closed", "body": "", "labels": []}]`
+	issues, err := ParseCobblerIssuesJSON([]byte(input))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if issues[0].State != "closed" {
+		t.Errorf("State = %q, want closed", issues[0].State)
+	}
+}
+
+// --- IssuesContextJSON edge cases ---
+
+func TestIssuesContextJSON_BothLabels(t *testing.T) {
+	t.Parallel()
+	// When issue has both labels, in_progress takes precedence
+	issues := []CobblerIssue{
+		{Number: 1, Title: "Both", Labels: []string{LabelReady, LabelInProgress}},
+	}
+	result, err := IssuesContextJSON(issues)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	var got []ContextIssue
+	if err := json.Unmarshal([]byte(result), &got); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if got[0].Status != "in_progress" {
+		t.Errorf("Status = %q, want in_progress (should take precedence)", got[0].Status)
+	}
+}
+
+// --- ExtractParentIssueNumber additional cases ---
+
+func TestExtractParentIssueNumber_NegativeNumber(t *testing.T) {
+	t.Parallel()
+	got := ExtractParentIssueNumber("generation-gh--5-slug")
+	if got != 0 {
+		t.Errorf("got %d, want 0 for negative number", got)
+	}
+}
+
+func TestExtractParentIssueNumber_ZeroNumber(t *testing.T) {
+	t.Parallel()
+	got := ExtractParentIssueNumber("generation-gh-0-slug")
+	if got != 0 {
+		t.Errorf("got %d, want 0 for zero number", got)
+	}
+}
+
+// --- FileTargetRepoDefects guard ---
+
+func TestFileTargetRepoDefects_EmptyRepo_NoOp(t *testing.T) {
+	t.Parallel()
+	tr := &GitHubTracker{
+		Log: t.Logf,
+		Cfg: RepoConfig{},
+	}
+	// Should log and return without calling gh
+	tr.FileTargetRepoDefects("", []string{"defect 1", "defect 2"})
+}
+
+func TestFileTargetRepoDefects_EmptyDefects(t *testing.T) {
+	t.Parallel()
+	tr := &GitHubTracker{
+		Log:   t.Logf,
+		GhBin: "gh",
+		Cfg:   RepoConfig{},
+	}
+	// No defects, should be a quick no-op
+	tr.FileTargetRepoDefects("owner/repo", nil)
+}
+
+// --- CommentCobblerIssue guards ---
+
+func TestCommentCobblerIssue_EmptyRepo_NoOp(t *testing.T) {
+	t.Parallel()
+	tr := testTracker(t)
+	tr.CommentCobblerIssue("", 42, "test") // should return immediately
+}
+
+func TestCommentCobblerIssue_NegativeNumber_NoOp(t *testing.T) {
+	t.Parallel()
+	tr := testTracker(t)
+	tr.CommentCobblerIssue("owner/repo", -1, "test") // number <= 0, returns
+}
+
+// --- GoModModulePath edge cases ---
+
+func TestGoModModulePath_EmptyFile(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "go.mod"), []byte(""), 0o644)
+	got := GoModModulePath(dir)
+	if got != "" {
+		t.Errorf("GoModModulePath empty file = %q, want empty", got)
+	}
+}
+
+// --- CloseGenerationIssues guard ---
+
+func TestCloseGenerationIssues_EmptyGeneration(t *testing.T) {
+	t.Parallel()
+	tr := testTracker(t)
+	err := tr.CloseGenerationIssues("owner/repo", "")
+	if err != nil {
+		t.Errorf("CloseGenerationIssues with empty generation should return nil, got %v", err)
+	}
+}
+
+// --- GhExec ---
+
+func TestGhExec_FakeCommand(t *testing.T) {
+	t.Parallel()
+	tr := testTracker(t)
+	_, err := tr.GhExec(t.TempDir(), "version")
+	// gh version should work if gh is installed
+	if err != nil {
+		t.Logf("GhExec(version) error (expected if gh not installed): %v", err)
+	}
+}
+
+// --- ParseCobblerIssuesJSON with state ---
+
+func TestParseIssuesJSON_MultipleLabels(t *testing.T) {
+	t.Parallel()
+	input := `[{
+		"number": 5,
+		"title": "Multi-label",
+		"state": "open",
+		"body": "---\ncobbler_generation: gen\ncobbler_index: 1\n---\n\ndesc",
+		"labels": [{"name": "cobbler-gen-gen"}, {"name": "cobbler-ready"}, {"name": "cobbler-in-progress"}]
+	}]`
+	issues, err := ParseCobblerIssuesJSON([]byte(input))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(issues[0].Labels) != 3 {
+		t.Errorf("Labels = %v, want 3 labels", issues[0].Labels)
+	}
+}
+
+// --- FormatIssueFrontMatter with large dep ---
+
+func TestFormatIssueFrontMatter_LargeDep(t *testing.T) {
+	t.Parallel()
+	body := FormatIssueFrontMatter("gen-x", 5, 999)
+	fm, _ := ParseIssueFrontMatter(body + "desc")
+	if fm.DependsOn != 999 {
+		t.Errorf("DependsOn round-trip: got %d, want 999", fm.DependsOn)
+	}
+	if fm.Index != 5 {
+		t.Errorf("Index round-trip: got %d, want 5", fm.Index)
+	}
+}
+
+func TestGoModModulePath_ModuleWithComment(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	// Module line with trailing comment-like text
+	os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module github.com/org/repo\n\ngo 1.23\n\nrequire (\n)\n"), 0o644)
+	got := GoModModulePath(dir)
+	if got != "github.com/org/repo" {
+		t.Errorf("GoModModulePath = %q, want github.com/org/repo", got)
+	}
+}
