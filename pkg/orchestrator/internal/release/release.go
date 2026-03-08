@@ -42,6 +42,7 @@ type roadmapDoc struct {
 
 type roadmapRelease struct {
 	Version  string           `yaml:"version"`
+	Status   string           `yaml:"status"`
 	UseCases []roadmapUseCase `yaml:"use_cases"`
 }
 
@@ -139,8 +140,8 @@ func UpdateRoadmapUCStatuses(version, newStatus string) error {
 }
 
 // SetRoadmapUCStatuses mutates the yaml.Node tree of road-map.yaml, finding
-// the release with the given version and setting all its use_cases[*].status
-// scalar values to newStatus.
+// the release with the given version and setting both the release-level status
+// and all its use_cases[*].status scalar values to newStatus.
 func SetRoadmapUCStatuses(root *yaml.Node, version, newStatus string) error {
 	// Unwrap document node.
 	doc := root
@@ -156,6 +157,10 @@ func SetRoadmapUCStatuses(root *yaml.Node, version, newStatus string) error {
 		versionNode := MappingValue(relNode, "version")
 		if versionNode == nil || versionNode.Value != version {
 			continue
+		}
+		// Reset the release-level status itself (GH-1189).
+		if relStatus := MappingValue(relNode, "status"); relStatus != nil {
+			relStatus.Value = newStatus
 		}
 		ucSeq := MappingValue(relNode, "use_cases")
 		if ucSeq == nil || ucSeq.Kind != yaml.SequenceNode {
@@ -323,4 +328,22 @@ func RoadmapUCStatuses(roadmapPath, version string) (map[string]string, error) {
 		}
 	}
 	return nil, fmt.Errorf("version %q not found", version)
+}
+
+// RoadmapReleaseStatus returns the release-level status for the given version.
+func RoadmapReleaseStatus(roadmapPath, version string) (string, error) {
+	data, err := os.ReadFile(roadmapPath)
+	if err != nil {
+		return "", err
+	}
+	var doc roadmapDoc
+	if err := yaml.Unmarshal(data, &doc); err != nil {
+		return "", err
+	}
+	for _, rel := range doc.Releases {
+		if rel.Version == version {
+			return rel.Status, nil
+		}
+	}
+	return "", fmt.Errorf("version %q not found", version)
 }

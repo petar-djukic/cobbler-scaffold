@@ -1540,11 +1540,19 @@ releases:
 		t.Fatalf("resetImplementedReleases error: %v", err)
 	}
 
-	// Verify 00.0 and 01.0 are reset to spec_complete.
+	// Verify 00.0 and 01.0 are reset to spec_complete (both release and UC level).
+	rmPath := filepath.Join(dir, "docs", "road-map.yaml")
 	for _, ver := range []string{"00.0", "01.0"} {
-		statuses, err := roadmapUCStatuses(filepath.Join(dir, "docs", "road-map.yaml"), ver)
+		relStatus, err := roadmapReleaseStatus(rmPath, ver)
 		if err != nil {
-			t.Fatalf("read statuses for %s: %v", ver, err)
+			t.Fatalf("read release status for %s: %v", ver, err)
+		}
+		if relStatus != "spec_complete" {
+			t.Errorf("release %s status: want spec_complete, got %q", ver, relStatus)
+		}
+		statuses, err := roadmapUCStatuses(rmPath, ver)
+		if err != nil {
+			t.Fatalf("read UC statuses for %s: %v", ver, err)
 		}
 		for id, status := range statuses {
 			if status != "spec_complete" {
@@ -1553,8 +1561,15 @@ releases:
 		}
 	}
 
-	// Verify 02.0 is unchanged.
-	statuses, err := roadmapUCStatuses(filepath.Join(dir, "docs", "road-map.yaml"), "02.0")
+	// Verify 02.0 is unchanged (both release and UC level).
+	relStatus02, err := roadmapReleaseStatus(rmPath, "02.0")
+	if err != nil {
+		t.Fatalf("read release status for 02.0: %v", err)
+	}
+	if relStatus02 != "spec_complete" {
+		t.Errorf("release 02.0 status: want spec_complete, got %q", relStatus02)
+	}
+	statuses, err := roadmapUCStatuses(rmPath, "02.0")
 	if err != nil {
 		t.Fatalf("read statuses for 02.0: %v", err)
 	}

@@ -89,3 +89,8 @@ func releaseVersionsFromConfig(configPath string) ([]string, error) {
 func roadmapUCStatuses(roadmapPath, version string) (map[string]string, error) {
 	return rel.RoadmapUCStatuses(roadmapPath, version)
 }
+
+// roadmapReleaseStatus delegates to the internal/release package.
+func roadmapReleaseStatus(roadmapPath, version string) (string, error) {
+	return rel.RoadmapReleaseStatus(roadmapPath, version)
+}
