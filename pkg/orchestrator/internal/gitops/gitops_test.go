@@ -177,3 +177,205 @@ func (m *MockGitOps) DiffShortstat(ref, dir string) (DiffStat, error) { return m
 func (m *MockGitOps) DiffNameStatus(ref, dir string) ([]FileChange, error) { return m.DiffNameStatusFn(ref, dir) }
 func (m *MockGitOps) LsTreeFiles(ref, dir string) ([]string, error) { return m.LsTreeFilesFn(ref, dir) }
 func (m *MockGitOps) ShowFileContent(ref, path, dir string) ([]byte, error) { return m.ShowFileContentFn(ref, path, dir) }
+
+// --- cmdGit tests ---
+
+func TestCmdGit_SetsDir(t *testing.T) {
+	t.Parallel()
+	g := &ShellGitOps{GitBin: "git"}
+	cmd := g.cmdGit("/tmp", "status")
+	if cmd.Dir != "/tmp" {
+		t.Errorf("cmd.Dir = %q, want /tmp", cmd.Dir)
+	}
+	if cmd.Args[0] != "git" {
+		t.Errorf("cmd.Args[0] = %q, want git", cmd.Args[0])
+	}
+	if cmd.Args[1] != "status" {
+		t.Errorf("cmd.Args[1] = %q, want status", cmd.Args[1])
+	}
+}
+
+func TestCmdGit_EmptyDir(t *testing.T) {
+	t.Parallel()
+	g := &ShellGitOps{}
+	cmd := g.cmdGit("", "log")
+	if cmd.Dir != "" {
+		t.Errorf("cmd.Dir = %q, want empty for no dir", cmd.Dir)
+	}
+}
+
+// --- ParseBranchList edge cases ---
+
+func TestParseBranchList_OnlyBlanks(t *testing.T) {
+	t.Parallel()
+	got := ParseBranchList("\n\n  \n\t\n")
+	if len(got) != 0 {
+		t.Errorf("ParseBranchList blanks = %v, want empty", got)
+	}
+}
+
+func TestParseBranchList_StarAndPlusPrefixes(t *testing.T) {
+	t.Parallel()
+	input := "* main\n+ feature/worktree\n  develop\n"
+	got := ParseBranchList(input)
+	want := []string{"main", "feature/worktree", "develop"}
+	if len(got) != len(want) {
+		t.Fatalf("ParseBranchList = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+// --- ParseDiffShortstat edge cases ---
+
+func TestParseDiffShortstat_InsertionsOnly(t *testing.T) {
+	t.Parallel()
+	ds := ParseDiffShortstat(" 2 files changed, 30 insertions(+)")
+	if ds.FilesChanged != 2 {
+		t.Errorf("FilesChanged = %d, want 2", ds.FilesChanged)
+	}
+	if ds.Insertions != 30 {
+		t.Errorf("Insertions = %d, want 30", ds.Insertions)
+	}
+	if ds.Deletions != 0 {
+		t.Errorf("Deletions = %d, want 0", ds.Deletions)
+	}
+}
+
+func TestParseDiffShortstat_DeletionsOnly(t *testing.T) {
+	t.Parallel()
+	ds := ParseDiffShortstat(" 1 file changed, 5 deletions(-)")
+	if ds.FilesChanged != 1 || ds.Deletions != 5 || ds.Insertions != 0 {
+		t.Errorf("got %+v", ds)
+	}
+}
+
+// --- ParseNumstat edge cases ---
+
+func TestParseNumstat_Empty(t *testing.T) {
+	t.Parallel()
+	m := ParseNumstat("")
+	if len(m) != 0 {
+		t.Errorf("ParseNumstat empty = %v, want empty map", m)
+	}
+}
+
+func TestParseNumstat_MalformedLine(t *testing.T) {
+	t.Parallel()
+	// Line with fewer than 3 tab-separated fields is skipped
+	m := ParseNumstat("10\tREADME.md\n")
+	if len(m) != 0 {
+		t.Errorf("ParseNumstat malformed = %v, want empty map", m)
+	}
+}
+
+func TestParseNumstat_BinaryFile(t *testing.T) {
+	t.Parallel()
+	m := ParseNumstat("-\t-\tbinary.png\n")
+	entry, ok := m["binary.png"]
+	if !ok {
+		t.Fatal("expected binary.png in map")
+	}
+	if entry.Ins != 0 || entry.Del != 0 {
+		t.Errorf("binary entry = %+v, want {0, 0}", entry)
+	}
+}
+
+// --- ParseNameStatus edge cases ---
+
+func TestParseNameStatus_Empty(t *testing.T) {
+	t.Parallel()
+	files := ParseNameStatus("", nil)
+	if len(files) != 0 {
+		t.Errorf("ParseNameStatus empty = %v, want empty", files)
+	}
+}
+
+func TestParseNameStatus_DeletedFile(t *testing.T) {
+	t.Parallel()
+	nsOutput := "D\tremoved.go\n"
+	numMap := map[string]NumstatEntry{
+		"removed.go": {Ins: 0, Del: 25},
+	}
+	files := ParseNameStatus(nsOutput, numMap)
+	if len(files) != 1 {
+		t.Fatalf("got %d files, want 1", len(files))
+	}
+	if files[0].Status != "D" || files[0].Path != "removed.go" {
+		t.Errorf("got %+v, want D removed.go", files[0])
+	}
+	if files[0].Deletions != 25 {
+		t.Errorf("Deletions = %d, want 25", files[0].Deletions)
+	}
+}
+
+func TestParseNameStatus_CopyStatus(t *testing.T) {
+	t.Parallel()
+	nsOutput := "C100\told.go\tnew_copy.go\n"
+	numMap := map[string]NumstatEntry{
+		"new_copy.go": {Ins: 10, Del: 0},
+	}
+	files := ParseNameStatus(nsOutput, numMap)
+	if len(files) != 1 {
+		t.Fatalf("got %d files, want 1", len(files))
+	}
+	if files[0].Status != "C" {
+		t.Errorf("Status = %q, want C", files[0].Status)
+	}
+	if files[0].Path != "new_copy.go" {
+		t.Errorf("Path = %q, want new_copy.go", files[0].Path)
+	}
+}
+
+func TestParseNameStatus_NoNumstat(t *testing.T) {
+	t.Parallel()
+	nsOutput := "M\tmodified.go\n"
+	files := ParseNameStatus(nsOutput, nil)
+	if len(files) != 1 {
+		t.Fatalf("got %d files, want 1", len(files))
+	}
+	if files[0].Insertions != 0 || files[0].Deletions != 0 {
+		t.Errorf("expected zero counts with nil numMap, got %+v", files[0])
+	}
+}
+
+func TestParseNameStatus_ShortLine(t *testing.T) {
+	t.Parallel()
+	// A line with only one tab-separated field should be skipped
+	files := ParseNameStatus("M\n", nil)
+	if len(files) != 0 {
+		t.Errorf("expected empty for malformed line, got %v", files)
+	}
+}
+
+// --- DiffStat / FileChange structs ---
+
+func TestDiffStat_ZeroValue(t *testing.T) {
+	t.Parallel()
+	var ds DiffStat
+	if ds.FilesChanged != 0 || ds.Insertions != 0 || ds.Deletions != 0 {
+		t.Errorf("zero-value DiffStat = %+v, want all zeros", ds)
+	}
+}
+
+func TestFileChange_Fields(t *testing.T) {
+	t.Parallel()
+	fc := FileChange{Path: "main.go", Status: "M", Insertions: 5, Deletions: 3}
+	if fc.Path != "main.go" {
+		t.Errorf("Path = %q, want main.go", fc.Path)
+	}
+}
+
+// --- LsFiles guard ---
+
+func TestShellGitOps_LsFiles_EmptyDir(t *testing.T) {
+	t.Parallel()
+	g := &ShellGitOps{}
+	got := g.LsFiles("")
+	if got != nil {
+		t.Errorf("LsFiles(\"\") = %v, want nil", got)
+	}
+}

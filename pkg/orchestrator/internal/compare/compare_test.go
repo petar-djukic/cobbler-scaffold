@@ -320,3 +320,287 @@ func TestGitTagResolver_Cleanup_BuildDirOnly(t *testing.T) {
 		t.Error("buildDir should be removed")
 	}
 }
+
+// --- CompareUtility edge cases ---
+
+func TestCompareUtility_StderrDiff(t *testing.T) {
+	t.Parallel()
+	binA := createTestBinary(t, "#!/bin/sh\necho hello; echo errA >&2")
+	binB := createTestBinary(t, "#!/bin/sh\necho hello; echo errB >&2")
+	cases := []CompareTestCase{
+		{Utility: "test", Name: "stderr diff", Args: []string{}},
+	}
+	results := CompareUtility(binA, binB, cases)
+	if len(results) != 1 {
+		t.Fatalf("got %d results, want 1", len(results))
+	}
+	if results[0].Passed {
+		t.Error("different stderr should fail")
+	}
+	if results[0].StderrDiff == "" {
+		t.Error("should have stderr diff")
+	}
+}
+
+func TestCompareUtility_ExitCodeDiff(t *testing.T) {
+	t.Parallel()
+	binA := createTestBinary(t, "#!/bin/sh\nexit 0")
+	binB := createTestBinary(t, "#!/bin/sh\nexit 1")
+	cases := []CompareTestCase{
+		{Utility: "test", Name: "exit diff", Args: []string{}},
+	}
+	results := CompareUtility(binA, binB, cases)
+	if results[0].Passed {
+		t.Error("different exit codes should fail")
+	}
+	if results[0].ExitCodeA != 0 {
+		t.Errorf("ExitCodeA = %d, want 0", results[0].ExitCodeA)
+	}
+	if results[0].ExitCodeB != 1 {
+		t.Errorf("ExitCodeB = %d, want 1", results[0].ExitCodeB)
+	}
+}
+
+func TestCompareUtility_WithStdin(t *testing.T) {
+	t.Parallel()
+	bin := createTestBinary(t, "#!/bin/sh\ncat")
+	cases := []CompareTestCase{
+		{Utility: "cat", Name: "stdin passthrough", Stdin: "hello world", Args: []string{}},
+	}
+	results := CompareUtility(bin, bin, cases)
+	if !results[0].Passed {
+		t.Errorf("identical cat with stdin should pass: %+v", results[0])
+	}
+}
+
+func TestCompareUtility_MultipleTests(t *testing.T) {
+	t.Parallel()
+	bin := createTestBinary(t, "#!/bin/sh\necho ok")
+	cases := []CompareTestCase{
+		{Utility: "test", Name: "case1", Args: []string{}},
+		{Utility: "test", Name: "case2", Args: []string{}},
+		{Utility: "test", Name: "case3", Args: []string{}},
+	}
+	results := CompareUtility(bin, bin, cases)
+	if len(results) != 3 {
+		t.Fatalf("got %d results, want 3", len(results))
+	}
+	for i, r := range results {
+		if !r.Passed {
+			t.Errorf("result[%d] should pass", i)
+		}
+	}
+}
+
+// --- CountFailed edge cases ---
+
+func TestCountFailed_Empty(t *testing.T) {
+	t.Parallel()
+	if got := CountFailed(nil); got != 0 {
+		t.Errorf("CountFailed(nil) = %d, want 0", got)
+	}
+}
+
+func TestCountFailed_AllPass(t *testing.T) {
+	t.Parallel()
+	results := []TestResult{{Passed: true}, {Passed: true}}
+	if got := CountFailed(results); got != 0 {
+		t.Errorf("CountFailed(all pass) = %d, want 0", got)
+	}
+}
+
+func TestCountFailed_AllFail(t *testing.T) {
+	t.Parallel()
+	results := []TestResult{{Passed: false}, {Passed: false}}
+	if got := CountFailed(results); got != 2 {
+		t.Errorf("CountFailed(all fail) = %d, want 2", got)
+	}
+}
+
+// --- FormatResults edge cases ---
+
+func TestFormatResults_SingleUtility(t *testing.T) {
+	t.Parallel()
+	results := []TestResult{
+		{Utility: "echo", Name: "basic", Passed: true},
+	}
+	out := FormatResults(results)
+	if !strings.Contains(out, "=== echo ===") {
+		t.Error("output should contain utility header")
+	}
+	if !strings.Contains(out, "1 passed, 0 failed, 1 total") {
+		t.Error("output should contain correct summary")
+	}
+}
+
+func TestFormatResults_MultipleUtilities(t *testing.T) {
+	t.Parallel()
+	results := []TestResult{
+		{Utility: "cat", Name: "a", Passed: true},
+		{Utility: "echo", Name: "b", Passed: false, StdoutDiff: "diff"},
+	}
+	out := FormatResults(results)
+	if !strings.Contains(out, "=== cat ===") {
+		t.Error("output should contain cat header")
+	}
+	if !strings.Contains(out, "=== echo ===") {
+		t.Error("output should contain echo header")
+	}
+}
+
+func TestFormatResults_StderrOnly(t *testing.T) {
+	t.Parallel()
+	results := []TestResult{
+		{Utility: "cmd", Name: "stderr-only", Passed: false, StderrDiff: "A: x\nB: y"},
+	}
+	out := FormatResults(results)
+	if !strings.Contains(out, "stderr:") {
+		t.Error("output should contain stderr diff")
+	}
+}
+
+// --- Truncate edge cases ---
+
+func TestTruncate_Empty(t *testing.T) {
+	t.Parallel()
+	if got := Truncate("", 10); got != "" {
+		t.Errorf("Truncate empty = %q, want empty", got)
+	}
+}
+
+func TestTruncate_ExactLen(t *testing.T) {
+	t.Parallel()
+	if got := Truncate("12345", 5); got != "12345" {
+		t.Errorf("Truncate exact = %q, want 12345", got)
+	}
+}
+
+func TestTruncate_ZeroMaxLen(t *testing.T) {
+	t.Parallel()
+	got := Truncate("hello", 0)
+	if got != "..." {
+		t.Errorf("Truncate(0) = %q, want ...", got)
+	}
+}
+
+// --- PathResolver edge cases ---
+
+func TestPathResolver_ListUtilities_EmptyDir(t *testing.T) {
+	t.Parallel()
+	r := PathResolver{Dir: t.TempDir()}
+	utils, err := r.ListUtilities()
+	if err != nil {
+		t.Fatalf("ListUtilities: %v", err)
+	}
+	if len(utils) != 0 {
+		t.Errorf("got %d utils, want 0", len(utils))
+	}
+}
+
+func TestPathResolver_ListUtilities_SkipsDirs(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, "subdir"), 0o755)
+	os.WriteFile(filepath.Join(dir, "cat"), []byte{}, 0o755)
+
+	r := PathResolver{Dir: dir}
+	utils, err := r.ListUtilities()
+	if err != nil {
+		t.Fatalf("ListUtilities: %v", err)
+	}
+	if len(utils) != 1 || utils[0] != "cat" {
+		t.Errorf("got %v, want [cat]", utils)
+	}
+}
+
+func TestPathResolver_ListUtilities_NonExistentDir(t *testing.T) {
+	t.Parallel()
+	r := PathResolver{Dir: "/nonexistent/dir/path"}
+	_, err := r.ListUtilities()
+	if err == nil {
+		t.Error("expected error for nonexistent directory")
+	}
+}
+
+// --- CommonUtilities edge cases ---
+
+func TestCommonUtilities_NoOverlap(t *testing.T) {
+	t.Parallel()
+	dirA := t.TempDir()
+	dirB := t.TempDir()
+	os.WriteFile(filepath.Join(dirA, "cat"), []byte{}, 0o755)
+	os.WriteFile(filepath.Join(dirB, "dog"), []byte{}, 0o755)
+
+	common, err := CommonUtilities(PathResolver{Dir: dirA}, PathResolver{Dir: dirB}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(common) != 0 {
+		t.Errorf("got %v, want empty for no overlap", common)
+	}
+}
+
+func TestCommonUtilities_BothEmpty(t *testing.T) {
+	t.Parallel()
+	dirA := t.TempDir()
+	dirB := t.TempDir()
+	common, err := CommonUtilities(PathResolver{Dir: dirA}, PathResolver{Dir: dirB}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(common) != 0 {
+		t.Errorf("got %v, want empty for both empty", common)
+	}
+}
+
+// --- LoadCompareTestCases ---
+
+func TestLoadCompareTestCases_ValidDir(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	content := `test_cases:
+  - use_case: "uc001"
+    name: "cat-basic"
+    inputs:
+      utility: "cat"
+      stdin: "hello"
+    expected:
+      stdout: "hello"
+  - use_case: "uc002"
+    name: "go-test-only"
+    go_test: "TestSomething"
+`
+	if err := os.WriteFile(filepath.Join(dir, "test-rel01.0.yaml"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cases, err := LoadCompareTestCases(dir)
+	if err != nil {
+		t.Fatalf("LoadCompareTestCases: %v", err)
+	}
+	if len(cases) != 1 {
+		t.Fatalf("got %d cases, want 1 (go_test-only should be skipped)", len(cases))
+	}
+	if cases[0].Utility != "cat" {
+		t.Errorf("Utility = %q, want cat", cases[0].Utility)
+	}
+}
+
+func TestLoadCompareTestCases_NoFiles(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	_, err := LoadCompareTestCases(dir)
+	if err == nil {
+		t.Error("expected error when no test suite files found")
+	}
+}
+
+func TestLoadCompareTestCases_MalformedYAML(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "test-bad.yaml"), []byte("not: [valid: yaml"), 0o644)
+	_, err := LoadCompareTestCases(dir)
+	if err == nil {
+		t.Error("expected error for malformed YAML")
+	}
+}
