@@ -92,12 +92,15 @@ design_patterns:
       callback registration when the producer should not know about its consumers.
 
 interfaces: |
-  Introduce an interface when you have two concrete implementations or when you
-  need to mock a dependency in tests. Do not create an interface for a single
-  implementation "just in case." Accept interfaces as parameters; return concrete
-  structs. Keep interfaces small: one to three methods. A large interface is a
-  sign that the abstraction is wrong. Split it into focused interfaces and compose
-  them.
+  Every boundary between a parent package and its internal sub-packages must be
+  defined by an interface. The parent package declares the interface; the internal
+  sub-package provides a concrete type that satisfies it. This applies even when
+  only one implementation exists today. The purpose is testability and explicit
+  contracts at every package boundary, not speculative abstraction.
+
+  Accept interfaces as parameters; return concrete structs. Keep interfaces small:
+  one to three methods. A large interface is a sign that the abstraction is wrong.
+  Split it into focused interfaces and compose them.
 
   Do not use interface{} or any as function parameters, return types, or struct
   fields. Every value must have a concrete type or a named interface. If a
@@ -193,19 +196,21 @@ project_structure: |
   cmd/: Entry points. Minimal: parse flags, wire dependencies, start.
   internal/: Private implementation. Not importable outside this module. One
   package per component.
-  pkg/: Shared public types and interfaces. No implementation. The contract layer
-  between libraries.
+  pkg/: Public API surface. Exports types and delegates to internal sub-packages.
   tests/: Integration tests.
   magefiles/: Build tooling. Flat directory (mage constraint). One file per
   concern.
 
+  Every package organizes its implementation into internal/ sub-packages grouped
+  by domain concept. The parent package is the public API surface: it exports
+  types, defines interfaces, and delegates to internal sub-packages that provide
+  the implementation. Internal sub-packages are not importable outside the parent,
+  enforced by Go's internal/ directory convention. This rule applies uniformly to
+  packages under pkg/ and to top-level internal/ packages alike.
+
   Align package structure to PRD component structure. Each major component maps
   to one package. Avoid package names like util, common, helpers. Name packages
   by domain: storage, auth, config.
-
-  Define interfaces between major components. The pkg/ directory holds shared
-  types and interface contracts. The internal/ directory holds implementations
-  that satisfy those contracts.
 
 file_organization: |
   Name files by the concern or feature they implement: scaffold.go, stitch.go,
@@ -342,7 +347,7 @@ code_review_checklist:
   - "Every error is handled or explicitly discarded with a comment."
   - "Every struct has a single, nameable responsibility."
   - "No function exceeds 200 lines without a strong reason."
-  - "Interfaces are small (one to three methods) and have at least two implementations or a testing need."
+  - "Every sub-package boundary has an interface. Interfaces are small (one to three methods)."
   - "No boolean parameters toggle behavior that should be a Strategy or Decorator."
   - "Config structs embed shared fields rather than duplicating them."
   - "context.Context is threaded through I/O paths."
@@ -378,9 +383,10 @@ sections:
   - tag: interfaces
     title: Interfaces
     content: |
-      Introduce an interface only when two concrete implementations exist or a
-      dependency must be mocked in tests. Accept interfaces as parameters;
-      return concrete structs. Keep interfaces small: one to three methods.
+      Every boundary between a parent package and its internal sub-packages
+      must be defined by an interface, even when only one implementation exists.
+      Accept interfaces as parameters; return concrete structs. Keep interfaces
+      small: one to three methods.
   - tag: struct_and_function_design
     title: Struct and Function Design
     content: |
@@ -435,8 +441,10 @@ sections:
     title: Project Structure
     content: |
       cmd/ for entry points, internal/ for private implementation, pkg/ for
-      public shared types, tests/ for integration tests, magefiles/ for build
-      tooling. Align package structure to PRD component structure.
+      public API surface, tests/ for integration tests, magefiles/ for build
+      tooling. Every package organizes implementation into internal/
+      sub-packages by domain concept. The parent package exports types and
+      delegates; internal sub-packages provide the implementation.
   - tag: file_organization
     title: File Organization
     content: |
