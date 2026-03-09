@@ -499,8 +499,10 @@ func (o *Orchestrator) importIssuesImpl(yamlFile, repo, generation string, skipE
 	}
 
 	// Deduplicate: fetch existing issues for this generation and skip any
-	// proposed issue whose normalized title matches an existing one (GH-1026, GH-1352).
+	// proposed issue whose normalized title or output files match an existing
+	// one (GH-1026, GH-1352, GH-1373).
 	existingTitles := make(map[string]int) // normalized title → issue number
+	existingFiles := make(map[string]int)  // file path → issue number
 	if existing, err := listAllCobblerIssues(repo, generation); err == nil {
 		hasOpen := false
 		for _, ex := range existing {
@@ -512,6 +514,9 @@ func (o *Orchestrator) importIssuesImpl(yamlFile, repo, generation string, skipE
 		if hasOpen {
 			for _, ex := range existing {
 				existingTitles[normalizeIssueTitle(ex.Title)] = ex.Number
+				for _, fp := range extractDescriptionFiles(ex.Description) {
+					existingFiles[fp] = ex.Number
+				}
 			}
 		}
 	}
@@ -519,7 +524,12 @@ func (o *Orchestrator) importIssuesImpl(yamlFile, repo, generation string, skipE
 	for _, issue := range issues {
 		norm := normalizeIssueTitle(issue.Title)
 		if dup, ok := existingTitles[norm]; ok {
-			logf("importIssues: skipping duplicate %q — already exists as #%d", issue.Title, dup)
+			logf("importIssues: skipping duplicate %q — title matches #%d", issue.Title, dup)
+			continue
+		}
+		// Check if any proposed output file overlaps with an existing issue (GH-1373).
+		if dup := fileOverlap(extractDescriptionFiles(issue.Description), existingFiles); dup > 0 {
+			logf("importIssues: skipping duplicate %q — output files overlap with #%d", issue.Title, dup)
 			continue
 		}
 		filtered = append(filtered, issue)
@@ -551,6 +561,17 @@ func (o *Orchestrator) importIssuesImpl(yamlFile, repo, generation string, skipE
 	appendMeasureLog(o.cfg.Cobbler.Dir, issues)
 
 	return ids, nil, nil
+}
+
+// fileOverlap returns the issue number of the first existing issue whose files
+// overlap with the proposed file list. Returns 0 if no overlap is found.
+func fileOverlap(proposedFiles []string, existingFiles map[string]int) int {
+	for _, fp := range proposedFiles {
+		if dup, ok := existingFiles[fp]; ok {
+			return dup
+		}
+	}
+	return 0
 }
 
 // saveHistory persists measure artifacts (log, issues YAML) to the configured

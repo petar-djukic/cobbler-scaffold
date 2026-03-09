@@ -150,6 +150,10 @@ func normalizeIssueTitle(title string) string {
 	return gh.NormalizeIssueTitle(title)
 }
 
+func extractDescriptionFiles(description string) []string {
+	return gh.ExtractDescriptionFiles(description)
+}
+
 func closeCobblerIssue(repo string, number int, generation string) error {
 	return ghTrackerNoCfg().CloseCobblerIssue(repo, number, generation)
 }
