@@ -201,7 +201,7 @@ func ValidateMeasureOutput(issues []ProposedIssue, maxReqs int, subItemCounts ma
 					}
 					if subItem != "" {
 						key := fmt.Sprintf("R%s.%s", groupNum, subItem)
-						if st, ok := prdReqs[key]; ok && st.Status == "complete" {
+						if st, ok := prdReqs[key]; ok && isRequirementComplete(st.Status) {
 							msg := fmt.Sprintf("[%d] %q: requirement %s %s is already complete (issue #%d)",
 								issue.Index, issue.Title, prdStem, key, st.Issue)
 							Log("validateMeasureOutput: %s", msg)
@@ -212,7 +212,7 @@ func ValidateMeasureOutput(issues []ProposedIssue, maxReqs int, subItemCounts ma
 						prefix := fmt.Sprintf("R%s.", groupNum)
 						allComplete := true
 						for k, st := range prdReqs {
-							if strings.HasPrefix(k, prefix) && st.Status != "complete" {
+							if strings.HasPrefix(k, prefix) && !isRequirementComplete(st.Status) {
 								allComplete = false
 								break
 							}

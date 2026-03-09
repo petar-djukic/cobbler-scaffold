@@ -126,9 +126,10 @@ func GenerateRequirementsFile(prdDir, cobblerDir string, preserveExisting bool) 
 
 // UpdateRequirementsFile reads the requirements state file, extracts PRD
 // requirement references from the task description YAML, and transitions
-// matching entries from "ready" to "complete" with the given issue number.
+// matching entries from "ready" to "complete" (or "complete_with_failures"
+// when testsPassed is false) with the given issue number.
 // If the file does not exist, the function returns nil (backward compat).
-func UpdateRequirementsFile(cobblerDir, description string, issueNumber int) error {
+func UpdateRequirementsFile(cobblerDir, description string, issueNumber int, testsPassed bool) error {
 	reqPath := filepath.Join(cobblerDir, RequirementsFileName)
 	data, err := os.ReadFile(reqPath)
 	if err != nil {
@@ -151,6 +152,11 @@ func UpdateRequirementsFile(cobblerDir, description string, issueNumber int) err
 		return nil
 	}
 
+	status := "complete"
+	if !testsPassed {
+		status = "complete_with_failures"
+	}
+
 	updated := 0
 	for _, ref := range refs {
 		prdReqs := findPRDRequirements(rf.Requirements, ref.PRDStem)
@@ -161,7 +167,7 @@ func UpdateRequirementsFile(cobblerDir, description string, issueNumber int) err
 			// Specific sub-item reference (e.g. R1.2).
 			key := fmt.Sprintf("R%s.%s", ref.Group, ref.SubItem)
 			if st, ok := prdReqs[key]; ok && st.Status == "ready" {
-				prdReqs[key] = RequirementState{Status: "complete", Issue: issueNumber}
+				prdReqs[key] = RequirementState{Status: status, Issue: issueNumber}
 				updated++
 			}
 		} else {
@@ -169,7 +175,7 @@ func UpdateRequirementsFile(cobblerDir, description string, issueNumber int) err
 			prefix := fmt.Sprintf("R%s.", ref.Group)
 			for key, st := range prdReqs {
 				if strings.HasPrefix(key, prefix) && st.Status == "ready" {
-					prdReqs[key] = RequirementState{Status: "complete", Issue: issueNumber}
+					prdReqs[key] = RequirementState{Status: status, Issue: issueNumber}
 					updated++
 				}
 			}
@@ -187,8 +193,14 @@ func UpdateRequirementsFile(cobblerDir, description string, issueNumber int) err
 	if err := os.WriteFile(reqPath, out, 0o644); err != nil {
 		return fmt.Errorf("writing %s: %w", reqPath, err)
 	}
-	Log("updateRequirementsFile: marked %d R-items as complete for issue #%d", updated, issueNumber)
+	Log("updateRequirementsFile: marked %d R-items as %s for issue #%d", updated, status, issueNumber)
 	return nil
+}
+
+// isRequirementComplete returns true if the status represents a completed
+// R-item, including items completed with test failures.
+func isRequirementComplete(status string) bool {
+	return status == "complete" || status == "complete_with_failures"
 }
 
 // prdRef holds a parsed PRD requirement reference.
@@ -273,7 +285,7 @@ func UCRequirementsComplete(cobblerDir string, touchpoints []string) (bool, []st
 		for _, group := range cite.groups {
 			prefix := group + "."
 			for key, st := range prdReqs {
-				if strings.HasPrefix(key, prefix) && st.Status != "complete" {
+				if strings.HasPrefix(key, prefix) && !isRequirementComplete(st.Status) {
 					remaining = append(remaining, fmt.Sprintf("%s %s", cite.prdID, key))
 				}
 			}

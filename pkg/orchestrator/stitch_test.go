@@ -866,7 +866,7 @@ func TestCloseStitchTask_GHFailureNoOp(t *testing.T) {
 	}
 	rec := InvocationRecord{}
 
-	o.closeStitchTask(task, rec) // must not panic
+	o.closeStitchTask(task, rec, true) // must not panic
 }
 
 // --- createWorktree (existing branch) ---

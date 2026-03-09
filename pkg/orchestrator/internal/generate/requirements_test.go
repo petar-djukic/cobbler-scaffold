@@ -349,7 +349,7 @@ func TestUpdateRequirementsFile(t *testing.T) {
   - id: R2
     text: "prd001 R2.1 — implement other thing"
 `
-		err := UpdateRequirementsFile(cobblerDir, desc, 42)
+		err := UpdateRequirementsFile(cobblerDir, desc, 42, true)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -384,7 +384,7 @@ func TestUpdateRequirementsFile(t *testing.T) {
   - id: R1
     text: "prd002 R1 — implement entire group"
 `
-		err := UpdateRequirementsFile(cobblerDir, desc, 99)
+		err := UpdateRequirementsFile(cobblerDir, desc, 99, true)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -397,7 +397,7 @@ func TestUpdateRequirementsFile(t *testing.T) {
 
 	t.Run("missing file returns nil", func(t *testing.T) {
 		tmp := t.TempDir()
-		err := UpdateRequirementsFile(tmp, "requirements:\n  - id: R1\n    text: prd001 R1.1", 1)
+		err := UpdateRequirementsFile(tmp, "requirements:\n  - id: R1\n    text: prd001 R1.1", 1, true)
 		if err != nil {
 			t.Fatalf("expected nil error, got: %v", err)
 		}
@@ -422,7 +422,7 @@ func TestUpdateRequirementsFile(t *testing.T) {
   - id: R1
     text: "prd999 R5.3 — nonexistent PRD"
 `
-		err := UpdateRequirementsFile(cobblerDir, desc, 10)
+		err := UpdateRequirementsFile(cobblerDir, desc, 10, true)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -451,7 +451,7 @@ func TestUpdateRequirementsFile(t *testing.T) {
   - id: R1
     text: "prd001 R1 — redo whole group"
 `
-		err := UpdateRequirementsFile(cobblerDir, desc, 20)
+		err := UpdateRequirementsFile(cobblerDir, desc, 20, true)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -461,6 +461,67 @@ func TestUpdateRequirementsFile(t *testing.T) {
 		assertReqState(t, result, "prd001-core", "R1.1", "complete", 10)
 		// R1.2 should now be complete with issue 20.
 		assertReqState(t, result, "prd001-core", "R1.2", "complete", 20)
+	})
+}
+
+func TestUpdateRequirementsFile_TestsFailed(t *testing.T) {
+	t.Run("marks as complete_with_failures when tests fail", func(t *testing.T) {
+		tmp := t.TempDir()
+		cobblerDir := filepath.Join(tmp, ".cobbler")
+		os.MkdirAll(cobblerDir, 0o755)
+
+		initial := RequirementsFile{
+			Requirements: map[string]map[string]RequirementState{
+				"prd001-core": {
+					"R1.1": {Status: "ready"},
+					"R1.2": {Status: "ready"},
+				},
+			},
+		}
+		data, _ := yaml.Marshal(initial)
+		os.WriteFile(filepath.Join(cobblerDir, RequirementsFileName), data, 0o644)
+
+		desc := `requirements:
+  - id: R1
+    text: "prd001 R1.1 — implement config"
+`
+		err := UpdateRequirementsFile(cobblerDir, desc, 50, false)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		result := readReqFile(t, filepath.Join(cobblerDir, RequirementsFileName))
+		assertReqState(t, result, "prd001-core", "R1.1", "complete_with_failures", 50)
+		// R1.2 should remain ready.
+		assertReqState(t, result, "prd001-core", "R1.2", "ready", 0)
+	})
+}
+
+func TestUCRequirementsComplete_CompleteWithFailures(t *testing.T) {
+	t.Run("treats complete_with_failures as complete", func(t *testing.T) {
+		tmp := t.TempDir()
+		cobblerDir := filepath.Join(tmp, ".cobbler")
+		os.MkdirAll(cobblerDir, 0o755)
+
+		initial := RequirementsFile{
+			Requirements: map[string]map[string]RequirementState{
+				"prd001-core": {
+					"R1.1": {Status: "complete_with_failures", Issue: 50},
+					"R1.2": {Status: "complete", Issue: 51},
+				},
+			},
+		}
+		data, _ := yaml.Marshal(initial)
+		os.WriteFile(filepath.Join(cobblerDir, RequirementsFileName), data, 0o644)
+
+		touchpoints := []string{
+			"T1: Config struct per prd001-core R1",
+		}
+
+		complete, remaining := UCRequirementsComplete(cobblerDir, touchpoints)
+		if !complete {
+			t.Errorf("expected complete (complete_with_failures counts), got remaining: %v", remaining)
+		}
 	})
 }
 
