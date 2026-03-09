@@ -172,8 +172,24 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 		}
 	}
 
+	// Separate measure issues ([measuring]/[measure]) from stitch tasks.
+	// In-progress [measuring] issues become measure table rows (GH-1365).
+	var stitchIssues []gh.CobblerIssue
+	var activeMeasureIssues []gh.CobblerIssue
+	measureIssuesSeen := make(map[int]bool) // track finalized measure issue numbers
+	for _, iss := range issues {
+		if strings.HasPrefix(iss.Title, "[measuring] ") || strings.HasPrefix(iss.Title, "[measure] ") {
+			if iss.State == "open" {
+				activeMeasureIssues = append(activeMeasureIssues, iss)
+			}
+			measureIssuesSeen[iss.Number] = true
+			continue
+		}
+		stitchIssues = append(stitchIssues, iss)
+	}
+
 	// Collect per-issue stats.
-	rows := make([]GeneratorIssueStats, 0, len(issues))
+	rows := make([]GeneratorIssueStats, 0, len(stitchIssues))
 	var totalStitchCost float64
 	var totalTurns, totalLocProd, totalLocTest, totalReqs, totalPromptBytes int
 	var totalInputTokens, totalOutputTokens int
@@ -181,7 +197,7 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 	prdStatus := make(map[string]string) // prd name → highest-priority status
 	prdReleaseMap := BuildPRDReleaseMap()
 
-	for _, iss := range issues {
+	for _, iss := range stitchIssues {
 		s := GeneratorIssueStats{CobblerIssue: iss}
 
 		switch {
@@ -485,6 +501,26 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 		tr.TokOut = "-"
 		if m.Tokens.Output > 0 {
 			tr.TokOut = FormatTokens(m.Tokens.Output)
+		}
+		tableRows = append(tableRows, tr)
+	}
+
+	// Add in-progress measure rows from active [measuring] GitHub issues (GH-1365).
+	for _, iss := range activeMeasureIssues {
+		tr := tableRow{
+			ID:     fmt.Sprintf("#%d", iss.Number),
+			Status: "in-progress",
+			Rel:    "-",
+			Reqs:   "-",
+			Prompt: "-",
+			Prod:   "-",
+			Test:   "-",
+			Cost:   "-",
+			Dur:    "-",
+			Turns:  "-",
+			TokIn:  "-",
+			TokOut: "-",
+			Title:  "measure",
 		}
 		tableRows = append(tableRows, tr)
 	}
