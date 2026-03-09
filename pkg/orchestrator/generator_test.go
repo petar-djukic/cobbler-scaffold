@@ -1390,13 +1390,11 @@ func TestResolveStopTarget_CallerOnCustomBase_UsesCustomBase(t *testing.T) {
 	}
 }
 
-// --- markActiveReleaseUCsDone (GH-1187) ---
+// --- validateAndMarkUCs (GH-1361, replaces GH-1187 markActiveReleaseUCsDone) ---
 
-func TestMarkActiveReleaseUCsDone(t *testing.T) {
+func TestValidateAndMarkUCs_OnlyMarksUCsWithPassingTests(t *testing.T) {
 	dir := initTestGitRepo(t)
 
-	// Release 00.0 has spec_complete UCs (stitch has finished all tasks but
-	// UC statuses were never updated — the bug this fixes).
 	roadmapContent := `id: rm1
 title: Test Roadmap
 releases:
@@ -1420,26 +1418,38 @@ releases:
 `
 	writeRoadmapFile(t, dir, roadmapContent)
 
-	o := &Orchestrator{cfg: Config{}}
-	o.markActiveReleaseUCsDone()
+	// Create go.mod so `go test` can run in this directory.
+	goMod := "module testmod\n\ngo 1.23\n"
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte(goMod), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
-	// Verify 00.0 UCs are now "implemented".
+	// Create test directory for uc001 only (uc002 has no tests).
+	testDir := filepath.Join(dir, "tests", "rel00.0", "uc001")
+	if err := os.MkdirAll(testDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Write a minimal passing test file.
+	testContent := "package uc001_test\n\nimport \"testing\"\n\nfunc TestPlaceholder(t *testing.T) {}\n"
+	if err := os.WriteFile(filepath.Join(testDir, "format_test.go"), []byte(testContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	o := &Orchestrator{cfg: Config{}}
+	o.validateAndMarkUCs()
+
 	rmPath := filepath.Join(dir, "docs", "road-map.yaml")
-	relStatus, err := roadmapReleaseStatus(rmPath, "00.0")
-	if err != nil {
-		t.Fatalf("read release status for 00.0: %v", err)
-	}
-	if relStatus != "implemented" {
-		t.Errorf("release 00.0 status: want implemented, got %q", relStatus)
-	}
 	statuses, err := roadmapUCStatuses(rmPath, "00.0")
 	if err != nil {
 		t.Fatalf("read UC statuses for 00.0: %v", err)
 	}
-	for id, status := range statuses {
-		if status != "implemented" {
-			t.Errorf("UC %s: want implemented, got %q", id, status)
-		}
+	// uc001 has tests → should be implemented.
+	if statuses["rel00.0-uc001-format"] != "implemented" {
+		t.Errorf("UC rel00.0-uc001-format: want implemented, got %q", statuses["rel00.0-uc001-format"])
+	}
+	// uc002 has no tests → should remain spec_complete.
+	if statuses["rel00.0-uc002-build"] != "spec_complete" {
+		t.Errorf("UC rel00.0-uc002-build: want spec_complete, got %q", statuses["rel00.0-uc002-build"])
 	}
 
 	// Verify 01.0 is unchanged.
@@ -1454,10 +1464,9 @@ releases:
 	}
 }
 
-func TestMarkActiveReleaseUCsDone_AlreadyImplemented(t *testing.T) {
+func TestValidateAndMarkUCs_SkipsAlreadyImplemented(t *testing.T) {
 	dir := initTestGitRepo(t)
 
-	// Release 00.0 is already implemented — should be a no-op.
 	roadmapContent := `id: rm1
 title: Test Roadmap
 releases:
@@ -1479,27 +1488,27 @@ releases:
 	writeRoadmapFile(t, dir, roadmapContent)
 
 	o := &Orchestrator{cfg: Config{}}
-	o.markActiveReleaseUCsDone()
+	o.validateAndMarkUCs()
 
-	// 01.0 should now be marked as implemented (it's the first non-done release).
+	// 01.0 UC has no tests → should remain spec_complete (not blindly marked).
 	rmPath := filepath.Join(dir, "docs", "road-map.yaml")
 	statuses, err := roadmapUCStatuses(rmPath, "01.0")
 	if err != nil {
 		t.Fatalf("read UC statuses for 01.0: %v", err)
 	}
 	for id, status := range statuses {
-		if status != "implemented" {
-			t.Errorf("UC %s (rel 01.0): want implemented, got %q", id, status)
+		if status != "spec_complete" {
+			t.Errorf("UC %s (rel 01.0): want spec_complete, got %q", id, status)
 		}
 	}
 }
 
-func TestMarkActiveReleaseUCsDone_NoRoadmap(t *testing.T) {
+func TestValidateAndMarkUCs_NoRoadmap(t *testing.T) {
 	initTestGitRepo(t)
 
 	o := &Orchestrator{cfg: Config{}}
 	// Should be a no-op, no panic.
-	o.markActiveReleaseUCsDone()
+	o.validateAndMarkUCs()
 }
 
 // --- checkAutoAdvanceRelease (GH-1006) ---

@@ -14,6 +14,9 @@ import (
 	"text/template"
 	"time"
 
+	"os/exec"
+
+	an "github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/analysis"
 	"github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/generate"
 )
 
@@ -437,18 +440,6 @@ func (o *Orchestrator) RunCycles(label string) error {
 			consecutiveZeroLOC = 0
 		}
 
-		// Mark UCs as implemented when no open issues remain (GH-1187).
-		// Only check after stitch has completed at least one task to avoid
-		// false positives on the first cycle before measure creates issues.
-		if totalStitched > 0 {
-			o.markCompletedReleaseUCs()
-		}
-
-		// Check if the current release is complete and auto-advance if so.
-		if advanced, ver := o.checkAutoAdvanceRelease(); advanced {
-			logf("generator %s: cycle %d — auto-advanced release %s", label, cycle, ver)
-		}
-
 		// Skip measure if open issues remain — stitch should drain them first (GH-1352).
 		if openBefore, err := o.hasOpenIssues(); err == nil && openBefore {
 			logf("generator %s: cycle %d — skipping measure, open issues remain", label, cycle)
@@ -457,6 +448,20 @@ func (o *Orchestrator) RunCycles(label string) error {
 			if err := o.RunMeasure(); err != nil {
 				return fmt.Errorf("cycle %d measure: %w", cycle, err)
 			}
+		}
+
+		// Validate UC implementation after measure has had a chance to propose
+		// remaining work. Only mark individual UCs whose tests exist and pass
+		// (GH-1361). Previous code marked ALL UCs when no open issues remained,
+		// which was premature — a single completed task would mark the entire
+		// release as done before measure could propose work for other UCs.
+		if totalStitched > 0 {
+			o.validateAndMarkUCs()
+		}
+
+		// Check if the current release is complete and auto-advance if so.
+		if advanced, ver := o.checkAutoAdvanceRelease(); advanced {
+			logf("generator %s: cycle %d — auto-advanced release %s", label, cycle, ver)
 		}
 
 		open, err := o.hasOpenIssues()
@@ -530,22 +535,12 @@ func (o *Orchestrator) checkAutoAdvanceRelease() (bool, string) {
 	return true, target.Version
 }
 
-// markCompletedReleaseUCs checks whether all cobbler issues for the current
-// generation are closed. If so, it marks the first non-implemented release's
-// use cases as "implemented" in road-map.yaml so that checkAutoAdvanceRelease
-// can detect the completion and advance the release (GH-1187).
-func (o *Orchestrator) markCompletedReleaseUCs() {
-	open, err := o.hasOpenIssues()
-	if err != nil || open {
-		return
-	}
-	o.markActiveReleaseUCsDone()
-}
-
-// markActiveReleaseUCsDone finds the first non-implemented release in
-// road-map.yaml and marks all its UCs as "implemented". Commits the change.
-// Separated from markCompletedReleaseUCs for testability (no GitHub API).
-func (o *Orchestrator) markActiveReleaseUCsDone() {
+// validateAndMarkUCs finds the first non-implemented release in road-map.yaml
+// and validates each UC individually. A UC is marked "implemented" only when
+// its test files exist and pass. Replaces the former markCompletedReleaseUCs /
+// markActiveReleaseUCsDone pair that blindly marked all UCs when no open issues
+// remained (GH-1361).
+func (o *Orchestrator) validateAndMarkUCs() {
 	rm := loadYAML[RoadmapDoc]("docs/road-map.yaml")
 	if rm == nil {
 		return
@@ -564,29 +559,57 @@ func (o *Orchestrator) markActiveReleaseUCsDone() {
 		return
 	}
 
-	// Check if any UCs still need marking.
-	allDone := true
+	var marked []string
 	for _, uc := range target.UseCases {
-		if !ucStatusDone(uc.Status) {
-			allDone = false
-			break
+		if ucStatusDone(uc.Status) {
+			continue
 		}
-	}
-	if allDone {
-		return
+		if !validateUCImplemented(uc.ID) {
+			logf("validateAndMarkUCs: UC %s not yet implemented (tests missing or failing)", uc.ID)
+			continue
+		}
+		logf("validateAndMarkUCs: UC %s validated — marking as implemented", uc.ID)
+		if err := updateRoadmapSingleUCStatus(target.Version, uc.ID, "implemented"); err != nil {
+			logf("validateAndMarkUCs: failed to mark %s: %v", uc.ID, err)
+			continue
+		}
+		marked = append(marked, uc.ID)
 	}
 
-	logf("markActiveReleaseUCsDone: marking release %s UCs as implemented", target.Version)
-	if err := updateRoadmapUCStatuses(target.Version, "implemented"); err != nil {
-		logf("markActiveReleaseUCsDone: failed: %v", err)
+	if len(marked) == 0 {
 		return
 	}
 
 	_ = gitStageAll(".")
-	msg := fmt.Sprintf("Mark release %s use cases as implemented\n\nAll cobbler issues closed; UCs updated in road-map.yaml.", target.Version)
+	msg := fmt.Sprintf("Mark validated UCs as implemented in release %s\n\nUCs with passing tests: %s",
+		target.Version, strings.Join(marked, ", "))
 	if err := gitCommit(msg, "."); err != nil {
-		logf("markActiveReleaseUCsDone: commit failed: %v", err)
+		logf("validateAndMarkUCs: commit failed: %v", err)
 	}
+}
+
+// validateUCImplemented checks whether a use case has test files and whether
+// those tests pass. Returns true only if both conditions are met.
+func validateUCImplemented(ucID string) bool {
+	testDir := an.TestDirForUC(ucID)
+	if testDir == "" {
+		return false
+	}
+	testCount := an.CountTestFiles(testDir)
+	if testCount == 0 {
+		logf("validateUCImplemented: %s — no test files in %s", ucID, testDir)
+		return false
+	}
+
+	// Run the UC's tests. Use -count=1 to disable caching.
+	cmd := exec.Command("go", "test", "-tags=usecase", "-count=1", "-timeout", "300s", "./"+testDir+"/...")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		logf("validateUCImplemented: %s — tests failed: %v\n%s", ucID, err, string(out))
+		return false
+	}
+	logf("validateUCImplemented: %s — %d test file(s) pass", ucID, testCount)
+	return true
 }
 
 // GeneratorStart begins a new generation trail.
