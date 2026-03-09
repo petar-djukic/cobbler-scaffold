@@ -50,6 +50,11 @@ func updateRoadmapUCStatuses(version, newStatus string) error {
 	return rel.UpdateRoadmapUCStatuses(version, newStatus)
 }
 
+// updateRoadmapSingleUCStatus delegates to the internal/release package.
+func updateRoadmapSingleUCStatus(version, ucID, newStatus string) error {
+	return rel.UpdateRoadmapSingleUCStatus(version, ucID, newStatus)
+}
+
 // setRoadmapUCStatuses delegates to the internal/release package.
 func setRoadmapUCStatuses(root *yaml.Node, version, newStatus string) error {
 	return rel.SetRoadmapUCStatuses(root, version, newStatus)
