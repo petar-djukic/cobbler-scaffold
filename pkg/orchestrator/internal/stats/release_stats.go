@@ -128,12 +128,8 @@ func BuildReleaseRows() ([]ReleaseRow, error) {
 		reqs  int
 	}
 	relPRDs := make(map[string][]prdInfo)
-	for short, rel := range prdRel {
-		// Only use the "prd-NNN" form, skip long stems like "prd003-cobbler-workflows".
-		if !strings.HasPrefix(short, "prd-") || len(short) != 7 {
-			continue
-		}
-		relPRDs[rel] = append(relPRDs[rel], prdInfo{short: short, reqs: reqsByPRD[short]})
+	for stem, rel := range prdRel {
+		relPRDs[rel] = append(relPRDs[rel], prdInfo{short: stem, reqs: reqsByPRD[stem]})
 	}
 
 	// Determine which PRDs are "complete" by checking if all use cases in that
@@ -223,16 +219,10 @@ func CountTotalPRDRequirements() (int, map[string]int) {
 			count += len(group.Items)
 		}
 		total += count
-		// Store under the short prd-NNN name that ExtractPRDRefs produces.
+		// Store under the full stem (e.g. "prd006-cat") which is what
+		// ExtractPRDRefs now produces for prdNNN-name format references.
 		stem := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
-		if idx := strings.IndexByte(stem, '-'); idx > 0 {
-			byPRD[stem] = count
-		}
-		// extractPRDRefs produces "prd-NNN" form, so convert "prd003" → "prd-003".
-		if len(stem) >= 6 && stem[:3] == "prd" {
-			short := "prd-" + stem[3:6]
-			byPRD[short] = count
-		}
+		byPRD[stem] = count
 	}
 	return total, byPRD
 }
@@ -267,11 +257,18 @@ func BuildPRDReleaseMap() map[string]string {
 					if !strings.HasPrefix(w, "prd") || len(w) < 6 {
 						continue
 					}
-					// Convert "prd003-cobbler-workflows" → "prd-003".
 					if w[3] >= '0' && w[3] <= '9' {
-						short := "prd-" + w[3:6]
-						if _, exists := prdRelease[short]; !exists {
-							prdRelease[short] = rel
+						// Strip trailing requirement refs (e.g. "R1," suffix
+						// is already trimmed by Trim above). Keep full stem
+						// like "prd003-cobbler-workflows".
+						// Also strip anything that is just the "prdNNN" prefix
+						// without a hyphen-separated name (e.g. if the
+						// touchpoint uses a bare "prd003 R1" token, skip it).
+						if !strings.ContainsRune(w[3:], '-') {
+							continue
+						}
+						if _, exists := prdRelease[w]; !exists {
+							prdRelease[w] = rel
 						}
 					}
 				}
