@@ -29,6 +29,20 @@ type RequirementsFile struct {
 // the cobbler directory.
 const RequirementsFileName = "requirements.yaml"
 
+// LoadRequirementStates reads requirements.yaml and returns the state map.
+// Returns nil if the file does not exist or cannot be parsed.
+func LoadRequirementStates(cobblerDir string) map[string]map[string]RequirementState {
+	data, err := os.ReadFile(filepath.Join(cobblerDir, RequirementsFileName))
+	if err != nil {
+		return nil
+	}
+	var rf RequirementsFile
+	if err := yaml.Unmarshal(data, &rf); err != nil {
+		return nil
+	}
+	return rf.Requirements
+}
+
 // GenerateRequirementsFile scans all PRD YAML files in the given directory
 // for R-items and writes a requirements state file where every item starts
 // with status "ready". Returns the path written, or an error.

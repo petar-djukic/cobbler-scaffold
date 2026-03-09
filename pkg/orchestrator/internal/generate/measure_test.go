@@ -6,6 +6,7 @@ package generate
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -164,7 +165,7 @@ files:
   - path: pkg/foo/bar.go`
 
 	issues := []ProposedIssue{{Index: 1, Title: "test", Description: desc}}
-	result := ValidateMeasureOutput(issues, 0, nil)
+	result := ValidateMeasureOutput(issues, 0, nil, nil)
 	if result.HasErrors() {
 		t.Errorf("expected no errors for valid code issue, got: %v", result.Errors)
 	}
@@ -195,7 +196,7 @@ design_decisions:
     text: dd3`
 
 	issues := []ProposedIssue{{Index: 1, Title: "test", Description: desc}}
-	result := ValidateMeasureOutput(issues, 0, nil)
+	result := ValidateMeasureOutput(issues, 0, nil, nil)
 	if !result.HasErrors() {
 		t.Error("expected error for code issue with 1 requirement")
 	}
@@ -236,7 +237,7 @@ files:
   - path: pkg/foo/foo.go`
 
 	issues := []ProposedIssue{{Index: 1, Title: "test", Description: desc}}
-	result := ValidateMeasureOutput(issues, 0, nil)
+	result := ValidateMeasureOutput(issues, 0, nil, nil)
 	if !result.HasErrors() {
 		t.Error("expected P7 violation error for foo/foo.go")
 	}
@@ -270,7 +271,7 @@ design_decisions:
 		"prd003": {"R2": 10},
 	}
 	issues := []ProposedIssue{{Index: 1, Title: "test", Description: desc}}
-	result := ValidateMeasureOutput(issues, 5, subItems)
+	result := ValidateMeasureOutput(issues, 5, subItems, nil)
 	if !result.HasErrors() {
 		t.Error("expected error for expanded count exceeding max")
 	}
@@ -278,7 +279,7 @@ design_decisions:
 
 func TestValidateMeasureOutput_UnparseableDescription(t *testing.T) {
 	issues := []ProposedIssue{{Index: 1, Title: "bad", Description: ":::not yaml"}}
-	result := ValidateMeasureOutput(issues, 0, nil)
+	result := ValidateMeasureOutput(issues, 0, nil, nil)
 	if result.HasErrors() {
 		t.Error("unparseable descriptions should produce warnings, not errors")
 	}
@@ -288,7 +289,7 @@ func TestValidateMeasureOutput_UnparseableDescription(t *testing.T) {
 }
 
 func TestValidateMeasureOutput_EmptyIssues(t *testing.T) {
-	result := ValidateMeasureOutput(nil, 0, nil)
+	result := ValidateMeasureOutput(nil, 0, nil, nil)
 	if result.HasErrors() {
 		t.Error("expected no errors for empty issue list")
 	}
@@ -312,9 +313,166 @@ acceptance_criteria:
     text: ac3`
 
 	issues := []ProposedIssue{{Index: 1, Title: "doc", Description: desc}}
-	result := ValidateMeasureOutput(issues, 0, nil)
+	result := ValidateMeasureOutput(issues, 0, nil, nil)
 	if result.HasErrors() {
 		t.Errorf("expected no errors for valid doc issue, got: %v", result.Errors)
+	}
+}
+
+func TestValidateMeasureOutput_CompletedRItemRejected(t *testing.T) {
+	desc := `deliverable_type: code
+requirements:
+  - id: R1
+    text: "Implement config per prd001 R1.2"
+  - id: R2
+    text: "Add validation per prd001 R2.1"
+  - id: R3
+    text: "Add logging per prd001 R3.1"
+  - id: R4
+    text: "Format output"
+  - id: R5
+    text: "Error handling"
+acceptance_criteria:
+  - id: AC1
+    text: ac1
+  - id: AC2
+    text: ac2
+  - id: AC3
+    text: ac3
+  - id: AC4
+    text: ac4
+  - id: AC5
+    text: ac5
+design_decisions:
+  - id: DD1
+    text: dd1
+  - id: DD2
+    text: dd2
+  - id: DD3
+    text: dd3
+files:
+  - path: pkg/foo/bar.go`
+
+	reqStates := map[string]map[string]RequirementState{
+		"prd001-core": {
+			"R1.1": {Status: "ready"},
+			"R1.2": {Status: "complete", Issue: 42},
+			"R2.1": {Status: "ready"},
+			"R3.1": {Status: "ready"},
+		},
+	}
+
+	issues := []ProposedIssue{{Index: 0, Title: "test", Description: desc}}
+	result := ValidateMeasureOutput(issues, 0, nil, reqStates)
+	if !result.HasErrors() {
+		t.Fatal("expected errors for proposal targeting completed R-item")
+	}
+	found := false
+	for _, e := range result.Errors {
+		if strings.Contains(e, "R1.2") && strings.Contains(e, "already complete") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected error mentioning R1.2 as complete, got: %v", result.Errors)
+	}
+}
+
+func TestValidateMeasureOutput_CompletedGroupRejected(t *testing.T) {
+	desc := `deliverable_type: code
+requirements:
+  - id: R1
+    text: "Implement group per prd002 R1"
+  - id: R2
+    text: "Other work"
+  - id: R3
+    text: "More work"
+  - id: R4
+    text: "Even more"
+  - id: R5
+    text: "Last one"
+acceptance_criteria:
+  - id: AC1
+    text: ac1
+  - id: AC2
+    text: ac2
+  - id: AC3
+    text: ac3
+  - id: AC4
+    text: ac4
+  - id: AC5
+    text: ac5
+design_decisions:
+  - id: DD1
+    text: dd1
+  - id: DD2
+    text: dd2
+  - id: DD3
+    text: dd3
+files:
+  - path: pkg/foo/bar.go`
+
+	reqStates := map[string]map[string]RequirementState{
+		"prd002-lifecycle": {
+			"R1.1": {Status: "complete", Issue: 10},
+			"R1.2": {Status: "complete", Issue: 11},
+		},
+	}
+
+	issues := []ProposedIssue{{Index: 0, Title: "test", Description: desc}}
+	result := ValidateMeasureOutput(issues, 0, nil, reqStates)
+	if !result.HasErrors() {
+		t.Fatal("expected errors for proposal targeting fully complete group")
+	}
+	found := false
+	for _, e := range result.Errors {
+		if strings.Contains(e, "R1") && strings.Contains(e, "fully complete") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected error mentioning R1 group as fully complete, got: %v", result.Errors)
+	}
+}
+
+func TestValidateMeasureOutput_NilReqStatesNoCheck(t *testing.T) {
+	desc := `deliverable_type: code
+requirements:
+  - id: R1
+    text: "Implement per prd001 R1.2"
+  - id: R2
+    text: r2
+  - id: R3
+    text: r3
+  - id: R4
+    text: r4
+  - id: R5
+    text: r5
+acceptance_criteria:
+  - id: AC1
+    text: ac1
+  - id: AC2
+    text: ac2
+  - id: AC3
+    text: ac3
+  - id: AC4
+    text: ac4
+  - id: AC5
+    text: ac5
+design_decisions:
+  - id: DD1
+    text: dd1
+  - id: DD2
+    text: dd2
+  - id: DD3
+    text: dd3
+files:
+  - path: pkg/foo/bar.go`
+
+	issues := []ProposedIssue{{Index: 0, Title: "test", Description: desc}}
+	result := ValidateMeasureOutput(issues, 0, nil, nil)
+	if result.HasErrors() {
+		t.Errorf("expected no errors when reqStates is nil, got: %v", result.Errors)
 	}
 }
 
