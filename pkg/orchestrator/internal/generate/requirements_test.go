@@ -1105,6 +1105,96 @@ func countStates(items map[string]RequirementState) (ready, complete int) {
 	return
 }
 
+func TestAllRefsAlreadyComplete(t *testing.T) {
+	// Build requirement states: prd003-config has R1.1, R1.2 complete and R2.1 ready.
+	states := map[string]map[string]RequirementState{
+		"prd003-config": {
+			"R1.1": {Status: "complete", Issue: 100},
+			"R1.2": {Status: "complete", Issue: 100},
+			"R2.1": {Status: "ready"},
+			"R2.2": {Status: "ready"},
+		},
+		"prd001-core": {
+			"R1.1": {Status: "complete", Issue: 101},
+			"R1.2": {Status: "complete_with_failures", Issue: 102},
+		},
+	}
+
+	makeDesc := func(reqText string) string {
+		return "requirements:\n  - text: \"" + reqText + "\"\n    source: test\n"
+	}
+
+	t.Run("all refs complete returns true", func(t *testing.T) {
+		desc := makeDesc("prd003-config R1.1")
+		if !AllRefsAlreadyComplete(desc, states) {
+			t.Error("expected true: R1.1 is complete")
+		}
+	})
+
+	t.Run("partial complete returns false", func(t *testing.T) {
+		desc := makeDesc("prd003-config R2.1")
+		if AllRefsAlreadyComplete(desc, states) {
+			t.Error("expected false: R2.1 is ready")
+		}
+	})
+
+	t.Run("no refs returns false", func(t *testing.T) {
+		desc := "requirements:\n  - text: \"no prd refs here\"\n    source: test\n"
+		if AllRefsAlreadyComplete(desc, states) {
+			t.Error("expected false: no PRD refs")
+		}
+	})
+
+	t.Run("nil states returns false", func(t *testing.T) {
+		desc := makeDesc("prd003-config R1.1")
+		if AllRefsAlreadyComplete(desc, nil) {
+			t.Error("expected false: nil states")
+		}
+	})
+
+	t.Run("group reference all complete", func(t *testing.T) {
+		desc := makeDesc("prd001-core R1")
+		if !AllRefsAlreadyComplete(desc, states) {
+			t.Error("expected true: all R1.x in prd001-core are complete")
+		}
+	})
+
+	t.Run("group reference partial complete", func(t *testing.T) {
+		desc := makeDesc("prd003-config R2")
+		if AllRefsAlreadyComplete(desc, states) {
+			t.Error("expected false: R2 group has ready items")
+		}
+	})
+
+	t.Run("complete_with_failures counts as complete", func(t *testing.T) {
+		desc := makeDesc("prd001-core R1.2")
+		if !AllRefsAlreadyComplete(desc, states) {
+			t.Error("expected true: complete_with_failures is still complete")
+		}
+	})
+
+	t.Run("unknown PRD returns false", func(t *testing.T) {
+		desc := makeDesc("prd999-unknown R1.1")
+		if AllRefsAlreadyComplete(desc, states) {
+			t.Error("expected false: PRD not in states")
+		}
+	})
+
+	t.Run("multiple refs all complete", func(t *testing.T) {
+		desc := "requirements:\n  - text: \"prd003-config R1.1\"\n    source: test\n  - text: \"prd001-core R1.2\"\n    source: test\n"
+		if !AllRefsAlreadyComplete(desc, states) {
+			t.Error("expected true: both refs are complete")
+		}
+	})
+
+	t.Run("multiple refs one incomplete", func(t *testing.T) {
+		desc := "requirements:\n  - text: \"prd003-config R1.1\"\n    source: test\n  - text: \"prd003-config R2.1\"\n    source: test\n"
+		if AllRefsAlreadyComplete(desc, states) {
+			t.Error("expected false: R2.1 is ready")
+		}
+	})
+}
+
 func readReqFile(t *testing.T, path string) RequirementsFile {
 	t.Helper()
 	data, err := os.ReadFile(path)

@@ -203,6 +203,47 @@ func isRequirementComplete(status string) bool {
 	return status == "complete" || status == "complete_with_failures"
 }
 
+// AllRefsAlreadyComplete checks whether every PRD requirement reference in
+// a task description is already marked complete in the given requirement
+// states. Returns true only when at least one reference is found and all
+// are complete. Used by stitch to skip tasks whose R-items were completed
+// by an earlier task in the same measure batch (GH-1434).
+func AllRefsAlreadyComplete(description string, reqStates map[string]map[string]RequirementState) bool {
+	refs := extractPRDRefsFromDescription(description)
+	if len(refs) == 0 || len(reqStates) == 0 {
+		return false
+	}
+	for _, ref := range refs {
+		prdReqs := findPRDRequirements(reqStates, ref.PRDStem)
+		if prdReqs == nil {
+			return false // unknown PRD — cannot verify
+		}
+		if ref.SubItem != "" {
+			key := fmt.Sprintf("R%s.%s", ref.Group, ref.SubItem)
+			st, ok := prdReqs[key]
+			if !ok || !isRequirementComplete(st.Status) {
+				return false
+			}
+		} else {
+			// Group reference — all sub-items must be complete.
+			prefix := fmt.Sprintf("R%s.", ref.Group)
+			found := false
+			for k, st := range prdReqs {
+				if strings.HasPrefix(k, prefix) {
+					found = true
+					if !isRequirementComplete(st.Status) {
+						return false
+					}
+				}
+			}
+			if !found {
+				return false // group has no sub-items
+			}
+		}
+	}
+	return true
+}
+
 // prdRef holds a parsed PRD requirement reference.
 type prdRef struct {
 	PRDStem string // e.g. "prd001" or "prd001-orchestrator-core"

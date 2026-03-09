@@ -183,6 +183,19 @@ func (o *Orchestrator) doOneTask(task stitchTask, baseBranch, repoRoot string) e
 
 	logf("doOneTask: task #%d claimed via pickReadyIssue label", task.GhNumber)
 
+	// Pre-execution dedup: skip tasks whose R-items were already completed
+	// by an earlier task in the same measure batch (GH-1434).
+	reqStates := generate.LoadRequirementStates(o.cfg.Cobbler.Dir)
+	if generate.AllRefsAlreadyComplete(task.Description, reqStates) {
+		logf("doOneTask: all R-items for #%d already complete, closing as duplicate", task.GhNumber)
+		commentCobblerIssue(task.Repo, task.GhNumber,
+			"Stitch skipped: all targeted R-items are already complete (duplicate from same measure batch).")
+		if err := closeCobblerIssue(task.Repo, task.GhNumber, task.Generation); err != nil {
+			logf("doOneTask: warning closing duplicate #%d: %v", task.GhNumber, err)
+		}
+		return nil
+	}
+
 	// Create worktree.
 	logf("doOneTask: creating worktree for %s", task.ID)
 	wtStart := time.Now()
