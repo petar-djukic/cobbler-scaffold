@@ -19,10 +19,12 @@ type stitchCommentData = st.StitchCommentData
 
 // GeneratorStats prints a status report for the current generation run.
 func (o *Orchestrator) GeneratorStats() error {
+	currentBranch, _ := gitCurrentBranch(".")
 	return st.PrintGeneratorStats(st.GeneratorStatsDeps{
 		Log:                    logf,
 		ListGenerationBranches: o.listGenerationBranches,
 		GenerationBranch:       o.cfg.Generation.Branch,
+		CurrentBranch:          currentBranch,
 		DetectGitHubRepo: func() (string, error) {
 			return detectGitHubRepo(".", o.cfg)
 		},

@@ -892,8 +892,8 @@ func (o *Orchestrator) mergeGeneration(branch, baseBranch string) error {
 	cleanupMsg := fmt.Sprintf("Reset %s to specs-only after v1 tag\n\nGenerated code preserved at version tags. Branch restored to documentation-only state.", baseBranch)
 	_ = gitCommit(cleanupMsg, ".") // best-effort; may be empty if nothing changed
 
-	logf("generator:stop: deleting branch")
-	_ = gitDeleteBranch(branch, ".") // best-effort; branch may already be deleted
+	logf("generator:stop: deleting branch %s", branch)
+	_ = gitForceDeleteBranch(branch, ".") // force-delete: safe -d fails after specs-only reset
 	return nil
 }
 

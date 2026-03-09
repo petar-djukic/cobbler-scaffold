@@ -40,6 +40,7 @@ type GeneratorStatsDeps struct {
 	Log                    Logger
 	ListGenerationBranches func() []string
 	GenerationBranch       string // from config, "" means auto-detect
+	CurrentBranch          string // current git branch, used to prefer the active generation
 	DetectGitHubRepo       func() (string, error)
 	ListAllIssues          func(repo, generation string) ([]gh.CobblerIssue, error)
 	FetchIssueComments     func(repo string, number int) ([]string, error)
@@ -85,8 +86,16 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 		return nil
 	}
 
-	// Prefer the configured branch; fall back to the first detected branch.
+	// Prefer: configured branch > current branch (if generation) > first detected.
 	genBranch := deps.GenerationBranch
+	if genBranch == "" && deps.CurrentBranch != "" {
+		for _, b := range branches {
+			if b == deps.CurrentBranch {
+				genBranch = b
+				break
+			}
+		}
+	}
 	if genBranch == "" {
 		genBranch = branches[0]
 	}
