@@ -94,10 +94,6 @@ func finalizeMeasurePlaceholder(repo string, number int, generation, comment str
 	ghTrackerNoCfg().FinalizeMeasurePlaceholder(repo, number, generation, comment, childIssues)
 }
 
-func upgradeMeasuringPlaceholder(repo string, number int, generation string, issue proposedIssue) error {
-	return ghTrackerNoCfg().UpgradeMeasuringPlaceholder(repo, number, generation, issue)
-}
-
 func createCobblerIssue(repo, generation string, issue proposedIssue) (int, error) {
 	return ghTrackerNoCfg().CreateCobblerIssue(repo, generation, issue)
 }

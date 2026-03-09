@@ -57,7 +57,6 @@ type WorkTracker interface {
 	// Issue CRUD
 	CreateCobblerIssue(repo, generation string, issue ProposedIssue) (int, error)
 	CreateMeasuringPlaceholder(repo, generation string, iteration int) (int, error)
-	UpgradeMeasuringPlaceholder(repo string, number int, generation string, issue ProposedIssue) error
 	CloseCobblerIssue(repo string, number int, generation string) error
 	CloseMeasuringPlaceholder(repo string, number int)
 	CloseMeasuringPlaceholderWithComment(repo string, number int, comment string)
@@ -542,42 +541,6 @@ func (t *GitHubTracker) FinalizeMeasurePlaceholder(repo string, number int, gene
 
 	t.CloseMeasuringPlaceholder(repo, number)
 	t.Log("finalizeMeasurePlaceholder: finalized #%d with %d child issue(s)", number, len(childIssues))
-}
-
-// UpgradeMeasuringPlaceholder converts the transient measuring placeholder
-// into the task issue in-place. It edits the placeholder's title and body
-// to match the proposed issue, adds the cobbler-gen label so stitch can
-// pick it up, and links it as a sub-issue of the parent generation issue
-// if the generation name encodes one (GH-578).
-func (t *GitHubTracker) UpgradeMeasuringPlaceholder(repo string, number int, generation string, issue ProposedIssue) error {
-	body := FormatIssueFrontMatter(generation, issue.Index, issue.Dependency) + issue.Description
-	title := "[measure] " + issue.Title
-
-	// Edit title and body in one command.
-	if err := exec.Command(t.GhBin, "issue", "edit",
-		"--repo", repo,
-		fmt.Sprintf("%d", number),
-		"--title", title,
-		"--body", body,
-	).Run(); err != nil {
-		return fmt.Errorf("gh issue edit placeholder #%d: %w", number, err)
-	}
-
-	// Add cobbler-gen label so stitch can pick it up.
-	if err := t.AddIssueLabel(repo, number, GenLabel(generation)); err != nil {
-		return fmt.Errorf("adding gen label to #%d: %w", number, err)
-	}
-
-	t.Log("upgradeMeasuringPlaceholder: upgraded #%d %q gen=%s index=%d dep=%d",
-		number, title, generation, issue.Index, issue.Dependency)
-
-	// Link as sub-issue of the parent if the generation name encodes one.
-	if parentNumber := ExtractParentIssueNumber(generation); parentNumber > 0 {
-		if err := t.LinkSubIssue(repo, parentNumber, number); err != nil {
-			t.Log("upgradeMeasuringPlaceholder: linkSubIssue warning for #%d -> parent #%d: %v", number, parentNumber, err)
-		}
-	}
-	return nil
 }
 
 // CreateCobblerIssue creates a GitHub issue on repo for the given generation

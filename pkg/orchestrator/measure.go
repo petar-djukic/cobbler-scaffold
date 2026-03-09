@@ -184,7 +184,6 @@ func (o *Orchestrator) RunMeasure() error {
 		var createdIDs []string
 		var lastOutputFile string
 		var lastValidationErrors []string // errors from previous attempt, fed back into retry prompt
-		placeholderUpgraded := false     // set when importIssues upgraded the placeholder in-place
 
 		// Attempt loop: try Claude + import, retrying on validation failure.
 		for attempt := 0; attempt <= maxRetries; attempt++ {
@@ -300,20 +299,10 @@ func (o *Orchestrator) RunMeasure() error {
 
 		logf("iteration %d imported %d issue(s)", i+1, len(createdIDs))
 
-		// Track whether the placeholder was upgraded in-place (GH-578).
-		phStr := fmt.Sprintf("%d", placeholderNum)
-		for _, id := range createdIDs {
-			if id == phStr {
-				placeholderUpgraded = true
-				break
-			}
-		}
-
 		// Finalize the placeholder as a permanent [measure] issue (GH-1360).
-		// When upgraded in-place (single issue), the placeholder became the
-		// stitch task — no finalization needed.
+		// The placeholder is always separate from stitch tasks (GH-1367).
 		placeholderResolved = true
-		if placeholderNum > 0 && !placeholderUpgraded {
+		if placeholderNum > 0 {
 			// Parse created IDs as ints for sub-issue linking.
 			var childNums []int
 			for _, id := range createdIDs {
@@ -537,27 +526,17 @@ func (o *Orchestrator) importIssuesImpl(yamlFile, repo, generation string, skipE
 	}
 	issues = filtered
 
-	// Create all issues on GitHub.
+	// Create all issues on GitHub as separate stitch tasks (GH-1367).
+	// The measure placeholder remains a distinct [measure] issue.
 	var ids []string
-	upgraded := false
-	if ph > 0 && len(issues) == 1 {
-		if err := upgradeMeasuringPlaceholder(repo, ph, generation, issues[0]); err != nil {
-			logf("importIssues: upgradeMeasuringPlaceholder #%d failed, falling back to createCobblerIssue: %v", ph, err)
-		} else {
-			ids = append(ids, fmt.Sprintf("%d", ph))
-			upgraded = true
+	for _, issue := range issues {
+		logf("importIssues: creating task %d: %s (dep=%d)", issue.Index, issue.Title, issue.Dependency)
+		ghNum, err := createCobblerIssue(repo, generation, issue)
+		if err != nil {
+			logf("importIssues: createCobblerIssue failed for %q: %v", issue.Title, err)
+			continue
 		}
-	}
-	if !upgraded {
-		for _, issue := range issues {
-			logf("importIssues: creating task %d: %s (dep=%d)", issue.Index, issue.Title, issue.Dependency)
-			ghNum, err := createCobblerIssue(repo, generation, issue)
-			if err != nil {
-				logf("importIssues: createCobblerIssue failed for %q: %v", issue.Title, err)
-				continue
-			}
-			ids = append(ids, fmt.Sprintf("%d", ghNum))
-		}
+		ids = append(ids, fmt.Sprintf("%d", ghNum))
 	}
 
 	if len(ids) > 0 {
