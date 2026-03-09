@@ -61,6 +61,7 @@ type WorkTracker interface {
 	CloseCobblerIssue(repo string, number int, generation string) error
 	CloseMeasuringPlaceholder(repo string, number int)
 	CloseMeasuringPlaceholderWithComment(repo string, number int, comment string)
+	FinalizeMeasurePlaceholder(repo string, number int, generation, comment string, childIssues []int)
 	EditIssueTitle(repo string, number int, title string) error
 	CommentCobblerIssue(repo string, number int, body string)
 	CloseGenerationIssues(repo, generation string) error
@@ -502,6 +503,45 @@ func (t *GitHubTracker) CloseMeasuringPlaceholderWithComment(repo string, number
 		t.Log("closeMeasuringPlaceholderWithComment: comment on #%d warning: %v", number, err)
 	}
 	t.CloseMeasuringPlaceholder(repo, number)
+}
+
+// FinalizeMeasurePlaceholder converts the measuring placeholder into a
+// permanent [measure] issue, adds a summary comment, links created stitch
+// issues as sub-issues, adds the generation label, and closes it (GH-1360).
+func (t *GitHubTracker) FinalizeMeasurePlaceholder(repo string, number int, generation, comment string, childIssues []int) {
+	title := fmt.Sprintf("[measure] %s #%d", generation, number)
+	if err := exec.Command(t.GhBin, "issue", "edit",
+		"--repo", repo,
+		fmt.Sprintf("%d", number),
+		"--title", title,
+	).Run(); err != nil {
+		t.Log("finalizeMeasurePlaceholder: edit title #%d warning: %v", number, err)
+	}
+
+	// Add generation label so the issue appears in generation queries.
+	if err := t.AddIssueLabel(repo, number, GenLabel(generation)); err != nil {
+		t.Log("finalizeMeasurePlaceholder: add label #%d warning: %v", number, err)
+	}
+
+	// Link created stitch issues as sub-issues of this measure issue.
+	for _, child := range childIssues {
+		if err := t.LinkSubIssue(repo, number, child); err != nil {
+			t.Log("finalizeMeasurePlaceholder: linkSubIssue #%d -> #%d warning: %v", child, number, err)
+		}
+	}
+
+	if comment != "" {
+		if err := exec.Command(t.GhBin, "issue", "comment",
+			"--repo", repo,
+			fmt.Sprintf("%d", number),
+			"--body", comment,
+		).Run(); err != nil {
+			t.Log("finalizeMeasurePlaceholder: comment #%d warning: %v", number, err)
+		}
+	}
+
+	t.CloseMeasuringPlaceholder(repo, number)
+	t.Log("finalizeMeasurePlaceholder: finalized #%d with %d child issue(s)", number, len(childIssues))
 }
 
 // UpgradeMeasuringPlaceholder converts the transient measuring placeholder

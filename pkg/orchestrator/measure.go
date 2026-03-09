@@ -224,6 +224,7 @@ func (o *Orchestrator) RunMeasure() error {
 				o.saveHistoryLog(historyTS, "measure", tokens.RawOutput)
 				o.saveHistoryStats(historyTS, "measure", HistoryStats{
 					Caller:        "measure",
+					TaskID:        fmt.Sprintf("%d", placeholderNum),
 					Status:        "failed",
 					Error:         fmt.Sprintf("claude failure (iteration %d/%d): %v", i+1, totalIssues, err),
 					StartedAt:     iterStart.UTC().Format(time.RFC3339),
@@ -245,6 +246,7 @@ func (o *Orchestrator) RunMeasure() error {
 			o.saveHistory(historyTS, tokens.RawOutput, outputFile)
 			o.saveHistoryStats(historyTS, "measure", HistoryStats{
 				Caller:        "measure",
+				TaskID:        fmt.Sprintf("%d", placeholderNum),
 				Status:        "success",
 				StartedAt:     iterStart.UTC().Format(time.RFC3339),
 				Duration:      iterDuration.Round(time.Second).String(),
@@ -307,10 +309,26 @@ func (o *Orchestrator) RunMeasure() error {
 			}
 		}
 
-		// Close the placeholder only when it was not upgraded in-place (GH-578).
+		// Finalize the placeholder as a permanent [measure] issue (GH-1360).
+		// When upgraded in-place (single issue), the placeholder became the
+		// stitch task — no finalization needed.
 		placeholderResolved = true
 		if placeholderNum > 0 && !placeholderUpgraded {
-			closeMeasuringPlaceholder(repo, placeholderNum)
+			// Parse created IDs as ints for sub-issue linking.
+			var childNums []int
+			for _, id := range createdIDs {
+				if n, err := fmt.Sscanf(id, "%d", new(int)); n == 1 && err == nil {
+					var v int
+					fmt.Sscanf(id, "%d", &v)
+					childNums = append(childNums, v)
+				}
+			}
+			comment := fmt.Sprintf("Measure completed. Created %d issue(s).", len(createdIDs))
+			if totalTokens.CostUSD > 0 {
+				comment += fmt.Sprintf("\nCost: $%.2f, Tokens: %din %dout",
+					totalTokens.CostUSD, totalTokens.InputTokens, totalTokens.OutputTokens)
+			}
+			finalizeMeasurePlaceholder(repo, placeholderNum, generation, comment, childNums)
 		}
 
 		allCreatedIDs = append(allCreatedIDs, createdIDs...)

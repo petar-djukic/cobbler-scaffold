@@ -90,6 +90,10 @@ func closeMeasuringPlaceholderWithComment(repo string, number int, comment strin
 	ghTrackerNoCfg().CloseMeasuringPlaceholderWithComment(repo, number, comment)
 }
 
+func finalizeMeasurePlaceholder(repo string, number int, generation, comment string, childIssues []int) {
+	ghTrackerNoCfg().FinalizeMeasurePlaceholder(repo, number, generation, comment, childIssues)
+}
+
 func upgradeMeasuringPlaceholder(repo string, number int, generation string, issue proposedIssue) error {
 	return ghTrackerNoCfg().UpgradeMeasuringPlaceholder(repo, number, generation, issue)
 }

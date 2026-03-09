@@ -442,8 +442,12 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 		return measureEntries[i].StartedAt < measureEntries[j].StartedAt
 	})
 	for i, m := range measureEntries {
+		mid := fmt.Sprintf("M%d", i+1)
+		if m.TaskID != "" {
+			mid = "#" + m.TaskID
+		}
 		tr := tableRow{
-			ID:       fmt.Sprintf("M%d", i+1),
+			ID:       mid,
 			Status:   "done",
 			Rel:      "-",
 			Reqs:     "-",
