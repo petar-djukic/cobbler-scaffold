@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/generate"
 	"gopkg.in/yaml.v3"
 )
 
@@ -503,6 +504,12 @@ func (o *Orchestrator) closeStitchTask(task stitchTask, rec InvocationRecord) {
 		rec.Tokens.Input, rec.Tokens.Output,
 	)
 	commentCobblerIssue(task.Repo, task.GhNumber, comment)
+
+	// Update requirement states before closing (GH-1378).
+	if err := generate.UpdateRequirementsFile(o.cfg.Cobbler.Dir, task.Description, task.GhNumber); err != nil {
+		logf("closeStitchTask: warning updating requirements: %v", err)
+	}
+
 	if err := closeCobblerIssue(task.Repo, task.GhNumber, task.Generation); err != nil {
 		logf("closeStitchTask: closeCobblerIssue warning for #%d: %v", task.GhNumber, err)
 	}

@@ -176,3 +176,175 @@ func TestGenerateRequirementsFile(t *testing.T) {
 		}
 	})
 }
+
+func TestUpdateRequirementsFile(t *testing.T) {
+	t.Run("marks matching sub-items as complete", func(t *testing.T) {
+		tmp := t.TempDir()
+		cobblerDir := filepath.Join(tmp, ".cobbler")
+		os.MkdirAll(cobblerDir, 0o755)
+
+		initial := RequirementsFile{
+			Requirements: map[string]map[string]RequirementState{
+				"prd001-core": {
+					"R1.1": {Status: "ready"},
+					"R1.2": {Status: "ready"},
+					"R2.1": {Status: "ready"},
+				},
+			},
+		}
+		data, _ := yaml.Marshal(initial)
+		os.WriteFile(filepath.Join(cobblerDir, RequirementsFileName), data, 0o644)
+
+		desc := `requirements:
+  - id: R1
+    text: "prd001 R1.2 — implement config loading"
+  - id: R2
+    text: "prd001 R2.1 — implement other thing"
+`
+		err := UpdateRequirementsFile(cobblerDir, desc, 42)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		result := readReqFile(t, filepath.Join(cobblerDir, RequirementsFileName))
+
+		// R1.2 and R2.1 should be complete with issue 42.
+		assertReqState(t, result, "prd001-core", "R1.2", "complete", 42)
+		assertReqState(t, result, "prd001-core", "R2.1", "complete", 42)
+		// R1.1 should remain ready.
+		assertReqState(t, result, "prd001-core", "R1.1", "ready", 0)
+	})
+
+	t.Run("group reference marks all sub-items", func(t *testing.T) {
+		tmp := t.TempDir()
+		cobblerDir := filepath.Join(tmp, ".cobbler")
+		os.MkdirAll(cobblerDir, 0o755)
+
+		initial := RequirementsFile{
+			Requirements: map[string]map[string]RequirementState{
+				"prd002-lifecycle": {
+					"R1.1": {Status: "ready"},
+					"R1.2": {Status: "ready"},
+					"R2.1": {Status: "ready"},
+				},
+			},
+		}
+		data, _ := yaml.Marshal(initial)
+		os.WriteFile(filepath.Join(cobblerDir, RequirementsFileName), data, 0o644)
+
+		desc := `requirements:
+  - id: R1
+    text: "prd002 R1 — implement entire group"
+`
+		err := UpdateRequirementsFile(cobblerDir, desc, 99)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		result := readReqFile(t, filepath.Join(cobblerDir, RequirementsFileName))
+		assertReqState(t, result, "prd002-lifecycle", "R1.1", "complete", 99)
+		assertReqState(t, result, "prd002-lifecycle", "R1.2", "complete", 99)
+		assertReqState(t, result, "prd002-lifecycle", "R2.1", "ready", 0)
+	})
+
+	t.Run("missing file returns nil", func(t *testing.T) {
+		tmp := t.TempDir()
+		err := UpdateRequirementsFile(tmp, "requirements:\n  - id: R1\n    text: prd001 R1.1", 1)
+		if err != nil {
+			t.Fatalf("expected nil error, got: %v", err)
+		}
+	})
+
+	t.Run("no matching requirements is no-op", func(t *testing.T) {
+		tmp := t.TempDir()
+		cobblerDir := filepath.Join(tmp, ".cobbler")
+		os.MkdirAll(cobblerDir, 0o755)
+
+		initial := RequirementsFile{
+			Requirements: map[string]map[string]RequirementState{
+				"prd001-core": {
+					"R1.1": {Status: "ready"},
+				},
+			},
+		}
+		data, _ := yaml.Marshal(initial)
+		os.WriteFile(filepath.Join(cobblerDir, RequirementsFileName), data, 0o644)
+
+		desc := `requirements:
+  - id: R1
+    text: "prd999 R5.3 — nonexistent PRD"
+`
+		err := UpdateRequirementsFile(cobblerDir, desc, 10)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		result := readReqFile(t, filepath.Join(cobblerDir, RequirementsFileName))
+		assertReqState(t, result, "prd001-core", "R1.1", "ready", 0)
+	})
+
+	t.Run("never regresses complete to ready", func(t *testing.T) {
+		tmp := t.TempDir()
+		cobblerDir := filepath.Join(tmp, ".cobbler")
+		os.MkdirAll(cobblerDir, 0o755)
+
+		initial := RequirementsFile{
+			Requirements: map[string]map[string]RequirementState{
+				"prd001-core": {
+					"R1.1": {Status: "complete", Issue: 10},
+					"R1.2": {Status: "ready"},
+				},
+			},
+		}
+		data, _ := yaml.Marshal(initial)
+		os.WriteFile(filepath.Join(cobblerDir, RequirementsFileName), data, 0o644)
+
+		desc := `requirements:
+  - id: R1
+    text: "prd001 R1 — redo whole group"
+`
+		err := UpdateRequirementsFile(cobblerDir, desc, 20)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		result := readReqFile(t, filepath.Join(cobblerDir, RequirementsFileName))
+		// R1.1 should still be complete with original issue 10.
+		assertReqState(t, result, "prd001-core", "R1.1", "complete", 10)
+		// R1.2 should now be complete with issue 20.
+		assertReqState(t, result, "prd001-core", "R1.2", "complete", 20)
+	})
+}
+
+func readReqFile(t *testing.T, path string) RequirementsFile {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("cannot read %s: %v", path, err)
+	}
+	var rf RequirementsFile
+	if err := yaml.Unmarshal(data, &rf); err != nil {
+		t.Fatalf("cannot parse %s: %v", path, err)
+	}
+	return rf
+}
+
+func assertReqState(t *testing.T, rf RequirementsFile, prd, rItem, wantStatus string, wantIssue int) {
+	t.Helper()
+	prdReqs, ok := rf.Requirements[prd]
+	if !ok {
+		t.Errorf("PRD %s not found", prd)
+		return
+	}
+	st, ok := prdReqs[rItem]
+	if !ok {
+		t.Errorf("%s %s not found", prd, rItem)
+		return
+	}
+	if st.Status != wantStatus {
+		t.Errorf("%s %s: status = %q, want %q", prd, rItem, st.Status, wantStatus)
+	}
+	if st.Issue != wantIssue {
+		t.Errorf("%s %s: issue = %d, want %d", prd, rItem, st.Issue, wantIssue)
+	}
+}

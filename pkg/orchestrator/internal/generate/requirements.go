@@ -79,6 +79,115 @@ func GenerateRequirementsFile(prdDir, cobblerDir string) (string, error) {
 	return outPath, nil
 }
 
+// UpdateRequirementsFile reads the requirements state file, extracts PRD
+// requirement references from the task description YAML, and transitions
+// matching entries from "ready" to "complete" with the given issue number.
+// If the file does not exist, the function returns nil (backward compat).
+func UpdateRequirementsFile(cobblerDir, description string, issueNumber int) error {
+	reqPath := filepath.Join(cobblerDir, RequirementsFileName)
+	data, err := os.ReadFile(reqPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("reading %s: %w", reqPath, err)
+	}
+
+	var rf RequirementsFile
+	if err := yaml.Unmarshal(data, &rf); err != nil {
+		return fmt.Errorf("parsing %s: %w", reqPath, err)
+	}
+	if rf.Requirements == nil {
+		return nil
+	}
+
+	refs := extractPRDRefsFromDescription(description)
+	if len(refs) == 0 {
+		return nil
+	}
+
+	updated := 0
+	for _, ref := range refs {
+		prdReqs := findPRDRequirements(rf.Requirements, ref.PRDStem)
+		if prdReqs == nil {
+			continue
+		}
+		if ref.SubItem != "" {
+			// Specific sub-item reference (e.g. R1.2).
+			key := fmt.Sprintf("R%s.%s", ref.Group, ref.SubItem)
+			if st, ok := prdReqs[key]; ok && st.Status == "ready" {
+				prdReqs[key] = RequirementState{Status: "complete", Issue: issueNumber}
+				updated++
+			}
+		} else {
+			// Group reference (e.g. R1) — mark all sub-items.
+			prefix := fmt.Sprintf("R%s.", ref.Group)
+			for key, st := range prdReqs {
+				if strings.HasPrefix(key, prefix) && st.Status == "ready" {
+					prdReqs[key] = RequirementState{Status: "complete", Issue: issueNumber}
+					updated++
+				}
+			}
+		}
+	}
+
+	if updated == 0 {
+		return nil
+	}
+
+	out, err := yaml.Marshal(rf)
+	if err != nil {
+		return fmt.Errorf("marshalling updated requirements: %w", err)
+	}
+	if err := os.WriteFile(reqPath, out, 0o644); err != nil {
+		return fmt.Errorf("writing %s: %w", reqPath, err)
+	}
+	Log("updateRequirementsFile: marked %d R-items as complete for issue #%d", updated, issueNumber)
+	return nil
+}
+
+// prdRef holds a parsed PRD requirement reference.
+type prdRef struct {
+	PRDStem string // e.g. "prd001" or "prd001-orchestrator-core"
+	Group   string // e.g. "1" from R1
+	SubItem string // e.g. "2" from R1.2; empty for group refs
+}
+
+// extractPRDRefsFromDescription parses the YAML description's requirements
+// section and returns all PRD refs found in requirement text fields.
+func extractPRDRefsFromDescription(description string) []prdRef {
+	var desc IssueDescription
+	if err := yaml.Unmarshal([]byte(description), &desc); err != nil {
+		return nil
+	}
+	var refs []prdRef
+	for _, req := range desc.Requirements {
+		matches := PRDRefPattern.FindAllStringSubmatch(req.Text, -1)
+		for _, m := range matches {
+			refs = append(refs, prdRef{
+				PRDStem: m[1],
+				Group:   m[2],
+				SubItem: m[3],
+			})
+		}
+	}
+	return refs
+}
+
+// findPRDRequirements looks up the requirement map for a PRD stem, trying
+// both exact match and prefix match (e.g. "prd001" matches "prd001-core").
+func findPRDRequirements(reqs map[string]map[string]RequirementState, stem string) map[string]RequirementState {
+	if r, ok := reqs[stem]; ok {
+		return r
+	}
+	for key, r := range reqs {
+		if strings.HasPrefix(key, stem+"-") || strings.HasPrefix(key, stem) {
+			return r
+		}
+	}
+	return nil
+}
+
 // extractRItems reads a PRD YAML file and returns all R-item IDs (e.g.
 // R1.1, R1.2, R2.1) in sorted order.
 func extractRItems(path string) []string {
