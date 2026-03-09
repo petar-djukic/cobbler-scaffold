@@ -694,6 +694,11 @@ func (o *Orchestrator) GeneratorStart() error {
 		if err := o.resetGoSources(genName); err != nil {
 			return fmt.Errorf("resetting Go sources: %w", err)
 		}
+		// Reset roadmap statuses so measure does not skip releases whose
+		// code was just deleted (GH-1368).
+		if err := o.resetImplementedReleases(); err != nil {
+			logf("generator:start: warning resetting releases: %v", err)
+		}
 	}
 
 	// Squash intermediate commits into one clean commit.
