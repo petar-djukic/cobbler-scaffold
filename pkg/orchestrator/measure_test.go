@@ -1185,6 +1185,43 @@ func TestBuildMeasurePrompt_GoldenExample(t *testing.T) {
 	}
 }
 
+// --- fileOverlap ---
+
+func TestFileOverlap_NoOverlap(t *testing.T) {
+	t.Parallel()
+	existing := map[string]int{"pkg/foo.go": 100, "pkg/bar.go": 101}
+	got := fileOverlap([]string{"pkg/baz.go"}, existing)
+	if got != 0 {
+		t.Errorf("fileOverlap() = %d, want 0", got)
+	}
+}
+
+func TestFileOverlap_HasOverlap(t *testing.T) {
+	t.Parallel()
+	existing := map[string]int{"pkg/foo.go": 100, "pkg/bar.go": 101}
+	got := fileOverlap([]string{"pkg/new.go", "pkg/foo.go"}, existing)
+	if got != 100 {
+		t.Errorf("fileOverlap() = %d, want 100", got)
+	}
+}
+
+func TestFileOverlap_EmptyProposed(t *testing.T) {
+	t.Parallel()
+	existing := map[string]int{"pkg/foo.go": 100}
+	got := fileOverlap(nil, existing)
+	if got != 0 {
+		t.Errorf("fileOverlap() = %d, want 0", got)
+	}
+}
+
+func TestFileOverlap_EmptyExisting(t *testing.T) {
+	t.Parallel()
+	got := fileOverlap([]string{"pkg/foo.go"}, map[string]int{})
+	if got != 0 {
+		t.Errorf("fileOverlap() = %d, want 0", got)
+	}
+}
+
 // --- importIssuesImpl YAML parsing ---
 
 func TestImportIssuesImpl_NonexistentFile(t *testing.T) {

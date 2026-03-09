@@ -828,6 +828,60 @@ func TestNormalizeIssueTitle(t *testing.T) {
 	}
 }
 
+func TestExtractDescriptionFiles(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		desc string
+		want []string
+	}{
+		{
+			"standard files section",
+			"deliverable_type: code\n\nfiles:\n  - path: pkg/types/example.go\n    action: create\n  - path: internal/example/impl.go\n    action: create\n",
+			[]string{"pkg/types/example.go", "internal/example/impl.go"},
+		},
+		{
+			"no files section",
+			"deliverable_type: code\n\nrequirements:\n  - id: R1\n    text: Do something\n",
+			nil,
+		},
+		{
+			"empty files list",
+			"files: []\n",
+			nil,
+		},
+		{
+			"invalid yaml",
+			"not: [valid: yaml: {{{",
+			nil,
+		},
+		{
+			"empty string",
+			"",
+			nil,
+		},
+		{
+			"files with empty path",
+			"files:\n  - path: \"\"\n    action: create\n  - path: pkg/foo.go\n    action: create\n",
+			[]string{"pkg/foo.go"},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := ExtractDescriptionFiles(tc.desc)
+			if len(got) != len(tc.want) {
+				t.Fatalf("ExtractDescriptionFiles() = %v, want %v", got, tc.want)
+			}
+			for i := range got {
+				if got[i] != tc.want[i] {
+					t.Errorf("ExtractDescriptionFiles()[%d] = %q, want %q", i, got[i], tc.want[i])
+				}
+			}
+		})
+	}
+}
+
 // --- NewGitHubTracker ---
 
 func TestNewGitHubTracker(t *testing.T) {

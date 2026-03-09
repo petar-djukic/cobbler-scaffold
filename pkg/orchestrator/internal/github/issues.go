@@ -16,6 +16,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 // Logger is a function that formats and emits log messages.
@@ -248,6 +250,27 @@ func NormalizeIssueTitle(title string) string {
 		t = strings.TrimPrefix(t, prefix)
 	}
 	return strings.TrimSpace(t)
+}
+
+// ExtractDescriptionFiles parses the files section from a YAML task description
+// and returns the set of file paths. Returns nil if parsing fails or no files
+// are found. Works with both CobblerIssue.Description and ProposedIssue.Description.
+func ExtractDescriptionFiles(description string) []string {
+	var parsed struct {
+		Files []struct {
+			Path string `yaml:"path"`
+		} `yaml:"files"`
+	}
+	if err := yaml.Unmarshal([]byte(description), &parsed); err != nil {
+		return nil
+	}
+	var paths []string
+	for _, f := range parsed.Files {
+		if f.Path != "" {
+			paths = append(paths, f.Path)
+		}
+	}
+	return paths
 }
 
 // HasLabel returns true if the issue has the given label.
