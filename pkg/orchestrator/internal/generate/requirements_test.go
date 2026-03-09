@@ -437,6 +437,57 @@ func TestExtractTouchpointCitations(t *testing.T) {
 	})
 }
 
+func TestFindPRDRequirements(t *testing.T) {
+	reqs := map[string]map[string]RequirementState{
+		"prd001-core":      {"R1.1": {Status: "ready"}},
+		"prd010-ext":       {"R2.1": {Status: "ready"}},
+		"prd053-logname":   {"R3.1": {Status: "ready"}},
+		"prd053-sort":      {"R3.2": {Status: "ready"}},
+	}
+
+	t.Run("exact match", func(t *testing.T) {
+		r := findPRDRequirements(reqs, "prd001-core")
+		if r == nil || r["R1.1"].Status != "ready" {
+			t.Errorf("expected exact match for prd001-core, got %v", r)
+		}
+	})
+
+	t.Run("dash-prefix match", func(t *testing.T) {
+		r := findPRDRequirements(reqs, "prd001")
+		if r == nil || r["R1.1"].Status != "ready" {
+			t.Errorf("expected prd001 to match prd001-core, got %v", r)
+		}
+	})
+
+	t.Run("greedy prefix rejected", func(t *testing.T) {
+		// "prd01" must NOT match "prd010-ext" — the numeric portions differ.
+		r := findPRDRequirements(reqs, "prd01")
+		if r != nil {
+			t.Errorf("prd01 should not match prd010-ext, got %v", r)
+		}
+	})
+
+	t.Run("no match returns nil", func(t *testing.T) {
+		r := findPRDRequirements(reqs, "prd999")
+		if r != nil {
+			t.Errorf("expected nil for nonexistent stem, got %v", r)
+		}
+	})
+
+	t.Run("ambiguous prefix picks longest key", func(t *testing.T) {
+		// Both "prd053-logname" and "prd053-sort" match "prd053".
+		// Longest key is "prd053-logname" (14 chars vs 10).
+		r := findPRDRequirements(reqs, "prd053")
+		if r == nil {
+			t.Fatal("expected a match for prd053")
+		}
+		// Should pick prd053-logname (longest key).
+		if _, ok := r["R3.1"]; !ok {
+			t.Errorf("expected prd053 to match prd053-logname (longest), got %v", r)
+		}
+	})
+}
+
 func readReqFile(t *testing.T, path string) RequirementsFile {
 	t.Helper()
 	data, err := os.ReadFile(path)

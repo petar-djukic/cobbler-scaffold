@@ -190,17 +190,24 @@ func extractPRDRefsFromDescription(description string) []prdRef {
 }
 
 // findPRDRequirements looks up the requirement map for a PRD stem, trying
-// both exact match and prefix match (e.g. "prd001" matches "prd001-core").
+// exact match first, then dash-delimited prefix match (e.g. "prd001" matches
+// "prd001-core" but not "prd0011-other"). When multiple candidates match,
+// the longest (most specific) key wins.
 func findPRDRequirements(reqs map[string]map[string]RequirementState, stem string) map[string]RequirementState {
 	if r, ok := reqs[stem]; ok {
 		return r
 	}
+	var bestKey string
+	var bestReqs map[string]RequirementState
 	for key, r := range reqs {
-		if strings.HasPrefix(key, stem+"-") || strings.HasPrefix(key, stem) {
-			return r
+		if strings.HasPrefix(key, stem+"-") {
+			if bestKey == "" || len(key) > len(bestKey) {
+				bestKey = key
+				bestReqs = r
+			}
 		}
 	}
-	return nil
+	return bestReqs
 }
 
 // UCRequirementsComplete checks whether all R-items cited by a use case's
