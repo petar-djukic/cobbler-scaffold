@@ -333,8 +333,8 @@ requirements:
 	if total != 3 {
 		t.Errorf("total = %d, want 3", total)
 	}
-	if byPRD["prd-001"] != 3 {
-		t.Errorf("byPRD[prd-001] = %d, want 3", byPRD["prd-001"])
+	if byPRD["prd001-test"] != 3 {
+		t.Errorf("byPRD[prd001-test] = %d, want 3", byPRD["prd001-test"])
 	}
 }
 
@@ -450,14 +450,14 @@ out_of_scope: []
 	os.Chdir(dir)
 
 	m := buildPRDReleaseMap()
-	if m["prd-001"] != "01.0" {
-		t.Errorf("prd-001 release = %q, want %q", m["prd-001"], "01.0")
+	if m["prd001-orchestrator-core"] != "01.0" {
+		t.Errorf("prd001-orchestrator-core release = %q, want %q", m["prd001-orchestrator-core"], "01.0")
 	}
-	if m["prd-003"] != "01.0" {
-		t.Errorf("prd-003 release = %q, want %q", m["prd-003"], "01.0")
+	if m["prd003-cobbler-workflows"] != "01.0" {
+		t.Errorf("prd003-cobbler-workflows release = %q, want %q", m["prd003-cobbler-workflows"], "01.0")
 	}
-	if m["prd-006"] != "02.0" {
-		t.Errorf("prd-006 release = %q, want %q", m["prd-006"], "02.0")
+	if m["prd006-vscode-extension"] != "02.0" {
+		t.Errorf("prd006-vscode-extension release = %q, want %q", m["prd006-vscode-extension"], "02.0")
 	}
 }
 

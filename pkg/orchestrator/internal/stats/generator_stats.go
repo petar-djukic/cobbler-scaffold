@@ -115,9 +115,23 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 		NumTurns     int
 		InputTokens  int
 		OutputTokens int
+		LocDeltaProd int
+		LocDeltaTest int
 	}
 	stitchByTask := make(map[string]*stitchAgg)
 	var measureEntries []cl.HistoryStats
+
+	// Determine whether any history entries carry a generation tag. If so,
+	// filter measure entries to only those matching genBranch. If none are
+	// tagged (old stats files), accept all entries for backward compat.
+	hasGenerationTag := false
+	for _, hs := range historyStats {
+		if hs.Generation != "" {
+			hasGenerationTag = true
+			break
+		}
+	}
+
 	for _, hs := range historyStats {
 		switch hs.Caller {
 		case "stitch":
@@ -137,7 +151,14 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 			agg.NumTurns += hs.NumTurns
 			agg.InputTokens += hs.Tokens.Input
 			agg.OutputTokens += hs.Tokens.Output
+			agg.LocDeltaProd += hs.LOCAfter.Production - hs.LOCBefore.Production
+			agg.LocDeltaTest += hs.LOCAfter.Test - hs.LOCBefore.Test
 		case "measure":
+			// Filter by generation: accept if generation matches genBranch,
+			// or if no entries have generation tags (backward compat).
+			if hasGenerationTag && hs.Generation != "" && hs.Generation != genBranch {
+				continue
+			}
 			measureEntries = append(measureEntries, hs)
 		}
 	}
@@ -177,6 +198,16 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 			s.NumTurns = agg.NumTurns
 			s.InputTokens = agg.InputTokens
 			s.OutputTokens = agg.OutputTokens
+			s.LocDeltaProd = agg.LocDeltaProd
+			s.LocDeltaTest = agg.LocDeltaTest
+			// PromptBytes is not in history stats; parse comments for it.
+			comments, _ := deps.FetchIssueComments(repo, iss.Number)
+			for _, c := range comments {
+				p := ParseStitchComment(c)
+				if p.PromptBytes > 0 {
+					s.PromptBytes = p.PromptBytes
+				}
+			}
 		} else {
 			// Fallback: parse stitch progress comments.
 			comments, _ := deps.FetchIssueComments(repo, iss.Number)
@@ -317,56 +348,144 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 	}
 	fmt.Println()
 
-	// Issue table.
+	// Build a unified table with both stitch (task) and measure rows.
+	// Each row is either a stitch task or a measure invocation.
+	type tableRow struct {
+		ID       string
+		Status   string
+		Rel      string
+		Reqs     string
+		Prompt   string
+		Cost     string
+		Dur      string
+		Turns    string
+		TokIn    string
+		TokOut   string
+		Prod     string
+		Test     string
+		Title    string
+		SortTime string // StartedAt for chronological ordering
+	}
+	var tableRows []tableRow
+
+	for _, r := range rows {
+		tr := tableRow{
+			ID:     strconv.Itoa(r.Number),
+			Status: r.Status,
+			Rel:    r.Release,
+		}
+		if tr.Rel == "" {
+			tr.Rel = "-"
+		}
+		tr.Prompt = "-"
+		if r.PromptBytes > 0 {
+			tr.Prompt = FormatBytes(r.PromptBytes)
+		}
+		tr.Cost = "-"
+		if r.CostUSD > 0 {
+			tr.Cost = fmt.Sprintf("$%.2f", r.CostUSD)
+		}
+		tr.Dur = "-"
+		if r.DurationS > 0 {
+			tr.Dur = FormatDuration(r.DurationS)
+		}
+		tr.Turns = "-"
+		if r.NumTurns > 0 {
+			tr.Turns = strconv.Itoa(r.NumTurns)
+		}
+		tr.TokIn = "-"
+		if r.InputTokens > 0 {
+			tr.TokIn = FormatTokens(r.InputTokens)
+		}
+		tr.TokOut = "-"
+		if r.OutputTokens > 0 {
+			tr.TokOut = FormatTokens(r.OutputTokens)
+		}
+		tr.Prod = "-"
+		if r.LocDeltaProd != 0 {
+			tr.Prod = fmt.Sprintf("%+d", r.LocDeltaProd)
+		}
+		tr.Test = "-"
+		if r.LocDeltaTest != 0 {
+			tr.Test = fmt.Sprintf("%+d", r.LocDeltaTest)
+		}
+		tr.Reqs = "-"
+		if r.NumReqs > 0 {
+			tr.Reqs = strconv.Itoa(r.NumReqs)
+		}
+		tr.Title = r.Title
+		if len(tr.Title) > 48 {
+			tr.Title = tr.Title[:45] + "..."
+		}
+		// Look up StartedAt from the first stitch history entry for this task.
+		taskID := fmt.Sprintf("%d", r.Number)
+		for _, hs := range historyStats {
+			if hs.Caller == "stitch" && hs.TaskID == taskID {
+				tr.SortTime = hs.StartedAt
+				break
+			}
+		}
+		tableRows = append(tableRows, tr)
+	}
+
+	// Add measure invocation rows.
+	sort.Slice(measureEntries, func(i, j int) bool {
+		return measureEntries[i].StartedAt < measureEntries[j].StartedAt
+	})
+	for i, m := range measureEntries {
+		tr := tableRow{
+			ID:       fmt.Sprintf("M%d", i+1),
+			Status:   "done",
+			Rel:      "-",
+			Reqs:     "-",
+			Prompt:   "-",
+			Prod:     "-",
+			Test:     "-",
+			Title:    "measure",
+			SortTime: m.StartedAt,
+		}
+		tr.Cost = "-"
+		if m.CostUSD > 0 {
+			tr.Cost = fmt.Sprintf("$%.2f", m.CostUSD)
+		}
+		tr.Dur = "-"
+		if m.DurationS > 0 {
+			tr.Dur = FormatDuration(m.DurationS)
+		}
+		tr.Turns = "-"
+		if m.NumTurns > 0 {
+			tr.Turns = strconv.Itoa(m.NumTurns)
+		}
+		tr.TokIn = "-"
+		if m.Tokens.Input > 0 {
+			tr.TokIn = FormatTokens(m.Tokens.Input)
+		}
+		tr.TokOut = "-"
+		if m.Tokens.Output > 0 {
+			tr.TokOut = FormatTokens(m.Tokens.Output)
+		}
+		tableRows = append(tableRows, tr)
+	}
+
+	// Sort chronologically by StartedAt; rows without timestamps go first.
+	sort.SliceStable(tableRows, func(i, j int) bool {
+		if tableRows[i].SortTime == "" && tableRows[j].SortTime == "" {
+			return false
+		}
+		if tableRows[i].SortTime == "" {
+			return true
+		}
+		if tableRows[j].SortTime == "" {
+			return false
+		}
+		return tableRows[i].SortTime < tableRows[j].SortTime
+	})
+
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "#\tStatus\tRel\tReqs\tPrompt\tCost\tDuration\tTurns\tTokIn\tTokOut\tProd\tTest\tTitle")
-	for _, r := range rows {
-		prompt := "-"
-		if r.PromptBytes > 0 {
-			prompt = FormatBytes(r.PromptBytes)
-		}
-		cost := "-"
-		if r.CostUSD > 0 {
-			cost = fmt.Sprintf("$%.2f", r.CostUSD)
-		}
-		dur := "-"
-		if r.DurationS > 0 {
-			dur = FormatDuration(r.DurationS)
-		}
-		turns := "-"
-		if r.NumTurns > 0 {
-			turns = strconv.Itoa(r.NumTurns)
-		}
-		tokIn := "-"
-		if r.InputTokens > 0 {
-			tokIn = FormatTokens(r.InputTokens)
-		}
-		tokOut := "-"
-		if r.OutputTokens > 0 {
-			tokOut = FormatTokens(r.OutputTokens)
-		}
-		prod := "-"
-		if r.LocDeltaProd != 0 {
-			prod = fmt.Sprintf("%+d", r.LocDeltaProd)
-		}
-		test := "-"
-		if r.LocDeltaTest != 0 {
-			test = fmt.Sprintf("%+d", r.LocDeltaTest)
-		}
-		reqs := "-"
-		if r.NumReqs > 0 {
-			reqs = strconv.Itoa(r.NumReqs)
-		}
-		rel := r.Release
-		if rel == "" {
-			rel = "-"
-		}
-		title := r.Title
-		if len(title) > 48 {
-			title = title[:45] + "..."
-		}
-		fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-			r.Number, r.Status, rel, reqs, prompt, cost, dur, turns, tokIn, tokOut, prod, test, title)
+	for _, tr := range tableRows {
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			tr.ID, tr.Status, tr.Rel, tr.Reqs, tr.Prompt, tr.Cost, tr.Dur, tr.Turns, tr.TokIn, tr.TokOut, tr.Prod, tr.Test, tr.Title)
 	}
 	if err := w.Flush(); err != nil {
 		return err
@@ -374,13 +493,9 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 
 	// Measure invocations summary.
 	if len(measureEntries) > 0 {
-		fmt.Printf("\nMeasure invocations: %d, cost $%.2f, %d turns, %s duration\n",
+		fmt.Printf("\nMeasure: %d invocations, $%.2f, %d turns, %s\n",
 			len(measureEntries), totalMeasureCost, totalMeasureTurns,
 			FormatDuration(totalMeasureDurS))
-		if totalMeasureIn > 0 || totalMeasureOut > 0 {
-			fmt.Printf("Measure tokens: %s in, %s out\n",
-				FormatTokens(totalMeasureIn), FormatTokens(totalMeasureOut))
-		}
 	}
 
 	// PRD coverage table.
@@ -560,17 +675,28 @@ func FormatBytes(b int) string {
 	}
 }
 
-// ExtractPRDRefs returns deduplicated prd-* tokens found in text.
+// ExtractPRDRefs returns deduplicated prd-* and prdNNN-* tokens found in text.
+// Both "prd-auth-flow" and "prd006-cat" formats are recognized.
 func ExtractPRDRefs(text string) []string {
 	seen := make(map[string]bool)
 	var prds []string
 	for _, word := range strings.Fields(text) {
 		w := strings.ToLower(strings.Trim(word, ".,;:()[]`\"'"))
-		if strings.HasPrefix(w, "prd-") && len(w) > 4 {
-			if !seen[w] {
-				seen[w] = true
-				prds = append(prds, w)
+		if !strings.HasPrefix(w, "prd") || len(w) < 5 {
+			continue
+		}
+		// Match "prd-<something>" (original format).
+		isPRD := strings.HasPrefix(w, "prd-") && len(w) > 4
+		// Match "prd<digit>..." e.g. "prd006-cat".
+		if !isPRD && len(w) >= 4 && w[3] >= '0' && w[3] <= '9' {
+			// Must have a hyphen after the digits to be a valid ref.
+			if strings.ContainsRune(w[3:], '-') {
+				isPRD = true
 			}
+		}
+		if isPRD && !seen[w] {
+			seen[w] = true
+			prds = append(prds, w)
 		}
 	}
 	return prds

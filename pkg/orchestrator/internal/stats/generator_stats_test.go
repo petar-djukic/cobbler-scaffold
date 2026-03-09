@@ -244,6 +244,26 @@ func TestExtractPRDRefs(t *testing.T) {
 			text: "prd-foo prd-bar prd-foo",
 			want: []string{"prd-foo", "prd-bar"},
 		},
+		{
+			text: "Implement prd006-cat utility",
+			want: []string{"prd006-cat"},
+		},
+		{
+			text: "Covers prd001-orchestrator-core and prd003-cobbler-workflows R1",
+			want: []string{"prd001-orchestrator-core", "prd003-cobbler-workflows"},
+		},
+		{
+			text: "Mixed prd-auth-flow and prd006-cat refs",
+			want: []string{"prd-auth-flow", "prd006-cat"},
+		},
+		{
+			text: "prd006-cat prd006-cat duplicate",
+			want: []string{"prd006-cat"},
+		},
+		{
+			text: "bare prd003 without hyphen-name is not a ref",
+			want: nil,
+		},
 	}
 	for _, tc := range tests {
 		got := ExtractPRDRefs(tc.text)
@@ -296,8 +316,8 @@ requirements:
 	if total != 3 {
 		t.Errorf("total = %d, want 3", total)
 	}
-	if byPRD["prd-001"] != 3 {
-		t.Errorf("byPRD[prd-001] = %d, want 3", byPRD["prd-001"])
+	if byPRD["prd001-test"] != 3 {
+		t.Errorf("byPRD[prd001-test] = %d, want 3", byPRD["prd001-test"])
 	}
 }
 
@@ -413,14 +433,14 @@ out_of_scope: []
 	os.Chdir(dir)
 
 	m := BuildPRDReleaseMap()
-	if m["prd-001"] != "01.0" {
-		t.Errorf("prd-001 release = %q, want %q", m["prd-001"], "01.0")
+	if m["prd001-orchestrator-core"] != "01.0" {
+		t.Errorf("prd001-orchestrator-core release = %q, want %q", m["prd001-orchestrator-core"], "01.0")
 	}
-	if m["prd-003"] != "01.0" {
-		t.Errorf("prd-003 release = %q, want %q", m["prd-003"], "01.0")
+	if m["prd003-cobbler-workflows"] != "01.0" {
+		t.Errorf("prd003-cobbler-workflows release = %q, want %q", m["prd003-cobbler-workflows"], "01.0")
 	}
-	if m["prd-006"] != "02.0" {
-		t.Errorf("prd-006 release = %q, want %q", m["prd-006"], "02.0")
+	if m["prd006-vscode-extension"] != "02.0" {
+		t.Errorf("prd006-vscode-extension release = %q, want %q", m["prd006-vscode-extension"], "02.0")
 	}
 }
 
@@ -681,7 +701,7 @@ num_turns: 15
 	t.Cleanup(func() { os.Chdir(orig) })
 	os.Chdir(dir)
 
-	commentCalled := false
+	commentCalledForCost := false
 	deps := GeneratorStatsDeps{
 		Log: func(format string, args ...any) {},
 		ListGenerationBranches: func() []string { return []string{"generation-main"} },
@@ -693,8 +713,11 @@ num_turns: 15
 			}, nil
 		},
 		FetchIssueComments: func(repo string, number int) ([]string, error) {
-			commentCalled = true
-			return []string{"Stitch completed in 1m 0s. Cost: $0.10. Turns: 2."}, nil
+			// Comments are still fetched for PromptBytes even when history
+			// exists. Return a "Stitch started" comment with prompt bytes
+			// but no cost — cost should come from history, not comments.
+			commentCalledForCost = false
+			return []string{"Stitch started. Branch: `generation-main`, prompt: 524288 bytes."}, nil
 		},
 		HistoryDir: histDir,
 	}
@@ -703,8 +726,8 @@ num_turns: 15
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if commentCalled {
-		t.Error("expected FetchIssueComments NOT to be called when history data exists for the task")
+	if commentCalledForCost {
+		t.Error("expected cost to come from history, not comments")
 	}
 }
 

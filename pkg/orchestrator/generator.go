@@ -449,9 +449,14 @@ func (o *Orchestrator) RunCycles(label string) error {
 			logf("generator %s: cycle %d — auto-advanced release %s", label, cycle, ver)
 		}
 
-		logf("generator %s: cycle %d — measure", label, cycle)
-		if err := o.RunMeasure(); err != nil {
-			return fmt.Errorf("cycle %d measure: %w", cycle, err)
+		// Skip measure if open issues remain — stitch should drain them first (GH-1352).
+		if openBefore, err := o.hasOpenIssues(); err == nil && openBefore {
+			logf("generator %s: cycle %d — skipping measure, open issues remain", label, cycle)
+		} else {
+			logf("generator %s: cycle %d — measure", label, cycle)
+			if err := o.RunMeasure(); err != nil {
+				return fmt.Errorf("cycle %d measure: %w", cycle, err)
+			}
 		}
 
 		open, err := o.hasOpenIssues()

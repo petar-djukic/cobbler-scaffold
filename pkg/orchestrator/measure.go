@@ -492,8 +492,8 @@ func (o *Orchestrator) importIssuesImpl(yamlFile, repo, generation string, skipE
 	}
 
 	// Deduplicate: fetch existing issues for this generation and skip any
-	// proposed issue whose normalized title matches a closed one (GH-1026).
-	closedTitles := make(map[string]int) // normalized title → issue number
+	// proposed issue whose normalized title matches an existing one (GH-1026, GH-1352).
+	existingTitles := make(map[string]int) // normalized title → issue number
 	if existing, err := listAllCobblerIssues(repo, generation); err == nil {
 		hasOpen := false
 		for _, ex := range existing {
@@ -504,17 +504,15 @@ func (o *Orchestrator) importIssuesImpl(yamlFile, repo, generation string, skipE
 		}
 		if hasOpen {
 			for _, ex := range existing {
-				if ex.State == "closed" {
-					closedTitles[normalizeIssueTitle(ex.Title)] = ex.Number
-				}
+				existingTitles[normalizeIssueTitle(ex.Title)] = ex.Number
 			}
 		}
 	}
 	var filtered []proposedIssue
 	for _, issue := range issues {
 		norm := normalizeIssueTitle(issue.Title)
-		if dup, ok := closedTitles[norm]; ok {
-			logf("importIssues: skipping duplicate %q — already completed as #%d", issue.Title, dup)
+		if dup, ok := existingTitles[norm]; ok {
+			logf("importIssues: skipping duplicate %q — already exists as #%d", issue.Title, dup)
 			continue
 		}
 		filtered = append(filtered, issue)

@@ -105,6 +105,7 @@ type DiffRecord struct {
 // and log artifacts in the history directory.
 type HistoryStats struct {
 	Caller        string       `yaml:"caller"`
+	Generation    string       `yaml:"generation,omitempty"`
 	TaskID        string       `yaml:"task_id,omitempty"`
 	TaskTitle     string       `yaml:"task_title,omitempty"`
 	Status        string       `yaml:"status,omitempty"`
