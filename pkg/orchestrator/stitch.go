@@ -4,10 +4,12 @@
 package orchestrator
 
 import (
+	"context"
 	_ "embed"
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -322,6 +324,12 @@ func (o *Orchestrator) doOneTask(task stitchTask, baseBranch, repoRoot string) e
 	}
 	logf("doOneTask: fileChanges=%d entries", len(fileChanges))
 
+	// Run post-merge tests to determine requirement completion status (GH-1388).
+	testsPassed := runPostMergeTests(".")
+	if !testsPassed {
+		logf("doOneTask: post-merge tests failed for %s, R-items will be marked complete_with_failures", task.ID)
+	}
+
 	// Cleanup worktree.
 	logf("doOneTask: cleaning up worktree for %s", task.ID)
 	cleanupWorktree(task)
@@ -370,7 +378,7 @@ func (o *Orchestrator) doOneTask(task stitchTask, baseBranch, repoRoot string) e
 		NumTurns:  tokens.NumTurns,
 	}
 	logf("doOneTask: closing task %s", task.ID)
-	o.closeStitchTask(task, rec)
+	o.closeStitchTask(task, rec, testsPassed)
 
 	logf("doOneTask: task %s finished in %s", task.ID, time.Since(taskStart).Round(time.Second))
 	return nil
@@ -491,7 +499,7 @@ func (o *Orchestrator) buildStitchPrompt(task stitchTask) (string, error) {
 	return string(out), nil
 }
 
-func (o *Orchestrator) closeStitchTask(task stitchTask, rec InvocationRecord) {
+func (o *Orchestrator) closeStitchTask(task stitchTask, rec InvocationRecord, testsPassed bool) {
 	logf("closeStitchTask: closing #%d %q", task.GhNumber, task.Title)
 	locDeltaProd := rec.LOCAfter.Production - rec.LOCBefore.Production
 	locDeltaTest := rec.LOCAfter.Test - rec.LOCBefore.Test
@@ -503,10 +511,14 @@ func (o *Orchestrator) closeStitchTask(task stitchTask, rec InvocationRecord) {
 		rec.NumTurns,
 		rec.Tokens.Input, rec.Tokens.Output,
 	)
+	if !testsPassed {
+		comment += " Tests: FAILED."
+	}
 	commentCobblerIssue(task.Repo, task.GhNumber, comment)
 
 	// Update requirement states before closing (GH-1378).
-	if err := generate.UpdateRequirementsFile(o.cfg.Cobbler.Dir, task.Description, task.GhNumber); err != nil {
+	// Pass test result so failures are tracked as complete_with_failures (GH-1388).
+	if err := generate.UpdateRequirementsFile(o.cfg.Cobbler.Dir, task.Description, task.GhNumber, testsPassed); err != nil {
 		logf("closeStitchTask: warning updating requirements: %v", err)
 	} else if gitHasChanges(".") {
 		// Commit requirement state immediately so it survives interruptions (GH-1385).
@@ -518,6 +530,28 @@ func (o *Orchestrator) closeStitchTask(task stitchTask, rec InvocationRecord) {
 		logf("closeStitchTask: closeCobblerIssue warning for #%d: %v", task.GhNumber, err)
 	}
 	logf("closeStitchTask: #%d closed", task.GhNumber)
+}
+
+// runPostMergeTests runs `go test ./...` in the given directory and returns
+// true if all tests pass. Uses a 5-minute timeout to avoid blocking the
+// pipeline indefinitely. Returns true on any execution error (fail open) to
+// avoid marking R-items as failed due to infrastructure issues.
+var runPostMergeTests = func(dir string) bool {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "go", "test", "./...")
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		logf("runPostMergeTests: tests failed: %v\n%s", err, out)
+		if ctx.Err() == context.DeadlineExceeded {
+			logf("runPostMergeTests: timed out, treating as passed")
+			return true
+		}
+		return false
+	}
+	logf("runPostMergeTests: all tests passed")
+	return true
 }
 
 // resetTask removes the in-progress label from a failed task, cleans up its

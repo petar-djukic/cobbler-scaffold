@@ -36,6 +36,7 @@ type AnalyzeResult struct {
 	UncoveredACs                   []string // ACs not covered by any test case (warning)
 	UntracedSuccessCriteria        []string // S-items with no AC traces (warning)
 	UnreachableUCs                 []string // UCs whose touchpoint PRDs have no R-items (warning)
+	FailedRequirements             []string // R-items marked complete_with_failures (warning)
 }
 
 // AnalyzeCounts holds the artifact counts discovered during analysis.
@@ -474,6 +475,29 @@ func CollectAnalyzeResult(deps AnalyzeDeps) (AnalyzeResult, AnalyzeCounts, error
 	sort.Strings(result.UnreachableUCs)
 	deps.Log("analyze: unreachable UCs found %d (warning)", len(result.UnreachableUCs))
 
+	// Check 19: R-items with test failures — scan .cobbler/requirements.yaml
+	// for items marked complete_with_failures (GH-1388).
+	if reqData, err := os.ReadFile(".cobbler/requirements.yaml"); err == nil {
+		var reqFile struct {
+			Requirements map[string]map[string]struct {
+				Status string `yaml:"status"`
+				Issue  int    `yaml:"issue,omitempty"`
+			} `yaml:"requirements"`
+		}
+		if err := yaml.Unmarshal(reqData, &reqFile); err == nil {
+			for prd, items := range reqFile.Requirements {
+				for rItem, st := range items {
+					if st.Status == "complete_with_failures" {
+						result.FailedRequirements = append(result.FailedRequirements,
+							fmt.Sprintf("%s %s: complete with test failures (issue #%d)", prd, rItem, st.Issue))
+					}
+				}
+			}
+			sort.Strings(result.FailedRequirements)
+		}
+	}
+	deps.Log("analyze: failed requirements found %d (warning)", len(result.FailedRequirements))
+
 	// Check 7: YAML schema validation.
 	result.SchemaErrors = deps.ValidateDocSchemas()
 	deps.Log("analyze: schema validation found %d error(s)", len(result.SchemaErrors))
@@ -539,6 +563,7 @@ func (r AnalyzeResult) PrintReport(prdCount, ucCount, tsCount, smCount int) erro
 	PrintSection("Uncovered ACs (AC not covered by any test case — warning)", r.UncoveredACs)
 	PrintSection("Untraced success criteria (S-item with no AC trace — warning)", r.UntracedSuccessCriteria)
 	PrintSection("Unreachable UCs (touchpoint PRDs have no R-items — warning)", r.UnreachableUCs)
+	PrintSection("Failed requirements (R-items complete with test failures — warning)", r.FailedRequirements)
 
 	if !hasIssues {
 		fmt.Printf("\n✅ All consistency checks passed\n")
