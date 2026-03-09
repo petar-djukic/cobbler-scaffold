@@ -716,7 +716,6 @@ num_turns: 15
 	t.Cleanup(func() { os.Chdir(orig) })
 	os.Chdir(dir)
 
-	commentCalledForCost := false
 	deps := GeneratorStatsDeps{
 		Log: func(format string, args ...any) {},
 		ListGenerationBranches: func() []string { return []string{"generation-main"} },
@@ -727,61 +726,12 @@ num_turns: 15
 				{Number: 100, Title: "implement feature", State: "closed", Labels: []string{"cobbler-task"}},
 			}, nil
 		},
-		FetchIssueComments: func(repo string, number int) ([]string, error) {
-			// Comments are still fetched for PromptBytes even when history
-			// exists. Return a "Stitch started" comment with prompt bytes
-			// but no cost — cost should come from history, not comments.
-			commentCalledForCost = false
-			return []string{"Stitch started. Branch: `generation-main`, prompt: 524288 bytes."}, nil
-		},
 		HistoryDir: histDir,
 	}
 
 	err := PrintGeneratorStats(deps)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
-	}
-	if commentCalledForCost {
-		t.Error("expected cost to come from history, not comments")
-	}
-}
-
-func TestPrintGeneratorStats_FallsBackToComments(t *testing.T) {
-	// Uses os.Chdir — do NOT use t.Parallel()
-	dir := t.TempDir()
-
-	// Empty history dir — no matching stats for any issue.
-	histDir := filepath.Join(dir, "history")
-	os.MkdirAll(histDir, 0o755)
-
-	orig, _ := os.Getwd()
-	t.Cleanup(func() { os.Chdir(orig) })
-	os.Chdir(dir)
-
-	commentCalled := false
-	deps := GeneratorStatsDeps{
-		Log: func(format string, args ...any) {},
-		ListGenerationBranches: func() []string { return []string{"generation-main"} },
-		GenerationBranch:       "generation-main",
-		DetectGitHubRepo:       func() (string, error) { return "owner/repo", nil },
-		ListAllIssues: func(repo, generation string) ([]gh.CobblerIssue, error) {
-			return []gh.CobblerIssue{
-				{Number: 200, Title: "other feature", State: "closed", Labels: []string{"cobbler-task"}},
-			}, nil
-		},
-		FetchIssueComments: func(repo string, number int) ([]string, error) {
-			commentCalled = true
-			return []string{"Stitch completed in 2m 0s. Cost: $0.30. Turns: 5."}, nil
-		},
-		HistoryDir: histDir,
-	}
-
-	err := PrintGeneratorStats(deps)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !commentCalled {
-		t.Error("expected FetchIssueComments to be called as fallback when no history data matches")
 	}
 }
 
@@ -819,9 +769,6 @@ num_turns: 3
 			return []gh.CobblerIssue{
 				{Number: 300, Title: "test task", State: "open", Labels: []string{"cobbler-task"}},
 			}, nil
-		},
-		FetchIssueComments: func(repo string, number int) ([]string, error) {
-			return nil, nil
 		},
 		HistoryDir: histDir,
 	}

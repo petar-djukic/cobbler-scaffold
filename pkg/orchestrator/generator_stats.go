@@ -31,9 +31,6 @@ func (o *Orchestrator) GeneratorStats() error {
 		ListAllIssues: func(repo, generation string) ([]gh.CobblerIssue, error) {
 			return listAllCobblerIssues(repo, generation)
 		},
-		FetchIssueComments: func(repo string, number int) ([]string, error) {
-			return fetchIssueComments(repo, number)
-		},
 		HistoryDir: o.historyDir(),
 	})
 }

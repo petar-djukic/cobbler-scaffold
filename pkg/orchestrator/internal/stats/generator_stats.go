@@ -18,7 +18,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// GeneratorIssueStats holds per-issue stats derived from labels and comments.
+// GeneratorIssueStats holds per-issue stats derived from history files.
 type GeneratorIssueStats struct {
 	gh.CobblerIssue
 	Status       string  // "done", "failed", "in-progress", "pending"
@@ -28,9 +28,8 @@ type GeneratorIssueStats struct {
 	LocDeltaProd int
 	LocDeltaTest int
 	NumReqs      int // number of requirements in the task description
-	PromptBytes  int // prompt size in bytes from "Stitch started" comment
-	InputTokens  int // total input tokens from stitch completion comments
-	OutputTokens int // total output tokens from stitch completion comments
+	InputTokens  int // total input tokens from history stats
+	OutputTokens int // total output tokens from history stats
 	PRDs         []string
 	Release      string // roadmap release version, e.g. "01.0"
 }
@@ -43,8 +42,7 @@ type GeneratorStatsDeps struct {
 	CurrentBranch          string // current git branch, used to prefer the active generation
 	DetectGitHubRepo       func() (string, error)
 	ListAllIssues          func(repo, generation string) ([]gh.CobblerIssue, error)
-	FetchIssueComments     func(repo string, number int) ([]string, error)
-	HistoryDir             string // path to .cobbler/history for local stats files
+	HistoryDir string // path to .cobbler/history for local stats files
 }
 
 // LoadHistoryStats reads all *-stats.yaml files from dir and returns the
@@ -191,7 +189,7 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 	// Collect per-issue stats.
 	rows := make([]GeneratorIssueStats, 0, len(stitchIssues))
 	var totalStitchCost float64
-	var totalTurns, totalLocProd, totalLocTest, totalReqs, totalPromptBytes int
+	var totalTurns, totalLocProd, totalLocTest, totalReqs int
 	var totalInputTokens, totalOutputTokens int
 	var nDone, nFailed, nInProgress, nPending int
 	prdStatus := make(map[string]string) // prd name → highest-priority status
@@ -215,7 +213,7 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 			nPending++
 		}
 
-		// Prefer local history data over comment parsing.
+		// Use local history data as the single source of truth (GH-1366).
 		taskID := fmt.Sprintf("%d", iss.Number)
 		if agg, ok := stitchByTask[taskID]; ok {
 			s.CostUSD = agg.CostUSD
@@ -225,42 +223,11 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 			s.OutputTokens = agg.OutputTokens
 			s.LocDeltaProd = agg.LocDeltaProd
 			s.LocDeltaTest = agg.LocDeltaTest
-			// PromptBytes is not in history stats; parse comments for it.
-			comments, _ := deps.FetchIssueComments(repo, iss.Number)
-			for _, c := range comments {
-				p := ParseStitchComment(c)
-				if p.PromptBytes > 0 {
-					s.PromptBytes = p.PromptBytes
-				}
-			}
-		} else {
-			// Fallback: parse stitch progress comments.
-			comments, _ := deps.FetchIssueComments(repo, iss.Number)
-			for _, c := range comments {
-				p := ParseStitchComment(c)
-				if p.CostUSD > 0 {
-					s.CostUSD += p.CostUSD
-				}
-				if p.DurationS > 0 {
-					s.DurationS = p.DurationS
-				}
-				if p.NumTurns > 0 {
-					s.NumTurns += p.NumTurns
-				}
-				s.LocDeltaProd += p.LocDeltaProd
-				s.LocDeltaTest += p.LocDeltaTest
-				if p.PromptBytes > 0 {
-					s.PromptBytes = p.PromptBytes
-				}
-				s.InputTokens += p.InputTokens
-				s.OutputTokens += p.OutputTokens
-			}
 		}
 		totalStitchCost += s.CostUSD
 		totalTurns += s.NumTurns
 		totalLocProd += s.LocDeltaProd
 		totalLocTest += s.LocDeltaTest
-		totalPromptBytes += s.PromptBytes
 		totalInputTokens += s.InputTokens
 		totalOutputTokens += s.OutputTokens
 
@@ -325,9 +292,6 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 	fmt.Printf(", %d turns\n", totalTurns)
 	fmt.Printf("LOC created: %+d prod, %+d test\n", totalLocProd, totalLocTest)
 	fmt.Printf("Requirements: %d total in tasks\n", totalReqs)
-	if totalPromptBytes > 0 {
-		fmt.Printf("Prompt total: %s\n", FormatBytes(totalPromptBytes))
-	}
 	combinedIn := totalInputTokens + totalMeasureIn
 	combinedOut := totalOutputTokens + totalMeasureOut
 	if combinedIn > 0 || combinedOut > 0 {
@@ -389,7 +353,6 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 		Status   string
 		Rel      string
 		Reqs     string
-		Prompt   string
 		Cost     string
 		Dur      string
 		Turns    string
@@ -410,10 +373,6 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 		}
 		if tr.Rel == "" {
 			tr.Rel = "-"
-		}
-		tr.Prompt = "-"
-		if r.PromptBytes > 0 {
-			tr.Prompt = FormatBytes(r.PromptBytes)
 		}
 		tr.Cost = "-"
 		if r.CostUSD > 0 {
@@ -476,7 +435,6 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 			Status:   "done",
 			Rel:      "-",
 			Reqs:     "-",
-			Prompt:   "-",
 			Prod:     "-",
 			Test:     "-",
 			Title:    "measure",
@@ -512,7 +470,6 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 			Status: "in-progress",
 			Rel:    "-",
 			Reqs:   "-",
-			Prompt: "-",
 			Prod:   "-",
 			Test:   "-",
 			Cost:   "-",
@@ -540,10 +497,10 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 	})
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "#\tStatus\tRel\tReqs\tPrompt\tCost\tDuration\tTurns\tTokIn\tTokOut\tProd\tTest\tTitle")
+	fmt.Fprintln(w, "#\tStatus\tRel\tReqs\tCost\tDuration\tTurns\tTokIn\tTokOut\tProd\tTest\tTitle")
 	for _, tr := range tableRows {
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-			tr.ID, tr.Status, tr.Rel, tr.Reqs, tr.Prompt, tr.Cost, tr.Dur, tr.Turns, tr.TokIn, tr.TokOut, tr.Prod, tr.Test, tr.Title)
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			tr.ID, tr.Status, tr.Rel, tr.Reqs, tr.Cost, tr.Dur, tr.Turns, tr.TokIn, tr.TokOut, tr.Prod, tr.Test, tr.Title)
 	}
 	if err := w.Flush(); err != nil {
 		return err
