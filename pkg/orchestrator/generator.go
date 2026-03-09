@@ -604,6 +604,14 @@ func (o *Orchestrator) GeneratorStart() error {
 		return fmt.Errorf("worktree has uncommitted changes on %s; commit or stash before starting a generation", baseBranch)
 	}
 
+	// Clear history from any previous generation so the new generation
+	// starts with a clean slate (GH-1356). The history directory may
+	// survive across generations when it is gitignored or when
+	// generator:stop was not called.
+	if err := o.HistoryClean(); err != nil {
+		logf("generator:start: warning clearing history: %v", err)
+	}
+
 	// Garbage-collect issues from generations whose branch no longer exists.
 	// This catches leaks from crashed tests or prior runs without cleanup.
 	if ghRepo, err := detectGitHubRepo(".", o.cfg); err == nil && ghRepo != "" {
@@ -777,6 +785,12 @@ func (o *Orchestrator) GeneratorStop() error {
 	logf("generator:stop: switching to %s", baseBranch)
 	if err := gitCheckout(baseBranch, "."); err != nil {
 		return fmt.Errorf("checking out %s: %w", baseBranch, err)
+	}
+
+	// Clear history before merging so untracked history files from the
+	// generation do not persist on disk across branches (GH-1356).
+	if err := o.HistoryClean(); err != nil {
+		logf("generator:stop: warning clearing history: %v", err)
 	}
 
 	if err := o.mergeGeneration(branch, baseBranch); err != nil {
