@@ -594,6 +594,27 @@ func TestPRDRefPattern_MatchesSubItem(t *testing.T) {
 	}
 }
 
+func TestPRDRefPattern_MatchesWithInterveningWord(t *testing.T) {
+	// Claude sometimes writes "prd002-sys requirement R2.5" instead of "prd002-sys R2.5".
+	matches := PRDRefPattern.FindStringSubmatch("Implement prd002-sys requirement R2.5 as specified")
+	if matches == nil {
+		t.Fatal("expected match")
+	}
+	if matches[1] != "prd002-sys" || matches[2] != "2" || matches[3] != "5" {
+		t.Errorf("unexpected match: stem=%q group=%q sub=%q", matches[1], matches[2], matches[3])
+	}
+}
+
+func TestPRDRefPattern_MatchesWithTwoInterveningWords(t *testing.T) {
+	matches := PRDRefPattern.FindStringSubmatch("prd003-format requirement group R1")
+	if matches == nil {
+		t.Fatal("expected match")
+	}
+	if matches[1] != "prd003-format" || matches[2] != "1" || matches[3] != "" {
+		t.Errorf("unexpected match: stem=%q group=%q sub=%q", matches[1], matches[2], matches[3])
+	}
+}
+
 func TestPRDRefPattern_NoMatch(t *testing.T) {
 	if PRDRefPattern.FindStringSubmatch("no prd reference here") != nil {
 		t.Error("expected no match")

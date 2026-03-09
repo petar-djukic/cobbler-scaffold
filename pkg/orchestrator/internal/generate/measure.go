@@ -96,11 +96,13 @@ func MeasureReleasesConstraint(releases []string, release string) string {
 // ---------------------------------------------------------------------------
 
 // PRDRefPattern matches PRD requirement references in task requirement text.
-// Examples: "prd003 R2", "prd004-ts R1.3", "prd001-orchestrator-core R5".
+// Examples: "prd003 R2", "prd004-ts R1.3", "prd002-sys requirement R2.5".
+// Allows up to 2 intervening words between the PRD stem and R-number to handle
+// Claude inserting words like "requirement" (e.g., "prd002-sys requirement R2.5").
 // Group 1 = PRD stem (e.g., "prd003" or "prd004-ts").
 // Group 2 = requirement group number (e.g., "2" from "R2").
 // Group 3 = optional sub-item number (e.g., "3" from "R1.3"); empty for groups.
-var PRDRefPattern = regexp.MustCompile(`(prd\d+[-\w]*)\s+R(\d+)(?:\.(\d+))?`)
+var PRDRefPattern = regexp.MustCompile(`(prd\d+[-\w]*)\s+(?:\w+\s+){0,2}R(\d+)(?:\.(\d+))?`)
 
 // ---------------------------------------------------------------------------
 // Validation
