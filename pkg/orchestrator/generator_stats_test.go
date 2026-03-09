@@ -257,21 +257,13 @@ func TestExtractPRDRefs(t *testing.T) {
 	}
 }
 
-// --- listAllCobblerIssues / fetchIssueComments (delegation, kept in parent) ---
+// --- listAllCobblerIssues (delegation, kept in parent) ---
 
 func TestListAllCobblerIssues_FakeRepo_Error(t *testing.T) {
 	t.Parallel()
 	_, err := listAllCobblerIssues("fake/repo-that-does-not-exist", "gen-test")
 	if err == nil {
 		t.Error("listAllCobblerIssues with fake repo must return an error")
-	}
-}
-
-func TestFetchIssueComments_FakeRepo_Error(t *testing.T) {
-	t.Parallel()
-	_, err := fetchIssueComments("fake/repo-that-does-not-exist", 99999)
-	if err == nil {
-		t.Error("fetchIssueComments with fake repo must return an error")
 	}
 }
 
