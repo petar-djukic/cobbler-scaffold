@@ -31,7 +31,7 @@ func TestGenerateRequirementsFile(t *testing.T) {
 `
 		os.WriteFile(filepath.Join(prdDir, "prd001-core.yaml"), []byte(prd), 0o644)
 
-		path, err := GenerateRequirementsFile(prdDir, cobblerDir)
+		path, err := GenerateRequirementsFile(prdDir, cobblerDir, false)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -74,7 +74,7 @@ func TestGenerateRequirementsFile(t *testing.T) {
 		cobblerDir := filepath.Join(tmp, ".cobbler")
 		os.MkdirAll(prdDir, 0o755)
 
-		path, err := GenerateRequirementsFile(prdDir, cobblerDir)
+		path, err := GenerateRequirementsFile(prdDir, cobblerDir, false)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -107,7 +107,7 @@ func TestGenerateRequirementsFile(t *testing.T) {
 `
 		os.WriteFile(filepath.Join(prdDir, "prd002-empty.yaml"), []byte(prd), 0o644)
 
-		path, err := GenerateRequirementsFile(prdDir, cobblerDir)
+		path, err := GenerateRequirementsFile(prdDir, cobblerDir, false)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -150,7 +150,7 @@ func TestGenerateRequirementsFile(t *testing.T) {
 		os.WriteFile(filepath.Join(prdDir, "prd001-alpha.yaml"), []byte(prd1), 0o644)
 		os.WriteFile(filepath.Join(prdDir, "prd002-beta.yaml"), []byte(prd2), 0o644)
 
-		path, err := GenerateRequirementsFile(prdDir, cobblerDir)
+		path, err := GenerateRequirementsFile(prdDir, cobblerDir, false)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -174,6 +174,154 @@ func TestGenerateRequirementsFile(t *testing.T) {
 		if len(rf.Requirements["prd002-beta"]) != 2 {
 			t.Errorf("prd002-beta: expected 2 items, got %d", len(rf.Requirements["prd002-beta"]))
 		}
+	})
+}
+
+func TestGenerateRequirementsFile_PreserveExisting(t *testing.T) {
+	t.Run("preserves completed states from previous run", func(t *testing.T) {
+		tmp := t.TempDir()
+		prdDir := filepath.Join(tmp, "prds")
+		cobblerDir := filepath.Join(tmp, ".cobbler")
+		os.MkdirAll(prdDir, 0o755)
+		os.MkdirAll(cobblerDir, 0o755)
+
+		prd := `requirements:
+  R1:
+    title: "Config"
+    items:
+      - R1.1: "first item"
+      - R1.2: "second item"
+  R2:
+    title: "Other"
+    items:
+      - R2.1: "third item"
+`
+		os.WriteFile(filepath.Join(prdDir, "prd001-core.yaml"), []byte(prd), 0o644)
+
+		// Seed existing requirements with R1.1 complete.
+		existing := RequirementsFile{
+			Requirements: map[string]map[string]RequirementState{
+				"prd001-core": {
+					"R1.1": {Status: "complete", Issue: 42},
+					"R1.2": {Status: "ready"},
+					"R2.1": {Status: "ready"},
+				},
+			},
+		}
+		data, _ := yaml.Marshal(existing)
+		os.WriteFile(filepath.Join(cobblerDir, RequirementsFileName), data, 0o644)
+
+		path, err := GenerateRequirementsFile(prdDir, cobblerDir, true)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		result := readReqFile(t, path)
+		// R1.1 should retain its complete state.
+		assertReqState(t, result, "prd001-core", "R1.1", "complete", 42)
+		// R1.2 and R2.1 should remain ready.
+		assertReqState(t, result, "prd001-core", "R1.2", "ready", 0)
+		assertReqState(t, result, "prd001-core", "R2.1", "ready", 0)
+	})
+
+	t.Run("new R-items default to ready", func(t *testing.T) {
+		tmp := t.TempDir()
+		prdDir := filepath.Join(tmp, "prds")
+		cobblerDir := filepath.Join(tmp, ".cobbler")
+		os.MkdirAll(prdDir, 0o755)
+		os.MkdirAll(cobblerDir, 0o755)
+
+		prd := `requirements:
+  R1:
+    title: "Config"
+    items:
+      - R1.1: "existing"
+      - R1.2: "new item"
+`
+		os.WriteFile(filepath.Join(prdDir, "prd001-core.yaml"), []byte(prd), 0o644)
+
+		// Existing file only has R1.1.
+		existing := RequirementsFile{
+			Requirements: map[string]map[string]RequirementState{
+				"prd001-core": {
+					"R1.1": {Status: "complete", Issue: 10},
+				},
+			},
+		}
+		data, _ := yaml.Marshal(existing)
+		os.WriteFile(filepath.Join(cobblerDir, RequirementsFileName), data, 0o644)
+
+		path, err := GenerateRequirementsFile(prdDir, cobblerDir, true)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		result := readReqFile(t, path)
+		assertReqState(t, result, "prd001-core", "R1.1", "complete", 10)
+		assertReqState(t, result, "prd001-core", "R1.2", "ready", 0)
+	})
+
+	t.Run("removed R-items are dropped", func(t *testing.T) {
+		tmp := t.TempDir()
+		prdDir := filepath.Join(tmp, "prds")
+		cobblerDir := filepath.Join(tmp, ".cobbler")
+		os.MkdirAll(prdDir, 0o755)
+		os.MkdirAll(cobblerDir, 0o755)
+
+		// PRD now only has R1.1.
+		prd := `requirements:
+  R1:
+    title: "Config"
+    items:
+      - R1.1: "kept"
+`
+		os.WriteFile(filepath.Join(prdDir, "prd001-core.yaml"), []byte(prd), 0o644)
+
+		// Existing file has R1.1 and R1.2 (R1.2 was removed from PRD).
+		existing := RequirementsFile{
+			Requirements: map[string]map[string]RequirementState{
+				"prd001-core": {
+					"R1.1": {Status: "complete", Issue: 5},
+					"R1.2": {Status: "complete", Issue: 6},
+				},
+			},
+		}
+		data, _ := yaml.Marshal(existing)
+		os.WriteFile(filepath.Join(cobblerDir, RequirementsFileName), data, 0o644)
+
+		path, err := GenerateRequirementsFile(prdDir, cobblerDir, true)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		result := readReqFile(t, path)
+		assertReqState(t, result, "prd001-core", "R1.1", "complete", 5)
+		if _, ok := result.Requirements["prd001-core"]["R1.2"]; ok {
+			t.Error("R1.2 should have been dropped (removed from PRD)")
+		}
+	})
+
+	t.Run("no existing file behaves like fresh generation", func(t *testing.T) {
+		tmp := t.TempDir()
+		prdDir := filepath.Join(tmp, "prds")
+		cobblerDir := filepath.Join(tmp, ".cobbler")
+		os.MkdirAll(prdDir, 0o755)
+
+		prd := `requirements:
+  R1:
+    title: "Config"
+    items:
+      - R1.1: "item"
+`
+		os.WriteFile(filepath.Join(prdDir, "prd001-core.yaml"), []byte(prd), 0o644)
+
+		path, err := GenerateRequirementsFile(prdDir, cobblerDir, true)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		result := readReqFile(t, path)
+		assertReqState(t, result, "prd001-core", "R1.1", "ready", 0)
 	})
 }
 

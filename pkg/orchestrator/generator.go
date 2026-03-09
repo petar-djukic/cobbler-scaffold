@@ -735,7 +735,7 @@ func (o *Orchestrator) GeneratorStart() error {
 
 	// Generate requirements state file from PRD R-items (GH-1378).
 	prdDir := "docs/specs/product-requirements"
-	if _, err := generate.GenerateRequirementsFile(prdDir, o.cfg.Cobbler.Dir); err != nil {
+	if _, err := generate.GenerateRequirementsFile(prdDir, o.cfg.Cobbler.Dir, o.cfg.Generation.PreserveSources); err != nil {
 		logf("generator:start: warning generating requirements file: %v", err)
 	}
 

@@ -44,12 +44,20 @@ func LoadRequirementStates(cobblerDir string) map[string]map[string]RequirementS
 }
 
 // GenerateRequirementsFile scans all PRD YAML files in the given directory
-// for R-items and writes a requirements state file where every item starts
-// with status "ready". Returns the path written, or an error.
-func GenerateRequirementsFile(prdDir, cobblerDir string) (string, error) {
+// for R-items and writes a requirements state file. When preserveExisting is
+// false, all items start with status "ready" (full regeneration). When true,
+// existing requirement states are preserved for items still present in PRDs,
+// and only new items default to "ready" (incremental generation).
+func GenerateRequirementsFile(prdDir, cobblerDir string, preserveExisting bool) (string, error) {
 	paths, err := filepath.Glob(filepath.Join(prdDir, "prd*.yaml"))
 	if err != nil {
 		return "", fmt.Errorf("globbing PRDs in %s: %w", prdDir, err)
+	}
+
+	// Load existing states when preserving.
+	var existing map[string]map[string]RequirementState
+	if preserveExisting {
+		existing = LoadRequirementStates(cobblerDir)
 	}
 
 	allReqs := make(map[string]map[string]RequirementState)
@@ -62,6 +70,14 @@ func GenerateRequirementsFile(prdDir, cobblerDir string) (string, error) {
 		}
 		group := make(map[string]RequirementState, len(items))
 		for _, id := range items {
+			if existing != nil {
+				if prev, ok := existing[slug]; ok {
+					if st, ok := prev[id]; ok {
+						group[id] = st
+						continue
+					}
+				}
+			}
 			group[id] = RequirementState{Status: "ready"}
 		}
 		allReqs[slug] = group
@@ -87,10 +103,24 @@ func GenerateRequirementsFile(prdDir, cobblerDir string) (string, error) {
 
 	// Count total R-items for logging.
 	total := 0
-	for _, g := range allReqs {
+	preserved := 0
+	for slug, g := range allReqs {
 		total += len(g)
+		if existing != nil {
+			if prev, ok := existing[slug]; ok {
+				for id := range g {
+					if _, ok := prev[id]; ok {
+						preserved++
+					}
+				}
+			}
+		}
 	}
-	Log("generateRequirementsFile: wrote %d R-items from %d PRDs to %s", total, len(allReqs), outPath)
+	if preserveExisting && preserved > 0 {
+		Log("generateRequirementsFile: wrote %d R-items (%d preserved) from %d PRDs to %s", total, preserved, len(allReqs), outPath)
+	} else {
+		Log("generateRequirementsFile: wrote %d R-items from %d PRDs to %s", total, len(allReqs), outPath)
+	}
 	return outPath, nil
 }
 
