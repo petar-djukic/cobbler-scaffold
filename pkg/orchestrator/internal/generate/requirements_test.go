@@ -1195,6 +1195,100 @@ func TestAllRefsAlreadyComplete(t *testing.T) {
 	})
 }
 
+func TestUpdateRequirementsFile_InterveningWord(t *testing.T) {
+	// Reproduces the bug from go-unix-utils run 27 (GH-1434): Claude writes
+	// "prd002-sys requirement R2.5" instead of "prd002-sys R2.5". The regex
+	// must handle intervening words between the PRD stem and R-number.
+	dir := t.TempDir()
+	reqPath := filepath.Join(dir, RequirementsFileName)
+	rf := RequirementsFile{
+		Requirements: map[string]map[string]RequirementState{
+			"prd002-sys": {
+				"R2.5": {Status: "ready"},
+				"R2.6": {Status: "ready"},
+			},
+		},
+	}
+	data, err := yaml.Marshal(rf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(reqPath, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	description := `deliverable_type: code
+requirements:
+  - id: R1
+    text: "Implement prd002-sys requirement R2.5 as specified in the PRD"
+  - id: R2
+    text: "Implement prd002-sys requirement R2.6 as specified in the PRD"`
+
+	if err := UpdateRequirementsFile(dir, description, 660, true); err != nil {
+		t.Fatalf("UpdateRequirementsFile: %v", err)
+	}
+
+	updated := readReqFile(t, reqPath)
+	assertReqState(t, updated, "prd002-sys", "R2.5", "complete", 660)
+	assertReqState(t, updated, "prd002-sys", "R2.6", "complete", 660)
+}
+
+func TestCrossBatchDuplicatePrevention_InterveningWord(t *testing.T) {
+	// Verifies that ValidateMeasureOutput rejects proposals using the
+	// "prd002-sys requirement R2.5" format when R2.5 is already complete.
+	reqStates := map[string]map[string]RequirementState{
+		"prd002-sys": {
+			"R2.5": {Status: "complete", Issue: 660},
+			"R2.6": {Status: "complete", Issue: 660},
+		},
+	}
+
+	desc := `deliverable_type: code
+requirements:
+  - id: R1
+    text: "Implement prd002-sys requirement R2.5 exactly as specified in the PRD"
+  - id: R2
+    text: "Implement prd002-sys requirement R2.6 exactly as specified in the PRD"
+  - id: R3
+    text: "More work"
+  - id: R4
+    text: "Even more"
+  - id: R5
+    text: "Last one"
+acceptance_criteria:
+  - id: AC1
+    text: ac1
+  - id: AC2
+    text: ac2
+  - id: AC3
+    text: ac3
+  - id: AC4
+    text: ac4
+  - id: AC5
+    text: ac5
+design_decisions:
+  - id: DD1
+    text: dd1
+  - id: DD2
+    text: dd2
+  - id: DD3
+    text: dd3
+files:
+  - path: pkg/sys/stat.go`
+
+	issues := []ProposedIssue{{Index: 0, Title: "test", Description: desc}}
+	result := ValidateMeasureOutput(issues, 0, nil, reqStates)
+	found := 0
+	for _, e := range result.Errors {
+		if strings.Contains(e, "already complete") {
+			found++
+		}
+	}
+	if found != 2 {
+		t.Errorf("expected 2 'already complete' errors for R2.5 and R2.6, got %d; errors: %v", found, result.Errors)
+	}
+}
+
 func readReqFile(t *testing.T, path string) RequirementsFile {
 	t.Helper()
 	data, err := os.ReadFile(path)
