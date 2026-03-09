@@ -562,10 +562,26 @@ func (o *Orchestrator) validateAndMarkUCs() {
 		if ucStatusDone(uc.Status) {
 			continue
 		}
-		if !validateUCImplemented(uc.ID) {
-			logf("validateAndMarkUCs: UC %s not yet implemented (tests missing or failing)", uc.ID)
+
+		// Load UC touchpoints to extract PRD citations.
+		ucTouchpoints := loadUCTouchpoints(uc.ID)
+		if len(ucTouchpoints) == 0 {
+			logf("validateAndMarkUCs: UC %s — no touchpoints found, skipping", uc.ID)
 			continue
 		}
+
+		// Requirement-based completion is the primary gate (GH-1378).
+		complete, remaining := generate.UCRequirementsComplete(o.cfg.Cobbler.Dir, ucTouchpoints)
+		if !complete {
+			logf("validateAndMarkUCs: UC %s — %d requirements still pending: %v", uc.ID, len(remaining), remaining)
+			continue
+		}
+
+		// Test-based validation is a secondary signal (log-only).
+		if !validateUCImplemented(uc.ID) {
+			logf("validateAndMarkUCs: UC %s — requirements complete but tests missing/failing (non-blocking)", uc.ID)
+		}
+
 		logf("validateAndMarkUCs: UC %s validated — marking as implemented", uc.ID)
 		if err := updateRoadmapSingleUCStatus(target.Version, uc.ID, "implemented"); err != nil {
 			logf("validateAndMarkUCs: failed to mark %s: %v", uc.ID, err)
@@ -579,11 +595,23 @@ func (o *Orchestrator) validateAndMarkUCs() {
 	}
 
 	_ = gitStageAll(".")
-	msg := fmt.Sprintf("Mark validated UCs as implemented in release %s\n\nUCs with passing tests: %s",
+	msg := fmt.Sprintf("Mark validated UCs as implemented in release %s\n\nUCs with complete requirements: %s",
 		target.Version, strings.Join(marked, ", "))
 	if err := gitCommit(msg, "."); err != nil {
 		logf("validateAndMarkUCs: commit failed: %v", err)
 	}
+}
+
+// loadUCTouchpoints loads a use case file and returns its touchpoints as
+// flat strings (e.g. "T1: Config struct: ... prd001-core R1"). Returns nil
+// if the UC file is not found or cannot be parsed.
+func loadUCTouchpoints(ucID string) []string {
+	path := filepath.Join("docs/specs/use-cases", ucID+".yaml")
+	uc, err := loadUseCase(path)
+	if err != nil {
+		return nil
+	}
+	return uc.Touchpoints
 }
 
 // validateUCImplemented checks whether a use case has test files and whether
@@ -699,6 +727,12 @@ func (o *Orchestrator) GeneratorStart() error {
 		if err := o.resetImplementedReleases(); err != nil {
 			logf("generator:start: warning resetting releases: %v", err)
 		}
+	}
+
+	// Generate requirements state file from PRD R-items (GH-1378).
+	prdDir := "docs/specs/product-requirements"
+	if _, err := generate.GenerateRequirementsFile(prdDir, o.cfg.Cobbler.Dir); err != nil {
+		logf("generator:start: warning generating requirements file: %v", err)
 	}
 
 	// Squash intermediate commits into one clean commit.

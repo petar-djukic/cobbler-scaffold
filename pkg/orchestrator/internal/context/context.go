@@ -161,8 +161,17 @@ type ProjectContext struct {
 	Analysis       any                `yaml:"analysis,omitempty"`
 	SourceCode     []SourceFile       `yaml:"source_code,omitempty"`
 	Issues         []ContextIssue     `yaml:"issues,omitempty"`
-	CompletedWork  []string           `yaml:"completed_work,omitempty"`
-	Extra          []*NamedDoc        `yaml:"extra,omitempty"`
+	CompletedWork     []string                                     `yaml:"completed_work,omitempty"`
+	RequirementStates map[string]map[string]RequirementStateEntry `yaml:"requirement_states,omitempty"`
+	Extra             []*NamedDoc                                 `yaml:"extra,omitempty"`
+}
+
+// RequirementStateEntry is a single R-item's status for inclusion in the
+// project context. Mirrors generate.RequirementState but lives in the
+// context package to avoid an import cycle.
+type RequirementStateEntry struct {
+	Status string `yaml:"status"`
+	Issue  int    `yaml:"issue,omitempty"`
 }
 
 // SourceFile holds a source file for inclusion in the project context.
@@ -1881,6 +1890,17 @@ func BuildProjectContext(existingIssuesJSON string, project ContextConfig, phase
 				v.File = path
 				ctx.Extra = append(ctx.Extra, v)
 			}
+		}
+	}
+
+	// Load requirement states from .cobbler/requirements.yaml (GH-1378).
+	if reqData, reqErr := os.ReadFile(filepath.Join(cobblerDir, "requirements.yaml")); reqErr == nil {
+		var reqFile struct {
+			Requirements map[string]map[string]RequirementStateEntry `yaml:"requirements"`
+		}
+		if err := yaml.Unmarshal(reqData, &reqFile); err == nil && len(reqFile.Requirements) > 0 {
+			ctx.RequirementStates = reqFile.Requirements
+			Log("buildProjectContext: loaded %d PRDs from requirements.yaml", len(reqFile.Requirements))
 		}
 	}
 

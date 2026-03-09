@@ -35,6 +35,7 @@ type AnalyzeResult struct {
 	UncoveredRItems                []string // R-items not covered by any acceptance criterion
 	UncoveredACs                   []string // ACs not covered by any test case (warning)
 	UntracedSuccessCriteria        []string // S-items with no AC traces (warning)
+	UnreachableUCs                 []string // UCs whose touchpoint PRDs have no R-items (warning)
 }
 
 // AnalyzeCounts holds the artifact counts discovered during analysis.
@@ -450,6 +451,29 @@ func CollectAnalyzeResult(deps AnalyzeDeps) (AnalyzeResult, AnalyzeCounts, error
 	sort.Strings(result.UntracedSuccessCriteria)
 	deps.Log("analyze: untraced success criteria found %d (warning)", len(result.UntracedSuccessCriteria))
 
+	// Check 18: UC reachability — each UC's touchpoint PRDs must have R-items
+	// so that measure can propose work for them (GH-1378).
+	for ucID, prds := range ucToPRDs {
+		if len(prds) == 0 {
+			result.UnreachableUCs = append(result.UnreachableUCs,
+				fmt.Sprintf("%s: no PRD touchpoints", ucID))
+			continue
+		}
+		hasRItems := false
+		for _, prdID := range prds {
+			if items, ok := prdRItems[prdID]; ok && len(items) > 0 {
+				hasRItems = true
+				break
+			}
+		}
+		if !hasRItems {
+			result.UnreachableUCs = append(result.UnreachableUCs,
+				fmt.Sprintf("%s: touchpoint PRDs have no R-items", ucID))
+		}
+	}
+	sort.Strings(result.UnreachableUCs)
+	deps.Log("analyze: unreachable UCs found %d (warning)", len(result.UnreachableUCs))
+
 	// Check 7: YAML schema validation.
 	result.SchemaErrors = deps.ValidateDocSchemas()
 	deps.Log("analyze: schema validation found %d error(s)", len(result.SchemaErrors))
@@ -514,6 +538,7 @@ func (r AnalyzeResult) PrintReport(prdCount, ucCount, tsCount, smCount int) erro
 	hasIssues = PrintSection("Uncovered R-items (R-item not traced by any acceptance criterion)", r.UncoveredRItems) || hasIssues
 	PrintSection("Uncovered ACs (AC not covered by any test case — warning)", r.UncoveredACs)
 	PrintSection("Untraced success criteria (S-item with no AC trace — warning)", r.UntracedSuccessCriteria)
+	PrintSection("Unreachable UCs (touchpoint PRDs have no R-items — warning)", r.UnreachableUCs)
 
 	if !hasIssues {
 		fmt.Printf("\n✅ All consistency checks passed\n")

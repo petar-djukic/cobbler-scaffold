@@ -1691,3 +1691,105 @@ success_criteria:
 		t.Errorf("expected S3 in untraced criteria, got %v", result.UntracedSuccessCriteria)
 	}
 }
+
+// --- Check 18: Unreachable UCs (GH-1378) ---
+
+func TestCollectAnalyzeResult_UnreachableUC_NoRItems(t *testing.T) {
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(orig)
+
+	os.MkdirAll("docs/specs/product-requirements", 0o755)
+	os.MkdirAll("docs/specs/use-cases", 0o755)
+	os.MkdirAll("docs/specs/test-suites", 0o755)
+	os.MkdirAll("docs/constitutions", 0o755)
+	os.MkdirAll("pkg/orchestrator/constitutions", 0o755)
+
+	// PRD with no R-items (empty requirements).
+	prd := "id: prd001-core\ntitle: Core\nrequirements: {}\n"
+	os.WriteFile("docs/specs/product-requirements/prd001-core.yaml", []byte(prd), 0o644)
+
+	// UC that references this PRD.
+	uc := "id: rel01.0-uc001-init\ntitle: Init\ntouchpoints:\n  - T1: prd001-core R1\n"
+	os.WriteFile("docs/specs/use-cases/rel01.0-uc001-init.yaml", []byte(uc), 0o644)
+
+	roadmap := "id: rm\ntitle: R\nreleases:\n  - version: \"01.0\"\n    name: R1\n    status: pending\n    use_cases:\n      - id: rel01.0-uc001-init\n        summary: Init\n"
+	os.WriteFile("docs/road-map.yaml", []byte(roadmap), 0o644)
+	os.WriteFile("docs/specs/test-suites/test-rel01.0.yaml",
+		[]byte("id: test-rel01.0\ntitle: T\ntraces:\n  - rel01.0-uc001-init\n"), 0o644)
+
+	result, _, err := CollectAnalyzeResult(noopDeps())
+	if err != nil {
+		t.Fatalf("CollectAnalyzeResult: %v", err)
+	}
+	if len(result.UnreachableUCs) != 1 {
+		t.Fatalf("expected 1 unreachable UC, got %d: %v", len(result.UnreachableUCs), result.UnreachableUCs)
+	}
+	if !strings.Contains(result.UnreachableUCs[0], "rel01.0-uc001-init") {
+		t.Errorf("expected unreachable UC to mention uc001, got %q", result.UnreachableUCs[0])
+	}
+}
+
+func TestCollectAnalyzeResult_ReachableUC_HasRItems(t *testing.T) {
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(orig)
+
+	os.MkdirAll("docs/specs/product-requirements", 0o755)
+	os.MkdirAll("docs/specs/use-cases", 0o755)
+	os.MkdirAll("docs/specs/test-suites", 0o755)
+	os.MkdirAll("docs/constitutions", 0o755)
+	os.MkdirAll("pkg/orchestrator/constitutions", 0o755)
+
+	// PRD with R-items.
+	prd := "id: prd001-core\ntitle: Core\nrequirements:\n  R1:\n    title: Config\n    items:\n      - R1.1: first\n"
+	os.WriteFile("docs/specs/product-requirements/prd001-core.yaml", []byte(prd), 0o644)
+
+	uc := "id: rel01.0-uc001-init\ntitle: Init\ntouchpoints:\n  - T1: prd001-core R1\n"
+	os.WriteFile("docs/specs/use-cases/rel01.0-uc001-init.yaml", []byte(uc), 0o644)
+
+	roadmap := "id: rm\ntitle: R\nreleases:\n  - version: \"01.0\"\n    name: R1\n    status: pending\n    use_cases:\n      - id: rel01.0-uc001-init\n        summary: Init\n"
+	os.WriteFile("docs/road-map.yaml", []byte(roadmap), 0o644)
+	os.WriteFile("docs/specs/test-suites/test-rel01.0.yaml",
+		[]byte("id: test-rel01.0\ntitle: T\ntraces:\n  - rel01.0-uc001-init\ntest_cases:\n  - name: tc1\n    use_case: rel01.0-uc001-init\n    traces:\n      - prd001-core AC1\n"), 0o644)
+
+	result, _, err := CollectAnalyzeResult(noopDeps())
+	if err != nil {
+		t.Fatalf("CollectAnalyzeResult: %v", err)
+	}
+	if len(result.UnreachableUCs) != 0 {
+		t.Errorf("expected 0 unreachable UCs, got %d: %v", len(result.UnreachableUCs), result.UnreachableUCs)
+	}
+}
+
+func TestCollectAnalyzeResult_UnreachableUC_MissingPRD(t *testing.T) {
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(orig)
+
+	os.MkdirAll("docs/specs/product-requirements", 0o755)
+	os.MkdirAll("docs/specs/use-cases", 0o755)
+	os.MkdirAll("docs/specs/test-suites", 0o755)
+	os.MkdirAll("docs/constitutions", 0o755)
+	os.MkdirAll("pkg/orchestrator/constitutions", 0o755)
+
+	// UC references a PRD that doesn't exist.
+	uc := "id: rel01.0-uc001-init\ntitle: Init\ntouchpoints:\n  - T1: prd999-missing R1\n"
+	os.WriteFile("docs/specs/use-cases/rel01.0-uc001-init.yaml", []byte(uc), 0o644)
+
+	roadmap := "id: rm\ntitle: R\nreleases:\n  - version: \"01.0\"\n    name: R1\n    status: pending\n    use_cases:\n      - id: rel01.0-uc001-init\n        summary: Init\n"
+	os.WriteFile("docs/road-map.yaml", []byte(roadmap), 0o644)
+	os.WriteFile("docs/specs/test-suites/test-rel01.0.yaml",
+		[]byte("id: test-rel01.0\ntitle: T\ntraces:\n  - rel01.0-uc001-init\n"), 0o644)
+
+	result, _, err := CollectAnalyzeResult(noopDeps())
+	if err != nil {
+		t.Fatalf("CollectAnalyzeResult: %v", err)
+	}
+	if len(result.UnreachableUCs) != 1 {
+		t.Fatalf("expected 1 unreachable UC, got %d: %v", len(result.UnreachableUCs), result.UnreachableUCs)
+	}
+}

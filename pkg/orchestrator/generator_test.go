@@ -1392,7 +1392,7 @@ func TestResolveStopTarget_CallerOnCustomBase_UsesCustomBase(t *testing.T) {
 
 // --- validateAndMarkUCs (GH-1361, replaces GH-1187 markActiveReleaseUCsDone) ---
 
-func TestValidateAndMarkUCs_OnlyMarksUCsWithPassingTests(t *testing.T) {
+func TestValidateAndMarkUCs_OnlyMarksUCsWithCompleteRequirements(t *testing.T) {
 	dir := initTestGitRepo(t)
 
 	roadmapContent := `id: rm1
@@ -1424,18 +1424,45 @@ releases:
 		t.Fatal(err)
 	}
 
-	// Create test directory for uc001 only (uc002 has no tests).
-	testDir := filepath.Join(dir, "tests", "rel00.0", "uc001")
-	if err := os.MkdirAll(testDir, 0o755); err != nil {
+	// Create use case files with touchpoints.
+	ucDir := filepath.Join(dir, "docs", "specs", "use-cases")
+	if err := os.MkdirAll(ucDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	// Write a minimal passing test file.
-	testContent := "package uc001_test\n\nimport \"testing\"\n\nfunc TestPlaceholder(t *testing.T) {}\n"
-	if err := os.WriteFile(filepath.Join(testDir, "format_test.go"), []byte(testContent), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	uc001 := `id: rel00.0-uc001-format
+title: Format output
+touchpoints:
+  - T1: "Format per prd001-core R1"
+`
+	uc002 := `id: rel00.0-uc002-build
+title: Build pipeline
+touchpoints:
+  - T1: "Build per prd002-build R1"
+`
+	os.WriteFile(filepath.Join(ucDir, "rel00.0-uc001-format.yaml"), []byte(uc001), 0o644)
+	os.WriteFile(filepath.Join(ucDir, "rel00.0-uc002-build.yaml"), []byte(uc002), 0o644)
 
-	o := &Orchestrator{cfg: Config{}}
+	// Create requirements.yaml: uc001's PRD is complete, uc002's is not.
+	cobblerDir := filepath.Join(dir, ".cobbler")
+	os.MkdirAll(cobblerDir, 0o755)
+	reqContent := `requirements:
+  prd001-core:
+    R1.1:
+      status: complete
+      issue: 10
+    R1.2:
+      status: complete
+      issue: 11
+  prd002-build:
+    R1.1:
+      status: ready
+    R1.2:
+      status: complete
+      issue: 12
+`
+	os.WriteFile(filepath.Join(cobblerDir, "requirements.yaml"), []byte(reqContent), 0o644)
+
+	o := &Orchestrator{cfg: Config{Cobbler: CobblerConfig{Dir: cobblerDir}}}
 	o.validateAndMarkUCs()
 
 	rmPath := filepath.Join(dir, "docs", "road-map.yaml")
@@ -1443,11 +1470,11 @@ releases:
 	if err != nil {
 		t.Fatalf("read UC statuses for 00.0: %v", err)
 	}
-	// uc001 has tests → should be implemented.
+	// uc001 has all requirements complete → should be implemented.
 	if statuses["rel00.0-uc001-format"] != "implemented" {
 		t.Errorf("UC rel00.0-uc001-format: want implemented, got %q", statuses["rel00.0-uc001-format"])
 	}
-	// uc002 has no tests → should remain spec_complete.
+	// uc002 has pending requirements → should remain spec_complete.
 	if statuses["rel00.0-uc002-build"] != "spec_complete" {
 		t.Errorf("UC rel00.0-uc002-build: want spec_complete, got %q", statuses["rel00.0-uc002-build"])
 	}
