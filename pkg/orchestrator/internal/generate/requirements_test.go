@@ -6,6 +6,7 @@ package generate
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"gopkg.in/yaml.v3"
@@ -695,6 +696,413 @@ func TestFindPRDRequirements(t *testing.T) {
 			t.Errorf("expected prd053 to match prd053-logname (longest), got %v", r)
 		}
 	})
+}
+
+// ---------------------------------------------------------------------------
+// sdd-hello-world fixture: prd003-config with 12 R-items across 4 R-groups.
+// Mirrors the structure of sdd-hello-world's rel04.0 release (GH-1394).
+// ---------------------------------------------------------------------------
+
+const prd003ConfigFixture = `requirements:
+  R1:
+    title: "Config file loading"
+    items:
+      - R1.1: "Load YAML configuration from default path"
+      - R1.2: "Support environment variable override for config path"
+      - R1.3: "Return typed config struct"
+  R2:
+    title: "Config validation"
+    items:
+      - R2.1: "Validate required fields are present"
+      - R2.2: "Validate field types and ranges"
+      - R2.3: "Return structured validation errors"
+  R3:
+    title: "Config defaults"
+    items:
+      - R3.1: "Apply default values for optional fields"
+      - R3.2: "Merge defaults with user-provided values"
+      - R3.3: "Document default values in config template"
+  R4:
+    title: "Config hot-reload"
+    items:
+      - R4.1: "Watch config file for changes"
+      - R4.2: "Re-validate on change"
+      - R4.3: "Notify subscribers of config updates"
+`
+
+// prd001 fixture: 6 R-items across 2 R-groups (mirrors sdd-hello-world prd001).
+const prd001CoreFixture = `requirements:
+  R1:
+    title: "Core operations"
+    items:
+      - R1.1: "Operation A"
+      - R1.2: "Operation B"
+      - R1.3: "Operation C"
+  R2:
+    title: "Output formatting"
+    items:
+      - R2.1: "Format stdout"
+      - R2.2: "Format stderr"
+      - R2.3: "Exit codes"
+`
+
+// prd002 fixture: 11 R-items across 3 R-groups (mirrors sdd-hello-world prd002).
+const prd002LifecycleFixture = `requirements:
+  R1:
+    title: "Lifecycle init"
+    items:
+      - R1.1: "Initialize state"
+      - R1.2: "Validate preconditions"
+      - R1.3: "Create workspace"
+      - R1.4: "Register signal handlers"
+  R2:
+    title: "Lifecycle run"
+    items:
+      - R2.1: "Main loop"
+      - R2.2: "Error recovery"
+      - R2.3: "Progress reporting"
+  R3:
+    title: "Lifecycle shutdown"
+    items:
+      - R3.1: "Graceful shutdown"
+      - R3.2: "Cleanup resources"
+      - R3.3: "Final status report"
+      - R3.4: "Exit with appropriate code"
+`
+
+func TestGenerateRequirementsFile_SDDHelloWorldFixture(t *testing.T) {
+	tmp := t.TempDir()
+	prdDir := filepath.Join(tmp, "prds")
+	cobblerDir := filepath.Join(tmp, ".cobbler")
+	os.MkdirAll(prdDir, 0o755)
+
+	os.WriteFile(filepath.Join(prdDir, "prd001-core.yaml"), []byte(prd001CoreFixture), 0o644)
+	os.WriteFile(filepath.Join(prdDir, "prd002-lifecycle.yaml"), []byte(prd002LifecycleFixture), 0o644)
+	os.WriteFile(filepath.Join(prdDir, "prd003-config.yaml"), []byte(prd003ConfigFixture), 0o644)
+
+	path, err := GenerateRequirementsFile(prdDir, cobblerDir, false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	rf := readReqFile(t, path)
+
+	// Verify all 3 PRDs are present.
+	if len(rf.Requirements) != 3 {
+		t.Fatalf("expected 3 PRDs, got %d", len(rf.Requirements))
+	}
+
+	// Verify item counts: prd001=6, prd002=11, prd003=12, total=29.
+	wantCounts := map[string]int{
+		"prd001-core":      6,
+		"prd002-lifecycle": 11,
+		"prd003-config":    12,
+	}
+	totalItems := 0
+	for prd, wantCount := range wantCounts {
+		got := len(rf.Requirements[prd])
+		if got != wantCount {
+			t.Errorf("%s: expected %d R-items, got %d", prd, wantCount, got)
+		}
+		totalItems += got
+	}
+	if totalItems != 29 {
+		t.Errorf("expected 29 total R-items, got %d", totalItems)
+	}
+
+	// Verify all items start as "ready" with no issue.
+	for prd, items := range rf.Requirements {
+		for rItem, st := range items {
+			if st.Status != "ready" {
+				t.Errorf("%s %s: expected status ready, got %s", prd, rItem, st.Status)
+			}
+			if st.Issue != 0 {
+				t.Errorf("%s %s: expected issue 0, got %d", prd, rItem, st.Issue)
+			}
+		}
+	}
+
+	// Verify specific prd003-config sub-requirements are extracted.
+	for _, id := range []string{"R1.1", "R1.2", "R1.3", "R2.1", "R2.2", "R2.3",
+		"R3.1", "R3.2", "R3.3", "R4.1", "R4.2", "R4.3"} {
+		if _, ok := rf.Requirements["prd003-config"][id]; !ok {
+			t.Errorf("prd003-config missing expected R-item %s", id)
+		}
+	}
+}
+
+func TestPartialCompletionSequence(t *testing.T) {
+	// Simulates the prd003-config 3-task sequence from GH-1394:
+	// Task 1: prd003-config R1 (3 items) → 3 complete, 9 ready
+	// Task 2: prd003-config R2, R3 (6 items) → 9 complete, 3 ready
+	// Task 3: prd003-config R4 (3 items) → 12 complete, 0 ready
+	tmp := t.TempDir()
+	prdDir := filepath.Join(tmp, "prds")
+	cobblerDir := filepath.Join(tmp, ".cobbler")
+	os.MkdirAll(prdDir, 0o755)
+
+	os.WriteFile(filepath.Join(prdDir, "prd003-config.yaml"), []byte(prd003ConfigFixture), 0o644)
+
+	// Generate initial requirements.yaml.
+	reqPath, err := GenerateRequirementsFile(prdDir, cobblerDir, false)
+	if err != nil {
+		t.Fatalf("GenerateRequirementsFile: %v", err)
+	}
+
+	// Verify initial state: 12 items, all ready.
+	rf := readReqFile(t, reqPath)
+	if len(rf.Requirements["prd003-config"]) != 12 {
+		t.Fatalf("expected 12 R-items, got %d", len(rf.Requirements["prd003-config"]))
+	}
+
+	// UC touchpoints: uc004 cites R1,R2,R3; uc005 cites R4.
+	uc004Touchpoints := []string{
+		"T1: Config loading per prd003-config R1, R2, R3",
+	}
+	uc005Touchpoints := []string{
+		"T1: Config hot-reload per prd003-config R4",
+	}
+
+	// --- Task 1: Mark R1 complete (3 items) ---
+	desc1 := `requirements:
+  - id: R1
+    text: "prd003-config R1 — implement config file loading"
+`
+	if err := UpdateRequirementsFile(cobblerDir, desc1, 100, true); err != nil {
+		t.Fatalf("Task 1 UpdateRequirementsFile: %v", err)
+	}
+
+	rf = readReqFile(t, reqPath)
+	readyCount, completeCount := countStates(rf.Requirements["prd003-config"])
+	if completeCount != 3 {
+		t.Errorf("after Task 1: expected 3 complete, got %d", completeCount)
+	}
+	if readyCount != 9 {
+		t.Errorf("after Task 1: expected 9 ready, got %d", readyCount)
+	}
+	assertReqState(t, rf, "prd003-config", "R1.1", "complete", 100)
+	assertReqState(t, rf, "prd003-config", "R1.2", "complete", 100)
+	assertReqState(t, rf, "prd003-config", "R1.3", "complete", 100)
+	assertReqState(t, rf, "prd003-config", "R2.1", "ready", 0)
+
+	// UC checks after Task 1: neither complete.
+	complete, remaining := UCRequirementsComplete(cobblerDir, uc004Touchpoints)
+	if complete {
+		t.Error("after Task 1: uc004 should not be complete (R2,R3 still ready)")
+	}
+	if len(remaining) != 6 {
+		t.Errorf("after Task 1: uc004 expected 6 remaining, got %d: %v", len(remaining), remaining)
+	}
+	complete, _ = UCRequirementsComplete(cobblerDir, uc005Touchpoints)
+	if complete {
+		t.Error("after Task 1: uc005 should not be complete (R4 still ready)")
+	}
+
+	// --- Task 2: Mark R2, R3 complete (6 items) ---
+	desc2 := `requirements:
+  - id: R1
+    text: "prd003-config R2 — implement config validation"
+  - id: R2
+    text: "prd003-config R3 — implement config defaults"
+`
+	if err := UpdateRequirementsFile(cobblerDir, desc2, 101, true); err != nil {
+		t.Fatalf("Task 2 UpdateRequirementsFile: %v", err)
+	}
+
+	rf = readReqFile(t, reqPath)
+	readyCount, completeCount = countStates(rf.Requirements["prd003-config"])
+	if completeCount != 9 {
+		t.Errorf("after Task 2: expected 9 complete, got %d", completeCount)
+	}
+	if readyCount != 3 {
+		t.Errorf("after Task 2: expected 3 ready, got %d", readyCount)
+	}
+
+	// uc004 should now be complete (R1,R2,R3 all done).
+	complete, remaining = UCRequirementsComplete(cobblerDir, uc004Touchpoints)
+	if !complete {
+		t.Errorf("after Task 2: uc004 should be complete, remaining: %v", remaining)
+	}
+	// uc005 should still be incomplete (R4 ready).
+	complete, remaining = UCRequirementsComplete(cobblerDir, uc005Touchpoints)
+	if complete {
+		t.Error("after Task 2: uc005 should not be complete (R4 still ready)")
+	}
+	if len(remaining) != 3 {
+		t.Errorf("after Task 2: uc005 expected 3 remaining, got %d: %v", len(remaining), remaining)
+	}
+
+	// --- Task 3: Mark R4 complete (3 items) ---
+	desc3 := `requirements:
+  - id: R1
+    text: "prd003-config R4 — implement config hot-reload"
+`
+	if err := UpdateRequirementsFile(cobblerDir, desc3, 102, true); err != nil {
+		t.Fatalf("Task 3 UpdateRequirementsFile: %v", err)
+	}
+
+	rf = readReqFile(t, reqPath)
+	readyCount, completeCount = countStates(rf.Requirements["prd003-config"])
+	if completeCount != 12 {
+		t.Errorf("after Task 3: expected 12 complete, got %d", completeCount)
+	}
+	if readyCount != 0 {
+		t.Errorf("after Task 3: expected 0 ready, got %d", readyCount)
+	}
+
+	// Both UCs should now be complete.
+	complete, remaining = UCRequirementsComplete(cobblerDir, uc004Touchpoints)
+	if !complete {
+		t.Errorf("after Task 3: uc004 should be complete, remaining: %v", remaining)
+	}
+	complete, remaining = UCRequirementsComplete(cobblerDir, uc005Touchpoints)
+	if !complete {
+		t.Errorf("after Task 3: uc005 should be complete, remaining: %v", remaining)
+	}
+
+	// Verify no regression: re-updating already-complete items is a no-op.
+	if err := UpdateRequirementsFile(cobblerDir, desc1, 999, true); err != nil {
+		t.Fatalf("re-update should not error: %v", err)
+	}
+	rf = readReqFile(t, reqPath)
+	assertReqState(t, rf, "prd003-config", "R1.1", "complete", 100) // original issue preserved
+	assertReqState(t, rf, "prd003-config", "R1.2", "complete", 100)
+	assertReqState(t, rf, "prd003-config", "R1.3", "complete", 100)
+}
+
+func TestCrossBatchDuplicatePrevention(t *testing.T) {
+	// After marking R1-R3 complete, verify that ValidateMeasureOutput
+	// rejects proposals targeting completed R-groups and accepts
+	// proposals targeting ready R-groups (R4).
+	reqStates := map[string]map[string]RequirementState{
+		"prd003-config": {
+			"R1.1": {Status: "complete", Issue: 100},
+			"R1.2": {Status: "complete", Issue: 100},
+			"R1.3": {Status: "complete", Issue: 100},
+			"R2.1": {Status: "complete", Issue: 101},
+			"R2.2": {Status: "complete", Issue: 101},
+			"R2.3": {Status: "complete", Issue: 101},
+			"R3.1": {Status: "complete", Issue: 101},
+			"R3.2": {Status: "complete", Issue: 101},
+			"R3.3": {Status: "complete", Issue: 101},
+			"R4.1": {Status: "ready"},
+			"R4.2": {Status: "ready"},
+			"R4.3": {Status: "ready"},
+		},
+	}
+
+	// Verify fixture counts: 9 complete, 3 ready.
+	ready, complete := 0, 0
+	for _, st := range reqStates["prd003-config"] {
+		if st.Status == "ready" {
+			ready++
+		} else if isRequirementComplete(st.Status) {
+			complete++
+		}
+	}
+	if complete != 9 || ready != 3 {
+		t.Fatalf("fixture should have 9 complete + 3 ready, got %d + %d", complete, ready)
+	}
+
+	makeDesc := func(reqText string) string {
+		return `deliverable_type: code
+requirements:
+  - id: R1
+    text: "` + reqText + `"
+  - id: R2
+    text: "General work"
+  - id: R3
+    text: "More work"
+  - id: R4
+    text: "Even more"
+  - id: R5
+    text: "Last one"
+acceptance_criteria:
+  - id: AC1
+    text: ac1
+  - id: AC2
+    text: ac2
+  - id: AC3
+    text: ac3
+  - id: AC4
+    text: ac4
+  - id: AC5
+    text: ac5
+design_decisions:
+  - id: DD1
+    text: dd1
+  - id: DD2
+    text: dd2
+  - id: DD3
+    text: dd3
+files:
+  - path: pkg/config/load.go`
+	}
+
+	t.Run("rejects proposal targeting completed group R1", func(t *testing.T) {
+		desc := makeDesc("prd003-config R1 — re-implement loading")
+		issues := []ProposedIssue{{Index: 0, Title: "test", Description: desc}}
+		result := ValidateMeasureOutput(issues, 0, nil, reqStates)
+		found := false
+		for _, e := range result.Errors {
+			if strings.Contains(e, "R1") && strings.Contains(e, "complete") {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("expected error for completed group R1, got errors: %v", result.Errors)
+		}
+	})
+
+	t.Run("rejects proposal targeting completed sub-item R2.1", func(t *testing.T) {
+		desc := makeDesc("prd003-config R2.1 — re-validate fields")
+		issues := []ProposedIssue{{Index: 0, Title: "test", Description: desc}}
+		result := ValidateMeasureOutput(issues, 0, nil, reqStates)
+		found := false
+		for _, e := range result.Errors {
+			if strings.Contains(e, "R2.1") && strings.Contains(e, "already complete") {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("expected error for completed R2.1, got errors: %v", result.Errors)
+		}
+	})
+
+	t.Run("accepts proposal targeting ready group R4", func(t *testing.T) {
+		desc := makeDesc("prd003-config R4 — implement hot-reload")
+		issues := []ProposedIssue{{Index: 0, Title: "test", Description: desc}}
+		result := ValidateMeasureOutput(issues, 0, nil, reqStates)
+		for _, e := range result.Errors {
+			if strings.Contains(e, "R4") && strings.Contains(e, "complete") {
+				t.Errorf("R4 is ready, should not be rejected: %s", e)
+			}
+		}
+	})
+
+	t.Run("accepts proposal targeting ready sub-item R4.2", func(t *testing.T) {
+		desc := makeDesc("prd003-config R4.2 — re-validate on change")
+		issues := []ProposedIssue{{Index: 0, Title: "test", Description: desc}}
+		result := ValidateMeasureOutput(issues, 0, nil, reqStates)
+		for _, e := range result.Errors {
+			if strings.Contains(e, "R4.2") && strings.Contains(e, "complete") {
+				t.Errorf("R4.2 is ready, should not be rejected: %s", e)
+			}
+		}
+	})
+}
+
+// countStates returns the number of ready and complete items in a requirement map.
+func countStates(items map[string]RequirementState) (ready, complete int) {
+	for _, st := range items {
+		switch {
+		case st.Status == "ready":
+			ready++
+		case isRequirementComplete(st.Status):
+			complete++
+		}
+	}
+	return
 }
 
 func readReqFile(t *testing.T, path string) RequirementsFile {
