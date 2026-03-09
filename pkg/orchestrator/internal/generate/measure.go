@@ -113,7 +113,9 @@ var PRDRefPattern = regexp.MustCompile(`(prd\d+[-\w]*)\s+R(\d+)(?:\.(\d+))?`)
 // PRD stems to group IDs to sub-item counts; when a task requirement
 // references a PRD group, the expanded sub-item count is used instead of 1.
 // Expanded-count violations are logged as warnings (best-effort), not errors.
-func ValidateMeasureOutput(issues []ProposedIssue, maxReqs int, subItemCounts map[string]map[string]int) ValidationResult {
+// reqStates, when non-nil, cross-references proposed R-items against
+// requirements.yaml and rejects proposals targeting completed R-items (GH-1386).
+func ValidateMeasureOutput(issues []ProposedIssue, maxReqs int, subItemCounts map[string]map[string]int, reqStates map[string]map[string]RequirementState) ValidationResult {
 	var result ValidationResult
 	for _, issue := range issues {
 		var desc IssueDescription
@@ -183,8 +185,74 @@ func ValidateMeasureOutput(issues []ProposedIssue, maxReqs int, subItemCounts ma
 				}
 			}
 		}
+
+		// Check for completed R-items: proposals must not target R-items
+		// already marked complete in requirements.yaml (GH-1386).
+		if len(reqStates) > 0 {
+			for _, req := range desc.Requirements {
+				matches := PRDRefPattern.FindAllStringSubmatch(req.Text, -1)
+				for _, m := range matches {
+					prdStem := m[1]
+					groupNum := m[2]
+					subItem := m[3]
+					prdReqs := findPRDReqStates(reqStates, prdStem)
+					if prdReqs == nil {
+						continue
+					}
+					if subItem != "" {
+						key := fmt.Sprintf("R%s.%s", groupNum, subItem)
+						if st, ok := prdReqs[key]; ok && st.Status == "complete" {
+							msg := fmt.Sprintf("[%d] %q: requirement %s %s is already complete (issue #%d)",
+								issue.Index, issue.Title, prdStem, key, st.Issue)
+							Log("validateMeasureOutput: %s", msg)
+							result.Errors = append(result.Errors, msg)
+						}
+					} else {
+						// Group reference — check if ALL sub-items are complete.
+						prefix := fmt.Sprintf("R%s.", groupNum)
+						allComplete := true
+						for k, st := range prdReqs {
+							if strings.HasPrefix(k, prefix) && st.Status != "complete" {
+								allComplete = false
+								break
+							}
+						}
+						if allComplete {
+							// Check there are actually sub-items.
+							hasItems := false
+							for k := range prdReqs {
+								if strings.HasPrefix(k, prefix) {
+									hasItems = true
+									break
+								}
+							}
+							if hasItems {
+								msg := fmt.Sprintf("[%d] %q: requirement group %s R%s is already fully complete",
+									issue.Index, issue.Title, prdStem, groupNum)
+								Log("validateMeasureOutput: %s", msg)
+								result.Errors = append(result.Errors, msg)
+							}
+						}
+					}
+				}
+			}
+		}
 	}
 	return result
+}
+
+// findPRDReqStates looks up requirement states for a PRD stem, trying exact
+// match and prefix match (e.g. "prd001" matches "prd001-core").
+func findPRDReqStates(states map[string]map[string]RequirementState, stem string) map[string]RequirementState {
+	if r, ok := states[stem]; ok {
+		return r
+	}
+	for key, r := range states {
+		if strings.HasPrefix(key, stem+"-") {
+			return r
+		}
+	}
+	return nil
 }
 
 // ExpandedRequirementCount computes the effective requirement count by

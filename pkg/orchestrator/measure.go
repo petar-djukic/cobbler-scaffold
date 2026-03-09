@@ -487,9 +487,10 @@ func (o *Orchestrator) importIssuesImpl(yamlFile, repo, generation string, skipE
 		logf("importIssues: [%d] title=%q dep=%d", i, issue.Title, issue.Dependency)
 	}
 
-	// Validate proposed issues against P9/P7 rules.
+	// Validate proposed issues against P9/P7 rules and completed R-items (GH-1386).
 	subItemCounts := loadPRDSubItemCounts()
-	vr := validateMeasureOutput(issues, o.cfg.Cobbler.MaxRequirementsPerTask, subItemCounts)
+	reqStates := loadRequirementStates(o.cfg.Cobbler.Dir)
+	vr := validateMeasureOutput(issues, o.cfg.Cobbler.MaxRequirementsPerTask, subItemCounts, reqStates)
 	if len(vr.Warnings) > 0 {
 		logf("importIssues: %d warning(s)", len(vr.Warnings))
 	}

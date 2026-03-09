@@ -200,7 +200,7 @@ func filterImplementedRelease(release string) string {
 	return generate.FilterImplementedRelease(release)
 }
 
-func validateMeasureOutput(issues []proposedIssue, maxReqs int, subItemCounts map[string]map[string]int) validationResult {
+func validateMeasureOutput(issues []proposedIssue, maxReqs int, subItemCounts map[string]map[string]int, reqStates map[string]map[string]generate.RequirementState) validationResult {
 	// Convert proposedIssue (from internal/github) to generate.ProposedIssue.
 	genIssues := make([]generate.ProposedIssue, len(issues))
 	for i, iss := range issues {
@@ -211,7 +211,7 @@ func validateMeasureOutput(issues []proposedIssue, maxReqs int, subItemCounts ma
 			Dependency:  iss.Dependency,
 		}
 	}
-	return generate.ValidateMeasureOutput(genIssues, maxReqs, subItemCounts)
+	return generate.ValidateMeasureOutput(genIssues, maxReqs, subItemCounts, reqStates)
 }
 
 func expandedRequirementCount(reqs []issueDescItem, subItemCounts map[string]map[string]int) int {
@@ -220,6 +220,10 @@ func expandedRequirementCount(reqs []issueDescItem, subItemCounts map[string]map
 
 func loadPRDSubItemCounts() map[string]map[string]int {
 	return generate.LoadPRDSubItemCounts()
+}
+
+func loadRequirementStates(cobblerDir string) map[string]map[string]generate.RequirementState {
+	return generate.LoadRequirementStates(cobblerDir)
 }
 
 func warnOversizedGroups(maxReqs int) {
