@@ -273,6 +273,12 @@ type CobblerConfig struct {
 	// the old behaviour of including test files.
 	MeasureExcludeTests *bool `yaml:"measure_exclude_tests"`
 
+	// StitchExcludeTests excludes *_test.go files from the stitch prompt
+	// context. Test files are not needed by the stitch agent, which writes
+	// production code. Default true (nil → true). Set
+	// stitch_exclude_tests: false to restore inclusion.
+	StitchExcludeTests *bool `yaml:"stitch_exclude_tests"`
+
 	// MeasureSourceMode controls how Go source files appear in the measure
 	// prompt. Valid values: "full" (default, verbatim inclusion), "headers"
 	// (exported declarations only, no function bodies), and "custom" (run
@@ -397,6 +403,16 @@ func (c *CobblerConfig) effectiveMeasureExcludeTests() bool {
 		return true
 	}
 	return *c.MeasureExcludeTests
+}
+
+// effectiveStitchExcludeTests returns whether *_test.go files should be
+// excluded from the stitch prompt. Nil (field absent in YAML) defaults to
+// true; an explicit false opts out.
+func (c *CobblerConfig) effectiveStitchExcludeTests() bool {
+	if c.StitchExcludeTests == nil {
+		return true
+	}
+	return *c.StitchExcludeTests
 }
 
 // DefaultConfig returns a Config populated with all default values.
