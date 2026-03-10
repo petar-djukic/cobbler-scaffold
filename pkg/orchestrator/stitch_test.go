@@ -1100,6 +1100,70 @@ func TestScopeSourceDirs_PkgNarrows(t *testing.T) {
 
 // --- commitWorktreeChanges (error path) ---
 
+// TestBuildStitchPrompt_ExcludeTests_DefaultTrue verifies that _test.go files
+// are excluded from the stitch prompt by default (nil StitchExcludeTests → true) (GH-1440).
+func TestBuildStitchPrompt_ExcludeTests_DefaultTrue(t *testing.T) {
+	// Uses os.Chdir via buildStitchPrompt — do NOT use t.Parallel()
+	tmp := t.TempDir()
+	pkgDir := filepath.Join(tmp, "pkg", "app")
+	os.MkdirAll(pkgDir, 0o755)
+	os.WriteFile(filepath.Join(pkgDir, "main.go"), []byte("package app\n"), 0o644)
+	os.WriteFile(filepath.Join(pkgDir, "main_test.go"), []byte("package app\n"), 0o644)
+
+	cfg := Config{}
+	cfg.Project.GoSourceDirs = []string{"pkg/"}
+	// StitchExcludeTests is nil → effectiveStitchExcludeTests() returns true.
+	o := New(cfg)
+
+	task := stitchTask{
+		ID:          "test-exclude",
+		Title:       "Exclude tests",
+		IssueType:   "code",
+		WorktreeDir: tmp,
+	}
+	out, err := o.buildStitchPrompt(task)
+	if err != nil {
+		t.Fatalf("buildStitchPrompt() error = %v", err)
+	}
+	if strings.Contains(out, "main_test.go") {
+		t.Error("_test.go should not appear in stitch prompt when StitchExcludeTests is unset (default true)")
+	}
+	if !strings.Contains(out, "main.go") {
+		t.Error("main.go should appear in stitch prompt")
+	}
+}
+
+// TestBuildStitchPrompt_ExcludeTests_DisabledFalse verifies that _test.go files
+// appear in the stitch prompt when StitchExcludeTests is explicitly false (GH-1440).
+func TestBuildStitchPrompt_ExcludeTests_DisabledFalse(t *testing.T) {
+	// Uses os.Chdir via buildStitchPrompt — do NOT use t.Parallel()
+	tmp := t.TempDir()
+	pkgDir := filepath.Join(tmp, "pkg", "app")
+	os.MkdirAll(pkgDir, 0o755)
+	os.WriteFile(filepath.Join(pkgDir, "main.go"), []byte("package app\n"), 0o644)
+	os.WriteFile(filepath.Join(pkgDir, "main_test.go"), []byte("package app\n"), 0o644)
+
+	f := false
+	cfg := Config{}
+	cfg.Project.GoSourceDirs = []string{"pkg/"}
+	cfg.Cobbler.StitchExcludeTests = &f
+	o := New(cfg)
+
+	task := stitchTask{
+		ID:          "test-include",
+		Title:       "Include tests",
+		IssueType:   "code",
+		WorktreeDir: tmp,
+	}
+	out, err := o.buildStitchPrompt(task)
+	if err != nil {
+		t.Fatalf("buildStitchPrompt() error = %v", err)
+	}
+	if !strings.Contains(out, "main_test.go") {
+		t.Error("_test.go should appear in stitch prompt when StitchExcludeTests=false")
+	}
+}
+
 func TestCommitWorktreeChanges_InvalidDir(t *testing.T) {
 	t.Parallel()
 	task := stitchTask{

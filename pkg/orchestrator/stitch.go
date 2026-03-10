@@ -418,6 +418,17 @@ func (o *Orchestrator) buildStitchPrompt(task stitchTask) (string, error) {
 		logf("buildStitchPrompt: no phase context file, using config defaults")
 	}
 
+	// Apply stitch_exclude_tests from config (GH-1440).
+	if o.cfg.Cobbler.effectiveStitchExcludeTests() {
+		if phaseCtx == nil {
+			phaseCtx = &PhaseContext{}
+		}
+		if !phaseCtx.ExcludeTests {
+			phaseCtx.ExcludeTests = true
+			logf("buildStitchPrompt: stitch_exclude_tests=true, _test.go files will be excluded")
+		}
+	}
+
 	// Build project context from the worktree directory.
 	var projectCtx *ProjectContext
 	if task.WorktreeDir != "" {
