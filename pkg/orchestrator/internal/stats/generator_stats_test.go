@@ -880,6 +880,97 @@ requirements:
 	}
 }
 
+// TestPrintGeneratorStats_WarnsWrongBranch verifies that a warning is printed
+// to stderr when the current branch does not match the generation branch (GH-1444).
+func TestPrintGeneratorStats_WarnsWrongBranch(t *testing.T) {
+	// Uses os.Chdir — do NOT use t.Parallel()
+	dir := t.TempDir()
+
+	orig, _ := os.Getwd()
+	t.Cleanup(func() { os.Chdir(orig) })
+	os.Chdir(dir)
+
+	// Capture stderr.
+	oldStderr := os.Stderr
+	r, w, _ := os.Pipe()
+	os.Stderr = w
+
+	deps := GeneratorStatsDeps{
+		Log: func(format string, args ...any) {},
+		ListGenerationBranches: func() []string { return []string{"generation-main"} },
+		GenerationBranch:       "generation-main",
+		CurrentBranch:          "main",
+		DetectGitHubRepo:       func() (string, error) { return "owner/repo", nil },
+		ListAllIssues: func(repo, generation string) ([]gh.CobblerIssue, error) {
+			return []gh.CobblerIssue{
+				{Number: 100, Title: "test task", State: "open", Labels: []string{"cobbler-task"}},
+			}, nil
+		},
+		HistoryDir: filepath.Join(dir, "history"),
+	}
+
+	err := PrintGeneratorStats(deps)
+	w.Close()
+	captured, _ := io.ReadAll(r)
+	os.Stderr = oldStderr
+	stderr := string(captured)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !strings.Contains(stderr, "warning: stats:generator should be run from the generation worktree") {
+		t.Errorf("expected warning on stderr, got: %q", stderr)
+	}
+	if !strings.Contains(stderr, "Expected branch: generation-main, current branch: main.") {
+		t.Errorf("expected branch names in warning, got: %q", stderr)
+	}
+}
+
+// TestPrintGeneratorStats_NoWarnWhenOnCorrectBranch verifies no warning is
+// printed when the current branch matches the generation branch.
+func TestPrintGeneratorStats_NoWarnWhenOnCorrectBranch(t *testing.T) {
+	// Uses os.Chdir — do NOT use t.Parallel()
+	dir := t.TempDir()
+
+	orig, _ := os.Getwd()
+	t.Cleanup(func() { os.Chdir(orig) })
+	os.Chdir(dir)
+
+	// Capture stderr.
+	oldStderr := os.Stderr
+	r, w, _ := os.Pipe()
+	os.Stderr = w
+
+	deps := GeneratorStatsDeps{
+		Log: func(format string, args ...any) {},
+		ListGenerationBranches: func() []string { return []string{"generation-main"} },
+		GenerationBranch:       "generation-main",
+		CurrentBranch:          "generation-main",
+		DetectGitHubRepo:       func() (string, error) { return "owner/repo", nil },
+		ListAllIssues: func(repo, generation string) ([]gh.CobblerIssue, error) {
+			return []gh.CobblerIssue{
+				{Number: 100, Title: "test task", State: "open", Labels: []string{"cobbler-task"}},
+			}, nil
+		},
+		HistoryDir: filepath.Join(dir, "history"),
+	}
+
+	err := PrintGeneratorStats(deps)
+	w.Close()
+	captured, _ := io.ReadAll(r)
+	os.Stderr = oldStderr
+	stderr := string(captured)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if strings.Contains(stderr, "warning") {
+		t.Errorf("expected no warning when on correct branch, got: %q", stderr)
+	}
+}
+
 // TestMeasureTaskIDZeroDisplaysAsMN verifies that a measure entry with
 // TaskID "0" (from a failed placeholder creation) displays as "M1" in the
 // stats table, not as "0" (GH-1438).

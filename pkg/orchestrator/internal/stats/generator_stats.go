@@ -100,6 +100,13 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 		genBranch = branches[0]
 	}
 
+	// Warn if the caller is not on the generation branch (GH-1444).
+	if deps.CurrentBranch != "" && deps.CurrentBranch != genBranch {
+		fmt.Fprintf(os.Stderr, "warning: stats:generator should be run from the generation worktree, not the main repo.\n"+
+			"Expected branch: %s, current branch: %s.\n"+
+			"Stats may be incomplete or incorrect.\n\n", genBranch, deps.CurrentBranch)
+	}
+
 	repo, err := deps.DetectGitHubRepo()
 	if err != nil || repo == "" {
 		return fmt.Errorf("detecting GitHub repo: %w", err)
