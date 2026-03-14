@@ -796,6 +796,103 @@ num_turns: 3
 	}
 }
 
+// TestPrintGeneratorStats_LOCDeltaIgnoresFailedEntries verifies that failed
+// stitch entries (with zero LOCAfter) do not corrupt the LOC delta (GH-1449).
+func TestPrintGeneratorStats_LOCDeltaIgnoresFailedEntries(t *testing.T) {
+	// Uses os.Chdir — do NOT use t.Parallel()
+	dir := t.TempDir()
+
+	histDir := filepath.Join(dir, "history")
+	os.MkdirAll(histDir, 0o755)
+
+	// Failed stitch: LOCBefore=2000, LOCAfter=0 (not set on failure).
+	failedYAML := `caller: stitch
+task_id: "823"
+task_title: "SetPriority"
+status: failed
+started_at: "2026-03-10T10:00:00Z"
+duration: "2m 0s"
+duration_s: 120
+tokens:
+  input: 80000
+  output: 3000
+  cache_creation: 0
+  cache_read: 0
+cost_usd: 0.50
+num_turns: 5
+loc_before:
+  production: 2000
+  test: 500
+loc_after:
+  production: 0
+  test: 0
+`
+	// Successful stitch: LOCBefore=694, LOCAfter=707.
+	successYAML := `caller: stitch
+task_id: "823"
+task_title: "SetPriority"
+status: done
+started_at: "2026-03-10T10:05:00Z"
+duration: "5m 0s"
+duration_s: 300
+tokens:
+  input: 125000
+  output: 5000
+  cache_creation: 0
+  cache_read: 0
+cost_usd: 1.00
+num_turns: 10
+loc_before:
+  production: 694
+  test: 100
+loc_after:
+  production: 707
+  test: 100
+`
+	os.WriteFile(filepath.Join(histDir, "2026-03-10-10-00-00-stitch-stats.yaml"), []byte(failedYAML), 0o644)
+	os.WriteFile(filepath.Join(histDir, "2026-03-10-10-05-00-stitch-stats.yaml"), []byte(successYAML), 0o644)
+
+	orig, _ := os.Getwd()
+	t.Cleanup(func() { os.Chdir(orig) })
+	os.Chdir(dir)
+
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	deps := GeneratorStatsDeps{
+		Log:                    func(format string, args ...any) {},
+		ListGenerationBranches: func() []string { return []string{"generation-main"} },
+		GenerationBranch:       "generation-main",
+		CurrentBranch:          "generation-main",
+		DetectGitHubRepo:       func() (string, error) { return "owner/repo", nil },
+		ListAllIssues: func(repo, generation string) ([]gh.CobblerIssue, error) {
+			return []gh.CobblerIssue{
+				{Number: 823, Title: "[stitch] SetPriority", State: "closed", Labels: []string{"cobbler-task"}},
+			}, nil
+		},
+		HistoryDir: histDir,
+	}
+
+	err := PrintGeneratorStats(deps)
+	w.Close()
+	captured, _ := io.ReadAll(r)
+	os.Stdout = oldStdout
+	output := string(captured)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Should show +13 prod (707-694), not -1375 (0-2000 + 707-694).
+	if !strings.Contains(output, "+13") {
+		t.Errorf("expected LOC delta +13 in output, got:\n%s", output)
+	}
+	if strings.Contains(output, "-1375") || strings.Contains(output, "-1987") {
+		t.Errorf("failed stitch entry corrupted LOC delta:\n%s", output)
+	}
+}
+
 // TestRequirementsCountUsesPerItemState verifies that the "Requirements: X/Y"
 // line counts actual non-ready R-items from requirements.yaml, not all R-items
 // in any touched PRD (GH-1437).

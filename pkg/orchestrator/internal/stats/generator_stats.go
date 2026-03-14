@@ -168,8 +168,14 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 			agg.NumTurns += hs.NumTurns
 			agg.InputTokens += hs.Tokens.Input
 			agg.OutputTokens += hs.Tokens.Output
-			agg.LocDeltaProd += hs.LOCAfter.Production - hs.LOCBefore.Production
-			agg.LocDeltaTest += hs.LOCAfter.Test - hs.LOCBefore.Test
+			// Use LOC delta only from entries with non-zero LOCAfter.
+			// Failed stitch entries record LOCBefore but no LOCAfter
+			// (zero-valued), producing a large negative delta that
+			// corrupts the sum (GH-1449). Take the last valid entry.
+			if hs.LOCAfter.Production > 0 || hs.LOCAfter.Test > 0 {
+				agg.LocDeltaProd = hs.LOCAfter.Production - hs.LOCBefore.Production
+				agg.LocDeltaTest = hs.LOCAfter.Test - hs.LOCBefore.Test
+			}
 		case "measure":
 			// Filter by generation: accept if generation matches genBranch,
 			// or if no entries have generation tags (backward compat).
