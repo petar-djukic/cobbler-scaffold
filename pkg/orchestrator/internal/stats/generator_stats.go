@@ -770,6 +770,10 @@ func ExtractPRDRefs(text string) []string {
 	var prds []string
 	for _, word := range strings.Fields(text) {
 		w := strings.ToLower(strings.Trim(word, ".,;:()[]`\"'"))
+		// Strip .yaml/.yml suffix so "prd001-foo.yaml" deduplicates with
+		// "prd001-foo" (GH-1448).
+		w = strings.TrimSuffix(w, ".yaml")
+		w = strings.TrimSuffix(w, ".yml")
 		if !strings.HasPrefix(w, "prd") || len(w) < 5 {
 			continue
 		}

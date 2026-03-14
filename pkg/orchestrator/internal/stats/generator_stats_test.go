@@ -268,6 +268,18 @@ func TestExtractPRDRefs(t *testing.T) {
 			text: "bare prd003 without hyphen-name is not a ref",
 			want: nil,
 		},
+		{
+			text: "prd001-testutils.yaml should strip yaml suffix",
+			want: []string{"prd001-testutils"},
+		},
+		{
+			text: "prd001-testutils and prd001-testutils.yaml deduplicate",
+			want: []string{"prd001-testutils"},
+		},
+		{
+			text: "prd-auth-flow.yml strips yml suffix too",
+			want: []string{"prd-auth-flow"},
+		},
 	}
 	for _, tc := range tests {
 		got := ExtractPRDRefs(tc.text)
