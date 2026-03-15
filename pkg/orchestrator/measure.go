@@ -154,6 +154,25 @@ func (o *Orchestrator) RunMeasure() error {
 	var totalTokens ClaudeResult
 	maxRetries := o.cfg.Cobbler.MaxMeasureRetries
 
+	// Create a single placeholder issue for the entire measure pass (GH-1467).
+	// Previously one placeholder was created per iteration, flooding the tracker.
+	placeholderNum, placeholderErr := createMeasuringPlaceholder(repo, generation, 0)
+	if placeholderErr != nil {
+		logf("measure: warning: createMeasuringPlaceholder: %v", placeholderErr)
+	}
+	placeholderResolved := false
+	if placeholderNum > 0 {
+		defer func() {
+			if !placeholderResolved {
+				closeMeasuringPlaceholderWithComment(repo, placeholderNum, "Measure did not complete; closed automatically.")
+			}
+		}()
+	}
+	taskID := ""
+	if placeholderNum > 0 {
+		taskID = fmt.Sprintf("%d", placeholderNum)
+	}
+
 	for i := 0; i < totalIssues; i++ {
 		logf("--- iteration %d/%d ---", i+1, totalIssues)
 
@@ -165,20 +184,6 @@ func (o *Orchestrator) RunMeasure() error {
 			} else {
 				existingIssues = refreshed
 			}
-		}
-
-		// Create a placeholder issue so users can see measure is running Claude.
-		placeholderNum, placeholderErr := createMeasuringPlaceholder(repo, generation, i+1)
-		if placeholderErr != nil {
-			logf("measure: warning: createMeasuringPlaceholder: %v", placeholderErr)
-		}
-		placeholderResolved := false
-		if placeholderNum > 0 {
-			defer func(num int) {
-				if !placeholderResolved {
-					closeMeasuringPlaceholderWithComment(repo, num, "Measure did not complete; closed automatically.")
-				}
-			}(placeholderNum)
 		}
 
 		var createdIDs []string
@@ -215,12 +220,6 @@ func (o *Orchestrator) RunMeasure() error {
 			totalTokens.CacheCreationTokens += tokens.CacheCreationTokens
 			totalTokens.CacheReadTokens += tokens.CacheReadTokens
 			totalTokens.CostUSD += tokens.CostUSD
-
-			// Build taskID once for both success and failure paths (GH-1438).
-			taskID := ""
-			if placeholderNum > 0 {
-				taskID = fmt.Sprintf("%d", placeholderNum)
-			}
 
 			if err != nil {
 				logf("Claude failed on iteration %d after %s: %v",
@@ -304,28 +303,6 @@ func (o *Orchestrator) RunMeasure() error {
 		}
 
 		logf("iteration %d imported %d issue(s)", i+1, len(createdIDs))
-
-		// Finalize the placeholder as a permanent [measure] issue (GH-1360).
-		// The placeholder is always separate from stitch tasks (GH-1367).
-		placeholderResolved = true
-		if placeholderNum > 0 {
-			// Parse created IDs as ints for sub-issue linking.
-			var childNums []int
-			for _, id := range createdIDs {
-				if n, err := fmt.Sscanf(id, "%d", new(int)); n == 1 && err == nil {
-					var v int
-					fmt.Sscanf(id, "%d", &v)
-					childNums = append(childNums, v)
-				}
-			}
-			comment := fmt.Sprintf("Measure completed. Created %d issue(s).", len(createdIDs))
-			if totalTokens.CostUSD > 0 {
-				comment += fmt.Sprintf("\nCost: $%.2f, Tokens: %din %dout",
-					totalTokens.CostUSD, totalTokens.InputTokens, totalTokens.OutputTokens)
-			}
-			finalizeMeasurePlaceholder(repo, placeholderNum, generation, comment, childNums)
-		}
-
 		allCreatedIDs = append(allCreatedIDs, createdIDs...)
 
 		if len(createdIDs) == 0 && lastOutputFile != "" {
@@ -333,6 +310,25 @@ func (o *Orchestrator) RunMeasure() error {
 		} else if lastOutputFile != "" {
 			os.Remove(lastOutputFile) // nolint: best-effort temp file cleanup
 		}
+	}
+
+	// Finalize the single placeholder with all created issues (GH-1467).
+	placeholderResolved = true
+	if placeholderNum > 0 {
+		var childNums []int
+		for _, id := range allCreatedIDs {
+			if n, err := fmt.Sscanf(id, "%d", new(int)); n == 1 && err == nil {
+				var v int
+				fmt.Sscanf(id, "%d", &v)
+				childNums = append(childNums, v)
+			}
+		}
+		comment := fmt.Sprintf("Measure completed. %d iteration(s), %d issue(s) created.", totalIssues, len(allCreatedIDs))
+		if totalTokens.CostUSD > 0 {
+			comment += fmt.Sprintf("\nCost: $%.2f, Tokens: %din %dout",
+				totalTokens.CostUSD, totalTokens.InputTokens, totalTokens.OutputTokens)
+		}
+		finalizeMeasurePlaceholder(repo, placeholderNum, generation, comment, childNums)
 	}
 
 	logf("completed %d iteration(s), %d issue(s) created in %s",
