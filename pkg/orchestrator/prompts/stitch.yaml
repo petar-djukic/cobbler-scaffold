@@ -25,3 +25,7 @@ constraints: |
   - Do NOT add features, refactoring, or improvements beyond what the requirements specify.
   - Do NOT run any git commands. No git add, git commit, git init, git status, rm .git, or any other git operation. Git is managed externally by the orchestrator. Just write code and verify it compiles and passes tests.
   - When building cmd/ binaries to verify compilation, use `go build -o bin/<name> ./cmd/<name>/` so outputs land in bin/ (which is git-ignored) rather than in the working directory.
+  - When a build or lint step fails, read ALL error and warning messages before making any changes. Fix every reported issue in a single edit pass, then run the build once to verify. Do not fix one issue, rebuild, fix the next — batch all fixes into one round.
+  - When modifying more than 3 locations in the same file, prefer the Write tool (full file replacement) over multiple Edit calls. Each Edit changes the file, invalidating old_string matches for subsequent Edits. Write avoids this by producing the complete file in one call.
+  - The test suite is the acceptance gate. Do not manually run binaries to compare output against reference implementations. Run `go test` and fix any failures. Manual comparison is only warranted when a test fails and the expected behavior is ambiguous.
+  - Complete all code changes before running `go build` or `go test`. Do not compile incrementally after each small edit. Mentally verify imports, types, and function signatures, then build once.
