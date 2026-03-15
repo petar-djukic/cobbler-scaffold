@@ -840,6 +840,15 @@ func (o *Orchestrator) GeneratorStop() error {
 		logf("generator:stop: caller was on %s; using it as merge target instead of recorded base %s", callerBranch, recordedBase)
 	}
 
+	// Commit any uncommitted history files (orchestrator logs, late stats)
+	// so they are captured in the finished tag for post-hoc analysis (GH-1452).
+	if hdir := o.historyDir(); hdir != "" {
+		if err := gitStageDir(hdir, "."); err == nil && gitHasChanges(".") {
+			logf("generator:stop: committing history files before tagging")
+			_ = gitCommit("Commit history files before generator:stop tag", ".")
+		}
+	}
+
 	logf("generator:stop: tagging as %s", finishedTag)
 	if err := gitTag(finishedTag, "."); err != nil {
 		return fmt.Errorf("tagging generation: %w", err)
@@ -851,8 +860,9 @@ func (o *Orchestrator) GeneratorStop() error {
 		return fmt.Errorf("checking out %s: %w", baseBranch, err)
 	}
 
-	// Clear history before merging so untracked history files from the
-	// generation do not persist on disk across branches (GH-1356).
+	// Clean up untracked history files on the base branch so they don't
+	// persist across branches (GH-1356). The history is preserved in the
+	// finished tag above (GH-1452).
 	if err := o.HistoryClean(); err != nil {
 		logf("generator:stop: warning clearing history: %v", err)
 	}

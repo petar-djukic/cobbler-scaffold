@@ -1767,6 +1767,76 @@ releases:
 	// No error, no commit — just a no-op.
 }
 
+// TestGeneratorStop_CommitsHistoryBeforeTag verifies that uncommitted history
+// files (e.g. orchestrator logs) are committed before the -finished tag so
+// they are preserved for post-hoc analysis (GH-1452).
+func TestGeneratorStop_CommitsHistoryBeforeTag(t *testing.T) {
+	// Uses os.Chdir — do NOT use t.Parallel()
+	dir := initTestGitRepo(t)
+
+	// Create .cobbler/history with a committed stats file.
+	cobblerDir := filepath.Join(dir, ".cobbler")
+	histDir := filepath.Join(cobblerDir, "history")
+	os.MkdirAll(histDir, 0o755)
+	os.WriteFile(filepath.Join(histDir, "stitch-stats.yaml"), []byte("caller: stitch\n"), 0o644)
+
+	// Write base-branch so GeneratorStop knows where to merge.
+	os.WriteFile(filepath.Join(cobblerDir, "base-branch"), []byte("main\n"), 0o644)
+
+	// Commit everything on main, then create a generation branch.
+	cmd := exec.Command("git", "add", "-A")
+	cmd.Dir = dir
+	cmd.CombinedOutput()
+	cmd = exec.Command("git", "commit", "-m", "add cobbler dir")
+	cmd.Dir = dir
+	cmd.CombinedOutput()
+
+	cmd = exec.Command("git", "checkout", "-b", "generation-test")
+	cmd.Dir = dir
+	cmd.CombinedOutput()
+
+	// Add a committed file on the generation branch.
+	os.WriteFile(filepath.Join(histDir, "measure-stats.yaml"), []byte("caller: measure\n"), 0o644)
+	cmd = exec.Command("git", "add", "-A")
+	cmd.Dir = dir
+	cmd.CombinedOutput()
+	cmd = exec.Command("git", "commit", "-m", "generation work")
+	cmd.Dir = dir
+	cmd.CombinedOutput()
+
+	// Add an UNCOMMITTED orchestrator log — this is the file GH-1452 is about.
+	os.WriteFile(filepath.Join(histDir, "stitch-orchestrator.log"), []byte("orchestrator log content\n"), 0o644)
+
+	o := &Orchestrator{cfg: Config{
+		Generation: GenerationConfig{
+			Prefix:          "generation-",
+			Branch:          "generation-test",
+			PreserveSources: true,
+		},
+		Cobbler: CobblerConfig{Dir: ".cobbler", HistoryDir: "history"},
+	}}
+
+	err := o.GeneratorStop()
+	if err != nil {
+		t.Fatalf("GeneratorStop error: %v", err)
+	}
+
+	// The -finished tag should contain the orchestrator log.
+	out, err := exec.Command("git", "show", "generation-test-finished:.cobbler/history/stitch-orchestrator.log").CombinedOutput()
+	if err != nil {
+		t.Fatalf("orchestrator log not in -finished tag: %v\n%s", err, out)
+	}
+	if !strings.Contains(string(out), "orchestrator log content") {
+		t.Errorf("orchestrator log content mismatch: %s", out)
+	}
+
+	// The committed stats file should also be in the tag.
+	out, err = exec.Command("git", "show", "generation-test-finished:.cobbler/history/measure-stats.yaml").CombinedOutput()
+	if err != nil {
+		t.Fatalf("measure-stats.yaml not in -finished tag: %v\n%s", err, out)
+	}
+}
+
 func TestResetImplementedReleases_NoRoadmap(t *testing.T) {
 	initTestGitRepo(t)
 
