@@ -671,6 +671,7 @@ func (t *GitHubTracker) ListAllCobblerIssues(repo, generation string) ([]Cobbler
 	label := GenLabel(generation)
 	out, err := exec.Command(t.GhBin, "api",
 		"--method", "GET",
+		"--paginate",
 		fmt.Sprintf("repos/%s/issues", repo),
 		"-f", "state=all",
 		"-f", "labels="+label,

@@ -108,25 +108,13 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 			"Stats may be incomplete or incorrect.\n\n", genBranch, deps.CurrentBranch)
 	}
 
-	repo, err := deps.DetectGitHubRepo()
-	if err != nil || repo == "" {
-		return fmt.Errorf("detecting GitHub repo: %w", err)
-	}
-
-	issues, err := deps.ListAllIssues(repo, genBranch)
-	if err != nil {
-		return fmt.Errorf("listing cobbler issues for %s: %w", genBranch, err)
-	}
-	if len(issues) == 0 {
-		fmt.Printf("generation %s: no task issues found\n", genBranch)
-		return nil
-	}
-
-	// Load local history stats if available.
+	// Load local history stats as the primary data source (GH-1450).
+	// History files contain all tasks regardless of GitHub API pagination.
 	historyStats, _ := LoadHistoryStats(deps.HistoryDir)
 
-	// Build lookup maps from history data: task_id → aggregated stitch stats.
+	// Build aggregated stitch stats and task metadata from history entries.
 	type stitchAgg struct {
+		Title        string
 		CostUSD      float64
 		DurationS    int
 		NumTurns     int
@@ -134,8 +122,11 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 		OutputTokens int
 		LocDeltaProd int
 		LocDeltaTest int
+		LastStatus   string // last history entry status: "success" or "failed"
+		StartedAt    string // earliest StartedAt for chronological ordering
 	}
 	stitchByTask := make(map[string]*stitchAgg)
+	var taskOrder []string // insertion order for deterministic iteration
 	var measureEntries []cl.HistoryStats
 
 	// Determine whether any history entries carry a generation tag. If so,
@@ -160,6 +151,10 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 			if agg == nil {
 				agg = &stitchAgg{}
 				stitchByTask[tid] = agg
+				taskOrder = append(taskOrder, tid)
+			}
+			if hs.TaskTitle != "" {
+				agg.Title = hs.TaskTitle
 			}
 			agg.CostUSD += hs.CostUSD
 			if hs.DurationS > agg.DurationS {
@@ -176,6 +171,12 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 				agg.LocDeltaProd = hs.LOCAfter.Production - hs.LOCBefore.Production
 				agg.LocDeltaTest = hs.LOCAfter.Test - hs.LOCBefore.Test
 			}
+			if hs.Status != "" {
+				agg.LastStatus = hs.Status
+			}
+			if agg.StartedAt == "" || (hs.StartedAt != "" && hs.StartedAt < agg.StartedAt) {
+				agg.StartedAt = hs.StartedAt
+			}
 		case "measure":
 			// Filter by generation: accept if generation matches genBranch,
 			// or if no entries have generation tags (backward compat).
@@ -186,60 +187,103 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 		}
 	}
 
-	// Separate measure issues ([measuring]/[measure]) from stitch tasks.
-	// In-progress [measuring] issues become measure table rows (GH-1365).
-	var stitchIssues []gh.CobblerIssue
+	// Fetch GitHub issues as supplementary data (non-fatal). GitHub provides
+	// accurate open/closed state and labels. History is the primary source
+	// for the task list so we don't miss tasks beyond the API page limit
+	// (GH-1450).
+	var ghIssueMap map[int]gh.CobblerIssue // number → issue
 	var activeMeasureIssues []gh.CobblerIssue
-	measureIssuesSeen := make(map[int]bool) // track finalized measure issue numbers
-	for _, iss := range issues {
-		if strings.HasPrefix(iss.Title, "[measuring] ") || strings.HasPrefix(iss.Title, "[measure] ") {
-			if iss.State == "open" {
-				activeMeasureIssues = append(activeMeasureIssues, iss)
+	if deps.DetectGitHubRepo != nil && deps.ListAllIssues != nil {
+		repo, err := deps.DetectGitHubRepo()
+		if err == nil && repo != "" {
+			issues, issErr := deps.ListAllIssues(repo, genBranch)
+			if issErr == nil {
+				ghIssueMap = make(map[int]gh.CobblerIssue, len(issues))
+				for _, iss := range issues {
+					if strings.HasPrefix(iss.Title, "[measuring] ") || strings.HasPrefix(iss.Title, "[measure] ") {
+						if iss.State == "open" {
+							activeMeasureIssues = append(activeMeasureIssues, iss)
+						}
+						continue
+					}
+					ghIssueMap[iss.Number] = iss
+				}
 			}
-			measureIssuesSeen[iss.Number] = true
-			continue
 		}
-		stitchIssues = append(stitchIssues, iss)
 	}
 
-	// Collect per-issue stats.
-	rows := make([]GeneratorIssueStats, 0, len(stitchIssues))
+	if len(stitchByTask) == 0 && len(ghIssueMap) == 0 {
+		fmt.Printf("generation %s: no task issues found\n", genBranch)
+		return nil
+	}
+
+	// Build rows from history-derived task list.
+	rows := make([]GeneratorIssueStats, 0, len(stitchByTask))
 	var totalStitchCost float64
 	var totalTurns, totalLocProd, totalLocTest, totalReqs int
 	var totalInputTokens, totalOutputTokens int
 	var nDone, nFailed, nInProgress, nPending int
 	prdStatus := make(map[string]string) // prd name → highest-priority status
 	prdReleaseMap := BuildPRDReleaseMap()
+	seen := make(map[string]bool) // track task IDs already added
 
-	for _, iss := range stitchIssues {
-		s := GeneratorIssueStats{CobblerIssue: iss}
+	for _, tid := range taskOrder {
+		agg := stitchByTask[tid]
+		seen[tid] = true
 
-		switch {
-		case iss.State == "closed" && !gh.HasLabel(iss, "failed"):
+		num, _ := strconv.Atoi(tid)
+		s := GeneratorIssueStats{
+			CobblerIssue: gh.CobblerIssue{
+				Number: num,
+				Title:  agg.Title,
+			},
+			CostUSD:      agg.CostUSD,
+			DurationS:    agg.DurationS,
+			NumTurns:     agg.NumTurns,
+			InputTokens:  agg.InputTokens,
+			OutputTokens: agg.OutputTokens,
+			LocDeltaProd: agg.LocDeltaProd,
+			LocDeltaTest: agg.LocDeltaTest,
+		}
+
+		// Derive status from history; override with GitHub data when available.
+		switch agg.LastStatus {
+		case "success":
 			s.Status = "done"
-			nDone++
-		case iss.State == "closed":
+		case "failed":
 			s.Status = "failed"
-			nFailed++
-		case gh.HasLabel(iss, gh.LabelInProgress):
+		default:
 			s.Status = "in-progress"
+		}
+		if ghIss, ok := ghIssueMap[num]; ok {
+			s.Title = ghIss.Title // prefer GitHub title (may be more current)
+			s.Description = ghIss.Description
+			s.State = ghIss.State
+			s.Labels = ghIss.Labels
+			// Refine status from GitHub state + labels.
+			switch {
+			case ghIss.State == "closed" && !gh.HasLabel(ghIss, "failed"):
+				s.Status = "done"
+			case ghIss.State == "closed":
+				s.Status = "failed"
+			case gh.HasLabel(ghIss, gh.LabelInProgress):
+				s.Status = "in-progress"
+			case ghIss.State == "open":
+				s.Status = "pending"
+			}
+		}
+
+		switch s.Status {
+		case "done":
+			nDone++
+		case "failed":
+			nFailed++
+		case "in-progress":
 			nInProgress++
 		default:
-			s.Status = "pending"
 			nPending++
 		}
 
-		// Use local history data as the single source of truth (GH-1366).
-		taskID := fmt.Sprintf("%d", iss.Number)
-		if agg, ok := stitchByTask[taskID]; ok {
-			s.CostUSD = agg.CostUSD
-			s.DurationS = agg.DurationS
-			s.NumTurns = agg.NumTurns
-			s.InputTokens = agg.InputTokens
-			s.OutputTokens = agg.OutputTokens
-			s.LocDeltaProd = agg.LocDeltaProd
-			s.LocDeltaTest = agg.LocDeltaTest
-		}
 		totalStitchCost += s.CostUSD
 		totalTurns += s.NumTurns
 		totalLocProd += s.LocDeltaProd
@@ -247,12 +291,12 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 		totalInputTokens += s.InputTokens
 		totalOutputTokens += s.OutputTokens
 
-		s.NumReqs = CountDescriptionReqs(iss.Description)
+		s.NumReqs = CountDescriptionReqs(s.Description)
 		totalReqs += s.NumReqs
 
 		// Extract release directly from title; fall back to PRD mapping.
-		s.Release = ExtractRelease(iss.Title)
-		s.PRDs = ExtractPRDRefs(iss.Title + " " + iss.Description)
+		s.Release = ExtractRelease(s.Title)
+		s.PRDs = ExtractPRDRefs(s.Title + " " + s.Description)
 		for _, prd := range s.PRDs {
 			if s.Release == "" {
 				if rel, ok := prdReleaseMap[prd]; ok {
@@ -274,6 +318,55 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 			}
 		}
 
+		rows = append(rows, s)
+	}
+
+	// Add GitHub-only tasks not seen in history (e.g., pending tasks with
+	// no stitch run yet).
+	for _, ghIss := range ghIssueMap {
+		tid := strconv.Itoa(ghIss.Number)
+		if seen[tid] {
+			continue
+		}
+		s := GeneratorIssueStats{CobblerIssue: ghIss}
+		switch {
+		case ghIss.State == "closed" && !gh.HasLabel(ghIss, "failed"):
+			s.Status = "done"
+			nDone++
+		case ghIss.State == "closed":
+			s.Status = "failed"
+			nFailed++
+		case gh.HasLabel(ghIss, gh.LabelInProgress):
+			s.Status = "in-progress"
+			nInProgress++
+		default:
+			s.Status = "pending"
+			nPending++
+		}
+		s.NumReqs = CountDescriptionReqs(ghIss.Description)
+		totalReqs += s.NumReqs
+		s.Release = ExtractRelease(ghIss.Title)
+		s.PRDs = ExtractPRDRefs(ghIss.Title + " " + ghIss.Description)
+		for _, prd := range s.PRDs {
+			if s.Release == "" {
+				if rel, ok := prdReleaseMap[prd]; ok {
+					s.Release = rel
+				}
+			}
+			existing := prdStatus[prd]
+			switch s.Status {
+			case "in-progress":
+				prdStatus[prd] = "in-progress"
+			case "pending":
+				if existing == "" {
+					prdStatus[prd] = "pending"
+				}
+			case "done", "failed":
+				if existing == "" {
+					prdStatus[prd] = s.Status
+				}
+			}
+		}
 		rows = append(rows, s)
 	}
 
@@ -426,13 +519,10 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 		if len(tr.Title) > 48 {
 			tr.Title = tr.Title[:45] + "..."
 		}
-		// Look up StartedAt from the first stitch history entry for this task.
-		taskID := fmt.Sprintf("%d", r.Number)
-		for _, hs := range historyStats {
-			if hs.Caller == "stitch" && hs.TaskID == taskID {
-				tr.SortTime = hs.StartedAt
-				break
-			}
+		// Use StartedAt from the aggregated stitch data.
+		taskID := strconv.Itoa(r.Number)
+		if agg, ok := stitchByTask[taskID]; ok {
+			tr.SortTime = agg.StartedAt
 		}
 		tableRows = append(tableRows, tr)
 	}

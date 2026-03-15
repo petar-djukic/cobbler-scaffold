@@ -703,6 +703,109 @@ func TestLoadHistoryStats_SkipsInvalidYAML(t *testing.T) {
 
 // --- PrintGeneratorStats with history ---
 
+// TestPrintGeneratorStats_HistoryOnly verifies that stats can be built
+// entirely from local history files without GitHub API (GH-1450).
+func TestPrintGeneratorStats_HistoryOnly(t *testing.T) {
+	// Uses os.Chdir — do NOT use t.Parallel()
+	dir := t.TempDir()
+
+	histDir := filepath.Join(dir, "history")
+	os.MkdirAll(histDir, 0o755)
+
+	// Two stitch tasks: one succeeded, one failed.
+	stitch1 := `caller: stitch
+task_id: "100"
+task_title: "[stitch] prd001 R1 implement feature"
+status: success
+started_at: "2026-03-08T12:00:00Z"
+duration: "5m 32s"
+duration_s: 332
+tokens:
+  input: 125000
+  output: 5000
+  cache_creation: 0
+  cache_read: 0
+cost_usd: 1.50
+num_turns: 15
+loc_before:
+  production: 500
+  test: 200
+loc_after:
+  production: 580
+  test: 240
+`
+	stitch2 := `caller: stitch
+task_id: "101"
+task_title: "[stitch] prd002 R1 another feature"
+status: failed
+started_at: "2026-03-08T13:00:00Z"
+duration: "2m 10s"
+duration_s: 130
+tokens:
+  input: 80000
+  output: 3000
+  cache_creation: 0
+  cache_read: 0
+cost_usd: 0.80
+num_turns: 8
+loc_before:
+  production: 580
+  test: 240
+loc_after:
+  production: 0
+  test: 0
+`
+	os.WriteFile(filepath.Join(histDir, "2026-03-08-12-00-00-stitch-stats.yaml"), []byte(stitch1), 0o644)
+	os.WriteFile(filepath.Join(histDir, "2026-03-08-13-00-00-stitch-stats.yaml"), []byte(stitch2), 0o644)
+
+	orig, _ := os.Getwd()
+	t.Cleanup(func() { os.Chdir(orig) })
+	os.Chdir(dir)
+
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	deps := GeneratorStatsDeps{
+		Log:                    func(format string, args ...any) {},
+		ListGenerationBranches: func() []string { return []string{"generation-main"} },
+		GenerationBranch:       "generation-main",
+		CurrentBranch:          "generation-main",
+		// No DetectGitHubRepo or ListAllIssues — history-only mode.
+		HistoryDir: histDir,
+	}
+
+	err := PrintGeneratorStats(deps)
+	w.Close()
+	captured, _ := io.ReadAll(r)
+	os.Stdout = oldStdout
+	output := string(captured)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Both tasks should appear.
+	if !strings.Contains(output, "100") {
+		t.Errorf("task 100 missing from output:\n%s", output)
+	}
+	if !strings.Contains(output, "101") {
+		t.Errorf("task 101 missing from output:\n%s", output)
+	}
+	// Task 100 should be "done" (status: success).
+	if !strings.Contains(output, "done") {
+		t.Errorf("expected 'done' status in output:\n%s", output)
+	}
+	// Task 101 should be "failed".
+	if !strings.Contains(output, "failed") {
+		t.Errorf("expected 'failed' status in output:\n%s", output)
+	}
+	// Should show cost totals.
+	if !strings.Contains(output, "$2.30") {
+		t.Errorf("expected total cost $2.30 in output:\n%s", output)
+	}
+}
+
 func TestPrintGeneratorStats_PrefersHistoryOverComments(t *testing.T) {
 	// Uses os.Chdir — do NOT use t.Parallel()
 	dir := t.TempDir()
