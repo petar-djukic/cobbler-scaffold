@@ -429,6 +429,21 @@ func (o *Orchestrator) buildStitchPrompt(task stitchTask) (string, error) {
 		}
 	}
 
+	// Exclude PRDs from stitch context — Claude reads them via required_reading
+	// instead. This avoids double-delivery (inline + Read tool) and shrinks the
+	// prompt by 10-30KB (GH-1464).
+	{
+		if phaseCtx == nil {
+			phaseCtx = &PhaseContext{}
+		}
+		prdExclude := "docs/specs/product-requirements/prd*.yaml"
+		if phaseCtx.Exclude == "" {
+			phaseCtx.Exclude = prdExclude
+		} else {
+			phaseCtx.Exclude = phaseCtx.Exclude + "\n" + prdExclude
+		}
+	}
+
 	// Build project context from the worktree directory.
 	var projectCtx *ProjectContext
 	if task.WorktreeDir != "" {
