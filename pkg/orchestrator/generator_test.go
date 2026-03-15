@@ -1888,6 +1888,56 @@ func TestResetImplementedReleases_RevertsUCStatuses(t *testing.T) {
 	}
 }
 
+// TestStripGoModRequires verifies that require and replace blocks are
+// removed from go.mod, keeping only module and go version (GH-1468).
+func TestStripGoModRequires(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	gomod := filepath.Join(dir, "go.mod")
+
+	content := `module example.com/test
+
+go 1.25.7
+
+require (
+	github.com/stretchr/testify v1.9.0
+	gopkg.in/yaml.v3 v3.0.1
+)
+
+require github.com/single/dep v1.0.0
+
+replace github.com/foo/bar => ./bar
+`
+	os.WriteFile(gomod, []byte(content), 0o644)
+
+	stripGoModRequires(gomod)
+
+	data, err := os.ReadFile(gomod)
+	if err != nil {
+		t.Fatalf("cannot read go.mod: %v", err)
+	}
+	result := string(data)
+
+	if strings.Contains(result, "require") {
+		t.Errorf("go.mod still contains require after strip:\n%s", result)
+	}
+	if strings.Contains(result, "replace") {
+		t.Errorf("go.mod still contains replace after strip:\n%s", result)
+	}
+	if !strings.Contains(result, "module example.com/test") {
+		t.Errorf("go.mod missing module line:\n%s", result)
+	}
+	if !strings.Contains(result, "go 1.25.7") {
+		t.Errorf("go.mod missing go version:\n%s", result)
+	}
+}
+
+func TestStripGoModRequires_NoFile(t *testing.T) {
+	t.Parallel()
+	// Should not panic on missing file.
+	stripGoModRequires("/nonexistent/go.mod")
+}
+
 func TestResetImplementedReleases_NoRoadmap(t *testing.T) {
 	initTestGitRepo(t)
 

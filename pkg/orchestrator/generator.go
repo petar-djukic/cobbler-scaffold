@@ -1302,14 +1302,55 @@ func (o *Orchestrator) resetGoSources(version string) error {
 	return o.reinitGoModule()
 }
 
-// cleanGoSources removes all Go files, empty source directories, and the
-// binary directory without re-seeding files or reinitializing the module.
+// cleanGoSources removes all Go files, empty source directories, the
+// binary directory, go.sum, and require/replace blocks from go.mod.
+// After this call the working tree contains only specs and a minimal
+// go.mod (module + go version) (GH-1468).
 func (o *Orchestrator) cleanGoSources() {
 	o.deleteGoFiles(".")
 	for _, dir := range o.cfg.Project.GoSourceDirs {
 		removeEmptyDirs(dir)
 	}
 	os.RemoveAll(o.cfg.Project.BinaryDir + "/")
+	_ = os.Remove("go.sum") // best-effort; may not exist
+	stripGoModRequires("go.mod")
+}
+
+// stripGoModRequires rewrites go.mod to keep only the module declaration
+// and go version, removing require and replace blocks.
+func stripGoModRequires(path string) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return // file absent — nothing to clean
+	}
+	var kept []string
+	inBlock := false
+	for _, line := range strings.Split(string(data), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "require ") && strings.HasSuffix(trimmed, "(") {
+			inBlock = true
+			continue
+		}
+		if strings.HasPrefix(trimmed, "replace ") && strings.HasSuffix(trimmed, "(") {
+			inBlock = true
+			continue
+		}
+		if inBlock {
+			if trimmed == ")" {
+				inBlock = false
+			}
+			continue
+		}
+		// Skip single-line require/replace directives.
+		if strings.HasPrefix(trimmed, "require ") || strings.HasPrefix(trimmed, "replace ") {
+			continue
+		}
+		kept = append(kept, line)
+	}
+	result := strings.Join(kept, "\n")
+	// Ensure single trailing newline.
+	result = strings.TrimRight(result, "\n") + "\n"
+	_ = os.WriteFile(path, []byte(result), 0o644)
 }
 
 // seedFiles creates the configured seed files using Go templates.
