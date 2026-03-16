@@ -226,6 +226,25 @@ func loadRequirementStates(cobblerDir string) map[string]map[string]generate.Req
 	return generate.LoadRequirementStates(cobblerDir)
 }
 
+// hasUnresolvedRequirements returns true if any R-item in requirements.yaml
+// has status "ready" (not yet implemented or skipped). Used to prevent the
+// generator from stopping prematurely when the GitHub API reports no open
+// issues but work remains (GH-1475).
+func (o *Orchestrator) hasUnresolvedRequirements() bool {
+	states := generate.LoadRequirementStates(o.cfg.Cobbler.Dir)
+	if states == nil {
+		return false
+	}
+	for _, prdReqs := range states {
+		for _, st := range prdReqs {
+			if st.Status == "ready" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func warnOversizedGroups(maxReqs int) {
 	generate.WarnOversizedGroups(maxReqs)
 }
@@ -471,8 +490,21 @@ func (o *Orchestrator) RunCycles(label string) error {
 			logf("generator %s: hasOpenIssues error (assuming open): %v", label, err)
 		}
 		if !open && err == nil {
-			logf("generator %s: no open issues remain, stopping after %d cycle(s)", label, cycle)
-			break
+			// Before stopping, check if unresolved requirements remain.
+			// The GitHub API may report no open issues due to a race
+			// condition (stale cache after closing the last task). If
+			// requirements are still "ready", run measure to create new
+			// tasks instead of stopping prematurely (GH-1475).
+			if o.hasUnresolvedRequirements() {
+				logf("generator %s: cycle %d — no open issues but unresolved requirements remain, running measure",
+					label, cycle)
+				if err := o.RunMeasure(); err != nil {
+					return fmt.Errorf("cycle %d measure (fallback): %w", cycle, err)
+				}
+			} else {
+				logf("generator %s: no open issues remain, stopping after %d cycle(s)", label, cycle)
+				break
+			}
 		}
 		logf("generator %s: open issues remain, continuing to cycle %d", label, cycle+1)
 	}

@@ -1946,3 +1946,53 @@ func TestResetImplementedReleases_NoRoadmap(t *testing.T) {
 		t.Fatalf("resetImplementedReleases error: %v", err)
 	}
 }
+
+// --- hasUnresolvedRequirements (GH-1475) ---
+
+func TestHasUnresolvedRequirements_ReadyItems(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, ".cobbler"), 0o755)
+	reqYAML := `requirements:
+  prd001-core:
+    R1.1:
+      status: complete
+      issue: 10
+    R1.2:
+      status: ready
+`
+	os.WriteFile(filepath.Join(dir, ".cobbler", "requirements.yaml"), []byte(reqYAML), 0o644)
+
+	o := &Orchestrator{cfg: Config{Cobbler: CobblerConfig{Dir: filepath.Join(dir, ".cobbler")}}}
+	if !o.hasUnresolvedRequirements() {
+		t.Error("expected true: R1.2 is still ready")
+	}
+}
+
+func TestHasUnresolvedRequirements_AllComplete(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, ".cobbler"), 0o755)
+	reqYAML := `requirements:
+  prd001-core:
+    R1.1:
+      status: complete
+      issue: 10
+    R1.2:
+      status: skip
+`
+	os.WriteFile(filepath.Join(dir, ".cobbler", "requirements.yaml"), []byte(reqYAML), 0o644)
+
+	o := &Orchestrator{cfg: Config{Cobbler: CobblerConfig{Dir: filepath.Join(dir, ".cobbler")}}}
+	if o.hasUnresolvedRequirements() {
+		t.Error("expected false: all items are complete or skip")
+	}
+}
+
+func TestHasUnresolvedRequirements_NoFile(t *testing.T) {
+	t.Parallel()
+	o := &Orchestrator{cfg: Config{Cobbler: CobblerConfig{Dir: "/nonexistent"}}}
+	if o.hasUnresolvedRequirements() {
+		t.Error("expected false: no requirements file")
+	}
+}
