@@ -22,7 +22,7 @@ type TagParams struct {
 // on the same date. Optionally updates the version file if configured.
 func Tag(p TagParams) error {
 	// Ensure we're on the configured base branch for doc tags.
-	current, err := GitCurrentBranchFn(".")
+	current, err := GitReader.CurrentBranch(".")
 	if err != nil {
 		return fmt.Errorf("getting current branch: %w", err)
 	}
@@ -42,7 +42,7 @@ func Tag(p TagParams) error {
 	Log("tag: creating documentation release %s", tag)
 
 	// Create the git tag.
-	if err := GitTagFn(tag, "."); err != nil {
+	if err := GitTags.Tag(tag, "."); err != nil {
 		return fmt.Errorf("creating tag %s: %w", tag, err)
 	}
 
@@ -52,8 +52,8 @@ func Tag(p TagParams) error {
 		if err := WriteVersionConst(p.VersionFile, tag); err != nil {
 			return fmt.Errorf("tag %s created but version file update failed: %w", tag, err)
 		}
-		_ = GitStageAllFn(".") // best-effort; commit below handles empty index
-		if err := GitCommitFn(fmt.Sprintf("Set version to %s", tag), "."); err != nil {
+		_ = GitCommitter.StageAll(".") // best-effort; commit below handles empty index
+		if err := GitCommitter.Commit(fmt.Sprintf("Set version to %s", tag), "."); err != nil {
 			Log("tag: version commit warning: %v", err)
 		}
 	}
@@ -67,7 +67,7 @@ func Tag(p TagParams) error {
 // highest existing revision + 1.
 func NextDocRevision(prefix, date string) int {
 	pattern := fmt.Sprintf("%s%s.*", prefix, date)
-	tags := GitListTagsFn(pattern, ".")
+	tags := GitTags.ListTags(pattern, ".")
 	if len(tags) == 0 {
 		return 0
 	}

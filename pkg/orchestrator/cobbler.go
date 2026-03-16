@@ -189,7 +189,7 @@ func (o *Orchestrator) hasOpenIssues() (bool, error) {
 		DetectGitHubRepoFn: func(repoRoot string) (string, error) {
 			return detectGitHubRepo(repoRoot, o.cfg)
 		},
-		GitCurrentBranchFn: gitCurrentBranch,
+		GitReader: defaultGitOps,
 		ListOpenCobblerIssuesFn: func(repo, branch string) (int, error) {
 			issues, err := listOpenCobblerIssues(repo, branch)
 			return len(issues), err

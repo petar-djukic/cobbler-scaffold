@@ -77,31 +77,18 @@ var prdRefPattern = generate.PRDRefPattern
 
 func genGitDeps() generate.GitDeps {
 	return generate.GitDeps{
-		Checkout:      gitCheckout,
-		CurrentBranch: gitCurrentBranch,
-		StageAll:      gitStageAll,
-		UnstageAll:    gitUnstageAll,
-		Commit:        gitCommit,
-		HasChanges:    gitHasChanges,
-		Stash:         gitStash,
+		RepoReader:    defaultGitOps,
+		BranchManager: defaultGitOps,
+		CommitWriter:  defaultGitOps,
 	}
 }
 
 // stitchGitDeps builds the StitchGitDeps struct for stitch operations.
 func stitchGitDeps() generate.StitchGitDeps {
 	return generate.StitchGitDeps{
-		BranchExists:      gitBranchExists,
-		CreateBranch:      gitCreateBranch,
-		DeleteBranch:      gitDeleteBranch,
-		ForceDeleteBranch: gitForceDeleteBranch,
-		ListBranches:      gitListBranches,
-		WorktreeAdd:       gitWorktreeAdd,
-		WorktreeRemove:    gitWorktreeRemove,
-		WorktreePrune:     gitWorktreePrune,
-		Checkout:          gitCheckout,
-		CurrentBranch:     gitCurrentBranch,
-		MergeCmd:          gitMergeCmd,
-		RevParseHEAD:      gitRevParseHEAD,
+		RepoReader:      defaultGitOps,
+		BranchManager:   defaultGitOps,
+		WorktreeManager: defaultGitOps,
 	}
 }
 

@@ -11,7 +11,21 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/gitops"
 )
+
+// stubRepoReader implements gitops.RepoReader for tests. Only CurrentBranch
+// is wired; other methods panic if called unexpectedly.
+type stubRepoReader struct {
+	gitops.ShellGitOps // provides default implementations
+	branch             string
+	branchErr          error
+}
+
+func (s *stubRepoReader) CurrentBranch(dir string) (string, error) {
+	return s.branch, s.branchErr
+}
 
 // ---------------------------------------------------------------------------
 // ParseClaudeTokens
@@ -457,7 +471,7 @@ func TestCaptureLOCAt_WithDir(t *testing.T) {
 func TestHasOpenIssues_HasIssues(t *testing.T) {
 	deps := HasOpenIssuesDeps{
 		DetectGitHubRepoFn:      func(root string) (string, error) { return "owner/repo", nil },
-		GitCurrentBranchFn:      func(dir string) (string, error) { return "gen-1", nil },
+		GitReader:               &stubRepoReader{branch: "gen-1"},
 		ListOpenCobblerIssuesFn: func(repo, branch string) (int, error) { return 3, nil },
 	}
 	got, err := HasOpenIssues(deps)
@@ -472,7 +486,7 @@ func TestHasOpenIssues_HasIssues(t *testing.T) {
 func TestHasOpenIssues_NoIssues(t *testing.T) {
 	deps := HasOpenIssuesDeps{
 		DetectGitHubRepoFn:      func(root string) (string, error) { return "owner/repo", nil },
-		GitCurrentBranchFn:      func(dir string) (string, error) { return "gen-1", nil },
+		GitReader:               &stubRepoReader{branch: "gen-1"},
 		ListOpenCobblerIssuesFn: func(repo, branch string) (int, error) { return 0, nil },
 	}
 	got, err := HasOpenIssues(deps)

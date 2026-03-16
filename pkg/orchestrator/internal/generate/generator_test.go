@@ -63,7 +63,9 @@ func TestGenerationName_NoSuffix(t *testing.T) {
 
 func TestSaveAndSwitchBranch_AlreadyOnTarget(t *testing.T) {
 	deps := GitDeps{
-		CurrentBranch: func(dir string) (string, error) { return "target", nil },
+		RepoReader:    &mockRepoReader{CurrentBranchFn: func(dir string) (string, error) { return "target", nil }},
+		BranchManager: &mockBranchManager{},
+		CommitWriter:  &mockCommitWriter{},
 	}
 	if err := SaveAndSwitchBranch("target", deps); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -73,10 +75,14 @@ func TestSaveAndSwitchBranch_AlreadyOnTarget(t *testing.T) {
 func TestSaveAndSwitchBranch_CommitSucceeds(t *testing.T) {
 	var staged, committed, checkedOut bool
 	deps := GitDeps{
-		CurrentBranch: func(dir string) (string, error) { return "current", nil },
-		StageAll:      func(dir string) error { staged = true; return nil },
-		Commit:        func(msg, dir string) error { committed = true; return nil },
-		Checkout:      func(branch, dir string) error { checkedOut = true; return nil },
+		RepoReader: &mockRepoReader{CurrentBranchFn: func(dir string) (string, error) { return "current", nil }},
+		BranchManager: &mockBranchManager{
+			CheckoutFn: func(branch, dir string) error { checkedOut = true; return nil },
+		},
+		CommitWriter: &mockCommitWriter{
+			StageAllFn: func(dir string) error { staged = true; return nil },
+			CommitFn:   func(msg, dir string) error { committed = true; return nil },
+		},
 	}
 	if err := SaveAndSwitchBranch("target", deps); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -95,13 +101,17 @@ func TestSaveAndSwitchBranch_CommitSucceeds(t *testing.T) {
 func TestSaveAndSwitchBranch_CommitFailsWithDirtyTree(t *testing.T) {
 	var stashed, unstaged bool
 	deps := GitDeps{
-		CurrentBranch: func(dir string) (string, error) { return "current", nil },
-		StageAll:      func(dir string) error { return nil },
-		Commit:        func(msg, dir string) error { return errors.New("nothing to commit") },
-		UnstageAll:    func(dir string) error { unstaged = true; return nil },
-		HasChanges:    func(dir string) bool { return true },
-		Stash:         func(msg, dir string) error { stashed = true; return nil },
-		Checkout:      func(branch, dir string) error { return nil },
+		RepoReader: &mockRepoReader{CurrentBranchFn: func(dir string) (string, error) { return "current", nil }},
+		BranchManager: &mockBranchManager{
+			CheckoutFn: func(branch, dir string) error { return nil },
+		},
+		CommitWriter: &mockCommitWriter{
+			StageAllFn:   func(dir string) error { return nil },
+			CommitFn:     func(msg, dir string) error { return errors.New("nothing to commit") },
+			UnstageAllFn: func(dir string) error { unstaged = true; return nil },
+			HasChangesFn: func(dir string) bool { return true },
+			StashFn:      func(msg, dir string) error { stashed = true; return nil },
+		},
 	}
 	if err := SaveAndSwitchBranch("target", deps); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -117,13 +127,17 @@ func TestSaveAndSwitchBranch_CommitFailsWithDirtyTree(t *testing.T) {
 func TestSaveAndSwitchBranch_CommitFailsCleanTree(t *testing.T) {
 	var stashed bool
 	deps := GitDeps{
-		CurrentBranch: func(dir string) (string, error) { return "current", nil },
-		StageAll:      func(dir string) error { return nil },
-		Commit:        func(msg, dir string) error { return errors.New("nothing to commit") },
-		UnstageAll:    func(dir string) error { return nil },
-		HasChanges:    func(dir string) bool { return false },
-		Stash:         func(msg, dir string) error { stashed = true; return nil },
-		Checkout:      func(branch, dir string) error { return nil },
+		RepoReader: &mockRepoReader{CurrentBranchFn: func(dir string) (string, error) { return "current", nil }},
+		BranchManager: &mockBranchManager{
+			CheckoutFn: func(branch, dir string) error { return nil },
+		},
+		CommitWriter: &mockCommitWriter{
+			StageAllFn:   func(dir string) error { return nil },
+			CommitFn:     func(msg, dir string) error { return errors.New("nothing to commit") },
+			UnstageAllFn: func(dir string) error { return nil },
+			HasChangesFn: func(dir string) bool { return false },
+			StashFn:      func(msg, dir string) error { stashed = true; return nil },
+		},
 	}
 	if err := SaveAndSwitchBranch("target", deps); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -135,7 +149,9 @@ func TestSaveAndSwitchBranch_CommitFailsCleanTree(t *testing.T) {
 
 func TestEnsureOnBranch_AlreadyOnBranch(t *testing.T) {
 	deps := GitDeps{
-		CurrentBranch: func(dir string) (string, error) { return "main", nil },
+		RepoReader:    &mockRepoReader{CurrentBranchFn: func(dir string) (string, error) { return "main", nil }},
+		BranchManager: &mockBranchManager{},
+		CommitWriter:  &mockCommitWriter{},
 	}
 	if err := EnsureOnBranch("main", deps); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -145,8 +161,11 @@ func TestEnsureOnBranch_AlreadyOnBranch(t *testing.T) {
 func TestEnsureOnBranch_SwitchesBranch(t *testing.T) {
 	var target string
 	deps := GitDeps{
-		CurrentBranch: func(dir string) (string, error) { return "feature", nil },
-		Checkout:      func(branch, dir string) error { target = branch; return nil },
+		RepoReader: &mockRepoReader{CurrentBranchFn: func(dir string) (string, error) { return "feature", nil }},
+		BranchManager: &mockBranchManager{
+			CheckoutFn: func(branch, dir string) error { target = branch; return nil },
+		},
+		CommitWriter: &mockCommitWriter{},
 	}
 	if err := EnsureOnBranch("main", deps); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -158,7 +177,9 @@ func TestEnsureOnBranch_SwitchesBranch(t *testing.T) {
 
 func TestEnsureOnBranch_ErrorFromCurrentBranch(t *testing.T) {
 	deps := GitDeps{
-		CurrentBranch: func(dir string) (string, error) { return "", errors.New("detached HEAD") },
+		RepoReader:    &mockRepoReader{CurrentBranchFn: func(dir string) (string, error) { return "", errors.New("detached HEAD") }},
+		BranchManager: &mockBranchManager{},
+		CommitWriter:  &mockCommitWriter{},
 	}
 	if err := EnsureOnBranch("main", deps); err == nil {
 		t.Fatal("expected error, got nil")

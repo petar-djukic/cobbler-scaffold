@@ -8,7 +8,22 @@ import (
 	"os/exec"
 	"strings"
 	"testing"
+
+	"github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/gitops"
 )
+
+// mockRepoReader wraps a real RepoReader but overrides CurrentBranch.
+type mockRepoReader struct {
+	gitops.RepoReader
+	currentBranch func(dir string) (string, error)
+}
+
+func (m *mockRepoReader) CurrentBranch(dir string) (string, error) {
+	if m.currentBranch != nil {
+		return m.currentBranch(dir)
+	}
+	return m.RepoReader.CurrentBranch(dir)
+}
 
 // setupTagRepo creates a temp git repo with an initial commit and the given
 // tags, then chdirs into it. Returns the original directory; the caller is
@@ -107,12 +122,13 @@ func TestNextDocRevision_CustomPrefix_Increments(t *testing.T) {
 }
 
 func TestTag_WrongBranch(t *testing.T) {
-	// Override GitCurrentBranchFn to return a known branch.
-	origFn := GitCurrentBranchFn
-	GitCurrentBranchFn = func(dir string) (string, error) {
-		return "feature-branch", nil
+	// Override GitReader to return a known branch.
+	origReader := GitReader
+	GitReader = &mockRepoReader{
+		RepoReader:    origReader,
+		currentBranch: func(dir string) (string, error) { return "feature-branch", nil },
 	}
-	defer func() { GitCurrentBranchFn = origFn }()
+	defer func() { GitReader = origReader }()
 
 	err := Tag(TagParams{
 		BaseBranch:   "release",
@@ -129,7 +145,7 @@ func TestTag_WrongBranch(t *testing.T) {
 func TestTag_CreatesGitTag(t *testing.T) {
 	setupTagRepo(t, nil)
 
-	current, err := GitCurrentBranchFn(".")
+	current, err := GitReader.CurrentBranch(".")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -143,7 +159,7 @@ func TestTag_CreatesGitTag(t *testing.T) {
 	}
 
 	// Verify the git tag was created.
-	tags := GitListTagsFn("v0.*", ".")
+	tags := GitTags.ListTags("v0.*", ".")
 	if len(tags) == 0 {
 		t.Error("expected at least one v0.* tag after Tag()")
 	}
@@ -152,7 +168,7 @@ func TestTag_CreatesGitTag(t *testing.T) {
 func TestTag_VersionFileWriteError(t *testing.T) {
 	setupTagRepo(t, nil)
 
-	current, err := GitCurrentBranchFn(".")
+	current, err := GitReader.CurrentBranch(".")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/gitops"
 	"gopkg.in/yaml.v3"
 )
 
@@ -176,20 +177,15 @@ func ValidateIssueDescription(desc string) error {
 // Stitch git helpers (standalone functions using DI)
 // ---------------------------------------------------------------------------
 
-// StitchGitDeps holds git helper functions needed by stitch operations.
+// StitchGitDeps holds the git interfaces needed by stitch operations.
+// It embeds RepoReader (BranchExists, ListBranches, CurrentBranch,
+// RevParseHEAD), BranchManager (Checkout, CreateBranch, DeleteBranch,
+// ForceDeleteBranch, MergeCmd), and WorktreeManager (WorktreeAdd,
+// WorktreeRemove, WorktreePrune).
 type StitchGitDeps struct {
-	BranchExists      func(name, dir string) bool
-	CreateBranch      func(name, dir string) error
-	DeleteBranch      func(name, dir string) error
-	ForceDeleteBranch func(name, dir string) error
-	ListBranches      func(pattern, dir string) []string
-	WorktreeAdd       func(worktreeDir, branch, dir string) *exec.Cmd
-	WorktreeRemove    func(worktreeDir, dir string) error
-	WorktreePrune     func(dir string) error
-	Checkout          func(branch, dir string) error
-	CurrentBranch     func(dir string) (string, error)
-	MergeCmd          func(branch, dir string) *exec.Cmd
-	RevParseHEAD      func(dir string) (string, error)
+	gitops.RepoReader
+	gitops.BranchManager
+	gitops.WorktreeManager
 }
 
 // StitchIssueDeps holds GitHub issue helper functions needed by stitch.

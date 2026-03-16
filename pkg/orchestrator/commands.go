@@ -28,9 +28,10 @@ const (
 	dirCobbler   = ".cobbler"
 )
 
-// defaultGitOps is the package-level ShellGitOps instance used by all git
-// helper functions. It shells out to the "git" binary.
-var defaultGitOps = &gitops.ShellGitOps{}
+// defaultGitOps is the package-level Repository instance used by all git
+// helper functions. It shells out to the "git" binary and implements all
+// role-based interfaces (GH-1439).
+var defaultGitOps = gitops.NewRepository("")
 
 // orDefault returns val if non-empty, otherwise fallback.
 func orDefault(val, fallback string) string {

@@ -169,7 +169,9 @@ func TestValidateIssueDescription_InvalidYAML(t *testing.T) {
 
 func TestRecoverStaleBranches_NoBranches(t *testing.T) {
 	gitDeps := StitchGitDeps{
-		ListBranches: func(pattern, dir string) []string { return nil },
+		RepoReader:      &mockRepoReader{ListBranchesFn: func(pattern, dir string) []string { return nil }},
+		BranchManager:   &mockBranchManager{},
+		WorktreeManager: &mockWorktreeManager{},
 	}
 	got := RecoverStaleBranches("main", "/tmp/wt", "owner/repo", gitDeps, StitchIssueDeps{})
 	if got {
@@ -181,9 +183,13 @@ func TestRecoverStaleBranches_RecoversBranch(t *testing.T) {
 	var deletedBranch string
 	var removedLabel int
 	gitDeps := StitchGitDeps{
-		ListBranches:      func(pattern, dir string) []string { return []string{"task/main-42"} },
-		WorktreeRemove:    func(wtDir, dir string) error { return nil },
-		ForceDeleteBranch: func(name, dir string) error { deletedBranch = name; return nil },
+		RepoReader: &mockRepoReader{ListBranchesFn: func(pattern, dir string) []string { return []string{"task/main-42"} }},
+		BranchManager: &mockBranchManager{
+			ForceDeleteBranchFn: func(name, dir string) error { deletedBranch = name; return nil },
+		},
+		WorktreeManager: &mockWorktreeManager{
+			WorktreeRemoveFn: func(wtDir, dir string) error { return nil },
+		},
 	}
 	issueDeps := StitchIssueDeps{
 		RemoveInProgressLabel: func(repo string, number int) error {
@@ -212,7 +218,11 @@ func TestResetOrphanedIssues_NoOrphans(t *testing.T) {
 		ListOpenCobblerIssues: func(repo, gen string) ([]StitchIssue, error) { return nil, nil },
 		LabelInProgress:       "cobbler-in-progress",
 	}
-	gitDeps := StitchGitDeps{}
+	gitDeps := StitchGitDeps{
+		RepoReader:      &mockRepoReader{},
+		BranchManager:   &mockBranchManager{},
+		WorktreeManager: &mockWorktreeManager{},
+	}
 	got := ResetOrphanedIssues("main", "owner/repo", "gen-1", gitDeps, issueDeps)
 	if got {
 		t.Error("expected false when no orphans")
@@ -242,7 +252,9 @@ func TestResetOrphanedIssues_ResetsOrphan(t *testing.T) {
 		LabelInProgress: "cobbler-in-progress",
 	}
 	gitDeps := StitchGitDeps{
-		BranchExists: func(name, dir string) bool { return false },
+		RepoReader:      &mockRepoReader{BranchExistsFn: func(name, dir string) bool { return false }},
+		BranchManager:   &mockBranchManager{},
+		WorktreeManager: &mockWorktreeManager{},
 	}
 	got := ResetOrphanedIssues("main", "owner/repo", "gen-1", gitDeps, issueDeps)
 	if !got {
@@ -299,11 +311,15 @@ func TestCreateWorktree_CreatesBranchAndWorktree(t *testing.T) {
 	var createdBranch string
 	var worktreeAdded bool
 	gitDeps := StitchGitDeps{
-		BranchExists: func(name, dir string) bool { return false },
-		CreateBranch: func(name, dir string) error { createdBranch = name; return nil },
-		WorktreeAdd: func(wtDir, branch, dir string) *exec.Cmd {
-			worktreeAdded = true
-			return exec.Command("true")
+		RepoReader: &mockRepoReader{BranchExistsFn: func(name, dir string) bool { return false }},
+		BranchManager: &mockBranchManager{
+			CreateBranchFn: func(name, dir string) error { createdBranch = name; return nil },
+		},
+		WorktreeManager: &mockWorktreeManager{
+			WorktreeAddFn: func(wtDir, branch, dir string) *exec.Cmd {
+				worktreeAdded = true
+				return exec.Command("true")
+			},
 		},
 	}
 	task := StitchTask{
@@ -324,10 +340,14 @@ func TestCreateWorktree_CreatesBranchAndWorktree(t *testing.T) {
 func TestCreateWorktree_BranchAlreadyExists(t *testing.T) {
 	var createdBranch string
 	gitDeps := StitchGitDeps{
-		BranchExists: func(name, dir string) bool { return true },
-		CreateBranch: func(name, dir string) error { createdBranch = name; return nil },
-		WorktreeAdd: func(wtDir, branch, dir string) *exec.Cmd {
-			return exec.Command("true")
+		RepoReader: &mockRepoReader{BranchExistsFn: func(name, dir string) bool { return true }},
+		BranchManager: &mockBranchManager{
+			CreateBranchFn: func(name, dir string) error { createdBranch = name; return nil },
+		},
+		WorktreeManager: &mockWorktreeManager{
+			WorktreeAddFn: func(wtDir, branch, dir string) *exec.Cmd {
+				return exec.Command("true")
+			},
 		},
 	}
 	task := StitchTask{
@@ -349,10 +369,14 @@ func TestCreateWorktree_BranchAlreadyExists(t *testing.T) {
 func TestMergeBranch_Success(t *testing.T) {
 	var checkedOut string
 	gitDeps := StitchGitDeps{
-		Checkout: func(branch, dir string) error { checkedOut = branch; return nil },
-		MergeCmd: func(branch, dir string) *exec.Cmd {
-			return exec.Command("true")
+		RepoReader: &mockRepoReader{},
+		BranchManager: &mockBranchManager{
+			CheckoutFn: func(branch, dir string) error { checkedOut = branch; return nil },
+			MergeCmdFn: func(branch, dir string) *exec.Cmd {
+				return exec.Command("true")
+			},
 		},
+		WorktreeManager: &mockWorktreeManager{},
 	}
 	if err := MergeBranch("task/main-42", "main", ".", gitDeps); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -364,7 +388,11 @@ func TestMergeBranch_Success(t *testing.T) {
 
 func TestMergeBranch_CheckoutFails(t *testing.T) {
 	gitDeps := StitchGitDeps{
-		Checkout: func(branch, dir string) error { return fmt.Errorf("checkout failed") },
+		RepoReader: &mockRepoReader{},
+		BranchManager: &mockBranchManager{
+			CheckoutFn: func(branch, dir string) error { return fmt.Errorf("checkout failed") },
+		},
+		WorktreeManager: &mockWorktreeManager{},
 	}
 	err := MergeBranch("task/main-42", "main", ".", gitDeps)
 	if err == nil {
@@ -379,8 +407,13 @@ func TestMergeBranch_CheckoutFails(t *testing.T) {
 func TestCleanupWorktree_Success(t *testing.T) {
 	var deletedBranch string
 	gitDeps := StitchGitDeps{
-		WorktreeRemove: func(wtDir, dir string) error { return nil },
-		DeleteBranch:   func(name, dir string) error { deletedBranch = name; return nil },
+		RepoReader: &mockRepoReader{},
+		BranchManager: &mockBranchManager{
+			DeleteBranchFn: func(name, dir string) error { deletedBranch = name; return nil },
+		},
+		WorktreeManager: &mockWorktreeManager{
+			WorktreeRemoveFn: func(wtDir, dir string) error { return nil },
+		},
 	}
 	task := StitchTask{BranchName: "task/main-42", WorktreeDir: "/tmp/wt/42"}
 	got := CleanupWorktree(task, gitDeps)
@@ -394,7 +427,11 @@ func TestCleanupWorktree_Success(t *testing.T) {
 
 func TestCleanupWorktree_RemoveFails(t *testing.T) {
 	gitDeps := StitchGitDeps{
-		WorktreeRemove: func(wtDir, dir string) error { return fmt.Errorf("remove failed") },
+		RepoReader: &mockRepoReader{},
+		BranchManager: &mockBranchManager{},
+		WorktreeManager: &mockWorktreeManager{
+			WorktreeRemoveFn: func(wtDir, dir string) error { return fmt.Errorf("remove failed") },
+		},
 	}
 	task := StitchTask{BranchName: "task/main-42", WorktreeDir: "/tmp/wt/42"}
 	got := CleanupWorktree(task, gitDeps)

@@ -21,6 +21,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/gitops"
 	claudetypes "github.com/schlunsen/claude-agent-sdk-go/types"
 	"gopkg.in/yaml.v3"
 )
@@ -827,8 +828,8 @@ func CaptureLOCAt(dir string, captureFn CaptureLOCFn) LocSnapshot {
 
 // HasOpenIssues returns true if there are open orchestrator issues.
 type HasOpenIssuesDeps struct {
-	DetectGitHubRepoFn    func(repoRoot string) (string, error)
-	GitCurrentBranchFn    func(dir string) (string, error)
+	DetectGitHubRepoFn      func(repoRoot string) (string, error)
+	GitReader               gitops.RepoReader
 	ListOpenCobblerIssuesFn func(repo, branch string) (int, error)
 }
 
@@ -842,7 +843,7 @@ func HasOpenIssues(deps HasOpenIssuesDeps) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("detectGitHubRepo: %w", err)
 	}
-	branch, err := deps.GitCurrentBranchFn(".")
+	branch, err := deps.GitReader.CurrentBranch(".")
 	if err != nil {
 		return false, fmt.Errorf("gitCurrentBranch: %w", err)
 	}

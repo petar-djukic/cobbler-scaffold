@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/gitops"
 	"gopkg.in/yaml.v3"
 )
 
@@ -25,11 +26,12 @@ type Logger func(format string, args ...any)
 var (
 	Log Logger = func(string, ...any) {}
 
-	GitCurrentBranchFn func(dir string) (string, error)
-	GitListTagsFn      func(pattern, dir string) []string
-	GitTagFn           func(tag, dir string) error
-	GitStageAllFn      func(dir string) error
-	GitCommitFn        func(msg, dir string) error
+	// GitReader provides read-only repository access (CurrentBranch).
+	GitReader gitops.RepoReader
+	// GitTags provides tag operations (Tag, ListTags).
+	GitTags gitops.TagManager
+	// GitCommitter provides staging and commit operations (StageAll, Commit).
+	GitCommitter gitops.CommitWriter
 )
 
 // ---------------------------------------------------------------------------

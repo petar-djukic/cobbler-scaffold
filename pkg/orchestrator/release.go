@@ -16,11 +16,9 @@ import (
 
 func init() {
 	rel.Log = logf
-	rel.GitCurrentBranchFn = gitCurrentBranch
-	rel.GitListTagsFn = gitListTags
-	rel.GitTagFn = gitTag
-	rel.GitStageAllFn = gitStageAll
-	rel.GitCommitFn = gitCommit
+	rel.GitReader = defaultGitOps
+	rel.GitTags = defaultGitOps
+	rel.GitCommitter = defaultGitOps
 }
 
 // ReleaseUpdate marks a release as complete in the project files. It sets all

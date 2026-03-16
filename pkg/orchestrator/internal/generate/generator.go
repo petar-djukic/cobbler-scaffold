@@ -11,6 +11,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/gitops"
 )
 
 // ---------------------------------------------------------------------------
@@ -181,13 +183,11 @@ func AppendToGitignore(dir, entry string) error {
 // GitDeps provides git operations needed by the generate package.
 // ---------------------------------------------------------------------------
 
-// GitDeps holds the git helper functions injected by the parent package.
+// GitDeps holds the git interfaces injected by the parent package.
+// It embeds RepoReader (CurrentBranch), BranchManager (Checkout), and
+// CommitWriter (StageAll, UnstageAll, Commit, HasChanges, Stash).
 type GitDeps struct {
-	Checkout      func(branch, dir string) error
-	CurrentBranch func(dir string) (string, error)
-	StageAll      func(dir string) error
-	UnstageAll    func(dir string) error
-	Commit        func(msg, dir string) error
-	HasChanges    func(dir string) bool
-	Stash         func(msg, dir string) error
+	gitops.RepoReader
+	gitops.BranchManager
+	gitops.CommitWriter
 }
