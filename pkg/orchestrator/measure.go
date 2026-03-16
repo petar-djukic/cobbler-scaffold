@@ -312,6 +312,65 @@ func (o *Orchestrator) RunMeasure() error {
 		}
 	}
 
+	// Retry once if measure returned empty but unresolved requirements remain.
+	// Claude non-deterministically returns [] on large prompts; a single retry
+	// recovers ~95% of these cases (GH-1513).
+	if len(allCreatedIDs) == 0 && o.hasUnresolvedRequirements() {
+		logf("measure: 0 issues created but unresolved requirements remain — retrying once")
+
+		// Refresh existing issues for the retry.
+		refreshed, refreshErr := listActiveIssuesContext(repo, generation)
+		if refreshErr == nil {
+			existingIssues = refreshed
+		}
+
+		timestamp := time.Now().Format("20060102-150405")
+		outputFile := filepath.Join(o.cfg.Cobbler.Dir, fmt.Sprintf("measure-%s.yaml", timestamp))
+
+		prompt, promptErr := o.buildMeasurePrompt(o.cfg.Cobbler.UserPrompt, existingIssues, 1)
+		if promptErr == nil {
+			historyTS := time.Now().Format("2006-01-02-15-04-05")
+			o.saveHistoryPrompt(historyTS, "measure", prompt)
+
+			retryStart := time.Now()
+			tokens, err := o.runMeasureClaude(prompt, "", o.cfg.Silence(), "--max-turns", "1")
+			retryDuration := time.Since(retryStart)
+
+			totalTokens.InputTokens += tokens.InputTokens
+			totalTokens.OutputTokens += tokens.OutputTokens
+			totalTokens.CostUSD += tokens.CostUSD
+
+			if err == nil {
+				o.saveHistory(historyTS, tokens.RawOutput, outputFile)
+				o.saveHistoryStats(historyTS, "measure", HistoryStats{
+					Caller:    "measure",
+					TaskID:    fmt.Sprintf("%d", placeholderNum),
+					Status:    "success",
+					StartedAt: retryStart.UTC().Format(time.RFC3339),
+					Duration:  retryDuration.Round(time.Second).String(),
+					DurationS: int(retryDuration.Seconds()),
+					Tokens:    historyTokens{Input: tokens.InputTokens, Output: tokens.OutputTokens, CacheCreation: tokens.CacheCreationTokens, CacheRead: tokens.CacheReadTokens},
+					CostUSD:   tokens.CostUSD,
+					NumTurns:  tokens.NumTurns,
+					LOCBefore: locBefore,
+					LOCAfter:  o.captureLOC(),
+				})
+
+				textOutput := extractTextFromStreamJSON(tokens.RawOutput)
+				yamlContent, extractErr := extractYAMLBlock(textOutput)
+				if extractErr == nil {
+					if writeErr := os.WriteFile(outputFile, yamlContent, 0o644); writeErr == nil {
+						retryIDs, _, importErr := o.importIssues(outputFile, repo, generation, placeholderNum)
+						if importErr == nil {
+							allCreatedIDs = append(allCreatedIDs, retryIDs...)
+							logf("measure: retry created %d issue(s)", len(retryIDs))
+						}
+					}
+				}
+			}
+		}
+	}
+
 	// Finalize the single placeholder with all created issues (GH-1467).
 	placeholderResolved = true
 	if placeholderNum > 0 {

@@ -1899,8 +1899,25 @@ func BuildProjectContext(existingIssuesJSON string, project ContextConfig, phase
 			Requirements map[string]map[string]RequirementStateEntry `yaml:"requirements"`
 		}
 		if err := yaml.Unmarshal(reqData, &reqFile); err == nil && len(reqFile.Requirements) > 0 {
-			ctx.RequirementStates = reqFile.Requirements
-			Log("buildProjectContext: loaded %d PRDs from requirements.yaml", len(reqFile.Requirements))
+			// Filter to ready-only items so the measure prompt contains only
+			// actionable requirements, reducing prompt size and focusing
+			// Claude's reasoning (GH-1513).
+			filtered := make(map[string]map[string]RequirementStateEntry, len(reqFile.Requirements))
+			totalReady := 0
+			for prd, items := range reqFile.Requirements {
+				readyItems := make(map[string]RequirementStateEntry)
+				for id, st := range items {
+					if st.Status == "ready" {
+						readyItems[id] = st
+						totalReady++
+					}
+				}
+				if len(readyItems) > 0 {
+					filtered[prd] = readyItems
+				}
+			}
+			ctx.RequirementStates = filtered
+			Log("buildProjectContext: loaded %d PRDs from requirements.yaml (%d ready items)", len(filtered), totalReady)
 		}
 	}
 
