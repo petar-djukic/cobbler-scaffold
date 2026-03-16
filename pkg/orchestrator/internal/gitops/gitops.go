@@ -71,6 +71,99 @@ type GitOps interface {
 }
 
 // ---------------------------------------------------------------------------
+// Role-based interfaces (GH-1439)
+//
+// Each cobbler stage consumes only the interfaces it needs. A Repository
+// struct implements all of them, but function signatures declare the
+// minimum capability required.
+// ---------------------------------------------------------------------------
+
+// RepoReader provides read-only access to repository state.
+// Used by measure (observer) and compare (inspector).
+type RepoReader interface {
+	CurrentBranch(dir string) (string, error)
+	BranchExists(name, dir string) bool
+	ListBranches(pattern, dir string) []string
+	ListTags(pattern, dir string) []string
+	LsFiles(dir string) []string
+	RevParseHEAD(dir string) (string, error)
+}
+
+// WorktreeManager creates and removes git worktrees.
+// Used by stitch (operator), compare, and recovery (janitor).
+type WorktreeManager interface {
+	WorktreeAdd(worktreeDir, branch, dir string) *exec.Cmd
+	WorktreeRemove(worktreeDir, dir string) error
+	WorktreePrune(dir string) error
+}
+
+// BranchManager creates, switches, and deletes branches.
+// Used by stitch, generator lifecycle (conductor), and recovery.
+type BranchManager interface {
+	Checkout(branch, dir string) error
+	CheckoutNew(branch, dir string) error
+	CreateBranch(name, dir string) error
+	DeleteBranch(name, dir string) error
+	ForceDeleteBranch(name, dir string) error
+	MergeCmd(branch, dir string) *exec.Cmd
+}
+
+// CommitWriter stages changes and creates commits.
+// Used by stitch agent (worker), release (finalizer), generator lifecycle.
+type CommitWriter interface {
+	StageAll(dir string) error
+	StageDir(path, dir string) error
+	UnstageAll(dir string) error
+	HasChanges(dir string) bool
+	Stash(msg, dir string) error
+	Commit(msg, dir string) error
+	CommitAllowEmpty(msg, dir string) error
+	ResetSoft(ref, dir string) error
+}
+
+// TagManager creates and manages git tags.
+// Used by release (finalizer).
+type TagManager interface {
+	Tag(name, dir string) error
+	TagAt(name, ref, dir string) error
+	DeleteTag(name, dir string) error
+	RenameTag(oldName, newName, dir string) error
+	ListTags(pattern, dir string) []string
+}
+
+// DiffInspector compares repository states.
+// Used by compare and metrics collection.
+type DiffInspector interface {
+	DiffShortstat(ref, dir string) (DiffStat, error)
+	DiffNameStatus(ref, dir string) ([]FileChange, error)
+	LsTreeFiles(ref, dir string) ([]string, error)
+	ShowFileContent(ref, path, dir string) ([]byte, error)
+}
+
+// Repository wraps a ShellGitOps and implements all role-based interfaces.
+// Pass it to any stage; the stage's function signature constrains which
+// operations it can call.
+type Repository struct {
+	ShellGitOps
+}
+
+// NewRepository creates a Repository backed by the given git binary.
+func NewRepository(gitBin string) *Repository {
+	return &Repository{ShellGitOps{GitBin: gitBin}}
+}
+
+// Compile-time interface satisfaction checks.
+var (
+	_ RepoReader      = (*Repository)(nil)
+	_ WorktreeManager = (*Repository)(nil)
+	_ BranchManager   = (*Repository)(nil)
+	_ CommitWriter    = (*Repository)(nil)
+	_ TagManager      = (*Repository)(nil)
+	_ DiffInspector   = (*Repository)(nil)
+	_ GitOps          = (*Repository)(nil)
+)
+
+// ---------------------------------------------------------------------------
 // ShellGitOps implementation
 // ---------------------------------------------------------------------------
 
