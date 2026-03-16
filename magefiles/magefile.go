@@ -28,9 +28,6 @@ type Generator mg.Namespace
 // Scaffold groups the scaffold install/uninstall targets.
 type Scaffold mg.Namespace
 
-// Podman groups container image and container lifecycle targets.
-type Podman mg.Namespace
-
 // Prompt groups prompt preview targets.
 type Prompt mg.Namespace
 
@@ -316,14 +313,6 @@ func (Prompt) Stitch() error { return newOrch().DumpStitchPrompt() }
 
 // Files lists all files that will be appended to the Claude prompt with sizes and token estimates.
 func (Prompt) Files() error { return newOrch().PrintContextFiles() }
-
-// --- Podman targets ---
-
-// Build builds the container image from the embedded Dockerfile with versioned and latest tags.
-func (Podman) Build() error { return newOrch().BuildImage() }
-
-// Clean removes all podman containers created from the configured image.
-func (Podman) Clean() error { return newOrch().PodmanClean() }
 
 // --- Compare targets ---
 
