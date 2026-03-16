@@ -293,52 +293,33 @@ type CobblerConfig struct {
 	MeasureSummarizeCommand string `yaml:"measure_summarize_command"`
 
 	// Mode selects the Claude execution backend. Valid values are
-	// ExecutionModePodman (default, run Claude inside a podman container),
-	// ExecutionModeCLI (run the claude binary directly on the host), and
-	// ExecutionModeSDK (use the Go Agent SDK for structured streaming).
-	// Use ExecutionModeCLI or ExecutionModeSDK in environments where podman
-	// is unavailable. See prd001 R11.
+	// ExecutionModeCLI (default, run the claude binary directly on the host)
+	// and ExecutionModeSDK (use the Go Agent SDK for structured streaming).
+	// See prd001 R11.
 	Mode string `yaml:"mode"`
 }
 
 // Execution mode constants for CobblerConfig.Mode.
 const (
-	// ExecutionModePodman runs Claude inside a podman container (default).
-	ExecutionModePodman = "podman"
-
-	// ExecutionModeCLI runs the claude binary directly on the host,
-	// bypassing podman volume mounts and image management.
+	// ExecutionModeCLI runs the claude binary directly on the host.
 	ExecutionModeCLI = "cli"
 
 	// ExecutionModeSDK uses the Go Agent SDK (github.com/schlunsen/claude-agent-sdk-go)
 	// to run Claude programmatically. The SDK communicates with the claude binary
 	// via the --stdio JSONL protocol and returns typed message events, providing
-	// native streaming, structured token reporting, and cwd isolation without
-	// the need for podman volume mounts.
+	// native streaming, structured token reporting, and cwd isolation.
 	ExecutionModeSDK = "sdk"
 )
 
-// effectiveMode returns the execution mode, defaulting to ExecutionModePodman
+// effectiveMode returns the execution mode, defaulting to ExecutionModeCLI
 // when Mode is empty or unrecognised.
 func (c *CobblerConfig) effectiveMode() string {
 	switch c.Mode {
-	case ExecutionModeCLI:
-		return ExecutionModeCLI
 	case ExecutionModeSDK:
 		return ExecutionModeSDK
 	default:
-		return ExecutionModePodman
+		return ExecutionModeCLI
 	}
-}
-
-// PodmanConfig holds settings for the podman container runtime.
-type PodmanConfig struct {
-	// Image is the container image for Claude execution (default "claude-cli").
-	// Claude runs inside a podman container for isolation.
-	Image string `yaml:"image"`
-
-	// Args are additional arguments passed to podman run before the image name.
-	Args []string `yaml:"args"`
 }
 
 // ClaudeConfig holds settings for the Claude CLI.
@@ -365,11 +346,6 @@ type ClaudeConfig struct {
 	// process is killed and the task is reset to ready in the issue tracker.
 	MaxTimeSec int `yaml:"max_time_sec"`
 
-	// ContainerCredentialsPath is the absolute path inside the container
-	// where the Claude CLI expects its credentials file.
-	// Default: /home/crumbs/.claude/.credentials.json
-	ContainerCredentialsPath string `yaml:"container_credentials_path"`
-
 	// Temperature controls the randomness of Claude's output. Lower values
 	// produce more deterministic output. When 0 (the default), no temperature
 	// parameter is passed and Claude uses its built-in default.
@@ -388,7 +364,6 @@ type Config struct {
 	Project    ProjectConfig    `yaml:"project"`
 	Generation GenerationConfig `yaml:"generation"`
 	Cobbler    CobblerConfig    `yaml:"cobbler"`
-	Podman     PodmanConfig     `yaml:"podman"`
 	Claude     ClaudeConfig     `yaml:"claude"`
 }
 
@@ -539,12 +514,6 @@ func (c *Config) applyDefaults() {
 	}
 	if c.Claude.MaxTimeSec == 0 {
 		c.Claude.MaxTimeSec = 300
-	}
-	if c.Claude.ContainerCredentialsPath == "" {
-		c.Claude.ContainerCredentialsPath = "/home/crumbs/.claude/.credentials.json"
-	}
-	if c.Podman.Image == "" {
-		c.Podman.Image = "claude-cli"
 	}
 }
 

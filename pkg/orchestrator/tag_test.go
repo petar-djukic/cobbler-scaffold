@@ -144,18 +144,11 @@ func TestTag_CreatesGitTag(t *testing.T) {
 	}
 	cfg.Cobbler.BaseBranch = current
 	cfg.Cobbler.DocTagPrefix = "v0."
-	// No version file, no podman image → Tag will fail at BuildImage.
 	o := &Orchestrator{cfg: cfg}
 
 	err = o.Tag()
-	// Tag will fail at BuildImage (podman not available), but the tag
-	// should already have been created before that step.
-	if err == nil || !strings.Contains(err.Error(), "building image") {
-		// If err is nil, tag succeeded fully (unlikely in test).
-		// If err doesn't mention "building image", something else failed.
-		if err != nil {
-			t.Fatalf("Tag() unexpected error: %v", err)
-		}
+	if err != nil {
+		t.Fatalf("Tag() unexpected error: %v", err)
 	}
 
 	// Verify the git tag was created.

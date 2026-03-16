@@ -6,9 +6,7 @@ package orchestrator
 import (
 	"context"
 	"encoding/json"
-	"os"
 	"os/exec"
-	"path/filepath"
 
 	"github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/claude"
 )
@@ -22,21 +20,17 @@ func init() {
 	claude.Log = logf
 	claude.BinGit = binGit
 	claude.BinClaude = binClaude
-	claude.BinPodman = binPodman
 }
 
 // ---------------------------------------------------------------------------
 // Type aliases for backward compatibility
 // ---------------------------------------------------------------------------
 
-// Runner executes Claude in a specific mode (CLI, Podman, or SDK).
+// Runner executes Claude in a specific mode (CLI or SDK).
 type Runner = claude.Runner
 
 // CLIRunner executes Claude by running the claude binary directly.
 type CLIRunner = claude.CLIRunner
-
-// PodmanRunner executes Claude inside a podman container.
-type PodmanRunner = claude.PodmanRunner
 
 // SDKRunner executes Claude via the Go Agent SDK.
 type SDKRunner = claude.SDKRunner
@@ -120,7 +114,6 @@ func (o *Orchestrator) checkClaude() error {
 	return claude.CheckClaude(claude.CheckClaudeDeps{
 		EffectiveMode:      o.cfg.Cobbler.effectiveMode(),
 		EnsureCredentialsFn: o.ensureCredentials,
-		CheckPodmanFn:      o.checkPodman,
 	})
 }
 
@@ -131,11 +124,6 @@ func (o *Orchestrator) ensureCredentials() error {
 		o.cfg.EffectiveTokenFile(),
 		o.ExtractCredentials,
 	)
-}
-
-// checkPodman verifies that podman is available and the image exists.
-func (o *Orchestrator) checkPodman() error {
-	return claude.CheckPodman(o.ensureImage)
 }
 
 // logConfig prints the resolved configuration for debugging.
@@ -168,28 +156,17 @@ func (o *Orchestrator) runClaudeDeps() claude.RunClaudeDeps {
 		Temperature:          o.cfg.Claude.Temperature,
 		Silence:              o.cfg.Silence(),
 		ClaudeArgs:           o.cfg.Claude.Args,
-		PodmanArgs:           o.cfg.Podman.Args,
-		PodmanImage:          o.cfg.Podman.Image,
 		SecretsDir:           o.cfg.Claude.SecretsDir,
 		TokenFile:            o.cfg.EffectiveTokenFile(),
-		ContainerCreds:       o.cfg.Claude.ContainerCredentialsPath,
 		IdleTimeoutS:         o.cfg.Cobbler.IdleTimeoutSeconds,
 		SdkQueryFn:           o.sdkQueryFn,
 		ExtractCredentialsFn: o.ExtractCredentials,
-		BuildPodmanCmdFn:     o.buildPodmanCmd,
 	}
 }
 
 // runClaudeSDK executes Claude via the Go Agent SDK.
 func (o *Orchestrator) runClaudeSDK(ctx context.Context, prompt, workDir string, silence bool, extraClaudeArgs ...string) (ClaudeResult, error) {
 	return claude.RunClaudeSDK(o.runClaudeDeps(), ctx, prompt, workDir, silence, extraClaudeArgs...)
-}
-
-// buildPodmanCmd constructs the exec.Cmd for running Claude inside a
-// podman container. It mounts the working directory and the credential
-// file so Claude Code can authenticate.
-func (o *Orchestrator) buildPodmanCmd(ctx context.Context, workDir string, extraClaudeArgs ...string) *exec.Cmd {
-	return buildPodmanCmdWithCfg(ctx, workDir, o.cfg, extraClaudeArgs...)
 }
 
 // buildDirectCmd constructs the exec.Cmd for running claude directly.
@@ -277,29 +254,3 @@ var newProgressWriter = claude.NewProgressWriter
 // idleTrackingWriter wraps an io.Writer and records the last write timestamp.
 type idleTrackingWriter = claude.IdleTrackingWriter
 
-// buildPodmanCmdWithCfg constructs the exec.Cmd for running Claude inside a
-// podman container. This stays in the parent package because it needs Config.
-func buildPodmanCmdWithCfg(ctx context.Context, workDir string, cfg Config, extraClaudeArgs ...string) *exec.Cmd {
-	args := []string{"run", "--rm", "-i",
-		"-v", workDir + ":" + workDir,
-		"-w", workDir,
-	}
-
-	// Mount credentials into the container at the path Claude Code expects.
-	credPath := filepath.Join(cfg.Claude.SecretsDir, cfg.EffectiveTokenFile())
-	if absCredPath, err := filepath.Abs(credPath); err == nil {
-		if _, err := os.Stat(absCredPath); err == nil {
-			args = append(args,
-				"-v", absCredPath+":"+cfg.Claude.ContainerCredentialsPath+":ro")
-		}
-	}
-
-	args = append(args, cfg.Podman.Args...)
-	args = append(args, cfg.Podman.Image)
-	args = append(args, binClaude)
-	args = append(args, cfg.Claude.Args...)
-	args = append(args, extraClaudeArgs...)
-
-	logf("runClaude: exec %s %v (timeout=%s)", binPodman, args, cfg.ClaudeTimeout())
-	return exec.CommandContext(ctx, binPodman, args...)
-}

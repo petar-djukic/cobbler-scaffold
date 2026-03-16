@@ -8,9 +8,8 @@ import (
 )
 
 // Tag creates a documentation-only release tag (v0.YYYYMMDD.N) for the current
-// state of the repository, builds the container image with that tag, and tags
-// the image as :latest. The revision number increments for each tag created on
-// the same date. Optionally updates the version file if configured.
+// state of the repository. The revision number increments for each tag created
+// on the same date. Optionally updates the version file if configured.
 //
 // Tag convention:
 //   - v0.* = documentation-only releases on main (manual)
@@ -22,7 +21,6 @@ func (o *Orchestrator) Tag() error {
 		BaseBranch:   o.cfg.Cobbler.BaseBranch,
 		DocTagPrefix: o.cfg.Cobbler.DocTagPrefix,
 		VersionFile:  o.cfg.Project.VersionFile,
-		BuildImageFn: o.BuildImage,
 	})
 }
 

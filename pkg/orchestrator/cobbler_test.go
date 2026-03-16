@@ -714,54 +714,6 @@ func TestSaveHistoryLog_MkdirError(t *testing.T) {
 	o.saveHistoryLog("ts", "phase", []byte("data"))
 }
 
-// --- buildPodmanCmd ---
-
-func TestBuildPodmanCmd_ContainsWorkdirMount(t *testing.T) {
-	t.Parallel()
-	o := New(Config{})
-	cmd := o.buildPodmanCmd(context.TODO(),"/work/mydir")
-
-	args := cmd.Args
-	// args[0] is the binary; remaining are the podman args
-	joined := strings.Join(args, " ")
-	if !strings.Contains(joined, "/work/mydir:/work/mydir") {
-		t.Errorf("buildPodmanCmd args missing workdir volume mount; args=%v", args)
-	}
-	if !strings.Contains(joined, "-w /work/mydir") {
-		t.Errorf("buildPodmanCmd args missing -w workdir flag; args=%v", args)
-	}
-}
-
-func TestBuildPodmanCmd_ContainsImageAndClaude(t *testing.T) {
-	t.Parallel()
-	cfg := Config{}
-	cfg.Podman.Image = "my-custom-image:latest"
-	o := New(cfg)
-	cmd := o.buildPodmanCmd(context.TODO(),"/work")
-
-	joined := strings.Join(cmd.Args, " ")
-	if !strings.Contains(joined, "my-custom-image:latest") {
-		t.Errorf("buildPodmanCmd args missing image; args=%v", cmd.Args)
-	}
-	if !strings.Contains(joined, binClaude) {
-		t.Errorf("buildPodmanCmd args missing claude binary %q; args=%v", binClaude, cmd.Args)
-	}
-}
-
-func TestBuildPodmanCmd_ExtraArgsAppended(t *testing.T) {
-	t.Parallel()
-	o := New(Config{})
-	cmd := o.buildPodmanCmd(context.TODO(),"/work", "--verbose", "--no-color")
-
-	joined := strings.Join(cmd.Args, " ")
-	if !strings.Contains(joined, "--verbose") {
-		t.Errorf("buildPodmanCmd missing extra arg --verbose; args=%v", cmd.Args)
-	}
-	if !strings.Contains(joined, "--no-color") {
-		t.Errorf("buildPodmanCmd missing extra arg --no-color; args=%v", cmd.Args)
-	}
-}
-
 // --- buildDirectCmd ---
 
 func TestBuildDirectCmd_UsesClaudeBinary(t *testing.T) {
@@ -808,13 +760,10 @@ func TestBuildDirectCmd_NoVolumeMount(t *testing.T) {
 	cmd := o.buildDirectCmd(context.TODO(), "/work/mydir")
 
 	joined := strings.Join(cmd.Args, " ")
-	// Check for the podman-style volume mount pattern ("-v /path:/path"),
+	// Check for volume mount pattern ("-v /path:/path"),
 	// not just "-v" which would match "--verbose".
 	if strings.Contains(joined, " -v /") {
 		t.Errorf("buildDirectCmd should not contain volume mount flags; args=%v", cmd.Args)
-	}
-	if strings.Contains(joined, binPodman) {
-		t.Errorf("buildDirectCmd should not invoke podman; args=%v", cmd.Args)
 	}
 }
 
@@ -835,11 +784,11 @@ func TestBuildDirectCmd_StripsCLAUDECODE(t *testing.T) {
 
 // --- effectiveMode ---
 
-func TestEffectiveMode_DefaultIsPodman(t *testing.T) {
+func TestEffectiveMode_DefaultIsCLI(t *testing.T) {
 	t.Parallel()
 	cfg := CobblerConfig{}
-	if got := cfg.effectiveMode(); got != ExecutionModePodman {
-		t.Errorf("effectiveMode() = %q; want %q", got, ExecutionModePodman)
+	if got := cfg.effectiveMode(); got != ExecutionModeCLI {
+		t.Errorf("effectiveMode() = %q; want %q", got, ExecutionModeCLI)
 	}
 }
 
@@ -851,11 +800,11 @@ func TestEffectiveMode_CLIMode(t *testing.T) {
 	}
 }
 
-func TestEffectiveMode_UnknownFallsToPodman(t *testing.T) {
+func TestEffectiveMode_UnknownFallsToCLI(t *testing.T) {
 	t.Parallel()
-	cfg := CobblerConfig{Mode: "docker"}
-	if got := cfg.effectiveMode(); got != ExecutionModePodman {
-		t.Errorf("effectiveMode() with unknown mode = %q; want %q", got, ExecutionModePodman)
+	cfg := CobblerConfig{Mode: "unknown"}
+	if got := cfg.effectiveMode(); got != ExecutionModeCLI {
+		t.Errorf("effectiveMode() with unknown mode = %q; want %q", got, ExecutionModeCLI)
 	}
 }
 
