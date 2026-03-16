@@ -220,6 +220,7 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 	// Build rows from history-derived task list.
 	rows := make([]GeneratorIssueStats, 0, len(stitchByTask))
 	var totalStitchCost float64
+	var totalStitchDurS int
 	var totalTurns, totalLocProd, totalLocTest, totalReqs int
 	var totalInputTokens, totalOutputTokens int
 	var nDone, nFailed, nInProgress, nPending int
@@ -285,6 +286,7 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 		}
 
 		totalStitchCost += s.CostUSD
+		totalStitchDurS += s.DurationS
 		totalTurns += s.NumTurns
 		totalLocProd += s.LocDeltaProd
 		totalLocTest += s.LocDeltaTest
@@ -658,6 +660,24 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 			pct = addressed * 100 / total
 		}
 		fmt.Printf("\nRequirements: %d/%d addressed by this generation (%d%%)\n", addressed, total, pct)
+
+		// ETA and cost estimates based on observed averages (GH-1545).
+		totalElapsedS := totalStitchDurS + totalMeasureDurS
+		remaining := total - addressed
+		if addressed > 0 && remaining > 0 {
+			avgTimePerReq := float64(totalElapsedS) / float64(addressed)
+			remainingS := int(avgTimePerReq * float64(remaining))
+			totalEstS := totalElapsedS + remainingS
+			fmt.Printf("ETA: %s remaining of estimated %s total\n",
+				FormatDurationLong(remainingS), FormatDurationLong(totalEstS))
+
+			estTotalCost := totalCost / float64(addressed) * float64(total)
+			remainingCost := estTotalCost - totalCost
+			fmt.Printf("Cost: $%.0f remaining of estimated $%.0f total ($%.2f spent)\n",
+				remainingCost, estTotalCost, totalCost)
+		} else if addressed == 0 {
+			fmt.Printf("ETA: calculating...\nCost: calculating...\n")
+		}
 	}
 
 	return nil

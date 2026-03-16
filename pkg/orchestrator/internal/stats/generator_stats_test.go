@@ -1428,3 +1428,264 @@ num_turns: 2
 		t.Errorf("expected M1 in output:\n%s", output)
 	}
 }
+
+// --- FormatDurationLong ---
+
+func TestFormatDurationLong(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		seconds int
+		want    string
+	}{
+		{"sub-minute", 45, "45s"},
+		{"minutes", 332, "5m 32s"},
+		{"exactly 1h", 3600, "1h 0m"},
+		{"hours and minutes", 39120, "10h 52m"},
+		{"zero", 0, "0s"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := FormatDurationLong(tc.seconds)
+			if got != tc.want {
+				t.Errorf("FormatDurationLong(%d) = %q, want %q", tc.seconds, got, tc.want)
+			}
+		})
+	}
+}
+
+// --- ETA and Cost Estimates (GH-1545) ---
+
+// TestPrintGeneratorStats_ETAAndCost verifies that ETA and cost estimate
+// lines appear in the output when requirements data is available.
+func TestPrintGeneratorStats_ETAAndCost(t *testing.T) {
+	// Uses os.Chdir — do NOT use t.Parallel()
+	dir := t.TempDir()
+
+	// Create a PRD with 10 R-items.
+	prdDir := filepath.Join(dir, "docs", "specs", "product-requirements")
+	os.MkdirAll(prdDir, 0o755)
+	prdYAML := `id: prd001-test
+requirements:
+  R1:
+    title: "Group"
+    items:
+      - R1.1: "a"
+      - R1.2: "b"
+      - R1.3: "c"
+      - R1.4: "d"
+      - R1.5: "e"
+      - R1.6: "f"
+      - R1.7: "g"
+      - R1.8: "h"
+      - R1.9: "i"
+      - R1.10: "j"
+`
+	os.WriteFile(filepath.Join(prdDir, "prd001-test.yaml"), []byte(prdYAML), 0o644)
+
+	// requirements.yaml: 2 of 10 addressed.
+	cobblerDir := filepath.Join(dir, ".cobbler")
+	os.MkdirAll(cobblerDir, 0o755)
+	reqYAML := `requirements:
+  prd001-test:
+    R1.1:
+      status: complete
+      issue: 100
+    R1.2:
+      status: complete
+      issue: 101
+    R1.3:
+      status: ready
+    R1.4:
+      status: ready
+    R1.5:
+      status: ready
+    R1.6:
+      status: ready
+    R1.7:
+      status: ready
+    R1.8:
+      status: ready
+    R1.9:
+      status: ready
+    R1.10:
+      status: ready
+`
+	os.WriteFile(filepath.Join(cobblerDir, generate.RequirementsFileName), []byte(reqYAML), 0o644)
+
+	// Create history with 2 stitch tasks (600s each) and 1 measure (60s).
+	histDir := filepath.Join(cobblerDir, "history")
+	os.MkdirAll(histDir, 0o755)
+	stitch1 := `caller: stitch
+task_id: "100"
+task_title: "task 1"
+status: success
+started_at: "2026-03-08T12:00:00Z"
+duration_s: 600
+tokens:
+  input: 100000
+  output: 5000
+  cache_creation: 0
+  cache_read: 0
+cost_usd: 2.00
+num_turns: 10
+loc_before:
+  production: 500
+  test: 200
+loc_after:
+  production: 550
+  test: 220
+`
+	stitch2 := `caller: stitch
+task_id: "101"
+task_title: "task 2"
+status: success
+started_at: "2026-03-08T13:00:00Z"
+duration_s: 600
+tokens:
+  input: 100000
+  output: 5000
+  cache_creation: 0
+  cache_read: 0
+cost_usd: 2.00
+num_turns: 10
+loc_before:
+  production: 550
+  test: 220
+loc_after:
+  production: 600
+  test: 240
+`
+	measure1 := `caller: measure
+started_at: "2026-03-08T11:50:00Z"
+duration_s: 60
+tokens:
+  input: 50000
+  output: 2000
+  cache_creation: 0
+  cache_read: 0
+cost_usd: 0.50
+num_turns: 3
+`
+	os.WriteFile(filepath.Join(histDir, "2026-03-08-12-00-00-stitch-stats.yaml"), []byte(stitch1), 0o644)
+	os.WriteFile(filepath.Join(histDir, "2026-03-08-13-00-00-stitch-stats.yaml"), []byte(stitch2), 0o644)
+	os.WriteFile(filepath.Join(histDir, "2026-03-08-11-50-00-measure-stats.yaml"), []byte(measure1), 0o644)
+
+	orig, _ := os.Getwd()
+	t.Cleanup(func() { os.Chdir(orig) })
+	os.Chdir(dir)
+
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	deps := GeneratorStatsDeps{
+		Log:                    func(format string, args ...any) {},
+		ListGenerationBranches: func() []string { return []string{"generation-main"} },
+		GenerationBranch:       "generation-main",
+		CurrentBranch:          "generation-main",
+		DetectGitHubRepo:       func() (string, error) { return "owner/repo", nil },
+		ListAllIssues: func(repo, generation string) ([]gh.CobblerIssue, error) {
+			return []gh.CobblerIssue{
+				{Number: 100, Title: "task 1", State: "closed", Labels: []string{"cobbler-task"}},
+				{Number: 101, Title: "task 2", State: "closed", Labels: []string{"cobbler-task"}},
+			}, nil
+		},
+		HistoryDir: histDir,
+		CobblerDir: cobblerDir,
+	}
+
+	err := PrintGeneratorStats(deps)
+	w.Close()
+	captured, _ := io.ReadAll(r)
+	os.Stdout = oldStdout
+	output := string(captured)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// 2 addressed, 8 remaining, total elapsed = 1200+60 = 1260s.
+	// Avg per req = 630s, remaining = 630*8 = 5040s, total est = 1260+5040 = 6300s.
+	// 5040s = 1h 24m, 6300s = 1h 45m.
+	if !strings.Contains(output, "ETA: 1h 24m remaining of estimated 1h 45m total") {
+		t.Errorf("expected ETA line in output, got:\n%s", output)
+	}
+
+	// Cost: total = $4.50, addressed = 2, total reqs = 10.
+	// Est total = 4.50/2*10 = $22.50, remaining = $22.50-$4.50 = $18.
+	if !strings.Contains(output, "Cost: $18 remaining of estimated $22 total ($4.50 spent)") {
+		t.Errorf("expected Cost line in output, got:\n%s", output)
+	}
+}
+
+// TestPrintGeneratorStats_ETACalculating verifies that "calculating..." is
+// shown when no requirements have been addressed yet.
+func TestPrintGeneratorStats_ETACalculating(t *testing.T) {
+	// Uses os.Chdir — do NOT use t.Parallel()
+	dir := t.TempDir()
+
+	prdDir := filepath.Join(dir, "docs", "specs", "product-requirements")
+	os.MkdirAll(prdDir, 0o755)
+	prdYAML := `id: prd001-test
+requirements:
+  R1:
+    title: "Group"
+    items:
+      - R1.1: "a"
+      - R1.2: "b"
+`
+	os.WriteFile(filepath.Join(prdDir, "prd001-test.yaml"), []byte(prdYAML), 0o644)
+
+	cobblerDir := filepath.Join(dir, ".cobbler")
+	os.MkdirAll(cobblerDir, 0o755)
+	reqYAML := `requirements:
+  prd001-test:
+    R1.1:
+      status: ready
+    R1.2:
+      status: ready
+`
+	os.WriteFile(filepath.Join(cobblerDir, generate.RequirementsFileName), []byte(reqYAML), 0o644)
+
+	orig, _ := os.Getwd()
+	t.Cleanup(func() { os.Chdir(orig) })
+	os.Chdir(dir)
+
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	deps := GeneratorStatsDeps{
+		Log:                    func(format string, args ...any) {},
+		ListGenerationBranches: func() []string { return []string{"generation-main"} },
+		GenerationBranch:       "generation-main",
+		CurrentBranch:          "generation-main",
+		DetectGitHubRepo:       func() (string, error) { return "owner/repo", nil },
+		ListAllIssues: func(repo, generation string) ([]gh.CobblerIssue, error) {
+			return []gh.CobblerIssue{
+				{Number: 100, Title: "test task", State: "open", Labels: []string{"cobbler-task"}},
+			}, nil
+		},
+		HistoryDir: filepath.Join(cobblerDir, "history"),
+		CobblerDir: cobblerDir,
+	}
+
+	err := PrintGeneratorStats(deps)
+	w.Close()
+	captured, _ := io.ReadAll(r)
+	os.Stdout = oldStdout
+	output := string(captured)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !strings.Contains(output, "ETA: calculating...") {
+		t.Errorf("expected 'ETA: calculating...' in output, got:\n%s", output)
+	}
+	if !strings.Contains(output, "Cost: calculating...") {
+		t.Errorf("expected 'Cost: calculating...' in output, got:\n%s", output)
+	}
+}

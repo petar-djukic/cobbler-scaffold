@@ -149,6 +149,20 @@ func FormatDuration(seconds int) string {
 	return fmt.Sprintf("%dm%ds", seconds/60, seconds%60)
 }
 
+// FormatDurationLong converts seconds to a human-readable string with hours
+// when the duration exceeds 60 minutes (e.g., "10h 52m").
+func FormatDurationLong(seconds int) string {
+	if seconds < 60 {
+		return fmt.Sprintf("%ds", seconds)
+	}
+	if seconds < 3600 {
+		return fmt.Sprintf("%dm %ds", seconds/60, seconds%60)
+	}
+	h := seconds / 3600
+	m := (seconds % 3600) / 60
+	return fmt.Sprintf("%dh %dm", h, m)
+}
+
 // ExtractBranchFromRefs returns the first local branch name from a %D
 // refs string (e.g. "HEAD -> task/main-abc, origin/task/main-abc").
 func ExtractBranchFromRefs(refs string) string {
