@@ -38,9 +38,6 @@ generation:
 cobbler:
   dir: .work/
   max_measure_issues: 3
-podman:
-  image: myimage:latest
-  args: ["-e", "KEY=val"]
 claude:
   max_time_sec: 600
 `
@@ -70,14 +67,8 @@ claude:
 	if cfg.Cobbler.MaxMeasureIssues != 3 {
 		t.Errorf("Cobbler.MaxMeasureIssues: got %d, want 3", cfg.Cobbler.MaxMeasureIssues)
 	}
-	if cfg.Podman.Image != "myimage:latest" {
-		t.Errorf("Podman.Image: got %q, want %q", cfg.Podman.Image, "myimage:latest")
-	}
 	if cfg.Claude.MaxTimeSec != 600 {
 		t.Errorf("Claude.MaxTimeSec: got %d, want 600", cfg.Claude.MaxTimeSec)
-	}
-	if len(cfg.Podman.Args) != 2 || cfg.Podman.Args[0] != "-e" {
-		t.Errorf("Podman.Args: got %v, want [\"-e\", \"KEY=val\"]", cfg.Podman.Args)
 	}
 }
 

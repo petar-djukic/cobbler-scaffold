@@ -15,13 +15,11 @@ type TagParams struct {
 	BaseBranch   string
 	DocTagPrefix string
 	VersionFile  string
-	BuildImageFn func() error
 }
 
 // Tag creates a documentation-only release tag (v0.YYYYMMDD.N) for the current
-// state of the repository, builds the container image with that tag, and tags
-// the image as :latest. The revision number increments for each tag created on
-// the same date. Optionally updates the version file if configured.
+// state of the repository. The revision number increments for each tag created
+// on the same date. Optionally updates the version file if configured.
 func Tag(p TagParams) error {
 	// Ensure we're on the configured base branch for doc tags.
 	current, err := GitCurrentBranchFn(".")
@@ -60,13 +58,7 @@ func Tag(p TagParams) error {
 		}
 	}
 
-	// Build the container image with the new tag.
-	Log("tag: building container image")
-	if err := p.BuildImageFn(); err != nil {
-		return fmt.Errorf("building image: %w", err)
-	}
-
-	Log("tag: done — created %s and built container image", tag)
+	Log("tag: done — created %s", tag)
 	return nil
 }
 

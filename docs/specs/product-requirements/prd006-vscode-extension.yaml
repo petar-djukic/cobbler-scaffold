@@ -81,7 +81,7 @@ requirements:
     items:
       - R6.1: The extension must register a command to open configuration.yaml in the editor
       - R6.2: The extension must display a summary of active configuration values in the status tree view as a collapsible Config node
-      - R6.3: The Config node must show the values of module_path, binary_name, gen_prefix, cycles, max_stitch_issues, max_measure_issues, and podman_image
+      - R6.3: The Config node must show the values of module_path, binary_name, gen_prefix, cycles, max_stitch_issues, and max_measure_issues
 
   R7:
     title: Extension Infrastructure

@@ -8,8 +8,8 @@ introduction: |
   A consuming project integrates the orchestrator by running the scaffold command,
   which detects the project structure and generates the files needed to run
   measure-stitch cycles. This document covers prerequisites, the scaffold procedure,
-  the files it creates, Claude execution modes, podman configuration, the
-  configuration reference, and the available Mage targets.
+  the files it creates, Claude execution modes, the configuration reference, and
+  the available Mage targets.
 
 sections:
   - title: Prerequisites
@@ -27,7 +27,6 @@ sections:
       | Go 1.25+ | Build and run |
       | Mage (magefile/mage) | Build system; orchestrator methods are Mage targets |
       | GitHub Issues | Issue tracking via GitHub API |
-      | Podman | Container runtime for Claude execution |
 
   - title: Scaffold Procedure
     content: |
@@ -71,74 +70,31 @@ sections:
 
   - title: Claude Execution Modes
     content: |
-      The orchestrator supports three Claude execution modes, selected by the
+      The orchestrator supports two Claude execution modes, selected by the
       cobbler.mode field in configuration.yaml. No environment variable controls
       the mode; configuration.yaml is the single source of truth.
 
       | Mode | Value | Description |
       |------|-------|-------------|
-      | Podman (default) | podman | Run Claude inside a podman container |
-      | CLI | cli | Run the claude binary directly on the host |
+      | CLI (default) | cli | Run the claude binary directly on the host |
       | SDK | sdk | Use the Go Agent SDK for structured streaming |
 
       Set the mode in configuration.yaml:
 
         cobbler:
-          mode: podman   # or cli, or sdk
+          mode: cli   # or sdk
 
-      When cobbler.mode is empty, the orchestrator defaults to podman. The
-      podman: section of configuration.yaml is required only when mode is
-      podman. For cli and sdk, the orchestrator invokes claude directly from
-      PATH, so no container image or podman installation is needed.
-
-      Use cli or sdk on hosts where podman is unavailable (CI runners, macOS
-      without a VM backend, development laptops). Use podman for production
-      generation runs that benefit from container isolation.
+      When cobbler.mode is empty, the orchestrator defaults to cli. The
+      orchestrator invokes claude directly from PATH.
 
       The execution mode is governed by prd001-orchestrator-core.yaml (R1 —
       Config struct and CobblerConfig).
-
-  - title: Podman Configuration
-    content: |
-      This section applies when cobbler.mode is podman (the default). Claude
-      runs inside a podman container. The orchestrator wraps every Claude
-      invocation in podman run, mounting the repository directory at the same
-      absolute path inside the container. Same-path mounting ensures that
-      absolute file references in prompts resolve correctly.
-
-      Install podman on macOS:
-
-        brew install podman
-        podman machine init
-        podman machine start
-
-      Prepare a container image that has the claude CLI installed. Verify:
-
-        podman run --rm <your-image> claude --version
-
-      Set podman_image in configuration.yaml:
-
-        podman:
-          image: "your-claude-image:latest"
-
-      Pass additional arguments (environment variables, extra mounts) via
-      podman_args:
-
-        podman:
-          args:
-            - "-e"
-            - "ANTHROPIC_API_KEY=sk-..."
-
-      The orchestrator runs a pre-flight check before every measure and stitch
-      phase: it verifies that podman is installed, the configured image exists,
-      and containers can start. If any check fails, the run aborts with a
-      diagnostic message.
 
       Extract Claude credentials from the macOS Keychain:
 
         mage credentials
 
-      This writes .secrets/claude.json, which the container mounts at runtime.
+      This writes .secrets/claude.json for Claude CLI authentication.
 
   - title: Configuration Reference
     content: |
@@ -165,7 +121,7 @@ sections:
         cleanup_dirs       Directories to remove after generator:stop or generator:reset
 
       cobbler:
-        mode                       default: podman — execution mode; one of podman, cli, sdk
+        mode                       default: cli — execution mode; one of cli, sdk
         dir                        default: .cobbler/ — scratch directory
         max_stitch_issues          default: 0 (unlimited) — total stitch cap for a run
         max_stitch_issues_per_cycle default: 10 — tasks per cycle before re-measuring
@@ -178,10 +134,6 @@ sections:
         design_constitution        Path to design constitution (overrides embedded)
         estimated_lines_min        default: 250 — min estimated LOC per task
         estimated_lines_max        default: 350 — max estimated LOC per task
-
-      podman:
-        image    (required) Container image for Claude execution
-        args     Additional podman run arguments before the image name
 
       claude:
         args              Default: --dangerously-skip-permissions -p --verbose

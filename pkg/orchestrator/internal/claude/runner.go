@@ -23,10 +23,10 @@ import (
 // ---------------------------------------------------------------------------
 
 // Runner executes Claude in a specific mode and returns token usage. The
-// three implementations — CLIRunner, PodmanRunner, SDKRunner — encapsulate
-// the mode-specific command construction and output handling. Shared
-// concerns (credential refresh, timeout, workDir resolution) live in the
-// caller (RunClaude).
+// two implementations — CLIRunner and SDKRunner — encapsulate the
+// mode-specific command construction and output handling. Shared concerns
+// (credential refresh, timeout, workDir resolution) live in the caller
+// (RunClaude).
 type Runner interface {
 	Run(ctx context.Context, prompt, workDir string, silence bool, extraArgs ...string) (ClaudeResult, error)
 }
@@ -40,7 +40,7 @@ func NewRunner(deps RunClaudeDeps) Runner {
 			queryFn:       deps.SdkQueryFn,
 			claudeTimeout: deps.ClaudeTimeout,
 		}
-	case "cli":
+	default:
 		return &CLIRunner{
 			execRunner: execRunner{
 				buildCmd: func(ctx context.Context, workDir string, extraArgs ...string) *exec.Cmd {
@@ -49,22 +49,15 @@ func NewRunner(deps RunClaudeDeps) Runner {
 				idleTimeoutS: deps.IdleTimeoutS,
 			},
 		}
-	default:
-		return &PodmanRunner{
-			execRunner: execRunner{
-				buildCmd:     deps.BuildPodmanCmdFn,
-				idleTimeoutS: deps.IdleTimeoutS,
-			},
-		}
 	}
 }
 
 // ---------------------------------------------------------------------------
-// execRunner — shared exec-based logic for CLI and Podman modes
+// execRunner — shared exec-based logic for CLI mode
 // ---------------------------------------------------------------------------
 
 // execRunner holds the shared execution logic for modes that run Claude as
-// an external process (CLI and Podman). It manages stdout capture, progress
+// an external process (CLI). It manages stdout capture, progress
 // logging, idle watchdog, and token parsing.
 type execRunner struct {
 	buildCmd     func(ctx context.Context, workDir string, extra ...string) *exec.Cmd
@@ -160,21 +153,6 @@ type CLIRunner struct {
 
 // Run executes Claude via the host CLI binary.
 func (r *CLIRunner) Run(ctx context.Context, prompt, workDir string, silence bool, extraArgs ...string) (ClaudeResult, error) {
-	return r.execRunner.run(ctx, prompt, workDir, silence, extraArgs...)
-}
-
-// ---------------------------------------------------------------------------
-// PodmanRunner
-// ---------------------------------------------------------------------------
-
-// PodmanRunner executes Claude inside a podman container. It embeds
-// execRunner for shared process management.
-type PodmanRunner struct {
-	execRunner
-}
-
-// Run executes Claude via a podman container.
-func (r *PodmanRunner) Run(ctx context.Context, prompt, workDir string, silence bool, extraArgs ...string) (ClaudeResult, error) {
 	return r.execRunner.run(ctx, prompt, workDir, silence, extraArgs...)
 }
 

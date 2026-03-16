@@ -41,7 +41,6 @@ var (
 
 	BinGit    string
 	BinClaude string
-	BinPodman string
 )
 
 // ---------------------------------------------------------------------------
@@ -52,7 +51,7 @@ var (
 // InputTokens is the total input (non-cached + cache creation + cache read).
 // CacheCreationTokens and CacheReadTokens break down how the input was served.
 // RawOutput contains the full stream-json output from Claude for history.
-// NumTurns is populated from ProgressWriter in CLI/Podman mode and from the
+// NumTurns is populated from ProgressWriter in CLI mode and from the
 // SDK ResultMessage in SDK mode. DurationAPIMs and SessionID are SDK-only.
 type ClaudeResult struct {
 	InputTokens         int
@@ -183,16 +182,12 @@ type RunClaudeDeps struct {
 	Temperature    float64
 	Silence        bool
 	ClaudeArgs     []string
-	PodmanArgs     []string
-	PodmanImage    string
 	SecretsDir     string
 	TokenFile      string
-	ContainerCreds string
 	IdleTimeoutS   int
 	SdkQueryFn     SdkQueryFunc
 
 	ExtractCredentialsFn func() error
-	BuildPodmanCmdFn     func(ctx context.Context, workDir string, extra ...string) *exec.Cmd
 }
 
 // ---------------------------------------------------------------------------
@@ -724,20 +719,12 @@ func RunClaudeSDK(deps RunClaudeDeps, ctx context.Context, prompt, workDir strin
 type CheckClaudeDeps struct {
 	EffectiveMode      string
 	EnsureCredentialsFn func() error
-	CheckPodmanFn      func() error
 }
 
 // CheckClaude verifies that Claude can be invoked.
 func CheckClaude(deps CheckClaudeDeps) error {
-	switch deps.EffectiveMode {
-	case "cli", "sdk":
-		if _, err := exec.LookPath(BinClaude); err != nil {
-			return fmt.Errorf("claude not found on PATH; install the Claude CLI or set mode: podman")
-		}
-		return deps.EnsureCredentialsFn()
-	}
-	if err := deps.CheckPodmanFn(); err != nil {
-		return err
+	if _, err := exec.LookPath(BinClaude); err != nil {
+		return fmt.Errorf("claude not found on PATH; install the Claude CLI")
 	}
 	return deps.EnsureCredentialsFn()
 }
@@ -760,14 +747,6 @@ func EnsureCredentials(secretsDir, tokenFile string, extractFn func() error) err
 			credPath, credPath)
 	}
 	return nil
-}
-
-// CheckPodman verifies that podman is available and the image exists.
-func CheckPodman(ensureImageFn func() error) error {
-	if _, err := exec.LookPath(BinPodman); err != nil {
-		return fmt.Errorf("podman not found on PATH; see README.md")
-	}
-	return ensureImageFn()
 }
 
 // ---------------------------------------------------------------------------

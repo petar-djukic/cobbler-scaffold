@@ -21,8 +21,7 @@ type contextFileEntry struct {
 
 // PrintContextFiles lists every file that would be appended to the Claude prompt
 // with its source annotation (default/config), category, line count, and estimated
-// token count (bytes/4). A totals line is printed at the end. No API call or
-// podman is required.
+// token count (bytes/4). A totals line is printed at the end.
 //
 // Exposed as a mage target (mage prompt:files).
 func (o *Orchestrator) PrintContextFiles() error {

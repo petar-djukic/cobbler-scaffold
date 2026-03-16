@@ -86,13 +86,13 @@ requirements:
   R6:
     title: Claude Invocation
     items:
-      - R6.1: runClaude must execute the claude binary inside a podman container with the prompt on stdin
-      - R6.2: runClaude must mount the working directory into the container at the same path using -v mountDir:mountDir
-      - R6.3: runClaude must set the container working directory using podman -w when a worktree path is provided
+      - R6.1: runClaude must execute the claude binary with the prompt on stdin
+      - R6.2: Reserved (container mounting removed — podman support dropped)
+      - R6.3: Reserved (container working directory removed — podman support dropped)
       - R6.4: runClaude must capture stdout for token parsing
       - R6.5: parseClaudeTokens must extract input tokens, output tokens, cache creation tokens, cache read tokens, and cost from stream-json output
       - R6.6: When silence is false, Claude stdout must be tee'd to both buffer and os.Stdout
-      - R6.7: runClaude must pass Config.PodmanArgs before the image name and Config.ClaudeArgs after the claude binary
+      - R6.7: runClaude must pass Config.ClaudeArgs to the claude binary
       - R6.8: runClaude must use context.WithTimeout to enforce ClaudeMaxTimeSec; process is killed on expiry
       - R6.10: On Claude failure or timeout in stitch, the task must be reset to ready and the worktree cleaned up
       - R6.11: On merge failure in stitch, the task must be reset to ready and the worktree cleaned up
@@ -111,12 +111,12 @@ requirements:
   R8:
     title: Pre-flight Checks
     items:
-      - R8.1: checkPodman must verify Config.PodmanImage is not empty
-      - R8.2: checkPodman must verify the podman binary is on PATH
-      - R8.3: checkPodman must verify a container can start using the configured PodmanImage
-      - R8.4: checkPodman must return an error with a README reference when any check fails
-      - R8.5: RunMeasure must call checkPodman before any other work
-      - R8.6: RunStitch must call checkPodman before any other work
+      - R8.1: Reserved (checkPodman removed — podman support dropped)
+      - R8.2: Reserved (checkPodman removed — podman support dropped)
+      - R8.3: Reserved (checkPodman removed — podman support dropped)
+      - R8.4: Reserved (checkPodman removed — podman support dropped)
+      - R8.5: Reserved (checkPodman removed — podman support dropped)
+      - R8.6: Reserved (checkPodman removed — podman support dropped)
 
   R9:
     title: Phase-Specific Context Files
@@ -231,7 +231,7 @@ acceptance_criteria:
       - R5.8
       - R5.9
   - id: AC5
-    criterion: Claude is invoked in a podman container with configurable arguments and enforced timeout
+    criterion: Claude is invoked with configurable arguments and enforced timeout
     traces:
       - R6.1
       - R6.2
@@ -254,7 +254,7 @@ acceptance_criteria:
       - R7.4
       - R7.5
   - id: AC7
-    criterion: Pre-flight checks verify podman availability before measure and stitch
+    criterion: Reserved (pre-flight podman checks removed — podman support dropped)
     traces:
       - R8.1
       - R8.2

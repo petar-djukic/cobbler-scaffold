@@ -5,7 +5,6 @@ package claude
 
 import (
 	"context"
-	"os/exec"
 	"testing"
 	"time"
 
@@ -42,30 +41,13 @@ func TestNewRunner_CLI(t *testing.T) {
 	}
 }
 
-func TestNewRunner_Podman(t *testing.T) {
-	deps := RunClaudeDeps{
-		EffectiveMode: "podman",
-		BuildPodmanCmdFn: func(ctx context.Context, workDir string, extra ...string) *exec.Cmd {
-			return exec.CommandContext(ctx, "echo")
-		},
-		IdleTimeoutS: 120,
-	}
-	r := NewRunner(deps)
-	if _, ok := r.(*PodmanRunner); !ok {
-		t.Errorf("expected *PodmanRunner, got %T", r)
-	}
-}
-
-func TestNewRunner_DefaultIsPodman(t *testing.T) {
+func TestNewRunner_DefaultIsCLI(t *testing.T) {
 	deps := RunClaudeDeps{
 		EffectiveMode: "",
-		BuildPodmanCmdFn: func(ctx context.Context, workDir string, extra ...string) *exec.Cmd {
-			return exec.CommandContext(ctx, "echo")
-		},
 	}
 	r := NewRunner(deps)
-	if _, ok := r.(*PodmanRunner); !ok {
-		t.Errorf("expected *PodmanRunner for empty mode, got %T", r)
+	if _, ok := r.(*CLIRunner); !ok {
+		t.Errorf("expected *CLIRunner for empty mode, got %T", r)
 	}
 }
 
@@ -75,10 +57,6 @@ func TestNewRunner_DefaultIsPodman(t *testing.T) {
 
 func TestCLIRunner_ImplementsRunner(t *testing.T) {
 	var _ Runner = (*CLIRunner)(nil)
-}
-
-func TestPodmanRunner_ImplementsRunner(t *testing.T) {
-	var _ Runner = (*PodmanRunner)(nil)
 }
 
 func TestSDKRunner_ImplementsRunner(t *testing.T) {

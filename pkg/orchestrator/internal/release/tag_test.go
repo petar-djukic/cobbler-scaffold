@@ -117,7 +117,6 @@ func TestTag_WrongBranch(t *testing.T) {
 	err := Tag(TagParams{
 		BaseBranch:   "release",
 		DocTagPrefix: "v0.",
-		BuildImageFn: func() error { return nil },
 	})
 	if err == nil {
 		t.Fatal("Tag() expected error for wrong branch, got nil")
@@ -135,20 +134,12 @@ func TestTag_CreatesGitTag(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	buildCalled := false
 	err = Tag(TagParams{
 		BaseBranch:   current,
 		DocTagPrefix: "v0.",
-		BuildImageFn: func() error {
-			buildCalled = true
-			return nil
-		},
 	})
 	if err != nil {
 		t.Fatalf("Tag() unexpected error: %v", err)
-	}
-	if !buildCalled {
-		t.Error("expected BuildImageFn to be called")
 	}
 
 	// Verify the git tag was created.
@@ -170,7 +161,6 @@ func TestTag_VersionFileWriteError(t *testing.T) {
 		BaseBranch:   current,
 		DocTagPrefix: "v0.",
 		VersionFile:  "/dev/null/impossible/version.go", // will fail
-		BuildImageFn: func() error { return nil },
 	})
 
 	if err == nil {

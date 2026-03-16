@@ -48,9 +48,6 @@ cobbler:
     estimated_lines_min: 250
     estimated_lines_max: 350
     history_dir: history
-podman:
-    image: claude-cli
-    args: []
 claude:
     args:
         - --dangerously-skip-permissions

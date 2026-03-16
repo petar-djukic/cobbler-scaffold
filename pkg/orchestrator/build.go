@@ -20,12 +20,8 @@ func init() {
 	build.BinGo = binGo
 	build.BinLint = binLint
 	build.BinSecurity = binSecurity
-	build.BinPodman = binPodman
 	build.BinMage = binMage
 	build.BinGit = binGit
-	build.PodmanBuildFn = podmanBuild
-	build.ReadVersionConstFn = readVersionConst
-	build.GitListTagsFn = gitListTags
 }
 
 // Build compiles the project binary. If MainPackage is empty, the

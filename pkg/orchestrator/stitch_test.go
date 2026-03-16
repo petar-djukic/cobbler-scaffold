@@ -23,9 +23,9 @@ func TestErrTaskReset_MentionsOpen(t *testing.T) {
 // per-cycle failed-task set: once a task ID is recorded as failed, any
 // subsequent pick of the same ID must cause the loop to terminate rather
 // than re-execute the task. This is the mechanism that prevents infinite
-// retry loops when a task repeatedly fails (e.g., Podman timeout).
+// retry loops when a task repeatedly fails (e.g., timeout).
 //
-// The full RunStitchN stack requires GitHub Issues, git, and a Claude container,
+// The full RunStitchN stack requires GitHub Issues, git, and a Claude session,
 // so this test exercises the tracking logic directly using the same map
 // operations that RunStitchN uses internally.
 func TestRunStitchN_SkipsAlreadyFailedTask(t *testing.T) {

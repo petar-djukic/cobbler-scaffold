@@ -10,9 +10,9 @@ overview:
 
     The system operates as build tooling, not a standalone application. An Orchestrator struct
     holds a Config and provides methods that Mage calls as targets. These methods coordinate
-    five subsystems: git branch management, Claude invocation (podman container, host CLI,
-    or Go Agent SDK — selected by cobbler.mode in configuration.yaml), issue tracking
-    (GitHub Issues via gh CLI), metrics collection, and project scaffolding.
+    four subsystems: git branch management, Claude invocation (host CLI or Go Agent SDK
+    — selected by cobbler.mode in configuration.yaml), issue tracking (GitHub Issues via
+    gh CLI), metrics collection, and project scaffolding.
 
   lifecycle: |
     Generations are the primary unit of work. A generation starts from a tagged main state,
@@ -104,7 +104,7 @@ interfaces:
       - "Scaffold(): scaffold orchestrator into consuming project"
       - "Uninstall(): remove scaffold artifacts from target project"
       - "Tag(): create versioned doc-release tag, update version file"
-      - "BuildImage(): build podman container image from embedded Dockerfile"
+      - "Reserved (BuildImage removed — podman support dropped)"
       - "BuildAll(): go build all cmd/ sub-packages when MainPackage is empty (prd003)"
       - "Build(): go build the consuming project binary"
       - "Analyze(): cross-artifact consistency checking"
@@ -127,7 +127,7 @@ interfaces:
       - "ExtractCredentials(): extract Claude credentials from macOS Keychain"
       - "VscodePush(): build, package, and install VS Code extension"
       - "VscodePop(): uninstall VS Code extension"
-      - "PodmanClean(): remove podman containers for the configured image"
+      - "Reserved (PodmanClean removed — podman support dropped)"
       - "ConstitutionPreviewFile(): render constitution YAML to markdown"
       - "RunPreCycleAnalysis(): write analysis.yaml before each measure/stitch cycle"
       - "PrepareTestRepo(): download and scaffold a test repository for E2E tests"
@@ -203,14 +203,13 @@ components:
 
   - name: Cobbler Common
     responsibility: |
-      Claude invocation (runClaude dispatches to runClaudePodman, runClaudeCLI, or
-      runClaudeSDK based on effectiveMode()), token parsing, LOC capture, invocation
-      recording, history artifact saving, progress logging, configuration logging, and
-      worktree path management. The progressWriter logs real-time Claude stream events
-      (tool calls, turns, timing) with claude: prefix for clear log attribution.
+      Claude invocation (runClaude dispatches to runClaudeCLI or runClaudeSDK based on
+      effectiveMode()), token parsing, LOC capture, invocation recording, history artifact
+      saving, progress logging, configuration logging, and worktree path management. The
+      progressWriter logs real-time Claude stream events (tool calls, turns, timing) with
+      claude: prefix for clear log attribution.
     capabilities:
-      - Dispatch Claude invocation to podman, CLI, or SDK mode via effectiveMode()
-      - Wrap podman run for Claude execution with same-path mounting (podman mode)
+      - Dispatch Claude invocation to CLI or SDK mode via effectiveMode()
       - Invoke claude binary directly on host (cli mode)
       - Invoke Claude via Go Agent SDK with sdkEnvMu-serialised env mutation (sdk mode)
       - Filter SDK stderr to replace rate_limit_event warnings with structured log entries (filterSDKStderr)
@@ -359,18 +358,6 @@ components:
     references:
       - prd003-cobbler-workflows (prompt building, R9 phase context)
       - eng08-phase-context-files
-
-  - name: Docker
-    responsibility: |
-      Manages the podman container image for Claude execution. Embeds a Dockerfile
-      (Dockerfile.claude) via go:embed. Builds the image with versioned and latest tags.
-      Auto-builds the image if it does not exist locally (ensureImage).
-    capabilities:
-      - Build container image from embedded Dockerfile
-      - Tag images with version and latest
-      - Auto-build missing images before Claude invocation
-    references:
-      - Design decision 4 (container-isolated Claude execution)
 
   - name: Logging
     responsibility: |
@@ -578,19 +565,18 @@ design_decisions:
   - id: 4
     title: Pluggable Claude execution mode
     decision: |
-      We support three Claude execution modes selected by cobbler.mode in configuration.yaml:
-      podman (default) wraps every invocation in a container with same-path mounting;
-      cli invokes the claude binary directly on the host; sdk uses the Go Agent SDK
-      (github.com/schlunsen/claude-agent-sdk-go) for structured streaming. effectiveMode()
-      resolves the configured mode and runClaude dispatches to the appropriate
-      implementation. Podman mode performs a pre-flight check before each run. SDK mode
-      serialises process-env mutations around each invocation via sdkEnvMu.
+      We support two Claude execution modes selected by cobbler.mode in configuration.yaml:
+      cli (default) invokes the claude binary directly on the host; sdk uses the Go Agent
+      SDK (github.com/schlunsen/claude-agent-sdk-go) for structured streaming.
+      effectiveMode() resolves the configured mode and runClaude dispatches to the
+      appropriate implementation. SDK mode serialises process-env mutations around each
+      invocation via sdkEnvMu.
     benefits:
-      - Podman mode isolates Claude from the host and makes builds reproducible
-      - CLI and SDK modes work on hosts without a container runtime (CI, laptops)
+      - CLI mode works on any host with the claude binary installed
+      - SDK mode provides structured streaming and programmatic control
       - Mode is a single configuration field — no code change to switch
     alternatives_rejected:
-      - "Hard-coded podman only: blocks use in CI and environments without a VM backend"
+      - "Podman container execution: removed in favor of direct CLI and SDK modes for simplicity"
 
   - id: 5
     title: GitHub Issues for task tracking
@@ -698,9 +684,6 @@ technology_choices:
   - component: AI execution
     technology: Claude Code (CLI)
     purpose: Code generation and task execution
-  - component: Container runtime
-    technology: Podman
-    purpose: Isolates Claude execution in containers
   - component: Prompt templating
     technology: Go text/template
     purpose: Parameterized prompts with data injection
@@ -737,8 +720,6 @@ project_structure:
     role: Scaffold orchestrator into consuming projects
   - path: pkg/orchestrator/context.go
     role: ProjectContext assembly from docs, specs, source code
-  - path: pkg/orchestrator/docker.go
-    role: Container image build from embedded Dockerfile
   - path: pkg/orchestrator/tag.go
     role: Versioned doc-release tagging
   - path: pkg/orchestrator/version.go
@@ -776,9 +757,9 @@ project_structure:
   - path: pkg/orchestrator/internal/analysis/
     role: Cross-artifact consistency checking, code status, pre-cycle analysis, structured criteria types (AcceptanceCriterion, SuccessCriterion)
   - path: pkg/orchestrator/internal/build/
-    role: Go build, scaffold, Docker image management
+    role: Go build, scaffold
   - path: pkg/orchestrator/internal/claude/
-    role: Claude invocation dispatch (podman, CLI, SDK) and runner implementation
+    role: Claude invocation dispatch (CLI, SDK) and runner implementation
   - path: pkg/orchestrator/internal/compare/
     role: Differential comparison and test case loader
   - path: pkg/orchestrator/internal/context/
@@ -795,8 +776,6 @@ project_structure:
     role: LOC metrics, generator stats, release stats, outcomes, token stats
   - path: pkg/orchestrator/internal/vscode/
     role: VS Code extension build, package, install
-  - path: pkg/orchestrator/Dockerfile.claude
-    role: Embedded Dockerfile for Claude container
   - path: pkg/orchestrator/prompts/
     role: Embedded prompt templates (measure.tmpl, stitch.tmpl)
   - path: pkg/orchestrator/constitutions/
@@ -815,13 +794,11 @@ implementation_status:
     - done: Measure and stitch workflows with full ProjectContext
     - done: Metrics collection and invocation records
     - done: Recovery from interrupted runs
-    - done: Container-isolated Claude execution via podman
     - done: Embedded prompt templates with override
     - done: Project scaffolding for consuming repos
     - done: Context assembly from docs, specs, source code, issues
     - done: History artifact saving (prompt, log, stats per invocation)
     - done: Phase-aware structured logging
-    - done: Container image build from embedded Dockerfile
     - done: Cross-artifact consistency analysis
     - done: Orchestrator-managed git commits in stitch worktrees
     - done: Phase-specific context file loading (PhaseContext override mechanism)

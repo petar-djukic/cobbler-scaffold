@@ -19,7 +19,7 @@ goals:
 
 requirements:
   R1:
-    title: "Config Struct (nested: ProjectConfig, GenerationConfig, CobblerConfig, PodmanConfig, ClaudeConfig)"
+    title: "Config Struct (nested: ProjectConfig, GenerationConfig, CobblerConfig, ClaudeConfig)"
     items:
       - R1.1: ProjectConfig must include ModulePath (string) for the Go module path
       - R1.2: ProjectConfig must include BinaryName (string) for the compiled binary name
@@ -48,8 +48,8 @@ requirements:
       - R1.25: CobblerConfig must include EstimatedLinesMin (int, default 250) for the minimum estimated lines per task, passed to the measure prompt as LinesMin
       - R1.26: CobblerConfig must include EstimatedLinesMax (int, default 350) for the maximum estimated lines per task, passed to the measure prompt as LinesMax
       - R1.27: GenerationConfig must include CleanupDirs ([]string) listing directories to remove after generation stop or reset
-      - R1.28: PodmanConfig must include Image (string, default "claude-cli") for the container image used for Claude execution
-      - R1.29: PodmanConfig must include Args ([]string) for additional arguments passed to podman run
+      - R1.28: Reserved (PodmanConfig removed — podman support dropped)
+      - R1.29: Reserved (PodmanConfig removed — podman support dropped)
       - R1.30: ClaudeConfig must include MaxTimeSec (int, default 300) for the maximum seconds per Claude invocation
       - R1.31: ProjectConfig must include ContextSources (string) as a newline-delimited list of extra file paths and glob patterns that supplement standard document discovery in the measure prompt project context
       - R1.32: ProjectConfig must include ContextInclude (string) as a newline-delimited list of glob patterns that, when set, replace the standard document discovery; only matching files are loaded
@@ -65,7 +65,7 @@ requirements:
       - R1.42: CobblerConfig must include HistoryDir (string, default "history") for saving measure artifacts per iteration
       - R1.43: CobblerConfig must include DocTagPrefix (string, default "v0.") as the prefix for documentation release tags
       - R1.44: CobblerConfig must include BaseBranch (string, default "main") as the branch from which documentation release tags must be created
-      - R1.45: ClaudeConfig must include ContainerCredentialsPath (string, default "/home/crumbs/.claude/.credentials.json") as the absolute path inside the container where the Claude CLI expects its credentials file
+      - R1.45: Reserved (ContainerCredentialsPath removed — podman support dropped)
       - R1.46: ClaudeConfig must include Temperature (float64) to control Claude output randomness; when 0 (default), no temperature parameter is passed; currently reserved for future use
 
   R2:
@@ -89,8 +89,8 @@ requirements:
       - R2.16: applyDefaults must set Cobbler.HistoryDir to "history" when empty
       - R2.17: applyDefaults must set Cobbler.DocTagPrefix to "v0." when empty
       - R2.18: applyDefaults must set Cobbler.BaseBranch to "main" when empty
-      - R2.19: applyDefaults must set Claude.ContainerCredentialsPath to "/home/crumbs/.claude/.credentials.json" when empty
-      - R2.20: applyDefaults must set Podman.Image to "claude-cli" when empty
+      - R2.19: Reserved (ContainerCredentialsPath removed — podman support dropped)
+      - R2.20: Reserved (Podman.Image removed — podman support dropped)
 
   R3:
     title: Logging
@@ -156,7 +156,7 @@ non_goals:
 
 acceptance_criteria:
   - id: AC1
-    criterion: Config struct and its five sub-structs (ProjectConfig, GenerationConfig, CobblerConfig, PodmanConfig, ClaudeConfig) include all fields listed in R1 with YAML struct tags
+    criterion: Config struct and its four sub-structs (ProjectConfig, GenerationConfig, CobblerConfig, ClaudeConfig) include all fields listed in R1 with YAML struct tags
     traces:
       - R1.1
       - R1.2

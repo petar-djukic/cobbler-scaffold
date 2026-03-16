@@ -420,9 +420,7 @@ coverage_gaps: |
     saveHistory(), saveHistoryStats(), saveHistoryPromptAndLog() — persists
     prompt, log, and stats per invocation. No PRD.
   - Tag/versioning (tag.go): Tag() creates v0.YYYYMMDD.N doc-release tags. No PRD.
-  - Docker/image management (docker.go): BuildImage(), ensureImage(), embedded
-    Dockerfile. Design decision 4 describes the rationale but no PRD specifies
-    the build/ensure behavior.
+  - Reserved (Docker/image management removed — podman support dropped).
   - Phase-aware logging (orchestrator.go): setPhase/clearPhase, logf with
     [phase +elapsed]. No PRD.
 
