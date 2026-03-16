@@ -142,6 +142,38 @@ traceability:
     - "Engineering guidelines: docs/engineering/eng*.md"
     - "Vision: docs/VISION.yaml"
 
+build_and_test:
+  build_within_module: |
+    Always build and test from within the Go module directory. Do not cd
+    outside the module or create separate Go modules for testing. Use
+    `go build -o bin/<name> ./cmd/<name>/` for cmd/ binaries so outputs
+    land in bin/ (git-ignored). Do not use mage build or mage lint for
+    individual packages — use go build and go vet directly.
+
+  test_planning: |
+    Plan test prerequisites before writing test code. Determine what
+    binaries, fixtures, or reference implementations the tests need.
+    If cmd/ is empty during generation (code not yet written), skip
+    tests that require a built binary — use t.Skip with an explanatory
+    message. For tests that compare against reference binaries (e.g.
+    GNU coreutils), always use exec.LookPath and t.Skip if the
+    reference is not installed.
+
+  negative_tests: |
+    Do not write subtests that intentionally fail the test harness and
+    then fix them afterward. Every test you write must pass on the first
+    run. Use assertions (require.Equal, assert.Error) to check expected
+    error conditions. Use subprocess exec.Command to test exit codes
+    and signal handling rather than calling os.Exit in-process. Never
+    write a test that you expect to fail — if behavior is conditional,
+    use t.Skip or build tags.
+
+  repository_notes: |
+    Files with "collision" in the name are test fixtures for hash
+    collision testing — do not delete or modify them. Utilities that
+    write to stdout must install a SIGPIPE handler (signal.Notify +
+    signal.Reset) so piped output does not cause a broken-pipe crash.
+
 session_completion:
   git_managed_externally: true  # Do NOT run any git commands
   token_tracking: true  # Log tokens used per issue
