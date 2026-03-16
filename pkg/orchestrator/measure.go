@@ -212,7 +212,7 @@ func (o *Orchestrator) RunMeasure() error {
 			o.saveHistoryPrompt(historyTS, "measure", prompt)
 
 			iterStart := time.Now()
-			tokens, err := o.runClaude(prompt, "", o.cfg.Silence(), "--max-turns", "1")
+			tokens, err := o.runMeasureClaude(prompt, "", o.cfg.Silence(), "--max-turns", "1")
 			iterDuration := time.Since(iterStart)
 
 			totalTokens.InputTokens += tokens.InputTokens

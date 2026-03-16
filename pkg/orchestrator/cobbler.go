@@ -164,6 +164,15 @@ func (o *Orchestrator) runClaudeDeps() claude.RunClaudeDeps {
 	}
 }
 
+// runMeasureClaude executes Claude with the measure-specific idle timeout,
+// which is higher than the default to accommodate large prompts that cause
+// extended thinking time (GH-1509).
+func (o *Orchestrator) runMeasureClaude(prompt, dir string, silence bool, extraClaudeArgs ...string) (ClaudeResult, error) {
+	deps := o.runClaudeDeps()
+	deps.IdleTimeoutS = o.cfg.Cobbler.MeasureIdleTimeoutSeconds
+	return claude.RunClaude(deps, prompt, dir, silence, extraClaudeArgs...)
+}
+
 // runClaudeSDK executes Claude via the Go Agent SDK.
 func (o *Orchestrator) runClaudeSDK(ctx context.Context, prompt, workDir string, silence bool, extraClaudeArgs ...string) (ClaudeResult, error) {
 	return claude.RunClaudeSDK(o.runClaudeDeps(), ctx, prompt, workDir, silence, extraClaudeArgs...)

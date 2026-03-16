@@ -241,6 +241,12 @@ type CobblerConfig struct {
 	// reads, tool calls, code). Default 60. Set to 0 to disable.
 	IdleTimeoutSeconds int `yaml:"idle_timeout_seconds"`
 
+	// MeasureIdleTimeoutSeconds overrides IdleTimeoutSeconds for measure
+	// invocations. Measure prompts can be very large (100KB+) causing
+	// Claude to think for 20+ minutes before producing output. Default
+	// 1800 (30 min). Set to 0 to disable the watchdog for measure.
+	MeasureIdleTimeoutSeconds int `yaml:"measure_idle_timeout_seconds"`
+
 	// MeasureExcludeSource excludes all Go source files from the measure
 	// prompt context when true. Specs (PRDs, use cases, constitutions,
 	// road-map) are always included. Default false; existing behaviour
@@ -508,6 +514,9 @@ func (c *Config) applyDefaults() {
 	}
 	if c.Cobbler.IdleTimeoutSeconds == 0 {
 		c.Cobbler.IdleTimeoutSeconds = 60
+	}
+	if c.Cobbler.MeasureIdleTimeoutSeconds == 0 {
+		c.Cobbler.MeasureIdleTimeoutSeconds = 1800
 	}
 	if c.Cobbler.MaxConsecutiveZeroLOCCycles == 0 {
 		c.Cobbler.MaxConsecutiveZeroLOCCycles = 3
