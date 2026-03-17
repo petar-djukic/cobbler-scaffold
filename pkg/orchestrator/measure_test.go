@@ -1966,13 +1966,38 @@ func TestBuildMeasurePrompt_SourceMode_PhaseCtxWins(t *testing.T) {
 
 // --- MeasureTasksPerCall (GH-1471) ---
 
-func TestMeasureTasksPerCall_DefaultIsOne(t *testing.T) {
+func TestMeasureTasksPerCall_DefaultIsMaxIssues(t *testing.T) {
 	t.Parallel()
+	// When MeasureTasksPerCall is 0 (not set), RunMeasure defaults it to
+	// maxIssues so that a single Claude call proposes all tasks (GH-1602).
 	cfg := Config{}
+	cfg.Cobbler.MaxMeasureIssues = 3
 	cfg.applyDefaults()
-	// MeasureTasksPerCall defaults to 0 in the struct; RunMeasure treats 0 as 1.
-	if cfg.Cobbler.MeasureTasksPerCall < 0 {
-		t.Errorf("MeasureTasksPerCall should not be negative, got %d", cfg.Cobbler.MeasureTasksPerCall)
+
+	tasksPerCall := cfg.Cobbler.MeasureTasksPerCall
+	if tasksPerCall != 0 {
+		t.Fatalf("applyDefaults should leave MeasureTasksPerCall at 0, got %d", tasksPerCall)
+	}
+	// Simulate the runtime default in RunMeasure.
+	maxIssues := cfg.Cobbler.MaxMeasureIssues
+	if tasksPerCall <= 0 {
+		tasksPerCall = maxIssues
+	}
+	totalCalls := (maxIssues + tasksPerCall - 1) / tasksPerCall
+	if totalCalls != 1 {
+		t.Errorf("default tasksPerCall=%d with maxIssues=%d should produce 1 call, got %d",
+			tasksPerCall, maxIssues, totalCalls)
+	}
+}
+
+func TestMeasureTasksPerCall_ExplicitOneIsSequential(t *testing.T) {
+	t.Parallel()
+	// Explicit measure_tasks_per_call: 1 preserves old sequential behavior.
+	tasksPerCall := 1
+	maxIssues := 3
+	totalCalls := (maxIssues + tasksPerCall - 1) / tasksPerCall
+	if totalCalls != 3 {
+		t.Errorf("explicit tasksPerCall=1 with maxIssues=3 should produce 3 calls, got %d", totalCalls)
 	}
 }
 

@@ -147,7 +147,8 @@ type CobblerConfig struct {
 	// a single measure call. Higher values reduce cost by amortizing prompt
 	// tokens across multiple tasks, but may increase per-call latency.
 	// MaxMeasureIssues remains the total cap; the measure loop issues
-	// ceiling(MaxMeasureIssues / MeasureTasksPerCall) calls. Default 1.
+	// ceiling(MaxMeasureIssues / MeasureTasksPerCall) calls.
+	// Default: MaxMeasureIssues (single call). Set to 1 for sequential calls.
 	MeasureTasksPerCall int `yaml:"measure_tasks_per_call"`
 
 	// UserPrompt provides additional context for the measure prompt.

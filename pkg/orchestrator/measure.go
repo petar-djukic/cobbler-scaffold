@@ -152,7 +152,7 @@ func (o *Orchestrator) RunMeasure() error {
 	maxIssues := o.cfg.Cobbler.MaxMeasureIssues
 	tasksPerCall := o.cfg.Cobbler.MeasureTasksPerCall
 	if tasksPerCall <= 0 {
-		tasksPerCall = 1
+		tasksPerCall = maxIssues
 	}
 	totalCalls := (maxIssues + tasksPerCall - 1) / tasksPerCall // ceiling division
 	logf("measure: maxIssues=%d tasksPerCall=%d totalCalls=%d", maxIssues, tasksPerCall, totalCalls)
