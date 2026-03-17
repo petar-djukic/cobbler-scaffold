@@ -362,6 +362,132 @@ func TestCreateWorktree_BranchAlreadyExists(t *testing.T) {
 	}
 }
 
+func TestCreateWorktree_RecoversStaleBranch(t *testing.T) {
+	// Simulate: branch exists, first WorktreeAdd fails (stale worktree
+	// reference), recovery deletes branch + prunes + recreates, retry succeeds.
+	worktreeAddCalls := 0
+	var forceDeleted string
+	var pruned bool
+	var recreatedBranch string
+	gitDeps := StitchGitDeps{
+		RepoReader: &mockRepoReader{BranchExistsFn: func(name, dir string) bool { return true }},
+		BranchManager: &mockBranchManager{
+			ForceDeleteBranchFn: func(name, dir string) error { forceDeleted = name; return nil },
+			CreateBranchFn:      func(name, dir string) error { recreatedBranch = name; return nil },
+		},
+		WorktreeManager: &mockWorktreeManager{
+			WorktreeAddFn: func(wtDir, branch, dir string) *exec.Cmd {
+				worktreeAddCalls++
+				if worktreeAddCalls == 1 {
+					return exec.Command("false") // first attempt fails
+				}
+				return exec.Command("true") // retry succeeds
+			},
+			WorktreePruneFn: func(dir string) error { pruned = true; return nil },
+		},
+	}
+	task := StitchTask{
+		BranchName:  "task/gen-2064",
+		WorktreeDir: t.TempDir(),
+	}
+	if err := CreateWorktree(task, gitDeps); err != nil {
+		t.Fatalf("expected recovery to succeed, got: %v", err)
+	}
+	if worktreeAddCalls != 2 {
+		t.Errorf("expected 2 WorktreeAdd calls (initial + retry), got %d", worktreeAddCalls)
+	}
+	if forceDeleted != "task/gen-2064" {
+		t.Errorf("expected stale branch force-deleted, got %q", forceDeleted)
+	}
+	if !pruned {
+		t.Error("expected WorktreePrune to be called during recovery")
+	}
+	if recreatedBranch != "task/gen-2064" {
+		t.Errorf("expected branch recreated, got %q", recreatedBranch)
+	}
+}
+
+func TestCreateWorktree_StaleBranchRecoveryRetryFails(t *testing.T) {
+	// When the retry after stale branch cleanup also fails, the error
+	// should propagate without further retries.
+	gitDeps := StitchGitDeps{
+		RepoReader: &mockRepoReader{BranchExistsFn: func(name, dir string) bool { return true }},
+		BranchManager: &mockBranchManager{
+			ForceDeleteBranchFn: func(name, dir string) error { return nil },
+			CreateBranchFn:      func(name, dir string) error { return nil },
+		},
+		WorktreeManager: &mockWorktreeManager{
+			WorktreeAddFn: func(wtDir, branch, dir string) *exec.Cmd {
+				return exec.Command("false") // always fails
+			},
+			WorktreePruneFn: func(dir string) error { return nil },
+		},
+	}
+	task := StitchTask{
+		BranchName:  "task/gen-2064",
+		WorktreeDir: t.TempDir(),
+	}
+	err := CreateWorktree(task, gitDeps)
+	if err == nil {
+		t.Fatal("expected error when retry also fails")
+	}
+}
+
+func TestCreateWorktree_StaleBranchDeleteFails(t *testing.T) {
+	// When the stale branch cannot be force-deleted, the original error
+	// and the cleanup error should both be reported.
+	gitDeps := StitchGitDeps{
+		RepoReader: &mockRepoReader{BranchExistsFn: func(name, dir string) bool { return true }},
+		BranchManager: &mockBranchManager{
+			ForceDeleteBranchFn: func(name, dir string) error { return fmt.Errorf("branch locked") },
+		},
+		WorktreeManager: &mockWorktreeManager{
+			WorktreeAddFn: func(wtDir, branch, dir string) *exec.Cmd {
+				return exec.Command("false")
+			},
+		},
+	}
+	task := StitchTask{
+		BranchName:  "task/gen-2064",
+		WorktreeDir: t.TempDir(),
+	}
+	err := CreateWorktree(task, gitDeps)
+	if err == nil {
+		t.Fatal("expected error when stale branch delete fails")
+	}
+}
+
+func TestCreateWorktree_WorktreeAddFailsNoBranch(t *testing.T) {
+	// When WorktreeAdd fails but the branch does not exist (not a stale
+	// branch scenario), the error should propagate without recovery.
+	branchExistsCalls := 0
+	gitDeps := StitchGitDeps{
+		RepoReader: &mockRepoReader{BranchExistsFn: func(name, dir string) bool {
+			branchExistsCalls++
+			if branchExistsCalls == 1 {
+				return false // branch doesn't exist initially
+			}
+			return false // still doesn't exist when checking for stale recovery
+		}},
+		BranchManager: &mockBranchManager{
+			CreateBranchFn: func(name, dir string) error { return nil },
+		},
+		WorktreeManager: &mockWorktreeManager{
+			WorktreeAddFn: func(wtDir, branch, dir string) *exec.Cmd {
+				return exec.Command("false")
+			},
+		},
+	}
+	task := StitchTask{
+		BranchName:  "task/gen-999",
+		WorktreeDir: t.TempDir(),
+	}
+	err := CreateWorktree(task, gitDeps)
+	if err == nil {
+		t.Fatal("expected error when WorktreeAdd fails without stale branch")
+	}
+}
+
 // ---------------------------------------------------------------------------
 // MergeBranch
 // ---------------------------------------------------------------------------

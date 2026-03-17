@@ -312,6 +312,8 @@ func PickTask(baseBranch, worktreeBase, repo, generation string, issueDeps Stitc
 }
 
 // CreateWorktree creates a git worktree for the given task.
+// If a stale branch exists from a previous failed attempt, it is deleted
+// and recreated before retrying (GH-1561).
 func CreateWorktree(task StitchTask, gitDeps StitchGitDeps) error {
 	Log("createWorktree: dir=%s branch=%s", task.WorktreeDir, task.BranchName)
 
@@ -336,6 +338,34 @@ func CreateWorktree(task StitchTask, gitDeps StitchGitDeps) error {
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
 		Log("createWorktree: worktree add failed: %v", err)
+
+		// The branch may be stale from a previous interrupted run where the
+		// worktree was cleaned up but the branch survived. Task branches are
+		// ephemeral, so delete the stale branch, prune worktree bookkeeping,
+		// recreate the branch from HEAD, and retry once (GH-1561).
+		if gitDeps.BranchExists(task.BranchName, ".") {
+			Log("createWorktree: stale branch %s detected, recovering", task.BranchName)
+			if delErr := gitDeps.ForceDeleteBranch(task.BranchName, "."); delErr != nil {
+				Log("createWorktree: force delete stale branch failed: %v", delErr)
+				return fmt.Errorf("adding worktree: %w (stale branch cleanup also failed: %v)", err, delErr)
+			}
+			gitDeps.WorktreePrune(".")
+			if createErr := gitDeps.CreateBranch(task.BranchName, "."); createErr != nil {
+				Log("createWorktree: recreate branch after stale cleanup failed: %v", createErr)
+				return fmt.Errorf("adding worktree: %w (branch recreate failed: %v)", err, createErr)
+			}
+			Log("createWorktree: retrying worktree add after stale branch cleanup")
+			retryCmd := gitDeps.WorktreeAdd(task.WorktreeDir, task.BranchName, ".")
+			retryCmd.Stdout = os.Stdout
+			retryCmd.Stderr = os.Stderr
+			if retryErr := retryCmd.Run(); retryErr != nil {
+				Log("createWorktree: retry also failed: %v", retryErr)
+				return fmt.Errorf("adding worktree after stale branch recovery: %w", retryErr)
+			}
+			Log("createWorktree: recovered — worktree ready at %s on branch %s", task.WorktreeDir, task.BranchName)
+			return nil
+		}
+
 		return fmt.Errorf("adding worktree: %w", err)
 	}
 
