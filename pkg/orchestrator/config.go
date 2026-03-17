@@ -214,6 +214,13 @@ type CobblerConfig struct {
 	// is disabled and requirement count is governed only by P9 range rules.
 	MaxRequirementsPerTask int `yaml:"max_requirements_per_task"`
 
+	// MaxTaskFailures is the maximum number of times a task may fail within
+	// a single stitch cycle before it is closed as permanently failed. This
+	// prevents a broken task from blocking all generation progress and
+	// exhausting GitHub API rate limits. Default 3. Set to 0 to disable
+	// (tasks fail once and the cycle moves on without closing them).
+	MaxTaskFailures int `yaml:"max_task_failures"`
+
 	// MaxConsecutiveZeroLOCCycles is the number of consecutive stitch cycles
 	// that may produce zero LOC change before the generator stops with a
 	// warning. This prevents runaway refinement loops where measure keeps
@@ -520,6 +527,9 @@ func (c *Config) applyDefaults() {
 	}
 	if c.Cobbler.MaxConsecutiveZeroLOCCycles == 0 {
 		c.Cobbler.MaxConsecutiveZeroLOCCycles = 3
+	}
+	if c.Cobbler.MaxTaskFailures == 0 {
+		c.Cobbler.MaxTaskFailures = 3
 	}
 	if c.Claude.MaxTimeSec == 0 {
 		c.Claude.MaxTimeSec = 300

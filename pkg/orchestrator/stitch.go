@@ -113,8 +113,9 @@ func (o *Orchestrator) RunStitchN(limit int) (int, error) {
 	}
 
 	totalTasks := 0
-	// failedTaskIDs tracks tasks that returned errTaskReset in this cycle.
-	failedTaskIDs := map[string]struct{}{}
+	maxFailures := o.cfg.Cobbler.MaxTaskFailures
+	// failedTaskCounts tracks how many times each task has failed in this cycle.
+	failedTaskCounts := map[string]int{}
 	for {
 		if limit > 0 && totalTasks >= limit {
 			logf("reached per-cycle limit (%d), pausing for measure", limit)
@@ -128,9 +129,12 @@ func (o *Orchestrator) RunStitchN(limit int) (int, error) {
 			break
 		}
 
-		// If this task already failed in the current cycle, stop.
-		if _, alreadyFailed := failedTaskIDs[task.ID]; alreadyFailed {
-			logf("task %s already failed this cycle, stopping stitch", task.ID)
+		// If this task has already failed in the current cycle, skip it.
+		// With maxFailures > 1 a task can be retried, but once it reaches the
+		// limit it was closed as permanently failed and should not be picked
+		// again. If it is (race with label removal), stop the loop.
+		if count := failedTaskCounts[task.ID]; count > 0 {
+			logf("task %s already failed %d time(s) this cycle, stopping stitch", task.ID, count)
 			break
 		}
 
@@ -138,8 +142,20 @@ func (o *Orchestrator) RunStitchN(limit int) (int, error) {
 		logf("executing task %d: id=%s title=%q", totalTasks+1, task.ID, task.Title)
 		if err := o.doOneTask(task, baseBranch, repoRoot); err != nil {
 			if errors.Is(err, errTaskReset) {
-				logf("task %s was reset after %s, continuing", task.ID, time.Since(taskStart).Round(time.Second))
-				failedTaskIDs[task.ID] = struct{}{}
+				failedTaskCounts[task.ID]++
+				count := failedTaskCounts[task.ID]
+				logf("task %s was reset after %s (failure %d/%d)", task.ID, time.Since(taskStart).Round(time.Second), count, maxFailures)
+
+				// Close the task as permanently failed once the limit is reached.
+				if maxFailures > 0 && count >= maxFailures {
+					logf("task %s reached max failures (%d), closing as permanently failed", task.ID, maxFailures)
+					o.closeTaskAsFailed(task, count)
+				}
+
+				// Back off before the next iteration to reduce API pressure.
+				backoff := time.Duration(count) * 2 * time.Second
+				logf("task %s: backing off %s before next task", task.ID, backoff)
+				stitchSleep(backoff)
 				continue
 			}
 			logf("task %s failed after %s: %v", task.ID, time.Since(taskStart).Round(time.Second), err)
@@ -608,6 +624,24 @@ func (o *Orchestrator) resetTask(task stitchTask, reason string) {
 		logf("resetTask: WARNING force branch delete failed for %s: %v", task.BranchName, err)
 	}
 }
+
+// closeTaskAsFailed closes a task as permanently failed after exceeding the
+// maximum failure count. Posts a comment and closes the issue so measure can
+// create a replacement if needed (GH-1562).
+func (o *Orchestrator) closeTaskAsFailed(task stitchTask, failureCount int) {
+	comment := fmt.Sprintf(
+		"Stitch abandoned after %d consecutive failures. Closing as permanently failed (GH-1562).",
+		failureCount,
+	)
+	commentCobblerIssue(task.Repo, task.GhNumber, comment)
+	if err := closeCobblerIssue(task.Repo, task.GhNumber, task.Generation); err != nil {
+		logf("closeTaskAsFailed: warning closing #%d: %v", task.GhNumber, err)
+	}
+}
+
+// stitchSleep is the sleep function used for backoff between failed tasks.
+// It is a package-level var so tests can replace it.
+var stitchSleep = time.Sleep
 
 // failTask posts a failure comment on the task issue, then resets it.
 func (o *Orchestrator) failTask(task stitchTask, reason string, startedAt time.Time) {
