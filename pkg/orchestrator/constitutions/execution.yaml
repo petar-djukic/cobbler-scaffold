@@ -40,6 +40,50 @@ articles:
       Every item in Acceptance Criteria must be verified. Run tests if the
       criteria require it. Do not skip any criterion.
 
+  - id: E6
+    title: Non-goals enforcement
+    rule: |
+      Features listed in a PRD's non_goals must not be implemented. Do not
+      parse, accept, or act on flags, options, or behaviors that appear in
+      non_goals. If a requirement references a non_goal feature, treat it as
+      a specification error and skip the requirement with a TODO comment
+      citing the conflict.
+
+  - id: E7
+    title: Skip ambiguous requirements
+    rule: |
+      If a requirement is too vague to implement completely, do not implement
+      it partially. Skip the requirement entirely. Add a TODO comment citing
+      the requirement ID and describing what is missing from the specification.
+      A parsed-but-nonfunctional flag is worse than a missing flag.
+
+  - id: E8
+    title: Function size limit
+    rule: |
+      No function may exceed 40 lines of code. This is a hard limit, not a
+      guideline. If a function exceeds 40 lines, find a seam and split it
+      before the task is considered complete. Common seams: validation logic,
+      formatting logic, I/O operations, and branch-specific handling.
+
+  - id: E9
+    title: File size limit
+    rule: |
+      Each Go source file should stay under 500 lines of production code.
+      When a file exceeds this threshold, split by responsibility: main.go
+      (entry point and arg parsing), format.go (output formatting), and
+      additional files as needed. Test files follow the same split. pkg/
+      packages follow the same 500-line threshold.
+
+  - id: E10
+    title: DRY enforcement
+    rule: |
+      The duplication threshold is two. If you write the same logic twice,
+      extract it into a shared function. Common violations: entry display
+      logic duplicated across output modes, error formatting repeated in
+      multiple functions, path construction logic copied between list and
+      recurse paths. Before writing a function, search for existing code
+      that does the same thing.
+
 coding_standards:
   copyright_header: |
     Every Go file must start with the SPDX copyright header:
@@ -49,7 +93,10 @@ coding_standards:
   never_duplicate_code: |
     Before writing a function, search for existing code that does the same thing.
     When two pieces of code share logic, extract the common part. The threshold
-    is two: if you write the same thing twice, extract it.
+    is two: if you write the same thing twice, extract it. Common violations:
+    entry display logic duplicated across output modes, error formatting repeated
+    in multiple functions, path construction logic copied between list and recurse
+    paths. See article E10.
 
   design_patterns:
     - Strategy: Multiple implementations, caller picks one. Define interface, not if/else ladder.
@@ -68,7 +115,9 @@ coding_standards:
   struct_and_function_design: |
     Each struct represents one concept. Each function does one thing. If a
     function takes more than three parameters, group related parameters into a
-    config struct. If a function exceeds 40 lines, find a seam and split it.
+    config struct. No function may exceed 40 lines — this is a hard limit
+    enforced by article E8. Common seams for splitting: validation, formatting,
+    I/O, and branch-specific handling.
 
   error_handling: |
     Handle errors at the point they occur. Use guard clauses: check err != nil
@@ -204,10 +253,11 @@ sections:
   - tag: articles
     title: Core Principles
     content: |
-      Six principles govern the stitch phase: specification-first development,
+      Ten principles govern the stitch phase: specification-first development,
       commit traceability, no scope creep, session completion via
-      orchestrator-managed git, quality gate enforcement, and prohibition of
-      magic test values.
+      orchestrator-managed git, quality gate enforcement, non-goals enforcement,
+      skip-on-ambiguity, function size limits, file size limits, and DRY
+      enforcement.
   - tag: coding_standards
     title: Coding Standards
     content: |

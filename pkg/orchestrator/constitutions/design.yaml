@@ -339,6 +339,7 @@ completeness_checklists:
     - non_goals define what is out of scope
     - acceptance_criteria are structured objects with id, criterion, and traces
     - Every R-item appears in at least one AC's traces list
+    - Interactive requirements (prompting, confirmation) specify exact prompt text, accepted input values, case sensitivity, retry behavior on invalid input, and default behavior when stdin is not a terminal
     - File saved as prd[NNN]-[feature-name].yaml
 
   use_case:
