@@ -46,10 +46,9 @@ func TestRel01_UC004_StitchNoReadyIssues(t *testing.T) {
 	if err := testutil.RunMage(t, dir, "init"); err != nil {
 		t.Fatalf("init: %v", err)
 	}
-	if err := testutil.RunMage(t, dir, "generator:start"); err != nil {
-		t.Fatalf("generator:start: %v", err)
-	}
+	_ = testutil.GeneratorStart(t, dir)
 
+	// cobbler:stitch auto-detects the worktree from the main repo.
 	out, err := testutil.RunMageOut(t, dir, "cobbler:stitch")
 	if err != nil {
 		t.Fatalf("cobbler:stitch: %v", err)

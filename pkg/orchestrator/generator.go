@@ -314,6 +314,12 @@ func cleanupWorktree(task stitchTask) bool {
 // If cycles > 0 it overrides configuration.yaml's generation.cycles for this run only.
 // cycles == 0 means use the configured value (or unlimited if that is also 0).
 func (o *Orchestrator) GeneratorRun(cycles int) error {
+	// If not on a generation branch, try to enter the worktree created by
+	// GeneratorStart (GH-1608).
+	if _, err := enterGenerationWorktree(); err != nil {
+		return err
+	}
+
 	currentBranch, err := gitCurrentBranch(".")
 	if err != nil {
 		return fmt.Errorf("getting current branch: %w", err)
@@ -331,6 +337,11 @@ func (o *Orchestrator) GeneratorRun(cycles int) error {
 // GeneratorResume recovers from an interrupted generator:run and continues.
 // Reads generation branch from Config.GenerationBranch or auto-detects.
 func (o *Orchestrator) GeneratorResume() error {
+	// If not on a generation branch, try to enter the worktree (GH-1608).
+	if _, err := enterGenerationWorktree(); err != nil {
+		return err
+	}
+
 	branch := o.cfg.Generation.Branch
 	if branch == "" {
 		resolved, err := o.resolveBranch("")
@@ -845,6 +856,48 @@ func (o *Orchestrator) readRepoRoot() string {
 	return strings.TrimSpace(string(data))
 }
 
+// findGenerationWorktree searches for a git worktree on a generation branch
+// (matching the given prefix) by parsing `git worktree list --porcelain`.
+// Returns the worktree path or "" if none found.
+func findGenerationWorktree(prefix string) string {
+	out, err := exec.Command(binGit, "worktree", "list", "--porcelain").Output()
+	if err != nil {
+		return ""
+	}
+	var currentPath string
+	for _, line := range strings.Split(string(out), "\n") {
+		if strings.HasPrefix(line, "worktree ") {
+			currentPath = strings.TrimPrefix(line, "worktree ")
+		}
+		if strings.HasPrefix(line, "branch refs/heads/"+prefix) && currentPath != "" {
+			return currentPath
+		}
+	}
+	return ""
+}
+
+// enterGenerationWorktree checks whether the current repo has a worktree
+// on a generation branch. If so, it changes the working directory to that
+// worktree. Returns the worktree path (empty if none found) and any error.
+func enterGenerationWorktree() (string, error) {
+	// If we're already on a generation branch, no need to search.
+	if branch, err := gitCurrentBranch("."); err == nil {
+		if strings.HasPrefix(branch, "generation-") {
+			return "", nil
+		}
+	}
+
+	wtPath := findGenerationWorktree("generation-")
+	if wtPath == "" {
+		return "", nil
+	}
+	logf("auto-entering generation worktree at %s", wtPath)
+	if err := os.Chdir(wtPath); err != nil {
+		return "", fmt.Errorf("switching to generation worktree %s: %w", wtPath, err)
+	}
+	return wtPath, nil
+}
+
 // readBaseBranch reads the base branch from .cobbler/base-branch on the
 // current branch. Returns "main" if the file does not exist (backward
 // compatibility with older generations, prd002 R5.3).
@@ -868,6 +921,11 @@ func (o *Orchestrator) readBaseBranch() string {
 // function tags the generation in the worktree, switches to the main repo for
 // the merge, and removes the worktree afterward.
 func (o *Orchestrator) GeneratorStop() error {
+	// If invoked from the main repo, try to enter the worktree (GH-1608).
+	if _, err := enterGenerationWorktree(); err != nil {
+		return err
+	}
+
 	branch := o.cfg.Generation.Branch
 	if branch != "" {
 		if !gitBranchExists(branch, ".") {
@@ -1331,6 +1389,27 @@ func (o *Orchestrator) GeneratorSwitch() error {
 func (o *Orchestrator) GeneratorReset() error {
 	logf("generator:reset: beginning")
 
+	// If a generation worktree exists, remove it first and switch to
+	// the main repo (GH-1608).
+	repoRoot := o.readRepoRoot()
+	if repoRoot != "" {
+		worktreeDir, _ := filepath.Abs(".")
+		logf("generator:reset: removing generation worktree %s", worktreeDir)
+		if err := os.Chdir(repoRoot); err != nil {
+			return fmt.Errorf("switching to main repo: %w", err)
+		}
+		_ = gitWorktreeRemove(worktreeDir, ".")
+		_ = gitWorktreePrune(".")
+		// worktree path cleaned up via worktree remove (GH-1608)
+	} else {
+		// Check if there's a generation worktree to remove.
+		if wtPath := findGenerationWorktree(o.cfg.Generation.Prefix); wtPath != "" {
+			logf("generator:reset: removing generation worktree %s", wtPath)
+			_ = gitWorktreeRemove(wtPath, ".")
+			_ = gitWorktreePrune(".")
+		}
+	}
+
 	baseBranch := o.cfg.Cobbler.BaseBranch
 	if err := ensureOnBranch(baseBranch); err != nil {
 		return fmt.Errorf("switching to %s: %w", baseBranch, err)
@@ -1370,10 +1449,14 @@ func (o *Orchestrator) GeneratorReset() error {
 	}
 
 	if len(genBranches) > 0 {
+		// Prune again to ensure worktree registrations are fully cleaned up
+		// before deleting branches (GH-1608). Without this, git may refuse
+		// to delete a branch it still thinks is checked out in a worktree.
+		_ = gitWorktreePrune(".")
 		logf("generator:reset: removing %d generation branch(es)", len(genBranches))
 		for _, gb := range genBranches {
 			logf("generator:reset: deleting branch %s", gb)
-			_ = gitForceDeleteBranch(gb, ".") // best-effort; branch may be already removed
+			_ = gitForceDeleteBranch(gb, ".")
 		}
 	}
 

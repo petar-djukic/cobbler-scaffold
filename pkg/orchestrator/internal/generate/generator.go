@@ -42,6 +42,7 @@ const BaseBranchFile = "base-branch"
 // this when it creates a worktree so GeneratorStop can find the main repo.
 const RepoRootFile = "repo-root"
 
+
 // TagSuffixes lists the lifecycle tag suffixes in order.
 var TagSuffixes = []string{"-start", "-finished", "-merged", "-abandoned"}
 

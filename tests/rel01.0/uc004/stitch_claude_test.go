@@ -35,9 +35,7 @@ func TestRel01_UC004_StitchExecutesTask(t *testing.T) {
 	if err := testutil.RunMage(t, dir, "reset"); err != nil {
 		t.Fatalf("reset: %v", err)
 	}
-	if err := testutil.RunMage(t, dir, "generator:start"); err != nil {
-		t.Fatalf("generator:start: %v", err)
-	}
+	_ = testutil.GeneratorStart(t, dir)
 
 	headBefore := testutil.GitHead(t, dir)
 
@@ -73,9 +71,7 @@ func TestRel01_UC004_StitchRecordsInvocation(t *testing.T) {
 	if err := testutil.RunMage(t, dir, "reset"); err != nil {
 		t.Fatalf("reset: %v", err)
 	}
-	if err := testutil.RunMage(t, dir, "generator:start"); err != nil {
-		t.Fatalf("generator:start: %v", err)
-	}
+	_ = testutil.GeneratorStart(t, dir)
 	if err := testutil.RunMageTimeout(t, dir, claudeTimeout, "cobbler:measure"); err != nil {
 		t.Fatalf("cobbler:measure: %v", err)
 	}
@@ -132,9 +128,7 @@ func TestRel01_UC004_SecondMeasureProducesNoNewTasks(t *testing.T) {
 	if err := testutil.RunMage(t, dir, "reset"); err != nil {
 		t.Fatalf("reset: %v", err)
 	}
-	if err := testutil.RunMage(t, dir, "generator:start"); err != nil {
-		t.Fatalf("generator:start: %v", err)
-	}
+	_ = testutil.GeneratorStart(t, dir)
 
 	// First measure: propose one task.
 	if err := testutil.RunMageTimeout(t, dir, claudeTimeout, "cobbler:measure"); err != nil {

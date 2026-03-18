@@ -30,6 +30,10 @@ var goStyleConstitution string
 // Stitch picks ready tasks from GitHub Issues and invokes Claude to execute them.
 // Reads all options from Config.
 func (o *Orchestrator) Stitch() error {
+	// If invoked from the main repo, enter the generation worktree (GH-1608).
+	if _, err := enterGenerationWorktree(); err != nil {
+		return err
+	}
 	_, err := o.RunStitch()
 	return err
 }

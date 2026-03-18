@@ -71,14 +71,122 @@ func SetupRepo(t testing.TB, snapshotDir string) string {
 		}
 	}
 
-	// Also clean up the worktree base directory that the orchestrator creates
-	// alongside the repo (e.g. /tmp/e2e-test-123456-worktrees/).
+	// Also clean up directories that the orchestrator creates alongside the repo:
+	// - /tmp/e2e-test-123456-worktrees/ (stitch worktree base)
+	// - generation worktree recorded in .cobbler/generation-worktree
 	worktreeBase := filepath.Join(os.TempDir(), filepath.Base(testDir)+"-worktrees")
 	t.Cleanup(func() {
+		// Remove generation worktree if GeneratorStart created one.
+		// Parse `git worktree list --porcelain` to find it.
+		if out, err := exec.Command("git", "-C", testDir, "worktree", "list", "--porcelain").Output(); err == nil {
+			var wtPath string
+			for _, line := range strings.Split(string(out), "\n") {
+				if strings.HasPrefix(line, "worktree ") {
+					wtPath = strings.TrimPrefix(line, "worktree ")
+				}
+				if strings.HasPrefix(line, "branch refs/heads/generation-") && wtPath != "" {
+					exec.Command("git", "-C", testDir, "worktree", "remove", "--force", wtPath).Run() //nolint:errcheck
+					os.RemoveAll(wtPath)
+				}
+			}
+		}
 		os.RemoveAll(testDir)
 		os.RemoveAll(worktreeBase)
 	})
 	return testDir
+}
+
+// RunMageEnv runs a mage target in dir with extra environment variables.
+func RunMageEnv(t testing.TB, dir string, env []string, target ...string) error {
+	t.Helper()
+	_, err := RunMageOutEnv(t, dir, env, target...)
+	return err
+}
+
+// RunMageOutEnv runs a mage target in dir with extra environment variables
+// and returns combined stdout+stderr.
+func RunMageOutEnv(t testing.TB, dir string, env []string, target ...string) (string, error) {
+	t.Helper()
+	args := append([]string{"-d", "."}, target...)
+	cmd := exec.CommandContext(context.Background(), "mage", args...)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), env...)
+
+	tag := "[" + t.Name() + "] "
+	var buf bytes.Buffer
+	pw := &prefixWriter{tag: tag, w: os.Stderr}
+	cmd.Stdout = io.MultiWriter(pw, &buf)
+	cmd.Stderr = io.MultiWriter(pw, &buf)
+
+	err := cmd.Run()
+	return buf.String(), err
+}
+
+// GeneratorStart runs mage generator:start with a unique generation name
+// derived from the test name to avoid worktree path collisions between
+// parallel tests. Returns the worktree directory path by parsing
+// `git worktree list` output.
+func GeneratorStart(t testing.TB, dir string) string {
+	t.Helper()
+	// Use a sanitized test name as the generation name to ensure
+	// uniqueness across parallel tests.
+	genName := sanitizeGenName(t.Name())
+	env := []string{"COBBLER_GEN_NAME=" + genName}
+	if err := RunMageEnv(t, dir, env, "generator:start"); err != nil {
+		t.Fatalf("generator:start: %v", err)
+	}
+	return FindGenerationWorktree(t, dir)
+}
+
+// FindGenerationWorktree finds the generation worktree path by parsing
+// `git worktree list --porcelain`. Returns the worktree path on a
+// generation branch.
+func FindGenerationWorktree(t testing.TB, dir string) string {
+	t.Helper()
+	cmd := exec.Command("git", "worktree", "list", "--porcelain")
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("FindGenerationWorktree: git worktree list: %v", err)
+	}
+	var currentPath string
+	for _, line := range strings.Split(string(out), "\n") {
+		if strings.HasPrefix(line, "worktree ") {
+			currentPath = strings.TrimPrefix(line, "worktree ")
+		}
+		if strings.HasPrefix(line, "branch refs/heads/generation-") && currentPath != "" {
+			return currentPath
+		}
+	}
+	t.Fatalf("FindGenerationWorktree: no generation worktree found in:\n%s", string(out))
+	return ""
+}
+
+// ReadWorktreeDir reads the generation worktree path via git worktree list.
+// Alias for FindGenerationWorktree for backward compatibility.
+func ReadWorktreeDir(t testing.TB, dir string) string {
+	t.Helper()
+	return FindGenerationWorktree(t, dir)
+}
+
+// sanitizeGenName creates a short, filesystem-safe generation name from
+// a test name by replacing path separators and special chars.
+func sanitizeGenName(testName string) string {
+	// Replace slashes and non-alphanumeric chars with hyphens.
+	var b strings.Builder
+	for _, r := range testName {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' {
+			b.WriteRune(r)
+		} else {
+			b.WriteRune('-')
+		}
+	}
+	name := strings.ToLower(b.String())
+	// Truncate to avoid overly long paths.
+	if len(name) > 40 {
+		name = name[:40]
+	}
+	return name
 }
 
 // RunMage runs a mage target in dir and returns an error on non-zero exit.
