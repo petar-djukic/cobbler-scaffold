@@ -1219,3 +1219,39 @@ func TestGoModModulePath_ModuleWithComment(t *testing.T) {
 		t.Errorf("GoModModulePath = %q, want github.com/org/repo", got)
 	}
 }
+
+// --- ExtractDescriptionFiles (GH-1604) ---
+
+func TestExtractDescriptionFiles_WithFrontmatter(t *testing.T) {
+	t.Parallel()
+	body := "---\ncobbler_generation: generation-gh-2607-run35\ncobbler_index: 0\n---\n\n" +
+		"deliverable_type: code\nfiles:\n  - path: pkg/testutils/difftest.go\n  - path: pkg/testutils/build.go\n"
+	got := ExtractDescriptionFiles(body)
+	want := []string{"pkg/testutils/difftest.go", "pkg/testutils/build.go"}
+	if len(got) != len(want) {
+		t.Fatalf("ExtractDescriptionFiles returned %d paths, want %d: %v", len(got), len(want), got)
+	}
+	for i, g := range got {
+		if g != want[i] {
+			t.Errorf("path[%d] = %q, want %q", i, g, want[i])
+		}
+	}
+}
+
+func TestExtractDescriptionFiles_WithoutFrontmatter(t *testing.T) {
+	t.Parallel()
+	body := "deliverable_type: code\nfiles:\n  - path: pkg/foo/bar.go\n"
+	got := ExtractDescriptionFiles(body)
+	if len(got) != 1 || got[0] != "pkg/foo/bar.go" {
+		t.Errorf("ExtractDescriptionFiles = %v, want [pkg/foo/bar.go]", got)
+	}
+}
+
+func TestExtractDescriptionFiles_NoFiles(t *testing.T) {
+	t.Parallel()
+	body := "---\ncobbler_generation: gen1\ncobbler_index: 0\n---\n\ndeliverable_type: docs\n"
+	got := ExtractDescriptionFiles(body)
+	if len(got) != 0 {
+		t.Errorf("ExtractDescriptionFiles = %v, want nil/empty", got)
+	}
+}

@@ -257,12 +257,17 @@ func NormalizeIssueTitle(title string) string {
 // and returns the set of file paths. Returns nil if parsing fails or no files
 // are found. Works with both CobblerIssue.Description and ProposedIssue.Description.
 func ExtractDescriptionFiles(description string) []string {
+	// Strip cobbler frontmatter if present (GH-1604). GitHub issue bodies
+	// have frontmatter prepended by CreateCobblerIssue; yaml.Unmarshal only
+	// parses the first YAML document, missing the files section entirely.
+	_, desc := ParseIssueFrontMatter(description)
+
 	var parsed struct {
 		Files []struct {
 			Path string `yaml:"path"`
 		} `yaml:"files"`
 	}
-	if err := yaml.Unmarshal([]byte(description), &parsed); err != nil {
+	if err := yaml.Unmarshal([]byte(desc), &parsed); err != nil {
 		return nil
 	}
 	var paths []string
