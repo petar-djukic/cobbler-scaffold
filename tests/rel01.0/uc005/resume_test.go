@@ -84,11 +84,11 @@ func TestRel01_UC005_ResumeFailsWhenAlreadyOnGenBranch(t *testing.T) {
 	if err := testutil.RunMage(t, dir, "init"); err != nil {
 		t.Fatalf("init: %v", err)
 	}
-	if err := testutil.RunMage(t, dir, "generator:start"); err != nil {
-		t.Fatalf("generator:start: %v", err)
-	}
+	_ = testutil.GeneratorStart(t, dir)
 
 	// Point credentials to an impossible path so checkClaude fails in RunCycles.
+	// Config is written to the main repo — the mage subprocess reads it
+	// before auto-entering the worktree.
 	testutil.WriteConfigOverride(t, dir, func(cfg *orchestrator.Config) {
 		cfg.Claude.SecretsDir = "/dev/null/impossible"
 	})
@@ -109,31 +109,25 @@ func TestRel01_UC005_Resume(t *testing.T) {
 	if err := testutil.RunMage(t, dir, "init"); err != nil {
 		t.Fatalf("init: %v", err)
 	}
-	if err := testutil.RunMage(t, dir, "generator:start"); err != nil {
-		t.Fatalf("generator:start: %v", err)
-	}
+	wtDir := testutil.GeneratorStart(t, dir)
+	genBranch := testutil.GitBranch(t, wtDir)
 
-	genBranch := testutil.GitBranch(t, dir)
-
-	// Switch back to main so resume has to resolve the branch.
-	cmd := exec.Command("git", "checkout", "main")
-	cmd.Dir = dir
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("git checkout main: %v\n%s", err, out)
-	}
-
+	// Config is written to the main repo — the mage subprocess reads it
+	// before auto-entering the worktree.
 	testutil.WriteConfigOverride(t, dir, func(cfg *orchestrator.Config) {
 		cfg.Generation.Branch = genBranch
 		cfg.Claude.SecretsDir = "/dev/null/impossible"
 	})
 
-	// Resume fails at RunCycles (credential check) but recovery completes first.
+	// Resume auto-detects the worktree from the main repo.
+	// Fails at RunCycles (credential check) but recovery completes first.
 	if err := testutil.RunMage(t, dir, "generator:resume"); err != nil {
 		t.Logf("generator:resume (expected credential error): %v", err)
 	}
 
-	if branch := testutil.GitBranch(t, dir); branch != genBranch {
-		t.Errorf("expected current branch %q after resume, got %q", genBranch, branch)
+	// The worktree should still be on the generation branch.
+	if branch := testutil.GitBranch(t, wtDir); branch != genBranch {
+		t.Errorf("expected worktree branch %q after resume, got %q", genBranch, branch)
 	}
 }
 
@@ -147,25 +141,15 @@ func TestRel01_UC005_ResumeRecoversStaleBranches(t *testing.T) {
 	if err := testutil.RunMage(t, dir, "init"); err != nil {
 		t.Fatalf("init: %v", err)
 	}
-	if err := testutil.RunMage(t, dir, "generator:start"); err != nil {
-		t.Fatalf("generator:start: %v", err)
-	}
-
-	genBranch := testutil.GitBranch(t, dir)
+	wtDir := testutil.GeneratorStart(t, dir)
+	genBranch := testutil.GitBranch(t, wtDir)
 	staleBranch := "task/" + genBranch + "-stale-id"
 
-	// Create a stale task branch.
+	// Create a stale task branch (shared git DB, visible from both dirs).
 	cmd := exec.Command("git", "branch", staleBranch)
 	cmd.Dir = dir
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("git branch %s: %v\n%s", staleBranch, err, out)
-	}
-
-	// Switch back to main so resume switches to the generation branch.
-	cmd = exec.Command("git", "checkout", "main")
-	cmd.Dir = dir
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("git checkout main: %v\n%s", err, out)
 	}
 
 	testutil.WriteConfigOverride(t, dir, func(cfg *orchestrator.Config) {
@@ -173,7 +157,7 @@ func TestRel01_UC005_ResumeRecoversStaleBranches(t *testing.T) {
 		cfg.Claude.SecretsDir = "/dev/null/impossible"
 	})
 
-	// Resume fails at RunCycles (credential check) but recovery completes first.
+	// Resume auto-detects the worktree from the main repo.
 	if err := testutil.RunMage(t, dir, "generator:resume"); err != nil {
 		t.Logf("generator:resume (expected credential error): %v", err)
 	}
@@ -193,28 +177,17 @@ func TestRel01_UC005_ResumeResetsOrphanedIssues(t *testing.T) {
 	if err := testutil.RunMage(t, dir, "init"); err != nil {
 		t.Fatalf("init: %v", err)
 	}
-	if err := testutil.RunMage(t, dir, "generator:start"); err != nil {
-		t.Fatalf("generator:start: %v", err)
-	}
-
-	genBranch := testutil.GitBranch(t, dir)
+	wtDir := testutil.GeneratorStart(t, dir)
+	genBranch := testutil.GitBranch(t, wtDir)
 
 	// Create a task and set it to in_progress (simulating an interrupted stitch).
-	issueNumber := testutil.CreateIssue(t, dir, "orphaned task for resume test")
-	testutil.SetIssueInProgress(t, dir, issueNumber)
+	// CreateIssue reads the generation label from the worktree's branch.
+	issueNumber := testutil.CreateIssue(t, wtDir, "orphaned task for resume test")
+	testutil.SetIssueInProgress(t, wtDir, issueNumber)
 
-	// Verify it is in_progress before resume. Use IssueHasLabel (direct fetch
-	// by number) rather than CountIssuesByStatus (label-filter list) to avoid
-	// eventual-consistency lag on the label index.
-	if !testutil.IssueHasLabel(t, dir, issueNumber, "cobbler-in-progress") {
+	// Verify it is in_progress before resume.
+	if !testutil.IssueHasLabel(t, wtDir, issueNumber, "cobbler-in-progress") {
 		t.Fatal("expected issue to have cobbler-in-progress label before resume")
-	}
-
-	// Switch back to main so resume switches to the generation branch.
-	checkout := exec.Command("git", "checkout", "main")
-	checkout.Dir = dir
-	if out, err := checkout.CombinedOutput(); err != nil {
-		t.Fatalf("git checkout main: %v\n%s", err, out)
 	}
 
 	testutil.WriteConfigOverride(t, dir, func(cfg *orchestrator.Config) {
@@ -222,15 +195,13 @@ func TestRel01_UC005_ResumeResetsOrphanedIssues(t *testing.T) {
 		cfg.Claude.SecretsDir = "/dev/null/impossible"
 	})
 
-	// Resume fails at RunCycles (credential check) but recovery completes first.
+	// Resume auto-detects the worktree from the main repo.
 	if err := testutil.RunMage(t, dir, "generator:resume"); err != nil {
 		t.Logf("generator:resume (expected credential error): %v", err)
 	}
 
 	// The orphaned in_progress issue should have its in-progress label removed.
-	// Use IssueHasLabel (fetches issue directly) rather than CountIssuesByStatus
-	// (uses gh issue list which has eventual-consistency lag for label filters).
-	if testutil.IssueHasLabel(t, dir, issueNumber, "cobbler-in-progress") {
+	if testutil.IssueHasLabel(t, wtDir, issueNumber, "cobbler-in-progress") {
 		t.Errorf("expected cobbler-in-progress label to be removed from issue %s after resume", issueNumber)
 	}
 }

@@ -183,17 +183,15 @@ func TestRel01_UC001_FullResetFromGenerationBranch(t *testing.T) {
 	if err := testutil.RunMage(t, dir, "init"); err != nil {
 		t.Fatalf("init: %v", err)
 	}
-	if err := testutil.RunMage(t, dir, "generator:start"); err != nil {
-		t.Fatalf("generator:start: %v", err)
-	}
+	wtDir := testutil.GeneratorStart(t, dir)
 
-	genBranch := testutil.GitBranch(t, dir)
+	genBranch := testutil.GitBranch(t, wtDir)
 	if !strings.HasPrefix(genBranch, "generation-") {
 		t.Fatalf("expected generation branch after start, got %q", genBranch)
 	}
 
-	// Create a file and commit on the generation branch so it has work.
-	if err := os.WriteFile(filepath.Join(dir, "gen-work.txt"), []byte("generation work"), 0o644); err != nil {
+	// Create a file and commit on the generation branch (worktree) so it has work.
+	if err := os.WriteFile(filepath.Join(wtDir, "gen-work.txt"), []byte("generation work"), 0o644); err != nil {
 		t.Fatalf("writing gen-work.txt: %v", err)
 	}
 	for _, args := range [][]string{
@@ -201,15 +199,15 @@ func TestRel01_UC001_FullResetFromGenerationBranch(t *testing.T) {
 		{"git", "commit", "-m", "work on generation branch"},
 	} {
 		cmd := exec.Command(args[0], args[1:]...)
-		cmd.Dir = dir
+		cmd.Dir = wtDir
 		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("git %v: %v\n%s", args[1:], err, out)
 		}
 	}
 
-	// Reset from the generation branch.
+	// Reset from the main repo — auto-detects and removes worktree.
 	if err := testutil.RunMage(t, dir, "reset"); err != nil {
-		t.Fatalf("mage reset from generation branch: %v", err)
+		t.Fatalf("mage reset: %v", err)
 	}
 
 	if branch := testutil.GitBranch(t, dir); branch != "main" {

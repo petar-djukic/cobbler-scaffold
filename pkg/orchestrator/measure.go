@@ -26,6 +26,10 @@ var issueFormatConstitution string
 // Measure assesses project state and proposes new tasks via Claude.
 // Reads all options from Config.
 func (o *Orchestrator) Measure() error {
+	// If invoked from the main repo, enter the generation worktree (GH-1608).
+	if _, err := enterGenerationWorktree(); err != nil {
+		return err
+	}
 	return o.RunMeasure()
 }
 
