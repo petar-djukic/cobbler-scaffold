@@ -1190,35 +1190,134 @@ func TestBuildMeasurePrompt_GoldenExample(t *testing.T) {
 func TestFileOverlap_NoOverlap(t *testing.T) {
 	t.Parallel()
 	existing := map[string]int{"pkg/foo.go": 100, "pkg/bar.go": 101}
-	got := fileOverlap([]string{"pkg/baz.go"}, existing)
-	if got != 0 {
-		t.Errorf("fileOverlap() = %d, want 0", got)
+	got, overlap := fileOverlap([]string{"pkg/baz.go"}, existing)
+	if overlap {
+		t.Errorf("fileOverlap() overlap=true (dup=%d), want false", got)
 	}
 }
 
 func TestFileOverlap_HasOverlap(t *testing.T) {
 	t.Parallel()
 	existing := map[string]int{"pkg/foo.go": 100, "pkg/bar.go": 101}
-	got := fileOverlap([]string{"pkg/new.go", "pkg/foo.go"}, existing)
-	if got != 100 {
-		t.Errorf("fileOverlap() = %d, want 100", got)
+	got, overlap := fileOverlap([]string{"pkg/new.go", "pkg/foo.go"}, existing)
+	if !overlap || got != 100 {
+		t.Errorf("fileOverlap() = (%d, %v), want (100, true)", got, overlap)
 	}
 }
 
 func TestFileOverlap_EmptyProposed(t *testing.T) {
 	t.Parallel()
 	existing := map[string]int{"pkg/foo.go": 100}
-	got := fileOverlap(nil, existing)
-	if got != 0 {
-		t.Errorf("fileOverlap() = %d, want 0", got)
+	_, overlap := fileOverlap(nil, existing)
+	if overlap {
+		t.Error("fileOverlap(nil) overlap=true, want false")
 	}
 }
 
 func TestFileOverlap_EmptyExisting(t *testing.T) {
 	t.Parallel()
-	got := fileOverlap([]string{"pkg/foo.go"}, map[string]int{})
-	if got != 0 {
-		t.Errorf("fileOverlap() = %d, want 0", got)
+	_, overlap := fileOverlap([]string{"pkg/foo.go"}, map[string]int{})
+	if overlap {
+		t.Error("fileOverlap(empty map) overlap=true, want false")
+	}
+}
+
+// --- Intra-batch dedup (GH-1605) ---
+
+func TestIntraBatchDedup_FileOverlap(t *testing.T) {
+	t.Parallel()
+	// Two proposed issues share pkg/testutils/difftest.go. The second should
+	// be filtered out by intra-batch dedup.
+	issues := []proposedIssue{
+		{Index: 0, Title: "Task A", Description: "deliverable_type: code\nfiles:\n  - path: pkg/testutils/difftest.go\n  - path: pkg/testutils/run.go\n"},
+		{Index: 1, Title: "Task B", Description: "deliverable_type: code\nfiles:\n  - path: pkg/testutils/difftest.go\n  - path: pkg/testutils/build.go\n"},
+	}
+
+	existingTitles := make(map[string]int)
+	existingFiles := make(map[string]int)
+	var filtered []proposedIssue
+	for _, issue := range issues {
+		norm := normalizeIssueTitle(issue.Title)
+		if _, ok := existingTitles[norm]; ok {
+			continue
+		}
+		if _, overlap := fileOverlap(extractDescriptionFiles(issue.Description), existingFiles); overlap {
+			continue
+		}
+		filtered = append(filtered, issue)
+		existingTitles[norm] = issue.Index
+		for _, fp := range extractDescriptionFiles(issue.Description) {
+			existingFiles[fp] = issue.Index
+		}
+	}
+
+	if len(filtered) != 1 {
+		t.Fatalf("expected 1 issue after intra-batch dedup, got %d", len(filtered))
+	}
+	if filtered[0].Title != "Task A" {
+		t.Errorf("expected Task A to survive, got %q", filtered[0].Title)
+	}
+}
+
+func TestIntraBatchDedup_TitleMatch(t *testing.T) {
+	t.Parallel()
+	// Two proposed issues with the same normalized title. Second should be filtered.
+	issues := []proposedIssue{
+		{Index: 0, Title: "prd001 R1.1-R1.4: Build testutils", Description: "deliverable_type: code\nfiles:\n  - path: pkg/a.go\n"},
+		{Index: 1, Title: "prd001 R1.1-R1.4: Build testutils", Description: "deliverable_type: code\nfiles:\n  - path: pkg/b.go\n"},
+	}
+
+	existingTitles := make(map[string]int)
+	existingFiles := make(map[string]int)
+	var filtered []proposedIssue
+	for _, issue := range issues {
+		norm := normalizeIssueTitle(issue.Title)
+		if _, ok := existingTitles[norm]; ok {
+			continue
+		}
+		if _, overlap := fileOverlap(extractDescriptionFiles(issue.Description), existingFiles); overlap {
+			continue
+		}
+		filtered = append(filtered, issue)
+		existingTitles[norm] = issue.Index
+		for _, fp := range extractDescriptionFiles(issue.Description) {
+			existingFiles[fp] = issue.Index
+		}
+	}
+
+	if len(filtered) != 1 {
+		t.Fatalf("expected 1 issue after intra-batch title dedup, got %d", len(filtered))
+	}
+}
+
+func TestIntraBatchDedup_NoOverlap(t *testing.T) {
+	t.Parallel()
+	// Two proposed issues with distinct titles and files. Both should pass.
+	issues := []proposedIssue{
+		{Index: 0, Title: "Task A", Description: "deliverable_type: code\nfiles:\n  - path: pkg/a.go\n"},
+		{Index: 1, Title: "Task B", Description: "deliverable_type: code\nfiles:\n  - path: pkg/b.go\n"},
+	}
+
+	existingTitles := make(map[string]int)
+	existingFiles := make(map[string]int)
+	var filtered []proposedIssue
+	for _, issue := range issues {
+		norm := normalizeIssueTitle(issue.Title)
+		if _, ok := existingTitles[norm]; ok {
+			continue
+		}
+		if _, overlap := fileOverlap(extractDescriptionFiles(issue.Description), existingFiles); overlap {
+			continue
+		}
+		filtered = append(filtered, issue)
+		existingTitles[norm] = issue.Index
+		for _, fp := range extractDescriptionFiles(issue.Description) {
+			existingFiles[fp] = issue.Index
+		}
+	}
+
+	if len(filtered) != 2 {
+		t.Fatalf("expected 2 issues (no overlap), got %d", len(filtered))
 	}
 }
 
