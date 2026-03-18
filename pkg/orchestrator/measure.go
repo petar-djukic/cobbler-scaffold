@@ -605,11 +605,16 @@ func (o *Orchestrator) importIssuesImpl(yamlFile, repo, generation string, skipE
 			continue
 		}
 		// Check if any proposed output file overlaps with an existing issue (GH-1373).
-		if dup := fileOverlap(extractDescriptionFiles(issue.Description), existingFiles); dup > 0 {
+		if dup, overlap := fileOverlap(extractDescriptionFiles(issue.Description), existingFiles); overlap {
 			logf("importIssues: skipping duplicate %q — output files overlap with #%d", issue.Title, dup)
 			continue
 		}
 		filtered = append(filtered, issue)
+		// Track accepted issue for intra-batch dedup (GH-1605).
+		existingTitles[norm] = issue.Index
+		for _, fp := range extractDescriptionFiles(issue.Description) {
+			existingFiles[fp] = issue.Index
+		}
 	}
 	issues = filtered
 
@@ -641,14 +646,14 @@ func (o *Orchestrator) importIssuesImpl(yamlFile, repo, generation string, skipE
 }
 
 // fileOverlap returns the issue number of the first existing issue whose files
-// overlap with the proposed file list. Returns 0 if no overlap is found.
-func fileOverlap(proposedFiles []string, existingFiles map[string]int) int {
+// overlap with the proposed file list, and true if an overlap was found.
+func fileOverlap(proposedFiles []string, existingFiles map[string]int) (int, bool) {
 	for _, fp := range proposedFiles {
 		if dup, ok := existingFiles[fp]; ok {
-			return dup
+			return dup, true
 		}
 	}
-	return 0
+	return 0, false
 }
 
 // saveHistory persists measure artifacts (log, issues YAML) to the configured
