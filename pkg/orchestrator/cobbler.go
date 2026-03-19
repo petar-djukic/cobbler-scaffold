@@ -246,7 +246,7 @@ func formatOutcomeTrailers(rec InvocationRecord) []string {
 
 // appendOutcomeTrailers amends the last commit with outcome trailers.
 func appendOutcomeTrailers(worktreeDir string, rec InvocationRecord) error {
-	return claude.AppendOutcomeTrailers(worktreeDir, rec)
+	return claude.AppendOutcomeTrailers(worktreeDir, rec, defaultGitOps.CommitAmendTrailers)
 }
 
 // worktreeBasePath returns the directory used for stitch worktrees.

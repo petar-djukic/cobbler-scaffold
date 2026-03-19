@@ -446,16 +446,12 @@ func (o *Orchestrator) PrepareTestRepo(module, version, orchestratorRoot string)
 		return "", fmt.Errorf("git init: %w", err)
 	}
 
-	addCmd := exec.Command(binGit, "add", "-A")
-	addCmd.Dir = repoDir
-	if err := addCmd.Run(); err != nil {
+	if err := gitStageAll(repoDir); err != nil {
 		os.RemoveAll(workDir)
 		return "", fmt.Errorf("git add: %w", err)
 	}
 
-	commitCmd := exec.Command(binGit, "commit", "-m", "Initial commit from test-clone")
-	commitCmd.Dir = repoDir
-	if err := commitCmd.Run(); err != nil {
+	if err := gitCommit("Initial commit from test-clone", repoDir); err != nil {
 		os.RemoveAll(workDir)
 		return "", fmt.Errorf("git commit: %w", err)
 	}
@@ -486,16 +482,12 @@ func (o *Orchestrator) PrepareTestRepo(module, version, orchestratorRoot string)
 	}
 
 	// Commit scaffold artifacts so the working tree is clean.
-	addCmd2 := exec.Command(binGit, "add", "-A")
-	addCmd2.Dir = repoDir
-	if err := addCmd2.Run(); err != nil {
+	if err := gitStageAll(repoDir); err != nil {
 		os.RemoveAll(workDir)
 		return "", fmt.Errorf("git add scaffold: %w", err)
 	}
 
-	commitCmd2 := exec.Command(binGit, "commit", "-m", "Add orchestrator scaffold")
-	commitCmd2.Dir = repoDir
-	if err := commitCmd2.Run(); err != nil {
+	if err := gitCommit("Add orchestrator scaffold", repoDir); err != nil {
 		os.RemoveAll(workDir)
 		return "", fmt.Errorf("git commit scaffold: %w", err)
 	}

@@ -130,8 +130,9 @@ type MockGitOps struct {
 	HasChangesFn       func(dir string) bool
 	StashFn            func(msg, dir string) error
 	CommitFn           func(msg, dir string) error
-	CommitAllowEmptyFn func(msg, dir string) error
-	RevParseHEADFn     func(dir string) (string, error)
+	CommitAllowEmptyFn     func(msg, dir string) error
+	CommitAmendTrailersFn func(dir string, trailers []string) error
+	RevParseHEADFn         func(dir string) (string, error)
 	ResetSoftFn        func(ref, dir string) error
 	MergeCmdFn         func(branch, dir string) *exec.Cmd
 	WorktreePruneFn    func(dir string) error
@@ -167,6 +168,7 @@ func (m *MockGitOps) HasChanges(dir string) bool               { return m.HasCha
 func (m *MockGitOps) Stash(msg, dir string) error              { return m.StashFn(msg, dir) }
 func (m *MockGitOps) Commit(msg, dir string) error             { return m.CommitFn(msg, dir) }
 func (m *MockGitOps) CommitAllowEmpty(msg, dir string) error   { return m.CommitAllowEmptyFn(msg, dir) }
+func (m *MockGitOps) CommitAmendTrailers(dir string, trailers []string) error { return m.CommitAmendTrailersFn(dir, trailers) }
 func (m *MockGitOps) RevParseHEAD(dir string) (string, error)  { return m.RevParseHEADFn(dir) }
 func (m *MockGitOps) ResetSoft(ref, dir string) error          { return m.ResetSoftFn(ref, dir) }
 func (m *MockGitOps) MergeCmd(branch, dir string) *exec.Cmd    { return m.MergeCmdFn(branch, dir) }

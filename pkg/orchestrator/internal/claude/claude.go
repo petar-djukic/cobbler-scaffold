@@ -396,18 +396,15 @@ func FormatOutcomeTrailers(rec InvocationRecord) []string {
 	}
 }
 
+// CommitAmendTrailersFn is a function that amends the last commit with trailers.
+// Injected by the parent package to use the gitops interface (GH-1632).
+type CommitAmendTrailersFn func(dir string, trailers []string) error
+
 // AppendOutcomeTrailers amends the last commit in the given git worktree
-// directory with outcome trailers from rec.
-func AppendOutcomeTrailers(worktreeDir string, rec InvocationRecord) error {
-	args := []string{"-C", worktreeDir, "commit", "--amend", "--no-edit"}
-	for _, t := range FormatOutcomeTrailers(rec) {
-		args = append(args, "--trailer", t)
-	}
-	cmd := exec.Command(BinGit, args...)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("git commit --amend: %w\n%s", err, out)
-	}
-	return nil
+// directory with outcome trailers from rec. The amendFn parameter provides
+// the git amend implementation (typically gitops.CommitAmendTrailers).
+func AppendOutcomeTrailers(worktreeDir string, rec InvocationRecord, amendFn CommitAmendTrailersFn) error {
+	return amendFn(worktreeDir, FormatOutcomeTrailers(rec))
 }
 
 // WorktreeBasePath returns the directory used for stitch worktrees.
