@@ -559,6 +559,15 @@ func (t *GitHubTracker) FinalizeMeasurePlaceholder(repo string, number int, gene
 		t.Log("finalizeMeasurePlaceholder: add label #%d warning: %v", number, err)
 	}
 
+	// Link this measure issue as a sub-issue of the generation parent (GH-1645).
+	// Stitch issues are then linked as sub-issues of this measure issue,
+	// giving the hierarchy: generation → measure → stitch.
+	if parentNumber := ExtractParentIssueNumber(generation); parentNumber > 0 {
+		if err := t.LinkSubIssue(repo, parentNumber, number); err != nil {
+			t.Log("finalizeMeasurePlaceholder: linkSubIssue measure #%d -> parent #%d warning: %v", number, parentNumber, err)
+		}
+	}
+
 	// Link created stitch issues as sub-issues of this measure issue.
 	for _, child := range childIssues {
 		if err := t.LinkSubIssue(repo, number, child); err != nil {
@@ -606,13 +615,6 @@ func (t *GitHubTracker) CreateCobblerIssue(repo, generation string, issue Propos
 	}
 	t.Log("createCobblerIssue: created #%d %q gen=%s index=%d dep=%d",
 		number, title, generation, issue.Index, issue.Dependency)
-
-	// Link as sub-issue of the parent, if the generation name encodes one (GH-566).
-	if parentNumber := ExtractParentIssueNumber(generation); parentNumber > 0 {
-		if err := t.LinkSubIssue(repo, parentNumber, number); err != nil {
-			t.Log("createCobblerIssue: linkSubIssue warning for #%d -> parent #%d: %v", number, parentNumber, err)
-		}
-	}
 
 	return number, nil
 }
