@@ -113,8 +113,9 @@ type mockCommitWriter struct {
 	HasChangesFn       func(dir string) bool
 	StashFn            func(msg, dir string) error
 	CommitFn           func(msg, dir string) error
-	CommitAllowEmptyFn func(msg, dir string) error
-	ResetSoftFn        func(ref, dir string) error
+	CommitAllowEmptyFn     func(msg, dir string) error
+	CommitAmendTrailersFn func(dir string, trailers []string) error
+	ResetSoftFn            func(ref, dir string) error
 }
 
 func (m *mockCommitWriter) StageAll(dir string) error {
@@ -156,6 +157,12 @@ func (m *mockCommitWriter) Commit(msg, dir string) error {
 func (m *mockCommitWriter) CommitAllowEmpty(msg, dir string) error {
 	if m.CommitAllowEmptyFn != nil {
 		return m.CommitAllowEmptyFn(msg, dir)
+	}
+	return nil
+}
+func (m *mockCommitWriter) CommitAmendTrailers(dir string, trailers []string) error {
+	if m.CommitAmendTrailersFn != nil {
+		return m.CommitAmendTrailersFn(dir, trailers)
 	}
 	return nil
 }

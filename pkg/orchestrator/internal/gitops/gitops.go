@@ -58,6 +58,7 @@ type GitOps interface {
 	Stash(msg, dir string) error
 	Commit(msg, dir string) error
 	CommitAllowEmpty(msg, dir string) error
+	CommitAmendTrailers(dir string, trailers []string) error
 	RevParseHEAD(dir string) (string, error)
 	ResetSoft(ref, dir string) error
 	MergeCmd(branch, dir string) *exec.Cmd
@@ -118,6 +119,7 @@ type CommitWriter interface {
 	Stash(msg, dir string) error
 	Commit(msg, dir string) error
 	CommitAllowEmpty(msg, dir string) error
+	CommitAmendTrailers(dir string, trailers []string) error
 	ResetSoft(ref, dir string) error
 }
 
@@ -287,6 +289,18 @@ func (g *ShellGitOps) Commit(msg, dir string) error {
 
 func (g *ShellGitOps) CommitAllowEmpty(msg, dir string) error {
 	return g.cmdGit(dir, "commit", "--no-verify", "-m", msg, "--allow-empty").Run()
+}
+
+func (g *ShellGitOps) CommitAmendTrailers(dir string, trailers []string) error {
+	args := []string{"commit", "--amend", "--no-edit"}
+	for _, t := range trailers {
+		args = append(args, "--trailer", t)
+	}
+	out, err := g.cmdGit(dir, args...).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("git commit --amend: %w\n%s", err, out)
+	}
+	return nil
 }
 
 func (g *ShellGitOps) RevParseHEAD(dir string) (string, error) {
