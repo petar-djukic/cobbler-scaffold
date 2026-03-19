@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/claude"
 	"gopkg.in/yaml.v3"
 )
 
@@ -161,7 +162,7 @@ func (o *Orchestrator) RunMeasure() error {
 	totalCalls := (maxIssues + tasksPerCall - 1) / tasksPerCall // ceiling division
 	logf("measure: maxIssues=%d tasksPerCall=%d totalCalls=%d", maxIssues, tasksPerCall, totalCalls)
 	var allCreatedIDs []string
-	var totalTokens ClaudeResult
+	var totalTokens claude.ClaudeResult
 	maxRetries := o.cfg.Cobbler.MaxMeasureRetries
 
 	// Create a single placeholder issue for the entire measure pass (GH-1467).
@@ -241,7 +242,7 @@ func (o *Orchestrator) RunMeasure() error {
 					i+1, iterDuration.Round(time.Second), err)
 				// Save log and stats even on failure.
 				o.saveHistoryLog(historyTS, "measure", tokens.RawOutput)
-				o.saveHistoryStats(historyTS, "measure", HistoryStats{
+				o.saveHistoryStats(historyTS, "measure", claude.HistoryStats{
 					Caller:        "measure",
 					TaskID:        taskID,
 					Status:        "failed",
@@ -249,7 +250,7 @@ func (o *Orchestrator) RunMeasure() error {
 					StartedAt:     iterStart.UTC().Format(time.RFC3339),
 					Duration:      iterDuration.Round(time.Second).String(),
 					DurationS:     int(iterDuration.Seconds()),
-					Tokens:        historyTokens{Input: tokens.InputTokens, Output: tokens.OutputTokens, CacheCreation: tokens.CacheCreationTokens, CacheRead: tokens.CacheReadTokens},
+					Tokens:        claude.HistoryTokens{Input: tokens.InputTokens, Output: tokens.OutputTokens, CacheCreation: tokens.CacheCreationTokens, CacheRead: tokens.CacheReadTokens},
 					CostUSD:       tokens.CostUSD,
 					NumTurns:      tokens.NumTurns,
 					DurationAPIMs: tokens.DurationAPIMs,
@@ -263,14 +264,14 @@ func (o *Orchestrator) RunMeasure() error {
 
 			// Save remaining history artifacts (log, issues, stats) after Claude.
 			o.saveHistory(historyTS, tokens.RawOutput, outputFile)
-			o.saveHistoryStats(historyTS, "measure", HistoryStats{
+			o.saveHistoryStats(historyTS, "measure", claude.HistoryStats{
 				Caller:        "measure",
 				TaskID:        taskID,
 				Status:        "success",
 				StartedAt:     iterStart.UTC().Format(time.RFC3339),
 				Duration:      iterDuration.Round(time.Second).String(),
 				DurationS:     int(iterDuration.Seconds()),
-				Tokens:        historyTokens{Input: tokens.InputTokens, Output: tokens.OutputTokens, CacheCreation: tokens.CacheCreationTokens, CacheRead: tokens.CacheReadTokens},
+				Tokens:        claude.HistoryTokens{Input: tokens.InputTokens, Output: tokens.OutputTokens, CacheCreation: tokens.CacheCreationTokens, CacheRead: tokens.CacheReadTokens},
 				CostUSD:       tokens.CostUSD,
 				NumTurns:      tokens.NumTurns,
 				DurationAPIMs: tokens.DurationAPIMs,
@@ -280,8 +281,8 @@ func (o *Orchestrator) RunMeasure() error {
 			})
 
 			// Extract YAML from Claude's text output and write to file.
-			textOutput := extractTextFromStreamJSON(tokens.RawOutput)
-			yamlContent, extractErr := extractYAMLBlock(textOutput)
+			textOutput := claude.ExtractTextFromStreamJSON(tokens.RawOutput)
+			yamlContent, extractErr := claude.ExtractYAMLBlock(textOutput)
 			if extractErr != nil {
 				logf("iteration %d YAML extraction failed: %v", i+1, extractErr)
 				if attempt < maxRetries {
@@ -361,22 +362,22 @@ func (o *Orchestrator) RunMeasure() error {
 
 			if err == nil {
 				o.saveHistory(historyTS, tokens.RawOutput, outputFile)
-				o.saveHistoryStats(historyTS, "measure", HistoryStats{
+				o.saveHistoryStats(historyTS, "measure", claude.HistoryStats{
 					Caller:    "measure",
 					TaskID:    fmt.Sprintf("%d", placeholderNum),
 					Status:    "success",
 					StartedAt: retryStart.UTC().Format(time.RFC3339),
 					Duration:  retryDuration.Round(time.Second).String(),
 					DurationS: int(retryDuration.Seconds()),
-					Tokens:    historyTokens{Input: tokens.InputTokens, Output: tokens.OutputTokens, CacheCreation: tokens.CacheCreationTokens, CacheRead: tokens.CacheReadTokens},
+					Tokens:    claude.HistoryTokens{Input: tokens.InputTokens, Output: tokens.OutputTokens, CacheCreation: tokens.CacheCreationTokens, CacheRead: tokens.CacheReadTokens},
 					CostUSD:   tokens.CostUSD,
 					NumTurns:  tokens.NumTurns,
 					LOCBefore: locBefore,
 					LOCAfter:  o.captureLOC(),
 				})
 
-				textOutput := extractTextFromStreamJSON(tokens.RawOutput)
-				yamlContent, extractErr := extractYAMLBlock(textOutput)
+				textOutput := claude.ExtractTextFromStreamJSON(tokens.RawOutput)
+				yamlContent, extractErr := claude.ExtractYAMLBlock(textOutput)
 				if extractErr == nil {
 					if writeErr := os.WriteFile(outputFile, yamlContent, 0o644); writeErr == nil {
 						retryIDs, _, importErr := o.importIssues(outputFile, repo, generation, placeholderNum)

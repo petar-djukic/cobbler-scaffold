@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/claude"
 	"github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/gitops" // diffStat alias, diffNameStatus conversion
 )
 
@@ -72,14 +73,14 @@ type diffStat = gitops.DiffStat
 // diffNameStatus runs git diff --name-status and returns per-file entries,
 // converting from gitops.FileChange to claude.FileChange (aliased as
 // FileChange in cobbler.go).
-func diffNameStatus(ref, dir string) ([]FileChange, error) {
+func diffNameStatus(ref, dir string) ([]claude.FileChange, error) {
 	gfc, err := defaultGitOps.DiffNameStatus(ref, dir)
 	if err != nil {
 		return nil, err
 	}
-	files := make([]FileChange, len(gfc))
+	files := make([]claude.FileChange, len(gfc))
 	for i, fc := range gfc {
-		files[i] = FileChange{
+		files[i] = claude.FileChange{
 			Path:       fc.Path,
 			Status:     fc.Status,
 			Insertions: fc.Insertions,

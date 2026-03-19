@@ -17,6 +17,7 @@ import (
 	"os/exec"
 
 	an "github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/analysis"
+	"github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/claude"
 	"github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/generate"
 )
 
@@ -370,7 +371,7 @@ func (o *Orchestrator) GeneratorResume() error {
 
 	// Pre-flight cleanup.
 	logf("resume: pre-flight cleanup")
-	wtBase := worktreeBasePath()
+	wtBase := claude.WorktreeBasePath()
 
 	logf("resume: pruning worktrees")
 	if err := defaultGitOps.WorktreePrune("."); err != nil {
@@ -1415,7 +1416,7 @@ func (o *Orchestrator) GeneratorReset() error {
 		return fmt.Errorf("switching to %s: %w", baseBranch, err)
 	}
 
-	wtBase := worktreeBasePath()
+	wtBase := claude.WorktreeBasePath()
 	ghRepo, _ := detectGitHubRepo(".", o.cfg)
 	genBranches := o.listGenerationBranches()
 	if len(genBranches) > 0 {

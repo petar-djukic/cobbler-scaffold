@@ -5,68 +5,14 @@ package orchestrator
 
 import (
 	"context"
-	"encoding/json"
 	"os/exec"
 
 	"github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/claude"
 )
 
 // ---------------------------------------------------------------------------
-// Dependency injection: wire the parent package's logf, binary paths,
-// and helper functions into the internal/claude package at init time.
-// ---------------------------------------------------------------------------
-
-func init() {
-	claude.Log = logf
-	claude.BinGit = binGit
-	claude.BinClaude = binClaude
-}
-
-// ---------------------------------------------------------------------------
-// Type aliases for backward compatibility
-// ---------------------------------------------------------------------------
-
-// Runner executes Claude in a specific mode (CLI or SDK).
-type Runner = claude.Runner
-
-// CLIRunner executes Claude by running the claude binary directly.
-type CLIRunner = claude.CLIRunner
-
-// SDKRunner executes Claude via the Go Agent SDK.
-type SDKRunner = claude.SDKRunner
-
-// ClaudeResult holds token usage from a Claude invocation.
-type ClaudeResult = claude.ClaudeResult
-
-// LocSnapshot holds a point-in-time LOC count.
-type LocSnapshot = claude.LocSnapshot
-
-// InvocationRecord is the JSON blob recorded as a GitHub issue comment.
-type InvocationRecord = claude.InvocationRecord
-
-// HistoryStats is the YAML-serializable stats file.
-type HistoryStats = claude.HistoryStats
-
-// StitchReport is the YAML-serializable stitch report.
-type StitchReport = claude.StitchReport
-
-// claudeTokens holds token counts for an invocation record.
-type claudeTokens = claude.ClaudeTokens
-
-// diffRecord holds file-level diff statistics.
-type diffRecord = claude.DiffRecord
-
-// historyTokens holds token counts in the history stats YAML.
-type historyTokens = claude.HistoryTokens
-
-// historyDiff holds diff statistics in the history stats YAML.
-type historyDiff = claude.HistoryDiff
-
-// FileChange holds per-file diff information.
-type FileChange = claude.FileChange
-
-// ---------------------------------------------------------------------------
-// Orchestrator wrapper methods
+// Orchestrator methods — each wires Config fields into dependency structs
+// before delegating to internal/claude.
 // ---------------------------------------------------------------------------
 
 // historyDir returns the resolved history directory path.
@@ -75,12 +21,12 @@ func (o *Orchestrator) historyDir() string {
 }
 
 // saveHistoryReport writes a stitch report YAML file to the history directory.
-func (o *Orchestrator) saveHistoryReport(ts string, report StitchReport) {
+func (o *Orchestrator) saveHistoryReport(ts string, report claude.StitchReport) {
 	claude.SaveHistoryReport(o.historyDir(), ts, report)
 }
 
 // saveHistoryStats writes a stats YAML file to the history directory.
-func (o *Orchestrator) saveHistoryStats(ts, phase string, stats HistoryStats) {
+func (o *Orchestrator) saveHistoryStats(ts, phase string, stats claude.HistoryStats) {
 	claude.SaveHistoryStats(o.historyDir(), ts, phase, stats)
 }
 
@@ -95,24 +41,24 @@ func (o *Orchestrator) saveHistoryLog(ts, phase string, rawOutput []byte) {
 }
 
 // captureLOC returns the current Go LOC counts.
-func (o *Orchestrator) captureLOC() LocSnapshot {
+func (o *Orchestrator) captureLOC() claude.LocSnapshot {
 	rec, err := o.CollectStats()
 	if err != nil {
 		logf("captureLOC: collectStats error: %v", err)
-		return LocSnapshot{}
+		return claude.LocSnapshot{}
 	}
-	return LocSnapshot{Production: rec.GoProdLOC, Test: rec.GoTestLOC}
+	return claude.LocSnapshot{Production: rec.GoProdLOC, Test: rec.GoTestLOC}
 }
 
 // captureLOCAt returns Go LOC counts measured in dir.
-func (o *Orchestrator) captureLOCAt(dir string) LocSnapshot {
+func (o *Orchestrator) captureLOCAt(dir string) claude.LocSnapshot {
 	return claude.CaptureLOCAt(dir, o.captureLOC)
 }
 
 // checkClaude verifies that Claude can be invoked.
 func (o *Orchestrator) checkClaude() error {
 	return claude.CheckClaude(claude.CheckClaudeDeps{
-		EffectiveMode:      o.cfg.Cobbler.effectiveMode(),
+		EffectiveMode:       o.cfg.Cobbler.effectiveMode(),
 		EnsureCredentialsFn: o.ensureCredentials,
 	})
 }
@@ -139,12 +85,12 @@ func (o *Orchestrator) logConfig(target string) {
 }
 
 // runner returns a Runner for the configured execution mode.
-func (o *Orchestrator) runner() Runner {
+func (o *Orchestrator) runner() claude.Runner {
 	return claude.NewRunner(o.runClaudeDeps())
 }
 
 // runClaude executes Claude and returns token usage.
-func (o *Orchestrator) runClaude(prompt, dir string, silence bool, extraClaudeArgs ...string) (ClaudeResult, error) {
+func (o *Orchestrator) runClaude(prompt, dir string, silence bool, extraClaudeArgs ...string) (claude.ClaudeResult, error) {
 	return claude.RunClaude(o.runClaudeDeps(), prompt, dir, silence, extraClaudeArgs...)
 }
 
@@ -167,14 +113,14 @@ func (o *Orchestrator) runClaudeDeps() claude.RunClaudeDeps {
 // runMeasureClaude executes Claude with the measure-specific idle timeout,
 // which is higher than the default to accommodate large prompts that cause
 // extended thinking time (GH-1509).
-func (o *Orchestrator) runMeasureClaude(prompt, dir string, silence bool, extraClaudeArgs ...string) (ClaudeResult, error) {
+func (o *Orchestrator) runMeasureClaude(prompt, dir string, silence bool, extraClaudeArgs ...string) (claude.ClaudeResult, error) {
 	deps := o.runClaudeDeps()
 	deps.IdleTimeoutS = o.cfg.Cobbler.MeasureIdleTimeoutSeconds
 	return claude.RunClaude(deps, prompt, dir, silence, extraClaudeArgs...)
 }
 
 // runClaudeSDK executes Claude via the Go Agent SDK.
-func (o *Orchestrator) runClaudeSDK(ctx context.Context, prompt, workDir string, silence bool, extraClaudeArgs ...string) (ClaudeResult, error) {
+func (o *Orchestrator) runClaudeSDK(ctx context.Context, prompt, workDir string, silence bool, extraClaudeArgs ...string) (claude.ClaudeResult, error) {
 	return claude.RunClaudeSDK(o.runClaudeDeps(), ctx, prompt, workDir, silence, extraClaudeArgs...)
 }
 
@@ -206,60 +152,3 @@ func (o *Orchestrator) HistoryClean() error {
 func (o *Orchestrator) CobblerReset() error {
 	return claude.CobblerReset(o.cfg.Cobbler.Dir)
 }
-
-// ---------------------------------------------------------------------------
-// Functions delegated to internal/claude (package-level)
-// ---------------------------------------------------------------------------
-
-// parseClaudeTokens extracts token usage from Claude's stream-json output.
-func parseClaudeTokens(output []byte) ClaudeResult {
-	return claude.ParseClaudeTokens(output)
-}
-
-// extractTextFromStreamJSON concatenates all text blocks from assistant messages.
-func extractTextFromStreamJSON(rawOutput []byte) string {
-	return claude.ExtractTextFromStreamJSON(rawOutput)
-}
-
-// extractYAMLBlock finds the first ```yaml fenced code block in text.
-func extractYAMLBlock(text string) ([]byte, error) {
-	return claude.ExtractYAMLBlock(text)
-}
-
-// filterSDKStderr reads lines from r and replaces rate-limit warnings.
-var filterSDKStderr = claude.FilterSDKStderr
-
-// toolSummary extracts a concise context string from tool input JSON.
-func toolSummary(input json.RawMessage) string {
-	return claude.ToolSummary(input)
-}
-
-// intFromUsage extracts an integer from the ResultMessage usage map.
-func intFromUsage(usage map[string]interface{}, key string) int {
-	return claude.IntFromUsage(usage, key)
-}
-
-// formatOutcomeTrailers returns the set of git trailer strings for rec.
-func formatOutcomeTrailers(rec InvocationRecord) []string {
-	return claude.FormatOutcomeTrailers(rec)
-}
-
-// appendOutcomeTrailers amends the last commit with outcome trailers.
-func appendOutcomeTrailers(worktreeDir string, rec InvocationRecord) error {
-	return claude.AppendOutcomeTrailers(worktreeDir, rec, defaultGitOps.CommitAmendTrailers)
-}
-
-// worktreeBasePath returns the directory used for stitch worktrees.
-func worktreeBasePath() string {
-	return claude.WorktreeBasePath()
-}
-
-// progressWriter wraps a bytes.Buffer, logging concise event summaries.
-type progressWriter = claude.ProgressWriter
-
-// newProgressWriter creates a progressWriter.
-var newProgressWriter = claude.NewProgressWriter
-
-// idleTrackingWriter wraps an io.Writer and records the last write timestamp.
-type idleTrackingWriter = claude.IdleTrackingWriter
-

@@ -18,16 +18,11 @@ import (
 	"github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/gitops"
 )
 
-// sdkQueryFunc is the function signature for claudesdk.Query.
-// Storing it on the Orchestrator allows tests to inject a fake without a
-// real Claude binary.
-type sdkQueryFunc = claude.SdkQueryFunc
-
 // Orchestrator provides Claude Code orchestration operations.
 // Create one with New() and call its methods from mage targets.
 type Orchestrator struct {
 	cfg        Config
-	sdkQueryFn sdkQueryFunc
+	sdkQueryFn claude.SdkQueryFunc
 	tracker    gh.WorkTracker
 	git        gitops.GitOps
 }
@@ -35,6 +30,11 @@ type Orchestrator struct {
 // New creates an Orchestrator with the given configuration.
 // It applies defaults to any zero-value Config fields.
 func New(cfg Config) *Orchestrator {
+	// Wire parent-package dependencies into internal/claude.
+	claude.Log = logf
+	claude.BinGit = binGit
+	claude.BinClaude = binClaude
+
 	cfg.applyDefaults()
 	return &Orchestrator{
 		cfg:        cfg,

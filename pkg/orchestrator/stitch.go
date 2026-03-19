@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/claude"
 	"github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/generate"
 	"gopkg.in/yaml.v3"
 )
@@ -101,7 +102,7 @@ func (o *Orchestrator) RunStitchN(limit int) (int, error) {
 		logf("ensureCobblerLabels warning: %v", err)
 	}
 
-	worktreeBase := worktreeBasePath()
+	worktreeBase := claude.WorktreeBasePath()
 	logf("worktreeBase=%s", worktreeBase)
 
 	baseBranch, err := defaultGitOps.CurrentBranch(".")
@@ -254,7 +255,7 @@ func (o *Orchestrator) doOneTask(task stitchTask, baseBranch, repoRoot string) e
 
 	if claudeErr != nil {
 		logf("doOneTask: Claude failed for %s after %s: %v", task.ID, time.Since(claudeStart).Round(time.Second), claudeErr)
-		o.saveHistoryStats(historyTS, "stitch", HistoryStats{
+		o.saveHistoryStats(historyTS, "stitch", claude.HistoryStats{
 			Caller:    "stitch",
 			TaskID:    task.ID,
 			TaskTitle: task.Title,
@@ -263,7 +264,7 @@ func (o *Orchestrator) doOneTask(task stitchTask, baseBranch, repoRoot string) e
 			StartedAt: claudeStart.UTC().Format(time.RFC3339),
 			Duration:  time.Since(taskStart).Round(time.Second).String(),
 			DurationS: int(time.Since(taskStart).Seconds()),
-			Tokens:    historyTokens{Input: tokens.InputTokens, Output: tokens.OutputTokens, CacheCreation: tokens.CacheCreationTokens, CacheRead: tokens.CacheReadTokens},
+			Tokens:    claude.HistoryTokens{Input: tokens.InputTokens, Output: tokens.OutputTokens, CacheCreation: tokens.CacheCreationTokens, CacheRead: tokens.CacheReadTokens},
 			CostUSD:   tokens.CostUSD,
 			LOCBefore: locBefore,
 		})
@@ -275,7 +276,7 @@ func (o *Orchestrator) doOneTask(task stitchTask, baseBranch, repoRoot string) e
 	// Commit Claude's changes in the worktree.
 	if err := commitWorktreeChanges(task); err != nil {
 		logf("doOneTask: worktree commit failed for %s: %v", task.ID, err)
-		o.saveHistoryStats(historyTS, "stitch", HistoryStats{
+		o.saveHistoryStats(historyTS, "stitch", claude.HistoryStats{
 			Caller:    "stitch",
 			TaskID:    task.ID,
 			TaskTitle: task.Title,
@@ -284,7 +285,7 @@ func (o *Orchestrator) doOneTask(task stitchTask, baseBranch, repoRoot string) e
 			StartedAt: claudeStart.UTC().Format(time.RFC3339),
 			Duration:  time.Since(taskStart).Round(time.Second).String(),
 			DurationS: int(time.Since(taskStart).Seconds()),
-			Tokens:    historyTokens{Input: tokens.InputTokens, Output: tokens.OutputTokens, CacheCreation: tokens.CacheCreationTokens, CacheRead: tokens.CacheReadTokens},
+			Tokens:    claude.HistoryTokens{Input: tokens.InputTokens, Output: tokens.OutputTokens, CacheCreation: tokens.CacheCreationTokens, CacheRead: tokens.CacheReadTokens},
 			CostUSD:   tokens.CostUSD,
 			LOCBefore: locBefore,
 		})
@@ -297,11 +298,11 @@ func (o *Orchestrator) doOneTask(task stitchTask, baseBranch, repoRoot string) e
 	logf("doOneTask: locAfter prod=%d test=%d", locAfter.Production, locAfter.Test)
 
 	// Append outcome trailers to the worktree commit before merging.
-	trailerRec := InvocationRecord{
+	trailerRec := claude.InvocationRecord{
 		Caller:    "stitch",
 		StartedAt: claudeStart.UTC().Format(time.RFC3339),
 		DurationS: int(time.Since(claudeStart).Seconds()),
-		Tokens: claudeTokens{
+		Tokens: claude.ClaudeTokens{
 			Input:         tokens.InputTokens,
 			Output:        tokens.OutputTokens,
 			CacheCreation: tokens.CacheCreationTokens,
@@ -312,7 +313,7 @@ func (o *Orchestrator) doOneTask(task stitchTask, baseBranch, repoRoot string) e
 		LOCAfter:  locAfter,
 		NumTurns:  tokens.NumTurns,
 	}
-	if err := appendOutcomeTrailers(task.WorktreeDir, trailerRec); err != nil {
+	if err := claude.AppendOutcomeTrailers(task.WorktreeDir, trailerRec, defaultGitOps.CommitAmendTrailers); err != nil {
 		logf("doOneTask: outcome trailer warning for %s: %v", task.ID, err)
 	}
 
@@ -327,7 +328,7 @@ func (o *Orchestrator) doOneTask(task stitchTask, baseBranch, repoRoot string) e
 	mergeStart := time.Now()
 	if err := mergeBranch(task.BranchName, baseBranch, repoRoot); err != nil {
 		logf("doOneTask: merge failed for %s after %s: %v", task.ID, time.Since(mergeStart).Round(time.Second), err)
-		o.saveHistoryStats(historyTS, "stitch", HistoryStats{
+		o.saveHistoryStats(historyTS, "stitch", claude.HistoryStats{
 			Caller:    "stitch",
 			TaskID:    task.ID,
 			TaskTitle: task.Title,
@@ -336,7 +337,7 @@ func (o *Orchestrator) doOneTask(task stitchTask, baseBranch, repoRoot string) e
 			StartedAt: claudeStart.UTC().Format(time.RFC3339),
 			Duration:  time.Since(taskStart).Round(time.Second).String(),
 			DurationS: int(time.Since(taskStart).Seconds()),
-			Tokens:    historyTokens{Input: tokens.InputTokens, Output: tokens.OutputTokens, CacheCreation: tokens.CacheCreationTokens, CacheRead: tokens.CacheReadTokens},
+			Tokens:    claude.HistoryTokens{Input: tokens.InputTokens, Output: tokens.OutputTokens, CacheCreation: tokens.CacheCreationTokens, CacheRead: tokens.CacheReadTokens},
 			CostUSD:   tokens.CostUSD,
 			LOCBefore: locBefore,
 		})
@@ -369,7 +370,7 @@ func (o *Orchestrator) doOneTask(task stitchTask, baseBranch, repoRoot string) e
 
 	// Save stitch stats.
 	taskDuration := time.Since(taskStart)
-	o.saveHistoryStats(historyTS, "stitch", HistoryStats{
+	o.saveHistoryStats(historyTS, "stitch", claude.HistoryStats{
 		Caller:        "stitch",
 		TaskID:        task.ID,
 		TaskTitle:     task.Title,
@@ -377,37 +378,37 @@ func (o *Orchestrator) doOneTask(task stitchTask, baseBranch, repoRoot string) e
 		StartedAt:     claudeStart.UTC().Format(time.RFC3339),
 		Duration:      taskDuration.Round(time.Second).String(),
 		DurationS:     int(taskDuration.Seconds()),
-		Tokens:        historyTokens{Input: tokens.InputTokens, Output: tokens.OutputTokens, CacheCreation: tokens.CacheCreationTokens, CacheRead: tokens.CacheReadTokens},
+		Tokens:        claude.HistoryTokens{Input: tokens.InputTokens, Output: tokens.OutputTokens, CacheCreation: tokens.CacheCreationTokens, CacheRead: tokens.CacheReadTokens},
 		CostUSD:       tokens.CostUSD,
 		NumTurns:      tokens.NumTurns,
 		DurationAPIMs: tokens.DurationAPIMs,
 		SessionID:     tokens.SessionID,
 		LOCBefore:     locBefore,
 		LOCAfter:      locAfter,
-		Diff:          historyDiff{Files: diff.FilesChanged, Insertions: diff.Insertions, Deletions: diff.Deletions},
+		Diff:          claude.HistoryDiff{Files: diff.FilesChanged, Insertions: diff.Insertions, Deletions: diff.Deletions},
 	})
 
 	// Save stitch report with per-file diffstat.
-	o.saveHistoryReport(historyTS, StitchReport{
+	o.saveHistoryReport(historyTS, claude.StitchReport{
 		TaskID:    task.ID,
 		TaskTitle: task.Title,
 		Status:    "success",
 		Branch:    task.BranchName,
-		Diff:      historyDiff{Files: diff.FilesChanged, Insertions: diff.Insertions, Deletions: diff.Deletions},
+		Diff:      claude.HistoryDiff{Files: diff.FilesChanged, Insertions: diff.Insertions, Deletions: diff.Deletions},
 		Files:     fileChanges,
 		LOCBefore: locBefore,
 		LOCAfter:  locAfter,
 	})
 
 	// Close task with metrics.
-	rec := InvocationRecord{
+	rec := claude.InvocationRecord{
 		Caller:    "stitch",
 		StartedAt: claudeStart.UTC().Format(time.RFC3339),
 		DurationS: int(taskDuration.Seconds()),
-		Tokens:    claudeTokens{Input: tokens.InputTokens, Output: tokens.OutputTokens, CacheCreation: tokens.CacheCreationTokens, CacheRead: tokens.CacheReadTokens, CostUSD: tokens.CostUSD},
+		Tokens:    claude.ClaudeTokens{Input: tokens.InputTokens, Output: tokens.OutputTokens, CacheCreation: tokens.CacheCreationTokens, CacheRead: tokens.CacheReadTokens, CostUSD: tokens.CostUSD},
 		LOCBefore: locBefore,
 		LOCAfter:  locAfter,
-		Diff:      diffRecord{Files: diff.FilesChanged, Insertions: diff.Insertions, Deletions: diff.Deletions},
+		Diff:      claude.DiffRecord{Files: diff.FilesChanged, Insertions: diff.Insertions, Deletions: diff.Deletions},
 		NumTurns:  tokens.NumTurns,
 	}
 	logf("doOneTask: closing task %s", task.ID)
@@ -564,7 +565,7 @@ func (o *Orchestrator) buildStitchPrompt(task stitchTask) (string, error) {
 	return string(out), nil
 }
 
-func (o *Orchestrator) closeStitchTask(task stitchTask, rec InvocationRecord, testsPassed bool) {
+func (o *Orchestrator) closeStitchTask(task stitchTask, rec claude.InvocationRecord, testsPassed bool) {
 	logf("closeStitchTask: closing #%d %q", task.GhNumber, task.Title)
 	locDeltaProd := rec.LOCAfter.Production - rec.LOCBefore.Production
 	locDeltaTest := rec.LOCAfter.Test - rec.LOCBefore.Test

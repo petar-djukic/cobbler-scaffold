@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/claude"
 )
 
 func TestErrTaskReset_MentionsOpen(t *testing.T) {
@@ -902,7 +904,7 @@ func TestCloseStitchTask_GHFailureNoOp(t *testing.T) {
 		Repo:       "fake/repo",
 		Generation: "test-gen",
 	}
-	rec := InvocationRecord{}
+	rec := claude.InvocationRecord{}
 
 	o.closeStitchTask(task, rec, true) // must not panic
 }

@@ -20,6 +20,7 @@ import (
 	"time"
 
 	claudetypes "github.com/schlunsen/claude-agent-sdk-go/types"
+	"github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/claude"
 	"github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/gitops"
 	"gopkg.in/yaml.v3"
 )
@@ -27,19 +28,19 @@ import (
 // --- StitchReport YAML serialization ---
 
 func TestStitchReport_SerializesAllFields(t *testing.T) {
-	report := StitchReport{
+	report := claude.StitchReport{
 		TaskID:    "mage-abc.1",
 		TaskTitle: "Add widget feature",
 		Status:    "success",
 		Branch:    "task/main-mage-abc.1",
-		Diff:      historyDiff{Files: 3, Insertions: 120, Deletions: 15},
-		Files: []FileChange{
+		Diff:      claude.HistoryDiff{Files: 3, Insertions: 120, Deletions: 15},
+		Files: []claude.FileChange{
 			{Path: "pkg/widget/widget.go", Status: "A", Insertions: 80, Deletions: 0},
 			{Path: "pkg/widget/widget_test.go", Status: "A", Insertions: 40, Deletions: 0},
 			{Path: "go.mod", Status: "M", Insertions: 0, Deletions: 15},
 		},
-		LOCBefore: LocSnapshot{Production: 500, Test: 200},
-		LOCAfter:  LocSnapshot{Production: 580, Test: 240},
+		LOCBefore: claude.LocSnapshot{Production: 500, Test: 200},
+		LOCAfter:  claude.LocSnapshot{Production: 580, Test: 240},
 	}
 
 	data, err := yaml.Marshal(&report)
@@ -48,7 +49,7 @@ func TestStitchReport_SerializesAllFields(t *testing.T) {
 	}
 
 	// Round-trip: unmarshal back and verify fields.
-	var got StitchReport
+	var got claude.StitchReport
 	if err := yaml.Unmarshal(data, &got); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
@@ -215,17 +216,17 @@ func TestSaveHistoryReport_WritesFile(t *testing.T) {
 		},
 	}
 
-	report := StitchReport{
+	report := claude.StitchReport{
 		TaskID:    "test-001",
 		TaskTitle: "Test task",
 		Status:    "success",
 		Branch:    "task/main-test-001",
-		Diff:      historyDiff{Files: 1, Insertions: 10, Deletions: 2},
-		Files: []FileChange{
+		Diff:      claude.HistoryDiff{Files: 1, Insertions: 10, Deletions: 2},
+		Files: []claude.FileChange{
 			{Path: "pkg/foo.go", Status: "M", Insertions: 10, Deletions: 2},
 		},
-		LOCBefore: LocSnapshot{Production: 100, Test: 50},
-		LOCAfter:  LocSnapshot{Production: 108, Test: 50},
+		LOCBefore: claude.LocSnapshot{Production: 100, Test: 50},
+		LOCAfter:  claude.LocSnapshot{Production: 108, Test: 50},
 	}
 
 	ts := "2026-02-24-10-00-00"
@@ -237,7 +238,7 @@ func TestSaveHistoryReport_WritesFile(t *testing.T) {
 		t.Fatalf("read report file: %v", err)
 	}
 
-	var got StitchReport
+	var got claude.StitchReport
 	if err := yaml.Unmarshal(data, &got); err != nil {
 		t.Fatalf("unmarshal report: %v", err)
 	}
@@ -257,7 +258,7 @@ func TestExtractTextFromStreamJSON_SingleAssistantMessage(t *testing.T) {
 {"type":"assistant","message":{"content":[{"type":"text","text":"Here is the output:\n\n` + "```yaml\\n- index: 0\\n  title: Task one\\n```" + `"}]}}
 {"type":"result","usage":{"input_tokens":100,"output_tokens":50}}
 `)
-	text := extractTextFromStreamJSON(raw)
+	text := claude.ExtractTextFromStreamJSON(raw)
 	if text == "" {
 		t.Fatal("expected non-empty text")
 	}
@@ -271,7 +272,7 @@ func TestExtractTextFromStreamJSON_NoAssistantMessages(t *testing.T) {
 	raw := []byte(`{"type":"system","message":"ready"}
 {"type":"result","usage":{"input_tokens":100,"output_tokens":0}}
 `)
-	text := extractTextFromStreamJSON(raw)
+	text := claude.ExtractTextFromStreamJSON(raw)
 	if text != "" {
 		t.Errorf("expected empty text, got: %s", text)
 	}
@@ -281,7 +282,7 @@ func TestExtractTextFromStreamJSON_MultipleTextBlocks(t *testing.T) {
 	t.Parallel()
 	raw := []byte(`{"type":"assistant","message":{"content":[{"type":"text","text":"first "},{"type":"text","text":"second"}]}}
 `)
-	text := extractTextFromStreamJSON(raw)
+	text := claude.ExtractTextFromStreamJSON(raw)
 	if text != "first second" {
 		t.Errorf("expected 'first second', got: %q", text)
 	}
@@ -291,7 +292,7 @@ func TestExtractTextFromStreamJSON_PlainTextFallback(t *testing.T) {
 	t.Parallel()
 	// SDK mode stores plain text in RawOutput — no JSON lines at all.
 	raw := []byte("```yaml\n- title: foo\n```\n")
-	text := extractTextFromStreamJSON(raw)
+	text := claude.ExtractTextFromStreamJSON(raw)
 	if text != string(raw) {
 		t.Errorf("expected raw text passthrough, got: %q", text)
 	}
@@ -302,7 +303,7 @@ func TestExtractTextFromStreamJSON_PlainTextFallback(t *testing.T) {
 func TestExtractYAMLBlock_ValidFencedBlock(t *testing.T) {
 	t.Parallel()
 	text := "Here is the YAML:\n\n```yaml\n- index: 0\n  title: Task one\n  dependency: -1\n```\n\nDone."
-	yaml, err := extractYAMLBlock(text)
+	yaml, err := claude.ExtractYAMLBlock(text)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -315,7 +316,7 @@ func TestExtractYAMLBlock_ValidFencedBlock(t *testing.T) {
 func TestExtractYAMLBlock_YmlFence(t *testing.T) {
 	t.Parallel()
 	text := "```yml\n- index: 0\n```\n"
-	yaml, err := extractYAMLBlock(text)
+	yaml, err := claude.ExtractYAMLBlock(text)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -327,7 +328,7 @@ func TestExtractYAMLBlock_YmlFence(t *testing.T) {
 func TestExtractYAMLBlock_NoFencedBlock(t *testing.T) {
 	t.Parallel()
 	text := "Here is some text with no YAML block."
-	_, err := extractYAMLBlock(text)
+	_, err := claude.ExtractYAMLBlock(text)
 	if err == nil {
 		t.Error("expected error for missing YAML block")
 	}
@@ -336,7 +337,7 @@ func TestExtractYAMLBlock_NoFencedBlock(t *testing.T) {
 func TestExtractYAMLBlock_UnclosedBlock(t *testing.T) {
 	t.Parallel()
 	text := "```yaml\n- index: 0\n  title: Task one"
-	_, err := extractYAMLBlock(text)
+	_, err := claude.ExtractYAMLBlock(text)
 	if err == nil {
 		t.Error("expected error for unclosed YAML block")
 	}
@@ -350,7 +351,7 @@ func TestParseClaudeTokens_ValidResult(t *testing.T) {
 {"type":"assistant","message":{"content":[{"type":"text","text":"hello"}]}}
 {"type":"result","total_cost_usd":0.0325,"usage":{"input_tokens":1000,"output_tokens":500,"cache_creation_input_tokens":200,"cache_read_input_tokens":300}}
 `)
-	got := parseClaudeTokens(output)
+	got := claude.ParseClaudeTokens(output)
 	if got.InputTokens != 1500 {
 		t.Errorf("InputTokens = %d, want 1500 (1000+200+300)", got.InputTokens)
 	}
@@ -373,7 +374,7 @@ func TestParseClaudeTokens_NoResultEvent(t *testing.T) {
 	output := []byte(`{"type":"system","message":"ready"}
 {"type":"assistant","message":{"content":[{"type":"text","text":"hello"}]}}
 `)
-	got := parseClaudeTokens(output)
+	got := claude.ParseClaudeTokens(output)
 	if got.InputTokens != 0 || got.OutputTokens != 0 {
 		t.Errorf("expected zero tokens for missing result, got in=%d out=%d", got.InputTokens, got.OutputTokens)
 	}
@@ -381,7 +382,7 @@ func TestParseClaudeTokens_NoResultEvent(t *testing.T) {
 
 func TestParseClaudeTokens_EmptyInput(t *testing.T) {
 	t.Parallel()
-	got := parseClaudeTokens([]byte(""))
+	got := claude.ParseClaudeTokens([]byte(""))
 	if got.InputTokens != 0 {
 		t.Errorf("expected zero tokens for empty input, got %d", got.InputTokens)
 	}
@@ -392,18 +393,18 @@ func TestParseClaudeTokens_EmptyInput(t *testing.T) {
 func TestToolSummary_FilePath(t *testing.T) {
 	t.Parallel()
 	input := json.RawMessage(`{"file_path":"pkg/orchestrator/generator.go","content":"hello"}`)
-	got := toolSummary(input)
+	got := claude.ToolSummary(input)
 	if got != "pkg/orchestrator/generator.go" {
-		t.Errorf("toolSummary(file_path) = %q, want %q", got, "pkg/orchestrator/generator.go")
+		t.Errorf("claude.ToolSummary(file_path) = %q, want %q", got, "pkg/orchestrator/generator.go")
 	}
 }
 
 func TestToolSummary_Command(t *testing.T) {
 	t.Parallel()
 	input := json.RawMessage(`{"command":"go test ./..."}`)
-	got := toolSummary(input)
+	got := claude.ToolSummary(input)
 	if got != "go test ./..." {
-		t.Errorf("toolSummary(command) = %q, want %q", got, "go test ./...")
+		t.Errorf("claude.ToolSummary(command) = %q, want %q", got, "go test ./...")
 	}
 }
 
@@ -411,38 +412,38 @@ func TestToolSummary_LongCommandTruncated(t *testing.T) {
 	t.Parallel()
 	longCmd := strings.Repeat("x", 100)
 	input := json.RawMessage(`{"command":"` + longCmd + `"}`)
-	got := toolSummary(input)
+	got := claude.ToolSummary(input)
 	if len(got) != 83 { // 80 + "..."
-		t.Errorf("toolSummary(long command) len = %d, want 83", len(got))
+		t.Errorf("claude.ToolSummary(long command) len = %d, want 83", len(got))
 	}
 	if !strings.HasSuffix(got, "...") {
-		t.Errorf("toolSummary(long command) should end with '...', got %q", got)
+		t.Errorf("claude.ToolSummary(long command) should end with '...', got %q", got)
 	}
 }
 
 func TestToolSummary_Pattern(t *testing.T) {
 	t.Parallel()
 	input := json.RawMessage(`{"pattern":"**/*.go"}`)
-	got := toolSummary(input)
+	got := claude.ToolSummary(input)
 	if got != "**/*.go" {
-		t.Errorf("toolSummary(pattern) = %q, want %q", got, "**/*.go")
+		t.Errorf("claude.ToolSummary(pattern) = %q, want %q", got, "**/*.go")
 	}
 }
 
 func TestToolSummary_EmptyInput(t *testing.T) {
 	t.Parallel()
-	got := toolSummary(json.RawMessage(""))
+	got := claude.ToolSummary(json.RawMessage(""))
 	if got != "" {
-		t.Errorf("toolSummary(empty) = %q, want empty", got)
+		t.Errorf("claude.ToolSummary(empty) = %q, want empty", got)
 	}
 }
 
 func TestToolSummary_NoKnownFields(t *testing.T) {
 	t.Parallel()
 	input := json.RawMessage(`{"unknown_field":"value"}`)
-	got := toolSummary(input)
+	got := claude.ToolSummary(input)
 	if got != "" {
-		t.Errorf("toolSummary(unknown) = %q, want empty", got)
+		t.Errorf("claude.ToolSummary(unknown) = %q, want empty", got)
 	}
 }
 
@@ -450,9 +451,9 @@ func TestToolSummary_PriorityOrder(t *testing.T) {
 	t.Parallel()
 	// file_path should take priority over command
 	input := json.RawMessage(`{"file_path":"foo.go","command":"go build"}`)
-	got := toolSummary(input)
+	got := claude.ToolSummary(input)
 	if got != "foo.go" {
-		t.Errorf("toolSummary(priority) = %q, want %q", got, "foo.go")
+		t.Errorf("claude.ToolSummary(priority) = %q, want %q", got, "foo.go")
 	}
 }
 
@@ -464,7 +465,7 @@ func TestSaveHistoryReport_NoOpWhenHistoryDirEmpty(t *testing.T) {
 	}
 
 	// Should not panic or create any files.
-	o.saveHistoryReport("2026-02-24-10-00-00", StitchReport{
+	o.saveHistoryReport("2026-02-24-10-00-00", claude.StitchReport{
 		TaskID: "test-noop",
 		Status: "success",
 	})
@@ -507,12 +508,12 @@ func TestHistoryDir_Relative(t *testing.T) {
 
 func TestWorktreeBasePath(t *testing.T) {
 	t.Parallel()
-	got := worktreeBasePath()
+	got := claude.WorktreeBasePath()
 	if got == "" {
-		t.Fatal("worktreeBasePath() returned empty string")
+		t.Fatal("claude.WorktreeBasePath() returned empty string")
 	}
 	if !strings.HasSuffix(got, "-worktrees") {
-		t.Errorf("worktreeBasePath() = %q, want suffix '-worktrees'", got)
+		t.Errorf("claude.WorktreeBasePath() = %q, want suffix '-worktrees'", got)
 	}
 }
 
@@ -555,11 +556,11 @@ func TestWorktreeBasePath_FromWorktree(t *testing.T) {
 
 	// Call from main repo.
 	os.Chdir(mainDir)
-	fromMain := worktreeBasePath()
+	fromMain := claude.WorktreeBasePath()
 
 	// Call from inside the worktree.
 	os.Chdir(wtDir)
-	fromWorktree := worktreeBasePath()
+	fromWorktree := claude.WorktreeBasePath()
 
 	if fromMain != expected {
 		t.Errorf("from main: got %q, want %q", fromMain, expected)
@@ -580,9 +581,9 @@ func TestWorktreeBasePath_FallbackOutsideGit(t *testing.T) {
 	os.Chdir(dir)
 	defer os.Chdir(orig)
 
-	got := worktreeBasePath()
+	got := claude.WorktreeBasePath()
 	if got == "" {
-		t.Fatal("worktreeBasePath() returned empty string in fallback")
+		t.Fatal("claude.WorktreeBasePath() returned empty string in fallback")
 	}
 	if !strings.HasSuffix(got, "-worktrees") {
 		t.Errorf("fallback: got %q, want suffix '-worktrees'", got)
@@ -602,7 +603,7 @@ func TestSaveHistoryStats_WritesFile(t *testing.T) {
 		HistoryDir: "hist",
 	}}}
 
-	stats := HistoryStats{
+	stats := claude.HistoryStats{
 		Caller: "test",
 		TaskID: "task-001",
 		Status: "success",
@@ -623,7 +624,7 @@ func TestSaveHistoryStats_NoOpWhenEmpty(t *testing.T) {
 	t.Parallel()
 	o := &Orchestrator{cfg: Config{Cobbler: CobblerConfig{HistoryDir: ""}}}
 	// Should not panic.
-	o.saveHistoryStats("ts", "phase", HistoryStats{})
+	o.saveHistoryStats("ts", "phase", claude.HistoryStats{})
 }
 
 // --- saveHistoryPrompt ---
@@ -688,7 +689,7 @@ func TestSaveHistoryReport_MkdirError(t *testing.T) {
 	os.WriteFile(f, []byte("x"), 0o644)
 	o := &Orchestrator{cfg: Config{Cobbler: CobblerConfig{HistoryDir: filepath.Join(f, "sub")}}}
 	// Should not panic; logs the mkdir error and returns.
-	o.saveHistoryReport("ts", StitchReport{})
+	o.saveHistoryReport("ts", claude.StitchReport{})
 }
 
 func TestSaveHistoryStats_MkdirError(t *testing.T) {
@@ -696,7 +697,7 @@ func TestSaveHistoryStats_MkdirError(t *testing.T) {
 	f := filepath.Join(t.TempDir(), "blocker")
 	os.WriteFile(f, []byte("x"), 0o644)
 	o := &Orchestrator{cfg: Config{Cobbler: CobblerConfig{HistoryDir: filepath.Join(f, "sub")}}}
-	o.saveHistoryStats("ts", "phase", HistoryStats{})
+	o.saveHistoryStats("ts", "phase", claude.HistoryStats{})
 }
 
 func TestSaveHistoryPrompt_MkdirError(t *testing.T) {
@@ -821,15 +822,15 @@ func TestEffectiveMode_SDKMode(t *testing.T) {
 
 func TestIntFromUsage_NilMap(t *testing.T) {
 	t.Parallel()
-	if got := intFromUsage(nil, "input_tokens"); got != 0 {
-		t.Errorf("intFromUsage(nil) = %d; want 0", got)
+	if got := claude.IntFromUsage(nil, "input_tokens"); got != 0 {
+		t.Errorf("claude.IntFromUsage(nil) = %d; want 0", got)
 	}
 }
 
 func TestIntFromUsage_MissingKey(t *testing.T) {
 	t.Parallel()
 	m := map[string]interface{}{"output_tokens": float64(100)}
-	if got := intFromUsage(m, "input_tokens"); got != 0 {
+	if got := claude.IntFromUsage(m, "input_tokens"); got != 0 {
 		t.Errorf("intFromUsage missing key = %d; want 0", got)
 	}
 }
@@ -837,7 +838,7 @@ func TestIntFromUsage_MissingKey(t *testing.T) {
 func TestIntFromUsage_Float64(t *testing.T) {
 	t.Parallel()
 	m := map[string]interface{}{"input_tokens": float64(512)}
-	if got := intFromUsage(m, "input_tokens"); got != 512 {
+	if got := claude.IntFromUsage(m, "input_tokens"); got != 512 {
 		t.Errorf("intFromUsage float64 = %d; want 512", got)
 	}
 }
@@ -845,7 +846,7 @@ func TestIntFromUsage_Float64(t *testing.T) {
 func TestIntFromUsage_Int(t *testing.T) {
 	t.Parallel()
 	m := map[string]interface{}{"input_tokens": int(256)}
-	if got := intFromUsage(m, "input_tokens"); got != 256 {
+	if got := claude.IntFromUsage(m, "input_tokens"); got != 256 {
 		t.Errorf("intFromUsage int = %d; want 256", got)
 	}
 }
@@ -853,7 +854,7 @@ func TestIntFromUsage_Int(t *testing.T) {
 func TestIntFromUsage_Int64(t *testing.T) {
 	t.Parallel()
 	m := map[string]interface{}{"input_tokens": int64(1024)}
-	if got := intFromUsage(m, "input_tokens"); got != 1024 {
+	if got := claude.IntFromUsage(m, "input_tokens"); got != 1024 {
 		t.Errorf("intFromUsage int64 = %d; want 1024", got)
 	}
 }
@@ -861,7 +862,7 @@ func TestIntFromUsage_Int64(t *testing.T) {
 func TestIntFromUsage_UnknownType(t *testing.T) {
 	t.Parallel()
 	m := map[string]interface{}{"input_tokens": "not-a-number"}
-	if got := intFromUsage(m, "input_tokens"); got != 0 {
+	if got := claude.IntFromUsage(m, "input_tokens"); got != 0 {
 		t.Errorf("intFromUsage unknown type = %d; want 0", got)
 	}
 }
@@ -873,7 +874,7 @@ func TestSaveHistoryReport_EmptyHistoryDir_NoOp(t *testing.T) {
 	// panicking. No files should be created.
 	o := New(Config{})
 	o.cfg.Cobbler.HistoryDir = "" // override default
-	o.saveHistoryReport("20260101T120000", StitchReport{TaskID: "t1", Status: "success"})
+	o.saveHistoryReport("20260101T120000", claude.StitchReport{TaskID: "t1", Status: "success"})
 	// success: did not panic
 }
 
@@ -881,7 +882,7 @@ func TestSaveHistoryReport_WritesToDisk(t *testing.T) {
 	tmp := t.TempDir()
 	o := New(Config{})
 	o.cfg.Cobbler.HistoryDir = tmp
-	o.saveHistoryReport("20260101T120000", StitchReport{TaskID: "t1", Status: "success"})
+	o.saveHistoryReport("20260101T120000", claude.StitchReport{TaskID: "t1", Status: "success"})
 
 	entries, err := os.ReadDir(tmp)
 	if err != nil {
@@ -898,7 +899,7 @@ func TestSaveHistoryReport_WritesToDisk(t *testing.T) {
 func TestSaveHistoryStats_EmptyHistoryDir_NoOp(t *testing.T) {
 	o := New(Config{})
 	o.cfg.Cobbler.HistoryDir = ""
-	o.saveHistoryStats("20260101T120000", "stitch", HistoryStats{})
+	o.saveHistoryStats("20260101T120000", "stitch", claude.HistoryStats{})
 	// success: did not panic
 }
 
@@ -1021,14 +1022,14 @@ func TestCaptureLOCAt_EmptyDirString_FallsBackToCwd(t *testing.T) {
 
 func TestInvocationRecord_JSONShape(t *testing.T) {
 	t.Parallel()
-	rec := InvocationRecord{
+	rec := claude.InvocationRecord{
 		Caller:    "stitch",
 		StartedAt: "2026-02-27T10:00:00Z",
 		DurationS: 42,
-		Tokens:    claudeTokens{Input: 1500, Output: 500, CacheCreation: 200, CacheRead: 300, CostUSD: 0.0325},
-		LOCBefore: LocSnapshot{Production: 100, Test: 50},
-		LOCAfter:  LocSnapshot{Production: 110, Test: 55},
-		Diff:      diffRecord{Files: 3, Insertions: 20, Deletions: 5},
+		Tokens:    claude.ClaudeTokens{Input: 1500, Output: 500, CacheCreation: 200, CacheRead: 300, CostUSD: 0.0325},
+		LOCBefore: claude.LocSnapshot{Production: 100, Test: 50},
+		LOCAfter:  claude.LocSnapshot{Production: 110, Test: 55},
+		Diff:      claude.DiffRecord{Files: 3, Insertions: 20, Deletions: 5},
 	}
 
 	data, err := json.Marshal(rec)
@@ -1055,7 +1056,7 @@ func TestInvocationRecord_JSONShape(t *testing.T) {
 		t.Errorf("caller = %q, want stitch", caller)
 	}
 
-	var tokens claudeTokens
+	var tokens claude.ClaudeTokens
 	json.Unmarshal(got["tokens"], &tokens)
 	if tokens.Input != 1500 || tokens.Output != 500 {
 		t.Errorf("tokens = %+v, want {Input:1500 Output:500}", tokens)
@@ -1071,7 +1072,7 @@ func TestParseClaudeTokens_MalformedResultEvent(t *testing.T) {
 	t.Parallel()
 	// type="result" line present but usage field is malformed JSON.
 	output := []byte(`{"type":"result","usage":"not_an_object"}`)
-	got := parseClaudeTokens(output)
+	got := claude.ParseClaudeTokens(output)
 	// Malformed result: should return zero values gracefully.
 	if got.InputTokens != 0 || got.OutputTokens != 0 {
 		t.Errorf("malformed result: got in=%d out=%d, want 0 0", got.InputTokens, got.OutputTokens)
@@ -1082,15 +1083,15 @@ func TestParseClaudeTokens_MalformedResultEvent(t *testing.T) {
 
 func TestFormatOutcomeTrailers_ReturnsTenStrings(t *testing.T) {
 	t.Parallel()
-	rec := InvocationRecord{
+	rec := claude.InvocationRecord{
 		Caller:    "stitch",
 		StartedAt: "2026-02-28T00:00:00Z",
 		DurationS: 1234,
-		Tokens:    claudeTokens{Input: 45000, Output: 12000, CacheCreation: 5000, CacheRead: 3000, CostUSD: 0.75},
-		LOCBefore: LocSnapshot{Production: 441, Test: 0},
-		LOCAfter:  LocSnapshot{Production: 520, Test: 45},
+		Tokens:    claude.ClaudeTokens{Input: 45000, Output: 12000, CacheCreation: 5000, CacheRead: 3000, CostUSD: 0.75},
+		LOCBefore: claude.LocSnapshot{Production: 441, Test: 0},
+		LOCAfter:  claude.LocSnapshot{Production: 520, Test: 45},
 	}
-	trailers := formatOutcomeTrailers(rec)
+	trailers := claude.FormatOutcomeTrailers(rec)
 	if len(trailers) != 10 {
 		t.Fatalf("formatOutcomeTrailers: got %d trailers, want 10; trailers=%v", len(trailers), trailers)
 	}
@@ -1115,7 +1116,7 @@ func TestFormatOutcomeTrailers_ReturnsTenStrings(t *testing.T) {
 
 func TestFormatOutcomeTrailers_ZeroRecord(t *testing.T) {
 	t.Parallel()
-	trailers := formatOutcomeTrailers(InvocationRecord{})
+	trailers := claude.FormatOutcomeTrailers(claude.InvocationRecord{})
 	if len(trailers) != 10 {
 		t.Fatalf("zero record: got %d trailers, want 10", len(trailers))
 	}
@@ -1155,13 +1156,13 @@ func TestAppendOutcomeTrailers_AmendsLastCommit(t *testing.T) {
 		}
 	}
 
-	rec := InvocationRecord{
+	rec := claude.InvocationRecord{
 		DurationS: 120,
-		Tokens:    claudeTokens{Input: 1000, Output: 200, CacheCreation: 50, CacheRead: 30, CostUSD: 0.05},
-		LOCBefore: LocSnapshot{Production: 100, Test: 20},
-		LOCAfter:  LocSnapshot{Production: 150, Test: 30},
+		Tokens:    claude.ClaudeTokens{Input: 1000, Output: 200, CacheCreation: 50, CacheRead: 30, CostUSD: 0.05},
+		LOCBefore: claude.LocSnapshot{Production: 100, Test: 20},
+		LOCAfter:  claude.LocSnapshot{Production: 150, Test: 30},
 	}
-	if err := appendOutcomeTrailers(dir, rec); err != nil {
+	if err := claude.AppendOutcomeTrailers(dir, rec, defaultGitOps.CommitAmendTrailers); err != nil {
 		// git commit --amend --trailer requires git >= 2.38; skip if unsupported.
 		t.Skipf("appendOutcomeTrailers: %v", err)
 	}
@@ -1191,7 +1192,7 @@ func TestNewProgressWriter(t *testing.T) {
 	t.Parallel()
 	var buf bytes.Buffer
 	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	pw := newProgressWriter(&buf, start)
+	pw := claude.NewProgressWriter(&buf, start)
 	if pw == nil {
 		t.Fatal("newProgressWriter returned nil")
 	}
@@ -1214,7 +1215,7 @@ func TestNewProgressWriter(t *testing.T) {
 func TestProgressWriter_Write_PassesThrough(t *testing.T) {
 	t.Parallel()
 	var buf bytes.Buffer
-	pw := newProgressWriter(&buf, time.Now())
+	pw := claude.NewProgressWriter(&buf, time.Now())
 	data := []byte(`{"type":"system"}` + "\n")
 	n, err := pw.Write(data)
 	if err != nil {
@@ -1231,7 +1232,7 @@ func TestProgressWriter_Write_PassesThrough(t *testing.T) {
 func TestProgressWriter_Write_SetsGotFirst(t *testing.T) {
 	t.Parallel()
 	var buf bytes.Buffer
-	pw := newProgressWriter(&buf, time.Now())
+	pw := claude.NewProgressWriter(&buf, time.Now())
 	if pw.GotFirst {
 		t.Fatal("gotFirst should be false before first write")
 	}
@@ -1244,7 +1245,7 @@ func TestProgressWriter_Write_SetsGotFirst(t *testing.T) {
 func TestProgressWriter_Write_AccumulatesPartial(t *testing.T) {
 	t.Parallel()
 	var buf bytes.Buffer
-	pw := newProgressWriter(&buf, time.Now())
+	pw := claude.NewProgressWriter(&buf, time.Now())
 	// Write without newline — should accumulate in partial.
 	pw.Write([]byte(`{"type":"sys`))
 	if len(pw.Partial) == 0 {
@@ -1263,7 +1264,7 @@ func TestProgressWriter_Write_AccumulatesPartial(t *testing.T) {
 func TestProgressWriter_LogLine_EmptyLine(t *testing.T) {
 	t.Parallel()
 	var buf bytes.Buffer
-	pw := newProgressWriter(&buf, time.Now())
+	pw := claude.NewProgressWriter(&buf, time.Now())
 	// Should not panic on empty line.
 	pw.LogLine(nil)
 	pw.LogLine([]byte{})
@@ -1272,7 +1273,7 @@ func TestProgressWriter_LogLine_EmptyLine(t *testing.T) {
 func TestProgressWriter_LogLine_InvalidJSON(t *testing.T) {
 	t.Parallel()
 	var buf bytes.Buffer
-	pw := newProgressWriter(&buf, time.Now())
+	pw := claude.NewProgressWriter(&buf, time.Now())
 	// Should not panic on invalid JSON.
 	pw.LogLine([]byte("not json"))
 	if pw.Turn != 0 {
@@ -1283,7 +1284,7 @@ func TestProgressWriter_LogLine_InvalidJSON(t *testing.T) {
 func TestProgressWriter_LogLine_AssistantTurn(t *testing.T) {
 	t.Parallel()
 	var buf bytes.Buffer
-	pw := newProgressWriter(&buf, time.Now())
+	pw := claude.NewProgressWriter(&buf, time.Now())
 
 	msg := map[string]any{
 		"type": "assistant",
@@ -1303,7 +1304,7 @@ func TestProgressWriter_LogLine_AssistantTurn(t *testing.T) {
 func TestProgressWriter_LogLine_AssistantToolUse(t *testing.T) {
 	t.Parallel()
 	var buf bytes.Buffer
-	pw := newProgressWriter(&buf, time.Now())
+	pw := claude.NewProgressWriter(&buf, time.Now())
 
 	msg := map[string]any{
 		"type": "assistant",
@@ -1323,7 +1324,7 @@ func TestProgressWriter_LogLine_AssistantToolUse(t *testing.T) {
 func TestProgressWriter_LogLine_ResultEvent(t *testing.T) {
 	t.Parallel()
 	var buf bytes.Buffer
-	pw := newProgressWriter(&buf, time.Now())
+	pw := claude.NewProgressWriter(&buf, time.Now())
 	pw.Turn = 3
 
 	msg := map[string]any{
@@ -1347,7 +1348,7 @@ func TestProgressWriter_LogLine_ResultEvent(t *testing.T) {
 func TestProgressWriter_LogLine_LongSnippetTruncated(t *testing.T) {
 	t.Parallel()
 	var buf bytes.Buffer
-	pw := newProgressWriter(&buf, time.Now())
+	pw := claude.NewProgressWriter(&buf, time.Now())
 
 	longText := strings.Repeat("a", 200)
 	msg := map[string]any{
@@ -1370,7 +1371,7 @@ func TestProgressWriter_LogLine_LongSnippetTruncated(t *testing.T) {
 func TestProgressWriter_TurnCount_MultipleAssistantEvents(t *testing.T) {
 	t.Parallel()
 	var buf bytes.Buffer
-	pw := newProgressWriter(&buf, time.Now())
+	pw := claude.NewProgressWriter(&buf, time.Now())
 
 	// Simulate 3 assistant turns followed by a result.
 	assistant := `{"type":"assistant","message":{"content":[{"type":"text","text":"turn"}]}}`
@@ -1385,7 +1386,7 @@ func TestProgressWriter_TurnCount_MultipleAssistantEvents(t *testing.T) {
 	}
 
 	// Verify parseClaudeTokens gets cost from the same buffer.
-	cr := parseClaudeTokens(buf.Bytes())
+	cr := claude.ParseClaudeTokens(buf.Bytes())
 	if cr.CostUSD != 0.50 {
 		t.Errorf("CostUSD = %v, want 0.50", cr.CostUSD)
 	}
@@ -1497,7 +1498,7 @@ func TestIdleTrackingWriter_UpdatesLastWrite(t *testing.T) {
 	before := time.Now().UnixNano()
 	last.Store(before)
 
-	w := &idleTrackingWriter{W: &buf, LastWrite: &last}
+	w := &claude.IdleTrackingWriter{W: &buf, LastWrite: &last}
 	time.Sleep(2 * time.Millisecond) // ensure clock advances
 
 	n, err := w.Write([]byte("hello"))
@@ -1522,7 +1523,7 @@ func TestIdleTrackingWriter_DelegatesWriteError(t *testing.T) {
 	last.Store(time.Now().UnixNano())
 
 	// errWriter always returns an error.
-	w := &idleTrackingWriter{W: &errWriter{}, LastWrite: &last}
+	w := &claude.IdleTrackingWriter{W: &errWriter{}, LastWrite: &last}
 	_, err := w.Write([]byte("x"))
 	if err == nil {
 		t.Error("expected error from underlying writer, got nil")
@@ -1556,9 +1557,9 @@ func TestNew_RespectsExplicitIdleTimeout(t *testing.T) {
 
 // --- runClaudeSDK ---
 
-// fakeSdkQuery returns a sdkQueryFunc that immediately sends msgs on a
+// fakeSdkQuery returns a claude.SdkQueryFunc that immediately sends msgs on a
 // buffered channel and closes it. Use for success-path and error-path tests.
-func fakeSdkQuery(msgs ...claudetypes.Message) sdkQueryFunc {
+func fakeSdkQuery(msgs ...claudetypes.Message) claude.SdkQueryFunc {
 	return func(_ context.Context, _ string, _ *claudetypes.ClaudeAgentOptions) (<-chan claudetypes.Message, error) {
 		ch := make(chan claudetypes.Message, len(msgs))
 		for _, m := range msgs {
@@ -1592,7 +1593,7 @@ func resultMsg(input, output int, costUSD float64) *claudetypes.ResultMessage {
 // newSDKOrchestrator creates an Orchestrator wired to the given fake query
 // function. The config has no real paths; only fields consumed by
 // runClaudeSDK are relevant.
-func newSDKOrchestrator(fn sdkQueryFunc) *Orchestrator {
+func newSDKOrchestrator(fn claude.SdkQueryFunc) *Orchestrator {
 	o := New(Config{})
 	o.sdkQueryFn = fn
 	return o
@@ -1886,7 +1887,7 @@ func TestFilterSDKStderr_RateLimitWarningReplaced(t *testing.T) {
 	}
 	inW.Close()
 
-	go filterSDKStderr(inR, outW, done)
+	go claude.FilterSDKStderr(inR, outW, done)
 	<-done
 	outW.Close()
 
@@ -1925,7 +1926,7 @@ func TestFilterSDKStderr_OtherWarningsPassThrough(t *testing.T) {
 	}
 	inW.Close()
 
-	go filterSDKStderr(inR, outW, done)
+	go claude.FilterSDKStderr(inR, outW, done)
 	<-done
 	outW.Close()
 
