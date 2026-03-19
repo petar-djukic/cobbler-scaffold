@@ -460,19 +460,21 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 	// Build a unified table with both stitch (task) and measure rows.
 	// Each row is either a stitch task or a measure invocation.
 	type tableRow struct {
-		ID       string
-		Status   string
-		Rel      string
-		Reqs     string
-		Cost     string
-		Dur      string
-		Turns    string
-		TokIn    string
-		TokOut   string
-		Prod     string
-		Test     string
-		Title    string
-		SortTime string // StartedAt for chronological ordering
+		ID        string
+		Status    string
+		Rel       string
+		Reqs      string
+		Cost      string
+		Dur       string
+		Turns     string
+		TokIn     string
+		TokOut    string
+		Prod      string
+		Test      string
+		Parent    string // measure placeholder that produced this stitch task
+		Title     string
+		SortTime  string // StartedAt for chronological ordering
+		IsMeasure bool   // true for measure rows, used for post-sort enrichment
 	}
 	var tableRows []tableRow
 
@@ -481,6 +483,7 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 			ID:     strconv.Itoa(r.Number),
 			Status: r.Status,
 			Rel:    r.Release,
+			Parent: "-",
 		}
 		if tr.Rel == "" {
 			tr.Rel = "-"
@@ -539,14 +542,16 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 			mid = m.TaskID
 		}
 		tr := tableRow{
-			ID:       mid,
-			Status:   "done",
-			Rel:      "-",
-			Reqs:     "-",
-			Prod:     "-",
-			Test:     "-",
-			Title:    "measure",
-			SortTime: m.StartedAt,
+			ID:        mid,
+			Status:    "done",
+			Rel:       "-",
+			Reqs:      "-",
+			Prod:      "-",
+			Test:      "-",
+			Parent:    "-",
+			Title:     "measure",
+			SortTime:  m.StartedAt,
+			IsMeasure: true,
 		}
 		tr.Cost = "-"
 		if m.CostUSD > 0 {
@@ -574,18 +579,20 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 	// Add in-progress measure rows from active [measuring] GitHub issues (GH-1365).
 	for _, iss := range activeMeasureIssues {
 		tr := tableRow{
-			ID:     strconv.Itoa(iss.Number),
-			Status: "in-progress",
-			Rel:    "-",
-			Reqs:   "-",
-			Prod:   "-",
-			Test:   "-",
-			Cost:   "-",
-			Dur:    "-",
-			Turns:  "-",
-			TokIn:  "-",
-			TokOut: "-",
-			Title:  "measure",
+			ID:        strconv.Itoa(iss.Number),
+			Status:    "in-progress",
+			Rel:       "-",
+			Reqs:      "-",
+			Prod:      "-",
+			Test:      "-",
+			Cost:      "-",
+			Dur:       "-",
+			Turns:     "-",
+			TokIn:     "-",
+			TokOut:    "-",
+			Parent:    "-",
+			Title:     "measure",
+			IsMeasure: true,
 		}
 		tableRows = append(tableRows, tr)
 	}
@@ -604,11 +611,32 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 		return tableRows[i].SortTime < tableRows[j].SortTime
 	})
 
+	// Enrich rows after chronological sorting (GH-1651):
+	// - Assign each stitch row's Parent to the most recent measure row's ID
+	// - Count stitch tasks following each measure and update measure titles
+	{
+		lastMeasureIdx := -1
+		lastMeasureID := ""
+		measureChildCounts := make(map[int]int) // tableRows index → child count
+		for i := range tableRows {
+			if tableRows[i].IsMeasure {
+				lastMeasureIdx = i
+				lastMeasureID = tableRows[i].ID
+			} else if lastMeasureID != "" {
+				tableRows[i].Parent = "#" + lastMeasureID
+				measureChildCounts[lastMeasureIdx]++
+			}
+		}
+		for idx, count := range measureChildCounts {
+			tableRows[idx].Title = fmt.Sprintf("measure (%d tasks)", count)
+		}
+	}
+
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "#\tStatus\tRel\tReqs\tCost\tDuration\tTurns\tTokIn\tTokOut\tProd\tTest\tTitle")
+	fmt.Fprintln(w, "#\tStatus\tRel\tReqs\tCost\tDuration\tTurns\tTokIn\tTokOut\tProd\tTest\tParent\tTitle")
 	for _, tr := range tableRows {
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-			tr.ID, tr.Status, tr.Rel, tr.Reqs, tr.Cost, tr.Dur, tr.Turns, tr.TokIn, tr.TokOut, tr.Prod, tr.Test, tr.Title)
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			tr.ID, tr.Status, tr.Rel, tr.Reqs, tr.Cost, tr.Dur, tr.Turns, tr.TokIn, tr.TokOut, tr.Prod, tr.Test, tr.Parent, tr.Title)
 	}
 	if err := w.Flush(); err != nil {
 		return err
