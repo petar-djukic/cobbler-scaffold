@@ -133,11 +133,11 @@ func (o *Orchestrator) buildDirectCmd(ctx context.Context, workDir string, extra
 func (o *Orchestrator) hasOpenIssues() (bool, error) {
 	return claude.HasOpenIssues(claude.HasOpenIssuesDeps{
 		DetectGitHubRepoFn: func(repoRoot string) (string, error) {
-			return detectGitHubRepo(repoRoot, o.cfg)
+			return ghTrackerWithCfg(o.cfg).DetectGitHubRepo(repoRoot)
 		},
 		GitReader: defaultGitOps,
 		ListOpenCobblerIssuesFn: func(repo, branch string) (int, error) {
-			issues, err := listOpenCobblerIssues(repo, branch)
+			issues, err := defaultGhTracker.ListOpenCobblerIssues(repo, branch)
 			return len(issues), err
 		},
 	})

@@ -19,6 +19,7 @@ import (
 	an "github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/analysis"
 	"github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/claude"
 	"github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/generate"
+	gh "github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/github"
 )
 
 // ---------------------------------------------------------------------------
@@ -101,7 +102,7 @@ func stitchGitDeps() generate.StitchGitDeps {
 func stitchIssueDeps(repo, generation string) generate.StitchIssueDeps {
 	return generate.StitchIssueDeps{
 		ListOpenCobblerIssues: func(r, g string) ([]generate.StitchIssue, error) {
-			issues, err := listOpenCobblerIssues(r, g)
+			issues, err := defaultGhTracker.ListOpenCobblerIssues(r, g)
 			if err != nil {
 				return nil, err
 			}
@@ -120,7 +121,7 @@ func stitchIssueDeps(repo, generation string) generate.StitchIssueDeps {
 			return result, nil
 		},
 		PickReadyIssue: func(r, g string) (generate.StitchIssue, error) {
-			iss, err := pickReadyIssue(r, g)
+			iss, err := defaultGhTracker.PickReadyIssue(r, g)
 			if err != nil {
 				return generate.StitchIssue{}, err
 			}
@@ -133,7 +134,7 @@ func stitchIssueDeps(repo, generation string) generate.StitchIssueDeps {
 			}, nil
 		},
 		RemoveInProgressLabel: func(r string, num int) error {
-			return removeInProgressLabel(r, num)
+			return defaultGhTracker.RemoveIssueLabel(r, num, gh.LabelInProgress)
 		},
 		HasLabel: func(iss generate.StitchIssue, label string) bool {
 			for _, l := range iss.Labels {
@@ -143,7 +144,7 @@ func stitchIssueDeps(repo, generation string) generate.StitchIssueDeps {
 			}
 			return false
 		},
-		LabelInProgress: cobblerLabelInProgress,
+		LabelInProgress: gh.LabelInProgress,
 	}
 }
 
@@ -384,7 +385,7 @@ func (o *Orchestrator) GeneratorResume() error {
 	}
 
 	logf("resume: recovering stale tasks")
-	ghRepo, err := detectGitHubRepo(".", o.cfg)
+	ghRepo, err := ghTrackerWithCfg(o.cfg).DetectGitHubRepo(".")
 	if err != nil {
 		logf("resume: warning: detectGitHubRepo: %v", err)
 	}
@@ -702,8 +703,8 @@ func (o *Orchestrator) GeneratorStart() error {
 
 	// Garbage-collect issues from generations whose branch no longer exists.
 	// This catches leaks from crashed tests or prior runs without cleanup.
-	if ghRepo, err := detectGitHubRepo(".", o.cfg); err == nil && ghRepo != "" {
-		gcStaleGenerationIssues(ghRepo, o.cfg.Generation.Prefix)
+	if ghRepo, err := ghTrackerWithCfg(o.cfg).DetectGitHubRepo("."); err == nil && ghRepo != "" {
+		defaultGhTracker.GcStaleGenerationIssues(ghRepo, o.cfg.Generation.Prefix)
 	}
 
 	suffix := os.Getenv("COBBLER_GEN_NAME")
@@ -1046,8 +1047,8 @@ func (o *Orchestrator) GeneratorStop() error {
 	}
 
 	// Close any open cobbler-gen issues for this generation.
-	if ghRepo, err := detectGitHubRepo(".", o.cfg); err == nil && ghRepo != "" {
-		if err := closeGenerationIssues(ghRepo, branch); err != nil {
+	if ghRepo, err := ghTrackerWithCfg(o.cfg).DetectGitHubRepo("."); err == nil && ghRepo != "" {
+		if err := defaultGhTracker.CloseGenerationIssues(ghRepo, branch); err != nil {
 			logf("generator:stop: close issues warning: %v", err)
 		}
 	}
@@ -1417,7 +1418,7 @@ func (o *Orchestrator) GeneratorReset() error {
 	}
 
 	wtBase := claude.WorktreeBasePath()
-	ghRepo, _ := detectGitHubRepo(".", o.cfg)
+	ghRepo, _ := ghTrackerWithCfg(o.cfg).DetectGitHubRepo(".")
 	genBranches := o.listGenerationBranches()
 	if len(genBranches) > 0 {
 		logf("generator:reset: removing task branches and worktrees")
@@ -1429,11 +1430,11 @@ func (o *Orchestrator) GeneratorReset() error {
 	if ghRepo != "" {
 		logf("generator:reset: closing GitHub issues")
 		for _, gb := range genBranches {
-			if err := closeGenerationIssues(ghRepo, gb); err != nil {
+			if err := defaultGhTracker.CloseGenerationIssues(ghRepo, gb); err != nil {
 				logf("generator:reset: close issues warning for %s: %v", gb, err)
 			}
 		}
-		if err := closeGenerationIssues(ghRepo, baseBranch); err != nil {
+		if err := defaultGhTracker.CloseGenerationIssues(ghRepo, baseBranch); err != nil {
 			logf("generator:reset: close issues warning for %s: %v", baseBranch, err)
 		}
 	}

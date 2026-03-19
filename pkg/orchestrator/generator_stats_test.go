@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	gh "github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/github"
 )
 
 // --- parseStitchComment (delegation sanity check) ---
@@ -257,13 +259,13 @@ func TestExtractPRDRefs(t *testing.T) {
 	}
 }
 
-// --- listAllCobblerIssues (delegation, kept in parent) ---
+// --- defaultGhTracker.ListAllCobblerIssues (delegation sanity check) ---
 
 func TestListAllCobblerIssues_FakeRepo_Error(t *testing.T) {
 	t.Parallel()
-	_, err := listAllCobblerIssues("fake/repo-that-does-not-exist", "gen-test")
+	_, err := defaultGhTracker.ListAllCobblerIssues("fake/repo-that-does-not-exist", "gen-test")
 	if err == nil {
-		t.Error("listAllCobblerIssues with fake repo must return an error")
+		t.Error("ListAllCobblerIssues with fake repo must return an error")
 	}
 }
 
@@ -273,7 +275,7 @@ func TestParseCobblerIssuesJSON_State(t *testing.T) {
 		{"number": 1, "title": "Open task", "state": "open", "body": "", "labels": []},
 		{"number": 2, "title": "Done task", "state": "closed", "body": "", "labels": []}
 	]`)
-	issues, err := parseCobblerIssuesJSON(data)
+	issues, err := gh.ParseCobblerIssuesJSON(data)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

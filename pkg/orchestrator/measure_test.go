@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	gh "github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/github"
 	"gopkg.in/yaml.v3"
 )
 
@@ -1237,16 +1238,16 @@ func TestIntraBatchDedup_FileOverlap(t *testing.T) {
 	existingFiles := make(map[string]int)
 	var filtered []proposedIssue
 	for _, issue := range issues {
-		norm := normalizeIssueTitle(issue.Title)
+		norm := gh.NormalizeIssueTitle(issue.Title)
 		if _, ok := existingTitles[norm]; ok {
 			continue
 		}
-		if _, overlap := fileOverlap(extractDescriptionFiles(issue.Description), existingFiles); overlap {
+		if _, overlap := fileOverlap(gh.ExtractDescriptionFiles(issue.Description), existingFiles); overlap {
 			continue
 		}
 		filtered = append(filtered, issue)
 		existingTitles[norm] = issue.Index
-		for _, fp := range extractDescriptionFiles(issue.Description) {
+		for _, fp := range gh.ExtractDescriptionFiles(issue.Description) {
 			existingFiles[fp] = issue.Index
 		}
 	}
@@ -1271,16 +1272,16 @@ func TestIntraBatchDedup_TitleMatch(t *testing.T) {
 	existingFiles := make(map[string]int)
 	var filtered []proposedIssue
 	for _, issue := range issues {
-		norm := normalizeIssueTitle(issue.Title)
+		norm := gh.NormalizeIssueTitle(issue.Title)
 		if _, ok := existingTitles[norm]; ok {
 			continue
 		}
-		if _, overlap := fileOverlap(extractDescriptionFiles(issue.Description), existingFiles); overlap {
+		if _, overlap := fileOverlap(gh.ExtractDescriptionFiles(issue.Description), existingFiles); overlap {
 			continue
 		}
 		filtered = append(filtered, issue)
 		existingTitles[norm] = issue.Index
-		for _, fp := range extractDescriptionFiles(issue.Description) {
+		for _, fp := range gh.ExtractDescriptionFiles(issue.Description) {
 			existingFiles[fp] = issue.Index
 		}
 	}
@@ -1302,16 +1303,16 @@ func TestIntraBatchDedup_NoOverlap(t *testing.T) {
 	existingFiles := make(map[string]int)
 	var filtered []proposedIssue
 	for _, issue := range issues {
-		norm := normalizeIssueTitle(issue.Title)
+		norm := gh.NormalizeIssueTitle(issue.Title)
 		if _, ok := existingTitles[norm]; ok {
 			continue
 		}
-		if _, overlap := fileOverlap(extractDescriptionFiles(issue.Description), existingFiles); overlap {
+		if _, overlap := fileOverlap(gh.ExtractDescriptionFiles(issue.Description), existingFiles); overlap {
 			continue
 		}
 		filtered = append(filtered, issue)
 		existingTitles[norm] = issue.Index
-		for _, fp := range extractDescriptionFiles(issue.Description) {
+		for _, fp := range gh.ExtractDescriptionFiles(issue.Description) {
 			existingFiles[fp] = issue.Index
 		}
 	}
