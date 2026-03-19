@@ -611,13 +611,15 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 		return tableRows[i].SortTime < tableRows[j].SortTime
 	})
 
-	// Enrich rows after chronological sorting (GH-1651):
+	// Enrich rows after chronological sorting (GH-1651, GH-1653):
 	// - Assign each stitch row's Parent to the most recent measure row's ID
-	// - Count stitch tasks following each measure and update measure titles
+	// - Count stitch tasks following each measure and collect their PRDs
 	{
 		lastMeasureIdx := -1
 		lastMeasureID := ""
-		measureChildCounts := make(map[int]int) // tableRows index → child count
+		measureChildCounts := make(map[int]int)      // tableRows index → child count
+		measureChildPRDs := make(map[int][]string)    // tableRows index → deduplicated PRD list
+		measurePRDSeen := make(map[int]map[string]bool)
 		for i := range tableRows {
 			if tableRows[i].IsMeasure {
 				lastMeasureIdx = i
@@ -625,10 +627,25 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 			} else if lastMeasureID != "" {
 				tableRows[i].Parent = "#" + lastMeasureID
 				measureChildCounts[lastMeasureIdx]++
+				for _, prd := range ExtractPRDRefs(tableRows[i].Title) {
+					if measurePRDSeen[lastMeasureIdx] == nil {
+						measurePRDSeen[lastMeasureIdx] = make(map[string]bool)
+					}
+					if !measurePRDSeen[lastMeasureIdx][prd] {
+						measurePRDSeen[lastMeasureIdx][prd] = true
+						measureChildPRDs[lastMeasureIdx] = append(measureChildPRDs[lastMeasureIdx], prd)
+					}
+				}
 			}
 		}
 		for idx, count := range measureChildCounts {
-			tableRows[idx].Title = fmt.Sprintf("measure (%d tasks)", count)
+			prds := measureChildPRDs[idx]
+			if len(prds) > 0 {
+				sort.Strings(prds)
+				tableRows[idx].Title = fmt.Sprintf("measure (%d tasks: %s)", count, strings.Join(prds, ", "))
+			} else {
+				tableRows[idx].Title = fmt.Sprintf("measure (%d tasks)", count)
+			}
 		}
 	}
 
