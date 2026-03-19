@@ -413,6 +413,12 @@ func (o *Orchestrator) doOneTask(task stitchTask, baseBranch, repoRoot string) e
 	logf("doOneTask: closing task %s", task.ID)
 	o.closeStitchTask(task, rec, testsPassed)
 
+	// After closing, sweep remaining open tasks whose R-items are now all
+	// complete. A prior task may have over-implemented requirements beyond
+	// its assignment; this sweep catches those before the next Claude
+	// invocation (GH-1647).
+	o.sweepCompletedTasks(task.Repo, task.Generation)
+
 	logf("doOneTask: task %s finished in %s", task.ID, time.Since(taskStart).Round(time.Second))
 	return nil
 }
@@ -589,6 +595,39 @@ func (o *Orchestrator) closeStitchTask(task stitchTask, rec InvocationRecord, te
 		logf("closeStitchTask: closeCobblerIssue warning for #%d: %v", task.GhNumber, err)
 	}
 	logf("closeStitchTask: #%d closed", task.GhNumber)
+}
+
+// sweepCompletedTasks closes open tasks whose R-items are now all complete
+// in requirements.yaml. This handles the case where a prior task over-
+// implemented requirements beyond its assignment (GH-1647).
+func (o *Orchestrator) sweepCompletedTasks(repo, generation string) {
+	reqStates := generate.LoadRequirementStates(o.cfg.Cobbler.Dir)
+	if len(reqStates) == 0 {
+		return
+	}
+
+	issues, err := listOpenCobblerIssues(repo, generation)
+	if err != nil {
+		logf("sweepCompletedTasks: list issues: %v", err)
+		return
+	}
+
+	swept := 0
+	for _, iss := range issues {
+		if !generate.AllRefsAlreadyComplete(iss.Description, reqStates) {
+			continue
+		}
+		logf("sweepCompletedTasks: all R-items for #%d already complete, closing", iss.Number)
+		commentCobblerIssue(repo, iss.Number,
+			"Stitch skipped: all targeted R-items are already complete (swept after prior task over-implemented).")
+		if err := closeCobblerIssue(repo, iss.Number, generation); err != nil {
+			logf("sweepCompletedTasks: close #%d warning: %v", iss.Number, err)
+		}
+		swept++
+	}
+	if swept > 0 {
+		logf("sweepCompletedTasks: closed %d already-complete task(s)", swept)
+	}
 }
 
 // runPostMergeTests runs `go test ./...` in the given directory and returns
