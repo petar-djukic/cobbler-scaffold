@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/claude"
+	gh "github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/github"
 	"gopkg.in/yaml.v3"
 )
 
@@ -101,7 +102,7 @@ func (o *Orchestrator) RunMeasure() error {
 	if err != nil {
 		return fmt.Errorf("getting working directory: %w", err)
 	}
-	repo, err := detectGitHubRepo(repoRoot, o.cfg)
+	repo, err := ghTrackerWithCfg(o.cfg).DetectGitHubRepo(repoRoot)
 	if err != nil {
 		logf("detectGitHubRepo failed: %v", err)
 		return fmt.Errorf("detecting GitHub repo: %w", err)
@@ -109,10 +110,10 @@ func (o *Orchestrator) RunMeasure() error {
 	logf("using GitHub repo %s for issues", repo)
 
 	// Ensure the cobbler labels and generation label exist on the repo.
-	if err := ensureCobblerLabels(repo); err != nil {
+	if err := defaultGhTracker.EnsureCobblerLabels(repo); err != nil {
 		logf("ensureCobblerLabels warning: %v", err)
 	}
-	ensureCobblerGenLabel(repo, generation) // nolint: best-effort
+	defaultGhTracker.EnsureCobblerGenLabel(repo, generation) // nolint: best-effort
 
 	// Run pre-cycle analysis so the measure prompt sees current project state.
 	o.RunPreCycleAnalysis()
@@ -125,9 +126,9 @@ func (o *Orchestrator) RunMeasure() error {
 
 	// Route target-repo defects to the target repo (prd003 R11).
 	if analysis := loadAnalysisDoc(o.cfg.Cobbler.Dir); analysis != nil && len(analysis.Defects) > 0 {
-		if targetRepo := resolveTargetRepo(o.cfg); targetRepo != "" {
+		if targetRepo := ghTrackerWithCfg(o.cfg).ResolveTargetRepo(); targetRepo != "" {
 			logf("measure: filing %d defect(s) as bug issues in %s", len(analysis.Defects), targetRepo)
-			fileTargetRepoDefects(targetRepo, analysis.Defects)
+			defaultGhTracker.FileTargetRepoDefects(targetRepo, analysis.Defects)
 		} else {
 			logf("measure: no target repo configured; skipping %d defect(s)", len(analysis.Defects))
 		}
@@ -143,7 +144,7 @@ func (o *Orchestrator) RunMeasure() error {
 	}
 
 	// Get initial state: open GitHub issues for this generation.
-	existingIssues, _ := listActiveIssuesContext(repo, generation)
+	existingIssues, _ := defaultGhTracker.ListActiveIssuesContext(repo, generation)
 	commitSHA, _ := defaultGitOps.RevParseHEAD(".") // empty string on error is acceptable for logging
 
 	logf("existing issues context len=%d, maxMeasureIssues=%d, commit=%s",
@@ -167,7 +168,7 @@ func (o *Orchestrator) RunMeasure() error {
 
 	// Create a single placeholder issue for the entire measure pass (GH-1467).
 	// Previously one placeholder was created per iteration, flooding the tracker.
-	placeholderNum, placeholderErr := createMeasuringPlaceholder(repo, generation, 0)
+	placeholderNum, placeholderErr := defaultGhTracker.CreateMeasuringPlaceholder(repo, generation, 0)
 	if placeholderErr != nil {
 		logf("measure: warning: createMeasuringPlaceholder: %v", placeholderErr)
 	}
@@ -175,7 +176,7 @@ func (o *Orchestrator) RunMeasure() error {
 	if placeholderNum > 0 {
 		defer func() {
 			if !placeholderResolved {
-				closeMeasuringPlaceholderWithComment(repo, placeholderNum, "Measure did not complete; closed automatically.")
+				defaultGhTracker.CloseMeasuringPlaceholderWithComment(repo, placeholderNum, "Measure did not complete; closed automatically.")
 			}
 		}()
 	}
@@ -194,7 +195,7 @@ func (o *Orchestrator) RunMeasure() error {
 
 		// Refresh existing issues from GitHub before each call (except the first).
 		if i > 0 {
-			refreshed, refreshErr := listActiveIssuesContext(repo, generation)
+			refreshed, refreshErr := defaultGhTracker.ListActiveIssuesContext(repo, generation)
 			if refreshErr != nil {
 				logf("measure: warning: refreshing issue list: %v", refreshErr)
 			} else {
@@ -335,7 +336,7 @@ func (o *Orchestrator) RunMeasure() error {
 		logf("measure: 0 issues created but unresolved requirements remain — retrying once")
 
 		// Refresh existing issues for the retry.
-		refreshed, refreshErr := listActiveIssuesContext(repo, generation)
+		refreshed, refreshErr := defaultGhTracker.ListActiveIssuesContext(repo, generation)
 		if refreshErr == nil {
 			existingIssues = refreshed
 		}
@@ -407,7 +408,7 @@ func (o *Orchestrator) RunMeasure() error {
 			comment += fmt.Sprintf("\nCost: $%.2f, Tokens: %din %dout",
 				totalTokens.CostUSD, totalTokens.InputTokens, totalTokens.OutputTokens)
 		}
-		finalizeMeasurePlaceholder(repo, placeholderNum, generation, comment, childNums)
+		defaultGhTracker.FinalizeMeasurePlaceholder(repo, placeholderNum, generation, comment, childNums)
 	}
 
 	logf("completed %d iteration(s), %d issue(s) created in %s",
@@ -585,7 +586,7 @@ func (o *Orchestrator) importIssuesImpl(yamlFile, repo, generation string, skipE
 	// one (GH-1026, GH-1352, GH-1373).
 	existingTitles := make(map[string]int) // normalized title → issue number
 	existingFiles := make(map[string]int)  // file path → issue number
-	if existing, err := listAllCobblerIssues(repo, generation); err == nil {
+	if existing, err := defaultGhTracker.ListAllCobblerIssues(repo, generation); err == nil {
 		hasOpen := false
 		for _, ex := range existing {
 			if ex.State == "open" {
@@ -595,8 +596,8 @@ func (o *Orchestrator) importIssuesImpl(yamlFile, repo, generation string, skipE
 		}
 		if hasOpen {
 			for _, ex := range existing {
-				existingTitles[normalizeIssueTitle(ex.Title)] = ex.Number
-				for _, fp := range extractDescriptionFiles(ex.Description) {
+				existingTitles[gh.NormalizeIssueTitle(ex.Title)] = ex.Number
+				for _, fp := range gh.ExtractDescriptionFiles(ex.Description) {
 					existingFiles[fp] = ex.Number
 				}
 			}
@@ -604,13 +605,13 @@ func (o *Orchestrator) importIssuesImpl(yamlFile, repo, generation string, skipE
 	}
 	var filtered []proposedIssue
 	for _, issue := range issues {
-		norm := normalizeIssueTitle(issue.Title)
+		norm := gh.NormalizeIssueTitle(issue.Title)
 		if dup, ok := existingTitles[norm]; ok {
 			logf("importIssues: skipping duplicate %q — title matches #%d", issue.Title, dup)
 			continue
 		}
 		// Check if any proposed output file overlaps with an existing issue (GH-1373).
-		if dup, overlap := fileOverlap(extractDescriptionFiles(issue.Description), existingFiles); overlap {
+		if dup, overlap := fileOverlap(gh.ExtractDescriptionFiles(issue.Description), existingFiles); overlap {
 			logf("importIssues: skipping duplicate %q — output files overlap with #%d", issue.Title, dup)
 			continue
 		}
@@ -628,7 +629,7 @@ func (o *Orchestrator) importIssuesImpl(yamlFile, repo, generation string, skipE
 	var ids []string
 	for _, issue := range issues {
 		logf("importIssues: creating task %d: %s (dep=%d)", issue.Index, issue.Title, issue.Dependency)
-		ghNum, err := createCobblerIssue(repo, generation, issue)
+		ghNum, err := defaultGhTracker.CreateCobblerIssue(repo, generation, issue)
 		if err != nil {
 			logf("importIssues: createCobblerIssue failed for %q: %v", issue.Title, err)
 			continue
@@ -637,8 +638,8 @@ func (o *Orchestrator) importIssuesImpl(yamlFile, repo, generation string, skipE
 	}
 
 	if len(ids) > 0 {
-		waitForIssuesVisible(repo, generation, len(ids))
-		if err := promoteReadyIssues(repo, generation); err != nil {
+		defaultGhTracker.WaitForIssuesVisible(repo, generation, len(ids))
+		if err := defaultGhTracker.PromoteReadyIssues(repo, generation); err != nil {
 			logf("importIssues: promoteReadyIssues warning: %v", err)
 		}
 	}

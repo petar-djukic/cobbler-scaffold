@@ -16,6 +16,7 @@ import (
 
 	"github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/claude"
 	"github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/generate"
+	gh "github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/github"
 	"gopkg.in/yaml.v3"
 )
 
@@ -91,14 +92,14 @@ func (o *Orchestrator) RunStitchN(limit int) (int, error) {
 	logf("repoRoot=%s", repoRoot)
 
 	// Resolve GitHub repo and ensure cobbler labels exist.
-	ghRepo, err := detectGitHubRepo(repoRoot, o.cfg)
+	ghRepo, err := ghTrackerWithCfg(o.cfg).DetectGitHubRepo(repoRoot)
 	if err != nil {
 		logf("detectGitHubRepo failed: %v", err)
 		return 0, fmt.Errorf("detecting GitHub repo: %w", err)
 	}
 	generation := branch
 	logf("using GitHub repo %s generation %s for issues", ghRepo, generation)
-	if err := ensureCobblerLabels(ghRepo); err != nil {
+	if err := defaultGhTracker.EnsureCobblerLabels(ghRepo); err != nil {
 		logf("ensureCobblerLabels warning: %v", err)
 	}
 
@@ -209,9 +210,9 @@ func (o *Orchestrator) doOneTask(task stitchTask, baseBranch, repoRoot string) e
 	reqStates := generate.LoadRequirementStates(o.cfg.Cobbler.Dir)
 	if generate.AllRefsAlreadyComplete(task.Description, reqStates) {
 		logf("doOneTask: all R-items for #%d already complete, closing as duplicate", task.GhNumber)
-		commentCobblerIssue(task.Repo, task.GhNumber,
+		defaultGhTracker.CommentCobblerIssue(task.Repo, task.GhNumber,
 			"Stitch skipped: all targeted R-items are already complete (duplicate from same measure batch).")
-		if err := closeCobblerIssue(task.Repo, task.GhNumber, task.Generation); err != nil {
+		if err := defaultGhTracker.CloseCobblerIssue(task.Repo, task.GhNumber, task.Generation); err != nil {
 			logf("doOneTask: warning closing duplicate #%d: %v", task.GhNumber, err)
 		}
 		return nil
@@ -239,7 +240,7 @@ func (o *Orchestrator) doOneTask(task stitchTask, baseBranch, repoRoot string) e
 	logf("doOneTask: prompt built, length=%d bytes", len(prompt))
 
 	// Post "started" comment so the issue reflects pickup immediately.
-	commentCobblerIssue(task.Repo, task.GhNumber, fmt.Sprintf(
+	defaultGhTracker.CommentCobblerIssue(task.Repo, task.GhNumber, fmt.Sprintf(
 		"Stitch started. Branch: `%s`, prompt: %d bytes.", task.BranchName, len(prompt)))
 
 	// Save prompt BEFORE calling Claude.
@@ -580,7 +581,7 @@ func (o *Orchestrator) closeStitchTask(task stitchTask, rec claude.InvocationRec
 	if !testsPassed {
 		comment += " Tests: FAILED."
 	}
-	commentCobblerIssue(task.Repo, task.GhNumber, comment)
+	defaultGhTracker.CommentCobblerIssue(task.Repo, task.GhNumber, comment)
 
 	// Update requirement states before closing (GH-1378).
 	// Pass test result so failures are tracked as complete_with_failures (GH-1388).
@@ -592,7 +593,7 @@ func (o *Orchestrator) closeStitchTask(task stitchTask, rec claude.InvocationRec
 		_ = defaultGitOps.Commit(fmt.Sprintf("Update requirement states after #%d", task.GhNumber), ".")
 	}
 
-	if err := closeCobblerIssue(task.Repo, task.GhNumber, task.Generation); err != nil {
+	if err := defaultGhTracker.CloseCobblerIssue(task.Repo, task.GhNumber, task.Generation); err != nil {
 		logf("closeStitchTask: closeCobblerIssue warning for #%d: %v", task.GhNumber, err)
 	}
 	logf("closeStitchTask: #%d closed", task.GhNumber)
@@ -607,7 +608,7 @@ func (o *Orchestrator) sweepCompletedTasks(repo, generation string) {
 		return
 	}
 
-	issues, err := listOpenCobblerIssues(repo, generation)
+	issues, err := defaultGhTracker.ListOpenCobblerIssues(repo, generation)
 	if err != nil {
 		logf("sweepCompletedTasks: list issues: %v", err)
 		return
@@ -619,9 +620,9 @@ func (o *Orchestrator) sweepCompletedTasks(repo, generation string) {
 			continue
 		}
 		logf("sweepCompletedTasks: all R-items for #%d already complete, closing", iss.Number)
-		commentCobblerIssue(repo, iss.Number,
+		defaultGhTracker.CommentCobblerIssue(repo, iss.Number,
 			"Stitch skipped: all targeted R-items are already complete (swept after prior task over-implemented).")
-		if err := closeCobblerIssue(repo, iss.Number, generation); err != nil {
+		if err := defaultGhTracker.CloseCobblerIssue(repo, iss.Number, generation); err != nil {
 			logf("sweepCompletedTasks: close #%d warning: %v", iss.Number, err)
 		}
 		swept++
@@ -657,7 +658,7 @@ var runPostMergeTests = func(dir string) bool {
 // worktree and branch.
 func (o *Orchestrator) resetTask(task stitchTask, reason string) {
 	logf("resetTask: resetting #%d to ready (%s)", task.GhNumber, reason)
-	if err := removeInProgressLabel(task.Repo, task.GhNumber); err != nil {
+	if err := defaultGhTracker.RemoveIssueLabel(task.Repo, task.GhNumber, gh.LabelInProgress); err != nil {
 		logf("resetTask: WARNING removeInProgressLabel failed for #%d: %v", task.GhNumber, err)
 	}
 	if !cleanupWorktree(task) {
@@ -677,8 +678,8 @@ func (o *Orchestrator) closeTaskAsFailed(task stitchTask, failureCount int) {
 		"Stitch abandoned after %d consecutive failures. Closing as permanently failed (GH-1562).",
 		failureCount,
 	)
-	commentCobblerIssue(task.Repo, task.GhNumber, comment)
-	if err := closeCobblerIssue(task.Repo, task.GhNumber, task.Generation); err != nil {
+	defaultGhTracker.CommentCobblerIssue(task.Repo, task.GhNumber, comment)
+	if err := defaultGhTracker.CloseCobblerIssue(task.Repo, task.GhNumber, task.Generation); err != nil {
 		logf("closeTaskAsFailed: warning closing #%d: %v", task.GhNumber, err)
 	}
 }
@@ -694,6 +695,6 @@ func (o *Orchestrator) failTask(task stitchTask, reason string, startedAt time.T
 		"Stitch failed after %dm %ds. Error: %s.",
 		durationS/60, durationS%60, reason,
 	)
-	commentCobblerIssue(task.Repo, task.GhNumber, comment)
+	defaultGhTracker.CommentCobblerIssue(task.Repo, task.GhNumber, comment)
 	o.resetTask(task, reason)
 }

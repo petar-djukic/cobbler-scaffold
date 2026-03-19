@@ -6,18 +6,20 @@ package orchestrator
 import (
 	"strings"
 	"testing"
+
+	gh "github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/github"
 )
 
 // TestIssuesContextJSON_ParseableByParseIssuesJSON verifies that the JSON
-// produced by issuesContextJSON (from internal/github) round-trips through
-// parseIssuesJSON (from context.go). This is a cross-boundary integration
-// test that validates both packages agree on the JSON format.
+// produced by gh.IssuesContextJSON round-trips through parseIssuesJSON
+// (from context.go). This is a cross-boundary integration test that
+// validates both packages agree on the JSON format.
 func TestIssuesContextJSON_ParseableByParseIssuesJSON(t *testing.T) {
 	t.Parallel()
 	issues := []cobblerIssue{
-		{Number: 115, Title: "cmd/wc core implementation", Labels: []string{cobblerLabelReady}},
+		{Number: 115, Title: "cmd/wc core implementation", Labels: []string{gh.LabelReady}},
 	}
-	jsonStr, err := issuesContextJSON(issues)
+	jsonStr, err := gh.IssuesContextJSON(issues)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

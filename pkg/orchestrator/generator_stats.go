@@ -26,10 +26,10 @@ func (o *Orchestrator) GeneratorStats() error {
 		GenerationBranch:       o.cfg.Generation.Branch,
 		CurrentBranch:          currentBranch,
 		DetectGitHubRepo: func() (string, error) {
-			return detectGitHubRepo(".", o.cfg)
+			return ghTrackerWithCfg(o.cfg).DetectGitHubRepo(".")
 		},
 		ListAllIssues: func(repo, generation string) ([]gh.CobblerIssue, error) {
-			return listAllCobblerIssues(repo, generation)
+			return defaultGhTracker.ListAllCobblerIssues(repo, generation)
 		},
 		HistoryDir: o.historyDir(),
 		CobblerDir: o.cfg.Cobbler.Dir,
