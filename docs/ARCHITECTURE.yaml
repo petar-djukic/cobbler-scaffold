@@ -198,6 +198,7 @@ components:
       - Commit worktree changes and merge task branch
       - Record metrics and save history artifacts per task
       - Recover stale tasks on resume
+      - Sweep open tasks after each close, auto-closing any whose R-items are already complete (GH-1647)
     references:
       - prd003-cobbler-workflows
 
@@ -218,6 +219,7 @@ components:
       - Snapshot LOC before and after Claude
       - Save history artifacts (prompt, log, stats YAML) to configurable directory
       - Log real-time Claude progress (turns, tool calls, timing)
+      - Append outcome trailers to commits via injected gitops function (CommitAmendTrailersFn)
     references:
       - prd003-cobbler-workflows
       - prd005-metrics-collection
@@ -240,7 +242,8 @@ components:
       ShellGitOps implementation executes git commands via exec.Command. The interface
       enables testing with mock implementations and future non-shell backends.
     capabilities:
-      - "GitOps interface: 50+ git operations (Checkout, CreateBranch, DeleteBranch, Tag, Push, Commit, Merge, Worktree, DiffStat, etc.)"
+      - "GitOps interface: 50+ git operations (Checkout, CreateBranch, DeleteBranch, Tag, Push, Commit, CommitAmendTrailers, Merge, Worktree, DiffStat, etc.)"
+      - "Role-based sub-interfaces: RepoReader, WorktreeManager, BranchManager, CommitWriter, TagManager, DiffInspector"
       - "ShellGitOps: implements GitOps using exec.Command"
       - "DiffStat: parsed output from git diff --shortstat (FilesChanged, Insertions, Deletions)"
       - "FileChange: per-file diff information"
@@ -265,6 +268,8 @@ components:
       - Close issues and re-promote dependents
       - Garbage-collect stale generation issues in a single bulk API call
       - Close orphaned measuring placeholders with an explanatory comment on Claude failure (GH-747)
+      - "Sub-issue hierarchy: generation → measure → stitch (FinalizeMeasurePlaceholder links measure to generation parent, stitch issues link to measure)"
+      - "GenLabel: truncate/hash generation labels to 50-char GitHub limit"
       - File defects in target repos
     references:
       - prd003-cobbler-workflows
@@ -745,7 +750,7 @@ project_structure:
   - path: pkg/orchestrator/prompt_files.go
     role: Context file enumeration — list files included in Claude prompts with sizes and token estimates
   - path: pkg/orchestrator/generator_stats.go
-    role: Generation status report — issue table with status, release, cost, duration, turns, LOC deltas per task; per-release task breakdown; PRD coverage table; requirements progress; shared helpers buildPRDReleaseMap, countTotalPRDRequirements, extractPRDRefs (stats:generator target)
+    role: Generation status report — issue table with status, release, cost, duration, turns, LOC deltas, parent measure per task; measure rows show task count and PRD refs; per-release task breakdown; PRD coverage table; requirements progress; shared helpers buildPRDReleaseMap, countTotalPRDRequirements, extractPRDRefs (stats:generator target)
   - path: pkg/orchestrator/release_stats.go
     role: Release statistics — per-release table with PRD counts (complete/started/untouched) and requirement totals sourced from road-map.yaml, PRD files, and use case touchpoints (stats:releases target)
   - path: pkg/orchestrator/release.go
