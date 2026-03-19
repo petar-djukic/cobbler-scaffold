@@ -614,11 +614,11 @@ func (o *Orchestrator) importIssuesImpl(yamlFile, repo, generation string, skipE
 			continue
 		}
 		filtered = append(filtered, issue)
-		// Track accepted issue for intra-batch dedup (GH-1605).
+		// Track accepted title for intra-batch dedup (GH-1605).
+		// File overlap is only checked against existing GitHub issues, not
+		// within the same batch — tasks in the same package naturally share
+		// files and are not duplicates (GH-1646).
 		existingTitles[norm] = issue.Index
-		for _, fp := range extractDescriptionFiles(issue.Description) {
-			existingFiles[fp] = issue.Index
-		}
 	}
 	issues = filtered
 
