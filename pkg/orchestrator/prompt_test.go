@@ -9,13 +9,14 @@ import (
 	"strings"
 	"testing"
 
+	ictx "github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/context"
 	"gopkg.in/yaml.v3"
 )
 
 // --- parsePromptTemplate ---
 
 func TestParsePromptTemplate_MeasureFields(t *testing.T) {
-	tmpl, err := parsePromptTemplate(defaultMeasurePrompt)
+	tmpl, err := ictx.ParsePromptTemplate(defaultMeasurePrompt)
 	if err != nil {
 		t.Fatalf("parsePromptTemplate: %v", err)
 	}
@@ -34,7 +35,7 @@ func TestParsePromptTemplate_MeasureFields(t *testing.T) {
 }
 
 func TestParsePromptTemplate_StitchFields(t *testing.T) {
-	tmpl, err := parsePromptTemplate(defaultStitchPrompt)
+	tmpl, err := ictx.ParsePromptTemplate(defaultStitchPrompt)
 	if err != nil {
 		t.Fatalf("parsePromptTemplate: %v", err)
 	}
@@ -50,7 +51,7 @@ func TestParsePromptTemplate_StitchFields(t *testing.T) {
 }
 
 func TestParsePromptTemplate_InvalidYAML(t *testing.T) {
-	_, err := parsePromptTemplate("not: [valid: yaml")
+	_, err := ictx.ParsePromptTemplate("not: [valid: yaml")
 	if err == nil {
 		t.Error("expected error for invalid YAML")
 	}
@@ -66,7 +67,7 @@ func TestSubstitutePlaceholders(t *testing.T) {
 		"lines_min":   "250",
 		"lines_max":   "350",
 	}
-	got := substitutePlaceholders(text, data)
+	got := ictx.SubstitutePlaceholders(text, data)
 	want := "Output to /tmp/out.yaml, max 5 tasks of 250-350 lines."
 	if got != want {
 		t.Errorf("got %q, want %q", got, want)
@@ -76,7 +77,7 @@ func TestSubstitutePlaceholders(t *testing.T) {
 // --- validatePromptTemplate ---
 
 func TestValidatePromptTemplate_MissingFile(t *testing.T) {
-	errs := validatePromptTemplate("/nonexistent/path/prompt.yaml")
+	errs := ictx.ValidatePromptTemplate("/nonexistent/path/prompt.yaml")
 	if errs != nil {
 		t.Errorf("expected nil for missing file, got %v", errs)
 	}
@@ -89,7 +90,7 @@ func TestValidatePromptTemplate_ValidFile(t *testing.T) {
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatalf("writing file: %v", err)
 	}
-	errs := validatePromptTemplate(path)
+	errs := ictx.ValidatePromptTemplate(path)
 	if errs != nil {
 		t.Errorf("expected nil for valid file, got %v", errs)
 	}
@@ -101,7 +102,7 @@ func TestValidatePromptTemplate_InvalidYAML(t *testing.T) {
 	if err := os.WriteFile(path, []byte("not: [valid: yaml"), 0o644); err != nil {
 		t.Fatalf("writing file: %v", err)
 	}
-	errs := validatePromptTemplate(path)
+	errs := ictx.ValidatePromptTemplate(path)
 	if len(errs) == 0 {
 		t.Error("expected errors for invalid YAML, got none")
 	}
@@ -110,7 +111,7 @@ func TestValidatePromptTemplate_InvalidYAML(t *testing.T) {
 // --- parseYAMLNode ---
 
 func TestParseYAMLNode_ValidYAML(t *testing.T) {
-	node := parseYAMLNode("articles:\n  - id: P1\n    title: Test")
+	node := ictx.ParseYAMLNode("articles:\n  - id: P1\n    title: Test")
 	if node == nil {
 		t.Fatal("expected non-nil node")
 	}
@@ -120,14 +121,14 @@ func TestParseYAMLNode_ValidYAML(t *testing.T) {
 }
 
 func TestParseYAMLNode_Empty(t *testing.T) {
-	node := parseYAMLNode("")
+	node := ictx.ParseYAMLNode("")
 	if node != nil {
 		t.Error("expected nil for empty input")
 	}
 }
 
 func TestParseYAMLNode_Invalid(t *testing.T) {
-	node := parseYAMLNode("not: [valid: yaml")
+	node := ictx.ParseYAMLNode("not: [valid: yaml")
 	if node != nil {
 		t.Error("expected nil for invalid YAML")
 	}
@@ -373,7 +374,7 @@ func TestLoadOODPromptContext_Empty(t *testing.T) {
 	defer os.Chdir(orig)
 	os.MkdirAll("docs/specs/product-requirements", 0o755)
 
-	contracts, protocols := loadOODPromptContext()
+	contracts, protocols := ictx.LoadOODPromptContext()
 	if len(contracts) != 0 {
 		t.Errorf("expected no contracts with no PRD files, got %d", len(contracts))
 	}
@@ -402,7 +403,7 @@ package_contract:
 title: Cmd
 `), 0o644)
 
-	contracts, _ := loadOODPromptContext()
+	contracts, _ := ictx.LoadOODPromptContext()
 	if len(contracts) != 1 {
 		t.Fatalf("expected 1 contract, got %d", len(contracts))
 	}
@@ -435,7 +436,7 @@ shared_protocols:
     pattern: "signal.Notify(...)"
 `), 0o644)
 
-	_, protocols := loadOODPromptContext()
+	_, protocols := ictx.LoadOODPromptContext()
 	if len(protocols) != 1 {
 		t.Fatalf("expected 1 protocol, got %d", len(protocols))
 	}
@@ -459,7 +460,7 @@ package_contract:
   exports: []
 `), 0o644)
 
-	contracts, _ := loadOODPromptContext()
+	contracts, _ := ictx.LoadOODPromptContext()
 	if len(contracts) != 0 {
 		t.Errorf("expected no contracts for empty exports, got %d", len(contracts))
 	}

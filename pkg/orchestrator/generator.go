@@ -18,6 +18,7 @@ import (
 
 	an "github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/analysis"
 	"github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/claude"
+	ictx "github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/context"
 	"github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/generate"
 	gh "github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/github"
 )
@@ -523,7 +524,7 @@ func (o *Orchestrator) RunCycles(label string) error {
 // configuration.yaml). Changes are committed on the current branch. Returns
 // (true, version) if a release was advanced, (false, "") otherwise.
 func (o *Orchestrator) checkAutoAdvanceRelease() (bool, string) {
-	rm := loadYAML[RoadmapDoc]("docs/road-map.yaml")
+	rm := ictx.LoadYAML[RoadmapDoc]("docs/road-map.yaml")
 	if rm == nil {
 		return false, ""
 	}
@@ -532,7 +533,7 @@ func (o *Orchestrator) checkAutoAdvanceRelease() (bool, string) {
 	var target *RoadmapRelease
 	for i := range rm.Releases {
 		rel := &rm.Releases[i]
-		if !ucStatusDone(rel.Status) {
+		if !ictx.UCStatusDone(rel.Status) {
 			target = rel
 			break
 		}
@@ -546,7 +547,7 @@ func (o *Orchestrator) checkAutoAdvanceRelease() (bool, string) {
 		return false, ""
 	}
 	for _, uc := range target.UseCases {
-		if !ucStatusDone(uc.Status) {
+		if !ictx.UCStatusDone(uc.Status) {
 			return false, ""
 		}
 	}
@@ -579,7 +580,7 @@ func (o *Orchestrator) checkAutoAdvanceRelease() (bool, string) {
 // markActiveReleaseUCsDone pair that blindly marked all UCs when no open issues
 // remained (GH-1361).
 func (o *Orchestrator) validateAndMarkUCs() {
-	rm := loadYAML[RoadmapDoc]("docs/road-map.yaml")
+	rm := ictx.LoadYAML[RoadmapDoc]("docs/road-map.yaml")
 	if rm == nil {
 		return
 	}
@@ -588,7 +589,7 @@ func (o *Orchestrator) validateAndMarkUCs() {
 	var target *RoadmapRelease
 	for i := range rm.Releases {
 		rel := &rm.Releases[i]
-		if !ucStatusDone(rel.Status) {
+		if !ictx.UCStatusDone(rel.Status) {
 			target = rel
 			break
 		}
@@ -599,7 +600,7 @@ func (o *Orchestrator) validateAndMarkUCs() {
 
 	var marked []string
 	for _, uc := range target.UseCases {
-		if ucStatusDone(uc.Status) {
+		if ictx.UCStatusDone(uc.Status) {
 			continue
 		}
 
@@ -1132,7 +1133,7 @@ func (o *Orchestrator) mergeGeneration(branch, baseBranch string) error {
 // validateAndMarkUCs even when the release itself is not yet implemented
 // (GH-1469).
 func (o *Orchestrator) resetImplementedReleases() error {
-	rm := loadYAML[RoadmapDoc]("docs/road-map.yaml")
+	rm := ictx.LoadYAML[RoadmapDoc]("docs/road-map.yaml")
 	if rm == nil {
 		return nil
 	}
@@ -1151,7 +1152,7 @@ func (o *Orchestrator) resetImplementedReleases() error {
 		// not yet implemented (GH-1469). validateAndMarkUCs promotes UCs
 		// one at a time during the run; generator:stop must undo them.
 		for _, uc := range rel.UseCases {
-			if ucStatusDone(uc.Status) {
+			if ictx.UCStatusDone(uc.Status) {
 				if err := updateRoadmapSingleUCStatus(rel.Version, uc.ID, "spec_complete"); err != nil {
 					logf("resetImplementedReleases: revert UC %s in %s failed: %v", uc.ID, rel.Version, err)
 					continue

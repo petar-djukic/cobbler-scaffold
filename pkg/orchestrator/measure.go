@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/claude"
+	ictx "github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/context"
 	gh "github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/github"
 	"gopkg.in/yaml.v3"
 )
@@ -417,7 +418,7 @@ func (o *Orchestrator) RunMeasure() error {
 }
 
 func (o *Orchestrator) buildMeasurePrompt(userInput, existingIssues string, limit int, validationErrors ...string) (string, error) {
-	tmpl, err := parsePromptTemplate(orDefault(o.cfg.Cobbler.MeasurePrompt, defaultMeasurePrompt))
+	tmpl, err := ictx.ParsePromptTemplate(orDefault(o.cfg.Cobbler.MeasurePrompt, defaultMeasurePrompt))
 	if err != nil {
 		return "", fmt.Errorf("measure prompt YAML: %w", err)
 	}
@@ -426,7 +427,7 @@ func (o *Orchestrator) buildMeasurePrompt(userInput, existingIssues string, limi
 
 	// Load per-phase context file (prd003 R9.8).
 	measureCtxPath := filepath.Join(o.cfg.Cobbler.Dir, "measure_context.yaml")
-	phaseCtx, phaseErr := loadPhaseContext(measureCtxPath)
+	phaseCtx, phaseErr := ictx.LoadPhaseContext(measureCtxPath)
 	if phaseErr != nil {
 		return "", fmt.Errorf("loading measure context: %w", phaseErr)
 	}
@@ -468,7 +469,7 @@ func (o *Orchestrator) buildMeasurePrompt(userInput, existingIssues string, limi
 		if err != nil {
 			logf("buildMeasurePrompt: road-map source selection error: %v", err)
 		} else if uc != nil {
-			pkgPaths := parseTouchpointPackages(uc.Touchpoints)
+			pkgPaths := ictx.ParseTouchpointPackages(uc.Touchpoints)
 			if len(pkgPaths) > 0 {
 				var patterns []string
 				for _, p := range pkgPaths {
@@ -501,7 +502,7 @@ func (o *Orchestrator) buildMeasurePrompt(userInput, existingIssues string, limi
 	var measureContracts []OODPackageContractRef
 	sourceMode := phaseCtx.SourceMode
 	if sourceMode == "headers" || sourceMode == "custom" {
-		contracts, _ := loadOODPromptContext()
+		contracts, _ := ictx.LoadOODPromptContext()
 		if len(contracts) > 0 {
 			measureContracts = contracts
 			logf("buildMeasurePrompt: injecting %d package_contracts (source_mode=%s)", len(contracts), sourceMode)
@@ -511,11 +512,11 @@ func (o *Orchestrator) buildMeasurePrompt(userInput, existingIssues string, limi
 	doc := MeasurePromptDoc{
 		Role:                    tmpl.Role,
 		ProjectContext:          projectCtx,
-		PlanningConstitution:    parseYAMLNode(planningConst),
-		IssueFormatConstitution: parseYAMLNode(issueFormatConstitution),
-		Task:                    substitutePlaceholders(tmpl.Task, placeholders),
-		Constraints:             substitutePlaceholders(tmpl.Constraints, placeholders),
-		OutputFormat:            substitutePlaceholders(tmpl.OutputFormat, placeholders),
+		PlanningConstitution:    ictx.ParseYAMLNode(planningConst),
+		IssueFormatConstitution: ictx.ParseYAMLNode(issueFormatConstitution),
+		Task:                    ictx.SubstitutePlaceholders(tmpl.Task, placeholders),
+		Constraints:             ictx.SubstitutePlaceholders(tmpl.Constraints, placeholders),
+		OutputFormat:            ictx.SubstitutePlaceholders(tmpl.OutputFormat, placeholders),
 		GoldenExample:           o.cfg.Cobbler.GoldenExample,
 		AdditionalContext:       userInput,
 		ValidationErrors:        validationErrors,

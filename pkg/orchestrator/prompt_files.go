@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	ictx "github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/context"
 	st "github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/stats"
 )
 
@@ -51,17 +52,17 @@ func (o *Orchestrator) resolveContextFileEntries() []contextFileEntry {
 	var entries []contextFileEntry
 
 	// Build exclude set (empty map when ContextExclude is unset).
-	excludeSet := resolveFileSet(o.cfg.Project.ContextExclude)
+	excludeSet := ictx.ResolveFileSet(o.cfg.Project.ContextExclude)
 
 	// Resolve doc files: ContextInclude overrides standard patterns.
 	var docFiles []string
 	var docSource string
 	if strings.TrimSpace(o.cfg.Project.ContextInclude) != "" {
-		docFiles = resolveContextSources(o.cfg.Project.ContextInclude)
-		docFiles = ensureTypedDocs(docFiles)
+		docFiles = ictx.ResolveContextSources(o.cfg.Project.ContextInclude)
+		docFiles = ictx.EnsureTypedDocs(docFiles)
 		docSource = "config"
 	} else {
-		docFiles = resolveStandardFiles()
+		docFiles = ictx.ResolveStandardFiles()
 		docSource = "default"
 	}
 
@@ -78,7 +79,7 @@ func (o *Orchestrator) resolveContextFileEntries() []contextFileEntry {
 		}
 		entries = append(entries, contextFileEntry{
 			Source:   docSource,
-			Category: classifyContextFile(path),
+			Category: ictx.ClassifyContextFile(path),
 			Path:     path,
 			Lines:    safeCountLines(path),
 			Bytes:    int(info.Size()),
@@ -87,7 +88,7 @@ func (o *Orchestrator) resolveContextFileEntries() []contextFileEntry {
 
 	// Extra context sources from configuration.
 	if strings.TrimSpace(o.cfg.Project.ContextSources) != "" {
-		extras := resolveContextSources(o.cfg.Project.ContextSources)
+		extras := ictx.ResolveContextSources(o.cfg.Project.ContextSources)
 		for _, path := range extras {
 			if seen[path] || excludeSet[path] {
 				continue

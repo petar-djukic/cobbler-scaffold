@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	ictx "github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/context"
 	"gopkg.in/yaml.v3"
 )
 
@@ -18,7 +19,7 @@ import (
 // ---------------------------------------------------------------------------
 
 func TestLoadPhaseContext_MissingFile(t *testing.T) {
-	pc, err := loadPhaseContext("/nonexistent/measure_context.yaml")
+	pc, err := ictx.LoadPhaseContext("/nonexistent/measure_context.yaml")
 	if err != nil {
 		t.Fatalf("expected nil error for missing file, got: %v", err)
 	}
@@ -39,7 +40,7 @@ release: "01.0"
 		t.Fatal(err)
 	}
 
-	pc, err := loadPhaseContext(path)
+	pc, err := ictx.LoadPhaseContext(path)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -68,7 +69,7 @@ func TestLoadPhaseContext_ExcludeSourceFields(t *testing.T) {
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	pc, err := loadPhaseContext(path)
+	pc, err := ictx.LoadPhaseContext(path)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -87,7 +88,7 @@ func TestLoadPhaseContext_MalformedFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	pc, err := loadPhaseContext(path)
+	pc, err := ictx.LoadPhaseContext(path)
 	if err == nil {
 		t.Fatal("expected error for malformed YAML")
 	}
@@ -184,7 +185,7 @@ func TestBuildProjectContext_PhaseContextPartialOverride(t *testing.T) {
 
 func TestNumberLines_Normal(t *testing.T) {
 	input := "package main\n\nimport \"fmt\"\n\nfunc main() {\n\tfmt.Println(\"hello\")\n}\n"
-	got := numberLines(input)
+	got := ictx.NumberLines(input)
 	want := "1 | package main\n3 | import \"fmt\"\n5 | func main() {\n6 | \tfmt.Println(\"hello\")\n7 | }"
 	if got != want {
 		t.Errorf("numberLines:\ngot:  %q\nwant: %q", got, want)
@@ -193,7 +194,7 @@ func TestNumberLines_Normal(t *testing.T) {
 
 func TestNumberLines_BlankLinesOmitted(t *testing.T) {
 	input := "a\n\n\nb\n"
-	got := numberLines(input)
+	got := ictx.NumberLines(input)
 	want := "1 | a\n4 | b"
 	if got != want {
 		t.Errorf("numberLines:\ngot:  %q\nwant: %q", got, want)
@@ -202,7 +203,7 @@ func TestNumberLines_BlankLinesOmitted(t *testing.T) {
 
 func TestNumberLines_SingleLine(t *testing.T) {
 	input := "package main\n"
-	got := numberLines(input)
+	got := ictx.NumberLines(input)
 	want := "1 | package main"
 	if got != want {
 		t.Errorf("numberLines:\ngot:  %q\nwant: %q", got, want)
@@ -210,7 +211,7 @@ func TestNumberLines_SingleLine(t *testing.T) {
 }
 
 func TestNumberLines_Empty(t *testing.T) {
-	got := numberLines("")
+	got := ictx.NumberLines("")
 	if got != "" {
 		t.Errorf("numberLines empty: got %q, want empty", got)
 	}
@@ -218,7 +219,7 @@ func TestNumberLines_Empty(t *testing.T) {
 
 func TestNumberLines_WhitespaceOnlyLines(t *testing.T) {
 	input := "a\n  \n\t\nb\n"
-	got := numberLines(input)
+	got := ictx.NumberLines(input)
 	want := "1 | a\n4 | b"
 	if got != want {
 		t.Errorf("numberLines:\ngot:  %q\nwant: %q", got, want)
@@ -258,17 +259,17 @@ func TestFileMatchesRelease(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		rf := releaseFilter{MaxRelease: tt.release}
-		got := fileMatchesRelease(tt.path, rf)
+		rf := ictx.ReleaseFilter{MaxRelease: tt.release}
+		got := ictx.FileMatchesRelease(tt.path, rf)
 		if got != tt.want {
-			t.Errorf("fileMatchesRelease(%q, maxRelease=%q) = %v, want %v",
+			t.Errorf("ictx.FileMatchesRelease(%q, maxRelease=%q) = %v, want %v",
 				tt.path, tt.release, got, tt.want)
 		}
 	}
 }
 
 func TestFileMatchesRelease_ReleaseSet(t *testing.T) {
-	set := releaseFilter{ReleaseSet: map[string]bool{"01.0": true, "03.0": true}}
+	set := ictx.ReleaseFilter{ReleaseSet: map[string]bool{"01.0": true, "03.0": true}}
 
 	tests := []struct {
 		path string
@@ -289,9 +290,9 @@ func TestFileMatchesRelease_ReleaseSet(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		got := fileMatchesRelease(tt.path, set)
+		got := ictx.FileMatchesRelease(tt.path, set)
 		if got != tt.want {
-			t.Errorf("fileMatchesRelease(%q, set{01.0,03.0}) = %v, want %v",
+			t.Errorf("ictx.FileMatchesRelease(%q, set{01.0,03.0}) = %v, want %v",
 				tt.path, got, tt.want)
 		}
 	}
@@ -299,7 +300,7 @@ func TestFileMatchesRelease_ReleaseSet(t *testing.T) {
 
 func TestNewReleaseFilter(t *testing.T) {
 	// Releases list takes precedence over Release string.
-	rf := newReleaseFilter([]string{"01.0", "02.0"}, "03.0")
+	rf := ictx.NewReleaseFilter([]string{"01.0", "02.0"}, "03.0")
 	if rf.ReleaseSet == nil {
 		t.Fatal("expected ReleaseSet to be set when Releases is non-empty")
 	}
@@ -311,7 +312,7 @@ func TestNewReleaseFilter(t *testing.T) {
 	}
 
 	// Empty Releases falls back to Release string.
-	rf2 := newReleaseFilter(nil, "02.0")
+	rf2 := ictx.NewReleaseFilter(nil, "02.0")
 	if rf2.ReleaseSet != nil {
 		t.Error("expected nil ReleaseSet when Releases is empty")
 	}
@@ -320,7 +321,7 @@ func TestNewReleaseFilter(t *testing.T) {
 	}
 
 	// Both empty → no filtering.
-	rf3 := newReleaseFilter(nil, "")
+	rf3 := ictx.NewReleaseFilter(nil, "")
 	if rf3.Active() {
 		t.Error("expected inactive filter when both are empty")
 	}
@@ -340,9 +341,9 @@ func TestExtractFileRelease(t *testing.T) {
 		{"prd001-core.yaml", ""},
 	}
 	for _, tt := range tests {
-		got := extractFileRelease(tt.path)
+		got := ictx.ExtractFileRelease(tt.path)
 		if got != tt.want {
-			t.Errorf("extractFileRelease(%q) = %q, want %q", tt.path, got, tt.want)
+			t.Errorf("ictx.ExtractFileRelease(%q) = %q, want %q", tt.path, got, tt.want)
 		}
 	}
 }
@@ -394,7 +395,7 @@ func TestResolveStandardFiles(t *testing.T) {
 		os.WriteFile(f, []byte("id: test"), 0o644)
 	}
 
-	resolved := resolveStandardFiles()
+	resolved := ictx.ResolveStandardFiles()
 
 	// All standard files should be included.
 	resolvedSet := make(map[string]bool)
@@ -427,10 +428,10 @@ func TestLoadContextFileIntoSetsFilePath(t *testing.T) {
 	os.WriteFile("docs/road-map.yaml", []byte("id: test\ntitle: Test Roadmap"), 0o644)
 
 	ctx := &ProjectContext{Specs: &SpecsCollection{}}
-	noFilter := releaseFilter{}
-	loadContextFileInto(ctx, "docs/VISION.yaml", noFilter)
-	loadContextFileInto(ctx, "docs/ARCHITECTURE.yaml", noFilter)
-	loadContextFileInto(ctx, "docs/road-map.yaml", noFilter)
+	noFilter := ictx.ReleaseFilter{}
+	ictx.LoadContextFileInto(ctx, "docs/VISION.yaml", noFilter)
+	ictx.LoadContextFileInto(ctx, "docs/ARCHITECTURE.yaml", noFilter)
+	ictx.LoadContextFileInto(ctx, "docs/road-map.yaml", noFilter)
 
 	if ctx.Vision == nil || ctx.Vision.File != "docs/VISION.yaml" {
 		t.Errorf("Vision.File = %q, want %q", ctx.Vision.File, "docs/VISION.yaml")
@@ -490,15 +491,15 @@ func TestParseIssuesJSON(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := parseIssuesJSON(tc.input)
+			got := ictx.ParseIssuesJSON(tc.input)
 			if tc.wantNil {
 				if got != nil {
-					t.Errorf("parseIssuesJSON(%q) = %v, want nil", tc.input, got)
+					t.Errorf("ictx.ParseIssuesJSON(%q) = %v, want nil", tc.input, got)
 				}
 				return
 			}
 			if len(got) != tc.wantLen {
-				t.Errorf("parseIssuesJSON() len = %d, want %d", len(got), tc.wantLen)
+				t.Errorf("ictx.ParseIssuesJSON() len = %d, want %d", len(got), tc.wantLen)
 			}
 		})
 	}
@@ -520,10 +521,10 @@ func TestLoadContextFileInto_SpecAux(t *testing.T) {
 	os.WriteFile(filepath.Join("docs", "specs", "utilities.yaml"), []byte("name: utilities\n"), 0o644)
 
 	ctx := &ProjectContext{Specs: &SpecsCollection{}}
-	noFilter := releaseFilter{}
-	loadContextFileInto(ctx, filepath.Join("docs", "specs", "dependency-map.yaml"), noFilter)
-	loadContextFileInto(ctx, filepath.Join("docs", "specs", "sources.yaml"), noFilter)
-	loadContextFileInto(ctx, filepath.Join("docs", "specs", "utilities.yaml"), noFilter)
+	noFilter := ictx.ReleaseFilter{}
+	ictx.LoadContextFileInto(ctx, filepath.Join("docs", "specs", "dependency-map.yaml"), noFilter)
+	ictx.LoadContextFileInto(ctx, filepath.Join("docs", "specs", "sources.yaml"), noFilter)
+	ictx.LoadContextFileInto(ctx, filepath.Join("docs", "specs", "utilities.yaml"), noFilter)
 
 	if ctx.Specs.DependencyMap == nil {
 		t.Error("Specs.DependencyMap should be set for dependency-map.yaml")
@@ -552,8 +553,8 @@ func TestLoadContextFileInto_Engineering(t *testing.T) {
 	os.WriteFile(filepath.Join("docs", "engineering", "eng01-testing.yaml"), []byte("id: eng01\ntitle: Testing Guide\n"), 0o644)
 
 	ctx := &ProjectContext{Specs: &SpecsCollection{}}
-	noFilter := releaseFilter{}
-	loadContextFileInto(ctx, filepath.Join("docs", "engineering", "eng01-testing.yaml"), noFilter)
+	noFilter := ictx.ReleaseFilter{}
+	ictx.LoadContextFileInto(ctx, filepath.Join("docs", "engineering", "eng01-testing.yaml"), noFilter)
 
 	if len(ctx.Engineering) != 1 {
 		t.Fatalf("Engineering len = %d, want 1", len(ctx.Engineering))
@@ -572,8 +573,8 @@ func TestLoadContextFileInto_Extra(t *testing.T) {
 	os.WriteFile("notes.yaml", []byte("name: notes\n"), 0o644)
 
 	ctx := &ProjectContext{Specs: &SpecsCollection{}}
-	noFilter := releaseFilter{}
-	loadContextFileInto(ctx, "notes.yaml", noFilter)
+	noFilter := ictx.ReleaseFilter{}
+	ictx.LoadContextFileInto(ctx, "notes.yaml", noFilter)
 
 	if len(ctx.Extra) != 1 {
 		t.Fatalf("Extra len = %d, want 1", len(ctx.Extra))
@@ -620,7 +621,7 @@ func TestPrdIDsFromUseCases(t *testing.T) {
 		},
 	}
 
-	ids := prdIDsFromUseCases(useCases)
+	ids := ictx.PRDIDsFromUseCases(useCases)
 	if !ids["prd001-core"] {
 		t.Error("expected prd001-core in referenced PRDs")
 	}
@@ -632,7 +633,7 @@ func TestPrdIDsFromUseCases(t *testing.T) {
 	}
 
 	// Nil use cases should return nil.
-	if got := prdIDsFromUseCases(nil); got != nil {
+	if got := ictx.PRDIDsFromUseCases(nil); got != nil {
 		t.Errorf("expected nil for nil use cases, got %v", got)
 	}
 }
@@ -1005,7 +1006,7 @@ func TestEnsureTypedDocs_AddsMissingDocs(t *testing.T) {
 
 	// Start with an empty file list — ensureTypedDocs should add typed docs
 	// that exist on disk.
-	files := ensureTypedDocs(nil)
+	files := ictx.EnsureTypedDocs(nil)
 
 	// VISION, ARCHITECTURE, and road-map.yaml exist in the test fixture.
 	found := make(map[string]bool)
@@ -1029,7 +1030,7 @@ func TestEnsureTypedDocs_DoesNotDuplicate(t *testing.T) {
 
 	// Start with VISION already in the list.
 	files := []string{"docs/VISION.yaml"}
-	result := ensureTypedDocs(files)
+	result := ictx.EnsureTypedDocs(files)
 
 	count := 0
 	for _, f := range result {
@@ -1049,7 +1050,7 @@ func TestEnsureTypedDocs_SkipsMissingFiles(t *testing.T) {
 	os.Chdir(dir)
 	defer os.Chdir(origDir)
 
-	files := ensureTypedDocs(nil)
+	files := ictx.EnsureTypedDocs(nil)
 	if len(files) != 0 {
 		t.Errorf("got %d files, want 0 (no typed docs exist in temp dir)", len(files))
 	}
@@ -1067,7 +1068,7 @@ func TestLoadNamedDoc_MarkdownFile(t *testing.T) {
 	content := "# Do Work\n\nUse this command:\n\n```bash\ncurl http://example.com\n```\n"
 	os.WriteFile(mdPath, []byte(content), 0o644)
 
-	doc := loadNamedDoc(mdPath)
+	doc := ictx.LoadNamedDoc(mdPath)
 	if doc == nil {
 		t.Fatal("loadNamedDoc returned nil for markdown file")
 	}
@@ -1087,7 +1088,7 @@ func TestLoadNamedDoc_TextFile(t *testing.T) {
 	txtPath := filepath.Join(dir, "readme.txt")
 	os.WriteFile(txtPath, []byte("plain text"), 0o644)
 
-	doc := loadNamedDoc(txtPath)
+	doc := ictx.LoadNamedDoc(txtPath)
 	if doc == nil {
 		t.Fatal("loadNamedDoc returned nil for .txt file")
 	}
@@ -1101,7 +1102,7 @@ func TestLoadNamedDoc_YAMLFileStillWorks(t *testing.T) {
 	yamlPath := filepath.Join(dir, "config.yaml")
 	os.WriteFile(yamlPath, []byte("id: test\ntitle: Test Doc"), 0o644)
 
-	doc := loadNamedDoc(yamlPath)
+	doc := ictx.LoadNamedDoc(yamlPath)
 	if doc == nil {
 		t.Fatal("loadNamedDoc returned nil for YAML file")
 	}
@@ -1137,8 +1138,8 @@ func TestClassifyContextFile_AllTypes(t *testing.T) {
 		{"random/file.yaml", "extra"},
 	}
 	for _, tc := range cases {
-		if got := classifyContextFile(tc.path); got != tc.want {
-			t.Errorf("classifyContextFile(%q) = %q, want %q", tc.path, got, tc.want)
+		if got := ictx.ClassifyContextFile(tc.path); got != tc.want {
+			t.Errorf("ictx.ClassifyContextFile(%q) = %q, want %q", tc.path, got, tc.want)
 		}
 	}
 }
@@ -1155,7 +1156,7 @@ func TestFilterSourceFiles_ExactMatch(t *testing.T) {
 	}
 	required := []string{"pkg/orchestrator/stitch.go", "pkg/orchestrator/context.go"}
 
-	got := filterSourceFiles(sources, required)
+	got := ictx.FilterSourceFiles(sources, required)
 	if len(got) != 2 {
 		t.Fatalf("filterSourceFiles: got %d files, want 2", len(got))
 	}
@@ -1174,7 +1175,7 @@ func TestFilterSourceFiles_SuffixMatch(t *testing.T) {
 	}
 	required := []string{"pkg/bar/foo.go"}
 
-	got := filterSourceFiles(sources, required)
+	got := ictx.FilterSourceFiles(sources, required)
 	if len(got) != 1 {
 		t.Fatalf("filterSourceFiles suffix: got %d files, want 1", len(got))
 	}
@@ -1190,12 +1191,12 @@ func TestFilterSourceFiles_EmptyRequired(t *testing.T) {
 		{File: "pkg/c.go"},
 	}
 
-	got := filterSourceFiles(sources, nil)
+	got := ictx.FilterSourceFiles(sources, nil)
 	if len(got) != 3 {
 		t.Errorf("filterSourceFiles empty required: got %d, want 3 (all files)", len(got))
 	}
 
-	got2 := filterSourceFiles(sources, []string{})
+	got2 := ictx.FilterSourceFiles(sources, []string{})
 	if len(got2) != 3 {
 		t.Errorf("filterSourceFiles empty slice: got %d, want 3", len(got2))
 	}
@@ -1208,7 +1209,7 @@ func TestFilterSourceFiles_NoMatch(t *testing.T) {
 	}
 	required := []string{"pkg/nonexistent.go"}
 
-	got := filterSourceFiles(sources, required)
+	got := ictx.FilterSourceFiles(sources, required)
 	if len(got) != 0 {
 		t.Errorf("filterSourceFiles no match: got %d, want 0", len(got))
 	}
@@ -1232,9 +1233,9 @@ func TestStripParenthetical(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		got := stripParenthetical(tt.input)
+		got := ictx.StripParenthetical(tt.input)
 		if got != tt.want {
-			t.Errorf("stripParenthetical(%q) = %q, want %q", tt.input, got, tt.want)
+			t.Errorf("ictx.StripParenthetical(%q) = %q, want %q", tt.input, got, tt.want)
 		}
 	}
 }
@@ -1303,7 +1304,7 @@ func TestApplyContextBudget_RemovesNonRequired(t *testing.T) {
 	fullSize := len(data)
 	budget := fullSize / 2
 
-	applyContextBudget(ctx, budget, required)
+	ictx.ApplyContextBudget(ctx, budget, required)
 
 	// a.go must be preserved (it's required).
 	found := false
@@ -1330,7 +1331,7 @@ func TestApplyContextBudget_ZeroBudget(t *testing.T) {
 		},
 	}
 
-	applyContextBudget(ctx, 0, nil)
+	ictx.ApplyContextBudget(ctx, 0, nil)
 
 	if len(ctx.SourceCode) != 2 {
 		t.Errorf("zero budget should not remove files, got %d", len(ctx.SourceCode))
@@ -1347,7 +1348,7 @@ func TestApplyContextBudget_PreservesRequired(t *testing.T) {
 	}
 	required := []string{"pkg/a.go", "pkg/b.go"}
 
-	applyContextBudget(ctx, 1, required) // impossibly small budget
+	ictx.ApplyContextBudget(ctx, 1, required) // impossibly small budget
 
 	if len(ctx.SourceCode) != 2 {
 		t.Errorf("all-required: expected 2 files preserved, got %d", len(ctx.SourceCode))
@@ -1361,7 +1362,7 @@ func TestApplyContextBudget_UnderBudget(t *testing.T) {
 		},
 	}
 
-	applyContextBudget(ctx, 1000000, nil)
+	ictx.ApplyContextBudget(ctx, 1000000, nil)
 
 	if len(ctx.SourceCode) != 1 {
 		t.Errorf("under budget should not remove files, got %d", len(ctx.SourceCode))
@@ -1377,7 +1378,7 @@ func TestApplyContextBudget_ExactlyAtLimit(t *testing.T) {
 	data, _ := yaml.Marshal(ctx)
 	exactSize := len(data)
 
-	applyContextBudget(ctx, exactSize, nil)
+	ictx.ApplyContextBudget(ctx, exactSize, nil)
 
 	if len(ctx.SourceCode) != 1 {
 		t.Errorf("at-limit: expected 1 file, got %d", len(ctx.SourceCode))
@@ -1386,7 +1387,7 @@ func TestApplyContextBudget_ExactlyAtLimit(t *testing.T) {
 
 func TestApplyContextBudget_NilContext(t *testing.T) {
 	// Should not panic.
-	applyContextBudget(nil, 100, nil)
+	ictx.ApplyContextBudget(nil, 100, nil)
 }
 
 func TestApplyContextBudget_NegativeBudget(t *testing.T) {
@@ -1397,7 +1398,7 @@ func TestApplyContextBudget_NegativeBudget(t *testing.T) {
 		},
 	}
 
-	applyContextBudget(ctx, -1, nil)
+	ictx.ApplyContextBudget(ctx, -1, nil)
 
 	if len(ctx.SourceCode) != 2 {
 		t.Errorf("negative budget should disable enforcement, got %d files", len(ctx.SourceCode))
@@ -1417,7 +1418,7 @@ func TestApplyContextBudget_DefaultBudget(t *testing.T) {
 	ctx := &ProjectContext{SourceCode: sources}
 
 	required := []string{"pkg/file000.go"}
-	applyContextBudget(ctx, 0, required)
+	ictx.ApplyContextBudget(ctx, 0, required)
 
 	// Required file must survive.
 	found := false
@@ -1622,7 +1623,7 @@ type MyType struct {
 
 type privateType struct{}
 `
-	got := summarizeGoHeaders(src)
+	got := ictx.SummarizeGoHeaders(src)
 
 	// Exported func signature must be present.
 	if !strings.Contains(got, "func Exported() string") {
@@ -1667,7 +1668,7 @@ var DefaultTimeout = 30
 
 var secretKey = "shh"
 `
-	got := summarizeGoHeaders(src)
+	got := ictx.SummarizeGoHeaders(src)
 	if !strings.Contains(got, "Version") {
 		t.Errorf("exported const Version should be kept, got:\n%s", got)
 	}
@@ -1687,7 +1688,7 @@ var secretKey = "shh"
 func TestSummarizeGoHeaders_InvalidInput(t *testing.T) {
 	t.Parallel()
 	src := "this is not valid Go source!!!"
-	got := summarizeGoHeaders(src)
+	got := ictx.SummarizeGoHeaders(src)
 	if got != src {
 		t.Errorf("invalid Go input should be returned unchanged, got:\n%s", got)
 	}
@@ -1702,7 +1703,7 @@ func TestSummarizeCustom_Output(t *testing.T) {
 	os.WriteFile(filePath, []byte("package foo\n"), 0o644)
 
 	// "echo hello" appended with filePath → output contains "hello".
-	out := summarizeCustom("echo hello", filePath, "original content")
+	out := ictx.SummarizeCustom("echo hello", filePath, "original content")
 	if !strings.Contains(out, "hello") {
 		t.Errorf("expected command output, got: %q", out)
 	}
@@ -1717,7 +1718,7 @@ func TestSummarizeCustom_FallbackOnFailure(t *testing.T) {
 	os.WriteFile(filePath, []byte("package foo\n"), 0o644)
 
 	fullContent := "original full content"
-	got := summarizeCustom("false", filePath, fullContent)
+	got := ictx.SummarizeCustom("false", filePath, fullContent)
 	if got != fullContent {
 		t.Errorf("failing command should fall back to full content, got: %q", got)
 	}
@@ -1728,7 +1729,7 @@ func TestSummarizeCustom_FallbackOnFailure(t *testing.T) {
 func TestSummarizeCustom_EmptyCommand(t *testing.T) {
 	t.Parallel()
 	full := "original content"
-	got := summarizeCustom("", "any/path.go", full)
+	got := ictx.SummarizeCustom("", "any/path.go", full)
 	if got != full {
 		t.Errorf("empty command should return full content, got: %q", got)
 	}
@@ -1801,7 +1802,7 @@ func TestParseTouchpointPackages_EmDash(t *testing.T) {
 		{"T1": "cmd/du \u2014 prd009-du R1, R2, R3"},
 		{"T2": "pkg/sys \u2014 prd003-sys"},
 	}
-	got := parseTouchpointPackages(touchpoints)
+	got := ictx.ParseTouchpointPackages(touchpoints)
 	if len(got) != 2 {
 		t.Fatalf("expected 2 packages, got %v", got)
 	}
@@ -1815,7 +1816,7 @@ func TestParseTouchpointPackages_EnDash(t *testing.T) {
 	touchpoints := []map[string]string{
 		{"T1": "pkg/format \u2013 prd007-format R1"},
 	}
-	got := parseTouchpointPackages(touchpoints)
+	got := ictx.ParseTouchpointPackages(touchpoints)
 	if len(got) != 1 || got[0] != "pkg/format" {
 		t.Errorf("expected [pkg/format], got %v", got)
 	}
@@ -1826,7 +1827,7 @@ func TestParseTouchpointPackages_MultiplePathsCommaSeparated(t *testing.T) {
 	touchpoints := []map[string]string{
 		{"T1": "cmd/cp, cmd/mv \u2014 prd001-cp R1"},
 	}
-	got := parseTouchpointPackages(touchpoints)
+	got := ictx.ParseTouchpointPackages(touchpoints)
 	if len(got) != 2 {
 		t.Fatalf("expected 2 packages, got %v", got)
 	}
@@ -1842,7 +1843,7 @@ func TestParseTouchpointPackages_NoDash_Ignored(t *testing.T) {
 		{"T1": "Config (workflow fields): prd001-orchestrator-core R1"},
 		{"T2": "Prompt templates: prd003-cobbler-workflows R5"},
 	}
-	got := parseTouchpointPackages(touchpoints)
+	got := ictx.ParseTouchpointPackages(touchpoints)
 	if len(got) != 0 {
 		t.Errorf("expected no packages for colon-separated touchpoints, got %v", got)
 	}
@@ -1853,7 +1854,7 @@ func TestParseTouchpointPackages_TrailingSlashNormalized(t *testing.T) {
 	touchpoints := []map[string]string{
 		{"T1": "pkg/util/ \u2014 prd002-util R1"},
 	}
-	got := parseTouchpointPackages(touchpoints)
+	got := ictx.ParseTouchpointPackages(touchpoints)
 	if len(got) != 1 || got[0] != "pkg/util" {
 		t.Errorf("expected [pkg/util] (trailing slash stripped), got %v", got)
 	}
@@ -1861,10 +1862,10 @@ func TestParseTouchpointPackages_TrailingSlashNormalized(t *testing.T) {
 
 func TestParseTouchpointPackages_Empty(t *testing.T) {
 	t.Parallel()
-	if got := parseTouchpointPackages(nil); got != nil {
+	if got := ictx.ParseTouchpointPackages(nil); got != nil {
 		t.Errorf("expected nil for nil input, got %v", got)
 	}
-	if got := parseTouchpointPackages([]map[string]string{}); got != nil {
+	if got := ictx.ParseTouchpointPackages([]map[string]string{}); got != nil {
 		t.Errorf("expected nil for empty input, got %v", got)
 	}
 }
@@ -2011,8 +2012,8 @@ func TestUCStatusDone(t *testing.T) {
 		{"", false},
 	}
 	for _, tc := range cases {
-		if got := ucStatusDone(tc.status); got != tc.want {
-			t.Errorf("ucStatusDone(%q) = %v, want %v", tc.status, got, tc.want)
+		if got := ictx.UCStatusDone(tc.status); got != tc.want {
+			t.Errorf("ictx.UCStatusDone(%q) = %v, want %v", tc.status, got, tc.want)
 		}
 	}
 }

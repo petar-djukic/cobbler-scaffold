@@ -7,6 +7,7 @@
 package orchestrator
 
 import (
+	ictx "github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/context"
 	st "github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/stats"
 )
 
@@ -28,8 +29,8 @@ func (o *Orchestrator) statsDeps() st.StatsDeps {
 	return st.StatsDeps{
 		BinaryDir:            o.cfg.Project.BinaryDir,
 		MagefilesDir:         o.cfg.Project.MagefilesDir,
-		ResolveStandardFiles: resolveStandardFiles,
-		ClassifyContextFile:  classifyContextFile,
+		ResolveStandardFiles: ictx.ResolveStandardFiles,
+		ClassifyContextFile:  ictx.ClassifyContextFile,
 	}
 }
 

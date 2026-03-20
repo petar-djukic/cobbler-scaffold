@@ -11,6 +11,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	an "github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/analysis"
+	ictx "github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/context"
 )
 
 // Type aliases for backward-compatible re-exports.
@@ -23,7 +24,7 @@ func (o *Orchestrator) collectAnalyzeResult() (AnalyzeResult, an.AnalyzeCounts, 
 		Log:                    logf,
 		Releases:               o.cfg.Project.Releases,
 		ValidateDocSchemas:     o.validateDocSchemas,
-		ValidatePromptTemplate: validatePromptTemplate,
+		ValidatePromptTemplate: ictx.ValidatePromptTemplate,
 	})
 }
 
@@ -33,7 +34,7 @@ func (o *Orchestrator) Analyze() error {
 		Log:                    logf,
 		Releases:               o.cfg.Project.Releases,
 		ValidateDocSchemas:     o.validateDocSchemas,
-		ValidatePromptTemplate: validatePromptTemplate,
+		ValidatePromptTemplate: ictx.ValidatePromptTemplate,
 	})
 }
 
@@ -46,8 +47,8 @@ func (o *Orchestrator) validateDocSchemas() []string {
 	var errs []string
 
 	// Validate standard documentation files.
-	for _, path := range resolveStandardFiles() {
-		switch classifyContextFile(path) {
+	for _, path := range ictx.ResolveStandardFiles() {
+		switch ictx.ClassifyContextFile(path) {
 		case "vision":
 			errs = append(errs, validateYAMLStrict[VisionDoc](path)...)
 		case "architecture":
@@ -84,10 +85,10 @@ func (o *Orchestrator) validateDocSchemas() []string {
 	errs = append(errs, validateYAMLStrict[TestingDoc]("pkg/orchestrator/constitutions/testing.yaml")...)
 
 	// Prompts (simple YAML mapping with text fields).
-	errs = append(errs, validatePromptTemplate("docs/prompts/measure.yaml")...)
-	errs = append(errs, validatePromptTemplate("docs/prompts/stitch.yaml")...)
-	errs = append(errs, validatePromptTemplate("pkg/orchestrator/prompts/measure.yaml")...)
-	errs = append(errs, validatePromptTemplate("pkg/orchestrator/prompts/stitch.yaml")...)
+	errs = append(errs, ictx.ValidatePromptTemplate("docs/prompts/measure.yaml")...)
+	errs = append(errs, ictx.ValidatePromptTemplate("docs/prompts/stitch.yaml")...)
+	errs = append(errs, ictx.ValidatePromptTemplate("pkg/orchestrator/prompts/measure.yaml")...)
+	errs = append(errs, ictx.ValidatePromptTemplate("pkg/orchestrator/prompts/stitch.yaml")...)
 
 	return errs
 }

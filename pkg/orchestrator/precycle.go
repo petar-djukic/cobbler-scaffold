@@ -5,6 +5,7 @@ package orchestrator
 
 import (
 	an "github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/analysis"
+	ictx "github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/context"
 )
 
 // Type aliases for backward-compatible re-exports.
@@ -21,7 +22,7 @@ func (o *Orchestrator) RunPreCycleAnalysis() {
 			Log:                    logf,
 			Releases:               o.cfg.Project.Releases,
 			ValidateDocSchemas:     o.validateDocSchemas,
-			ValidatePromptTemplate: validatePromptTemplate,
+			ValidatePromptTemplate: ictx.ValidatePromptTemplate,
 		},
 	})
 }

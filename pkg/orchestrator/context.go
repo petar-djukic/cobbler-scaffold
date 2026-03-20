@@ -5,7 +5,6 @@ package orchestrator
 
 import (
 	ctx "github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/context"
-	"gopkg.in/yaml.v3"
 )
 
 // ---------------------------------------------------------------------------
@@ -144,33 +143,9 @@ type Risk = ctx.Risk
 type ContextIssue = ctx.ContextIssue
 type NamedDoc = ctx.NamedDoc
 
-// Release filter types.
-type releaseFilter = ctx.ReleaseFilter
-
-// ---------------------------------------------------------------------------
-// Constants re-exported from internal/context.
-// ---------------------------------------------------------------------------
-
-const defaultMeasureContext = ctx.DefaultMeasureContext
-const defaultStitchContext = ctx.DefaultStitchContext
-const defaultMaxContextBytes = ctx.DefaultMaxContextBytes
-
-// ---------------------------------------------------------------------------
-// Variable re-exports from internal/context.
-// ---------------------------------------------------------------------------
-
-var standardContextPatterns = ctx.StandardContextPatterns
-var typedDocPaths = ctx.TypedDocPaths
-
-// ---------------------------------------------------------------------------
-// Function delegates — unexported wrappers that preserve the original
-// call signatures used throughout the parent package.
-// ---------------------------------------------------------------------------
-
-func loadPhaseContext(path string) (*PhaseContext, error) {
-	return ctx.LoadPhaseContext(path)
-}
-
+// buildProjectContext converts parent-package ProjectConfig to the internal
+// ContextConfig before delegating to ctx.BuildProjectContext. This wrapper
+// exists because the parent and internal packages define separate config structs.
 func buildProjectContext(existingIssuesJSON string, project ProjectConfig, phaseCtx *PhaseContext) (*ProjectContext, error) {
 	return ctx.BuildProjectContext(existingIssuesJSON, ContextConfig{
 		ContextInclude: project.ContextInclude,
@@ -182,115 +157,11 @@ func buildProjectContext(existingIssuesJSON string, project ProjectConfig, phase
 	}, phaseCtx, dirCobbler)
 }
 
+// selectNextPendingUseCase converts parent-package ProjectConfig to the
+// internal ContextConfig before delegating. Same rationale as buildProjectContext.
 func selectNextPendingUseCase(cfg ProjectConfig) (*UseCaseDoc, error) {
 	return ctx.SelectNextPendingUseCase(ContextConfig{
 		Releases: cfg.Releases,
 		Release:  cfg.Release,
 	})
 }
-
-func loadYAML[T any](path string) *T {
-	return ctx.LoadYAML[T](path)
-}
-
-func loadNamedDoc(path string) *NamedDoc {
-	return ctx.LoadNamedDoc(path)
-}
-
-func parseIssuesJSON(jsonStr string) []ContextIssue {
-	return ctx.ParseIssuesJSON(jsonStr)
-}
-
-func numberLines(content string) string {
-	return ctx.NumberLines(content)
-}
-
-func loadSourceFiles(dirs []string) []SourceFile {
-	return ctx.LoadSourceFiles(dirs)
-}
-
-func parseContextSources(text string) []string {
-	return ctx.ParseContextSources(text)
-}
-
-func resolveContextSources(sources string) []string {
-	return ctx.ResolveContextSources(sources)
-}
-
-func resolveFileSet(text string) map[string]bool {
-	return ctx.ResolveFileSet(text)
-}
-
-func classifyContextFile(path string) string {
-	return ctx.ClassifyContextFile(path)
-}
-
-func ensureTypedDocs(files []string) []string {
-	return ctx.EnsureTypedDocs(files)
-}
-
-func resolveStandardFiles() []string {
-	return ctx.ResolveStandardFiles()
-}
-
-func newReleaseFilter(releases []string, release string) releaseFilter {
-	return ctx.NewReleaseFilter(releases, release)
-}
-
-func extractFileRelease(path string) string {
-	return ctx.ExtractFileRelease(path)
-}
-
-func fileMatchesRelease(path string, rf releaseFilter) bool {
-	return ctx.FileMatchesRelease(path, rf)
-}
-
-func prdIDsFromUseCases(useCases []*UseCaseDoc) map[string]bool {
-	return ctx.PRDIDsFromUseCases(useCases)
-}
-
-func ucStatusDone(status string) bool {
-	return ctx.UCStatusDone(status)
-}
-
-func parseTouchpointPackages(touchpoints []map[string]string) []string {
-	return ctx.ParseTouchpointPackages(touchpoints)
-}
-
-func loadContextFileInto(c *ProjectContext, path string, rf releaseFilter) {
-	ctx.LoadContextFileInto(c, path, rf)
-}
-
-func stripParenthetical(s string) string {
-	return ctx.StripParenthetical(s)
-}
-
-func sourceFileMatchesAny(sf SourceFile, suffixes []string) bool {
-	return ctx.SourceFileMatchesAny(sf, suffixes)
-}
-
-func filterSourceFiles(sources []SourceFile, requiredPaths []string) []SourceFile {
-	return ctx.FilterSourceFiles(sources, requiredPaths)
-}
-
-func applyContextBudget(c *ProjectContext, budget int, requiredPaths []string) {
-	ctx.ApplyContextBudget(c, budget, requiredPaths)
-}
-
-func summarizeGoHeaders(content string) string {
-	return ctx.SummarizeGoHeaders(content)
-}
-
-func summarizeCustom(command, filePath, fullContent string) string {
-	return ctx.SummarizeCustom(command, filePath, fullContent)
-}
-
-func loadOODPromptContext() ([]OODPackageContractRef, []ArchSharedProtocol) {
-	return ctx.LoadOODPromptContext()
-}
-
-func loadPRDSemanticModel() *yaml.Node {
-	return ctx.LoadPRDSemanticModel()
-}
-
-// safeCountLines stays in prompt_files.go (not delegated here).

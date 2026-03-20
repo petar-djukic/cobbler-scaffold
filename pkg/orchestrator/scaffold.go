@@ -13,6 +13,7 @@ import (
 	"slices"
 
 	"github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/build"
+	ictx "github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/context"
 	"gopkg.in/yaml.v3"
 )
 
@@ -93,8 +94,8 @@ func (o *Orchestrator) Scaffold(targetDir, orchestratorRoot string) error {
 		return fmt.Errorf("creating cobbler directory: %w", err)
 	}
 	contextFiles := map[string]string{
-		"measure_context.yaml": defaultMeasureContext,
-		"stitch_context.yaml":  defaultStitchContext,
+		"measure_context.yaml": ictx.DefaultMeasureContext,
+		"stitch_context.yaml":  ictx.DefaultStitchContext,
 	}
 	for _, name := range slices.Sorted(maps.Keys(contextFiles)) {
 		p := filepath.Join(cobblerDir, name)

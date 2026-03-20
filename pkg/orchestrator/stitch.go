@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/claude"
+	ictx "github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/context"
 	"github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/generate"
 	gh "github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/github"
 	"gopkg.in/yaml.v3"
@@ -426,7 +427,7 @@ func (o *Orchestrator) doOneTask(task stitchTask, baseBranch, repoRoot string) e
 }
 
 func (o *Orchestrator) buildStitchPrompt(task stitchTask) (string, error) {
-	tmpl, err := parsePromptTemplate(orDefault(o.cfg.Cobbler.StitchPrompt, defaultStitchPrompt))
+	tmpl, err := ictx.ParsePromptTemplate(orDefault(o.cfg.Cobbler.StitchPrompt, defaultStitchPrompt))
 	if err != nil {
 		return "", fmt.Errorf("stitch prompt YAML: %w", err)
 	}
@@ -436,7 +437,7 @@ func (o *Orchestrator) buildStitchPrompt(task stitchTask) (string, error) {
 
 	// Load per-phase context file (prd003 R9.9).
 	stitchCtxPath := filepath.Join(o.cfg.Cobbler.Dir, "stitch_context.yaml")
-	phaseCtx, phaseErr := loadPhaseContext(stitchCtxPath)
+	phaseCtx, phaseErr := ictx.LoadPhaseContext(stitchCtxPath)
 	if phaseErr != nil {
 		return "", fmt.Errorf("loading stitch context: %w", phaseErr)
 	}
@@ -503,14 +504,14 @@ func (o *Orchestrator) buildStitchPrompt(task stitchTask) (string, error) {
 		requiredReading := parseRequiredReading(task.Description)
 		var sourcePaths []string
 		for _, entry := range requiredReading {
-			clean := stripParenthetical(entry)
+			clean := ictx.StripParenthetical(entry)
 			if strings.HasSuffix(clean, ".go") {
 				sourcePaths = append(sourcePaths, clean)
 			}
 		}
 		if len(sourcePaths) > 0 {
 			before := len(projectCtx.SourceCode)
-			projectCtx.SourceCode = filterSourceFiles(projectCtx.SourceCode, sourcePaths)
+			projectCtx.SourceCode = ictx.FilterSourceFiles(projectCtx.SourceCode, sourcePaths)
 			logf("buildStitchPrompt: filtered source files %d -> %d (required_reading has %d source paths)",
 				before, len(projectCtx.SourceCode), len(sourcePaths))
 		} else {
@@ -519,7 +520,7 @@ func (o *Orchestrator) buildStitchPrompt(task stitchTask) (string, error) {
 		}
 
 		// Context budget enforcement.
-		applyContextBudget(projectCtx, o.cfg.Cobbler.MaxContextBytes, sourcePaths)
+		ictx.ApplyContextBudget(projectCtx, o.cfg.Cobbler.MaxContextBytes, sourcePaths)
 	}
 
 	taskContext := fmt.Sprintf("Task ID: %s\nType: %s\nTitle: %s",
@@ -528,7 +529,7 @@ func (o *Orchestrator) buildStitchPrompt(task stitchTask) (string, error) {
 	repoFiles := defaultGitOps.LsFiles(task.WorktreeDir)
 
 	// Load OOD context.
-	oodContracts, oodProtocols := loadOODPromptContext()
+	oodContracts, oodProtocols := ictx.LoadOODPromptContext()
 	if len(oodProtocols) > 0 {
 		logf("buildStitchPrompt: injecting %d shared_protocols", len(oodProtocols))
 	}
@@ -537,7 +538,7 @@ func (o *Orchestrator) buildStitchPrompt(task stitchTask) (string, error) {
 	}
 
 	// Load semantic model from PRD (informational context for stitch).
-	semanticModel := loadPRDSemanticModel()
+	semanticModel := ictx.LoadPRDSemanticModel()
 	if semanticModel != nil {
 		logf("buildStitchPrompt: injecting semantic_model from PRD")
 	}
@@ -547,8 +548,8 @@ func (o *Orchestrator) buildStitchPrompt(task stitchTask) (string, error) {
 		RepositoryFiles:       repoFiles,
 		ProjectContext:        projectCtx,
 		Context:               taskContext,
-		ExecutionConstitution: parseYAMLNode(executionConst),
-		GoStyleConstitution:   parseYAMLNode(goStyleConst),
+		ExecutionConstitution: ictx.ParseYAMLNode(executionConst),
+		GoStyleConstitution:   ictx.ParseYAMLNode(goStyleConst),
 		Task:                  tmpl.Task,
 		Constraints:           tmpl.Constraints,
 		Description:           task.Description,

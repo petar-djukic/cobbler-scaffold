@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	ictx "github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/context"
 	gh "github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/github"
 )
 
@@ -24,7 +25,7 @@ func TestIssuesContextJSON_ParseableByParseIssuesJSON(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	// Verify the output is parseable by parseIssuesJSON (the function that was broken).
-	parsed := parseIssuesJSON(jsonStr)
+	parsed := ictx.ParseIssuesJSON(jsonStr)
 	if len(parsed) != 1 {
 		t.Fatalf("parseIssuesJSON returned %d issues, want 1; input: %s", len(parsed), jsonStr)
 	}
