@@ -168,6 +168,7 @@ components:
       - Tag lifecycle events on git
       - Re-seed template files at start and reset (skipped in library mode)
       - "Library mode: preserve Go source files when preserve_sources is true (prd002 R10)"
+      - Stop cleanly when only cobbler-skipped tasks remain (GH-1699)
     references:
       - prd002-generation-lifecycle
 
@@ -181,6 +182,7 @@ components:
       - Build measure prompt from MeasurePromptDoc with full ProjectContext
       - Parse Claude YAML output into task list
       - Create GitHub Issues for proposed tasks with dependency labels
+      - Reject proposed tasks for out-of-scope releases (hard filter, GH-1703)
       - Save history artifacts per iteration
     references:
       - prd003-cobbler-workflows
@@ -198,6 +200,7 @@ components:
       - Commit worktree changes and merge task branch
       - Record metrics and save history artifacts per task
       - Recover stale tasks on resume
+      - Skip tasks that exceed the retry limit (cobbler-skipped label) instead of halting the generation (GH-1699)
       - Sweep open tasks after each close, auto-closing any whose R-items are already complete (GH-1647)
     references:
       - prd003-cobbler-workflows
@@ -264,7 +267,7 @@ components:
       - "Create cobbler issues with YAML front-matter (generation, index, dependency) and [measure] title prefix"
       - List open issues filtered by generation label via REST API
       - Promote unblocked issues to cobbler-ready based on dependency DAG
-      - Pick lowest-numbered ready issue and mark in-progress
+      - Pick lowest-numbered ready issue and mark in-progress (excludes cobbler-skipped issues)
       - Close issues and re-promote dependents
       - Garbage-collect stale generation issues in a single bulk API call
       - Close orphaned measuring placeholders with an explanatory comment on Claude failure (GH-747)
@@ -588,8 +591,8 @@ design_decisions:
     decision: |
       We use GitHub Issues as the task tracker. Each generation's tasks are GitHub issues
       labelled with a generation-specific label (cobbler-gen-{branch}). Status is encoded
-      as additional labels (cobbler-ready, cobbler-in-progress). The gh CLI manages all
-      issue operations via the GitHub REST API.
+      as additional labels (cobbler-ready, cobbler-in-progress, cobbler-skipped). The gh CLI
+      manages all issue operations via the GitHub REST API.
     benefits:
       - Task state is visible on the GitHub issue page without any local tooling
       - No external binary dependency beyond gh, which is standard in GitHub workflows
@@ -727,8 +730,6 @@ project_structure:
     role: ProjectContext assembly from docs, specs, source code
   - path: pkg/orchestrator/tag.go
     role: Versioned doc-release tagging
-  - path: pkg/orchestrator/version.go
-    role: Version constant read/write
   - path: pkg/orchestrator/build.go
     role: Go build, lint, test, install, credential extraction
   - path: pkg/orchestrator/vscode.go
@@ -738,7 +739,7 @@ project_structure:
   - path: pkg/orchestrator/constitution_md.go
     role: Constitution YAML to markdown conversion and ConstitutionPreviewFile helper
   - path: pkg/orchestrator/prompt.go
-    role: Prompt document types (MeasurePromptDoc, StitchPromptDoc), template parsing, placeholder substitution
+    role: Prompt document type aliases (MeasurePromptDoc, StitchPromptDoc) re-exported from internal/context
   - path: pkg/orchestrator/codestatus.go
     role: Code implementation status — scan tests/ for use-case test directories, compare roadmap spec status with test file presence, detect spec-vs-code gaps
   - path: pkg/orchestrator/compare.go
