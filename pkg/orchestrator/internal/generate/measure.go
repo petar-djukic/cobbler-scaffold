@@ -426,10 +426,12 @@ type RoadmapRelease struct {
 }
 
 // UCStatusDone returns true when the status string indicates a completed
-// use case or release ("implemented", "done", or "closed").
+// use case or release. Recognized statuses: "implemented", "done", "closed",
+// "code_complete", "released" (GH-1703).
 func UCStatusDone(status string) bool {
 	s := strings.ToLower(status)
-	return s == "implemented" || s == "done" || s == "closed"
+	return s == "implemented" || s == "done" || s == "closed" ||
+		s == "code_complete" || s == "released"
 }
 
 // FilterImplementedReleases returns a copy of releases with any entry whose
@@ -485,4 +487,37 @@ func FilterImplementedRelease(release string) string {
 		}
 	}
 	return release
+}
+
+// reRelease matches release patterns like "rel01.0" or "rel02.1" in text.
+var reRelease = regexp.MustCompile(`rel(\d{2}\.\d)`)
+
+// ExtractReleaseFromText returns the release version (e.g. "05.5") from text
+// containing a pattern like "rel05.5". Returns "" if no release is found.
+func ExtractReleaseFromText(text string) string {
+	m := reRelease.FindStringSubmatch(text)
+	if m == nil {
+		return ""
+	}
+	return m[1]
+}
+
+// IsOutOfScopeRelease returns true if the proposed task references a release
+// that is not in the active releases list (GH-1703). When activeReleases is
+// empty, no filtering is applied. The release is extracted from the task's
+// title and description using the "relNN.N" pattern.
+func IsOutOfScopeRelease(title, description string, activeReleases []string) bool {
+	if len(activeReleases) == 0 {
+		return false
+	}
+	rel := ExtractReleaseFromText(title + " " + description)
+	if rel == "" {
+		return false // cannot determine release — allow it
+	}
+	for _, r := range activeReleases {
+		if r == rel {
+			return false
+		}
+	}
+	return true
 }

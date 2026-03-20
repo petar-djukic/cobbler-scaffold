@@ -14,6 +14,7 @@ import (
 	an "github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/analysis"
 	"github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/claude"
 	ictx "github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/context"
+	"github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/generate"
 	gh "github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/github"
 	"gopkg.in/yaml.v3"
 )
@@ -625,6 +626,23 @@ func (o *Orchestrator) importIssuesImpl(yamlFile, repo, generation string, skipE
 		existingTitles[norm] = issue.Index
 	}
 	issues = filtered
+
+	// Hard-filter proposals for out-of-scope releases (GH-1703).
+	// The prompt constraint instructs Claude to stay in scope, but this
+	// filter rejects any proposals that slip through anyway.
+	activeReleases := filterImplementedReleases(o.cfg.Project.Releases)
+	if len(activeReleases) > 0 {
+		var scoped []proposedIssue
+		for _, issue := range issues {
+			if generate.IsOutOfScopeRelease(issue.Title, issue.Description, activeReleases) {
+				rel := generate.ExtractReleaseFromText(issue.Title + " " + issue.Description)
+				logf("importIssues: rejecting out-of-scope task %q (release %s not in %v)", issue.Title, rel, activeReleases)
+				continue
+			}
+			scoped = append(scoped, issue)
+		}
+		issues = scoped
+	}
 
 	// Create all issues on GitHub as separate stitch tasks (GH-1367).
 	// The measure placeholder remains a distinct [measure] issue.
