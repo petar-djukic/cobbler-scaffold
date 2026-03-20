@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"strings"
 	"testing"
+
+	rel "github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/release"
 )
 
 // setupTagRepo creates a temp git repo with an initial commit and the given
@@ -52,17 +54,17 @@ func setupTagRepo(t *testing.T, tags []string) string {
 func TestNextDocRevision_DefaultPrefix(t *testing.T) {
 	// With no matching tags in the repo for a far-future date, revision is 0.
 	// Use a date unlikely to have real tags.
-	rev := nextDocRevision("v0.", "29991231")
+	rev := rel.NextDocRevision("v0.", "29991231")
 	if rev != 0 {
-		t.Errorf("nextDocRevision(\"v0.\", \"29991231\") = %d, want 0", rev)
+		t.Errorf("rel.NextDocRevision(\"v0.\", \"29991231\") = %d, want 0", rev)
 	}
 }
 
 func TestNextDocRevision_CustomPrefix(t *testing.T) {
 	// With no matching tags for a custom prefix + far-future date, revision is 0.
-	rev := nextDocRevision("myproj.", "29991231")
+	rev := rel.NextDocRevision("myproj.", "29991231")
 	if rev != 0 {
-		t.Errorf("nextDocRevision(\"myproj.\", \"29991231\") = %d, want 0", rev)
+		t.Errorf("rel.NextDocRevision(\"myproj.\", \"29991231\") = %d, want 0", rev)
 	}
 }
 
@@ -71,7 +73,7 @@ func TestNextDocRevision_CustomPrefix(t *testing.T) {
 func TestNextDocRevision_SameDate_Increments(t *testing.T) {
 	// Not parallel: uses os.Chdir.
 	setupTagRepo(t, []string{"v0.29991231.0"})
-	rev := nextDocRevision("v0.", "29991231")
+	rev := rel.NextDocRevision("v0.", "29991231")
 	if rev != 1 {
 		t.Errorf("nextDocRevision with existing .0 tag: got %d, want 1", rev)
 	}
@@ -80,7 +82,7 @@ func TestNextDocRevision_SameDate_Increments(t *testing.T) {
 func TestNextDocRevision_SameDate_MultipleRevisions(t *testing.T) {
 	// Not parallel: uses os.Chdir.
 	setupTagRepo(t, []string{"v0.29991231.0", "v0.29991231.3", "v0.29991231.1"})
-	rev := nextDocRevision("v0.", "29991231")
+	rev := rel.NextDocRevision("v0.", "29991231")
 	if rev != 4 {
 		t.Errorf("nextDocRevision with .0/.1/.3 tags: got %d, want 4", rev)
 	}
@@ -90,7 +92,7 @@ func TestNextDocRevision_DifferentDate_ReturnsZero(t *testing.T) {
 	// Not parallel: uses os.Chdir.
 	// Tags for date 29991230 must not affect revision for 29991231.
 	setupTagRepo(t, []string{"v0.29991230.0", "v0.29991230.5"})
-	rev := nextDocRevision("v0.", "29991231")
+	rev := rel.NextDocRevision("v0.", "29991231")
 	if rev != 0 {
 		t.Errorf("nextDocRevision with tags for different date: got %d, want 0", rev)
 	}
@@ -101,7 +103,7 @@ func TestNextDocRevision_MalformedRevision_ReturnsZero(t *testing.T) {
 	// A tag that matches the glob but has a non-numeric revision should be skipped;
 	// with no valid revisions found, nextDocRevision returns 0.
 	setupTagRepo(t, []string{"v0.29991231.xyz"})
-	rev := nextDocRevision("v0.", "29991231")
+	rev := rel.NextDocRevision("v0.", "29991231")
 	if rev != 0 {
 		t.Errorf("nextDocRevision with malformed tag revision: got %d, want 0", rev)
 	}
@@ -110,7 +112,7 @@ func TestNextDocRevision_MalformedRevision_ReturnsZero(t *testing.T) {
 func TestNextDocRevision_CustomPrefix_Increments(t *testing.T) {
 	// Not parallel: uses os.Chdir.
 	setupTagRepo(t, []string{"docs.29991231.0", "docs.29991231.2"})
-	rev := nextDocRevision("docs.", "29991231")
+	rev := rel.NextDocRevision("docs.", "29991231")
 	if rev != 3 {
 		t.Errorf("nextDocRevision with custom prefix: got %d, want 3", rev)
 	}

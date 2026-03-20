@@ -23,26 +23,6 @@ type TestResult = compare.TestResult
 // BinaryResolver is re-exported from the internal compare package.
 type BinaryResolver = compare.BinaryResolver
 
-// LoadCompareTestCases delegates to the internal compare package.
-func LoadCompareTestCases(specsDir string) ([]CompareTestCase, error) {
-	return compare.LoadCompareTestCases(specsDir)
-}
-
-// FilterByUtility delegates to the internal compare package.
-func FilterByUtility(cases []CompareTestCase, utility string) []CompareTestCase {
-	return compare.FilterByUtility(cases, utility)
-}
-
-// CompareUtility delegates to the internal compare package.
-func CompareUtility(binA, binB string, cases []CompareTestCase) []TestResult {
-	return compare.CompareUtility(binA, binB, cases)
-}
-
-// FormatResults delegates to the internal compare package.
-func FormatResults(results []TestResult) string {
-	return compare.FormatResults(results)
-}
-
 // ResolverFromArg delegates to the internal compare package.
 func ResolverFromArg(arg string) BinaryResolver {
 	deps := compare.Deps{

@@ -24,7 +24,3 @@ func (o *Orchestrator) Tag() error {
 	})
 }
 
-// nextDocRevision delegates to the internal/release package.
-func nextDocRevision(prefix, date string) int {
-	return rel.NextDocRevision(prefix, date)
-}
