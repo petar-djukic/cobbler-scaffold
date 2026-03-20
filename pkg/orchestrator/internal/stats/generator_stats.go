@@ -223,7 +223,7 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 	var totalStitchDurS int
 	var totalTurns, totalLocProd, totalLocTest, totalReqs int
 	var totalInputTokens, totalOutputTokens int
-	var nDone, nFailed, nInProgress, nPending int
+	var nDone, nFailed, nSkipped, nInProgress, nPending int
 	prdStatus := make(map[string]string) // prd name → highest-priority status
 	prdReleaseMap := BuildPRDReleaseMap()
 	seen := make(map[string]bool) // track task IDs already added
@@ -267,6 +267,8 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 				s.Status = "done"
 			case ghIss.State == "closed":
 				s.Status = "failed"
+			case gh.HasLabel(ghIss, gh.LabelSkipped):
+				s.Status = "skipped"
 			case gh.HasLabel(ghIss, gh.LabelInProgress):
 				s.Status = "in-progress"
 			case ghIss.State == "open":
@@ -279,6 +281,8 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 			nDone++
 		case "failed":
 			nFailed++
+		case "skipped":
+			nSkipped++
 		case "in-progress":
 			nInProgress++
 		default:
@@ -338,6 +342,9 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 		case ghIss.State == "closed":
 			s.Status = "failed"
 			nFailed++
+		case gh.HasLabel(ghIss, gh.LabelSkipped):
+			s.Status = "skipped"
+			nSkipped++
 		case gh.HasLabel(ghIss, gh.LabelInProgress):
 			s.Status = "in-progress"
 			nInProgress++
@@ -394,6 +401,9 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 	fmt.Printf("Tasks: %d done, %d in-progress, %d pending", nDone, nInProgress, nPending)
 	if nFailed > 0 {
 		fmt.Printf(", %d failed", nFailed)
+	}
+	if nSkipped > 0 {
+		fmt.Printf(", %d skipped", nSkipped)
 	}
 	fmt.Println()
 	fmt.Printf("Total cost: $%.2f", totalCost)

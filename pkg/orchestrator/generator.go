@@ -480,6 +480,13 @@ func (o *Orchestrator) RunCycles(label string) error {
 			logf("generator %s: cycle %d — auto-advanced release %s", label, cycle, ver)
 		}
 
+		// If the only remaining open issues are skipped, stop the generation
+		// immediately rather than wasting cycles (GH-1699).
+		if onlySkipped, skippedErr := o.hasOnlySkippedIssues(); skippedErr == nil && onlySkipped {
+			logf("generator %s: cycle %d — only skipped tasks remain, stopping", label, cycle)
+			break
+		}
+
 		// Skip measure if open issues remain — stitch should drain them first (GH-1352).
 		if openBefore, err := o.hasOpenIssues(); err == nil && openBefore {
 			logf("generator %s: cycle %d — skipping measure, open issues remain", label, cycle)

@@ -153,10 +153,12 @@ func (o *Orchestrator) RunStitchN(limit int) (int, error) {
 				count := failedTaskCounts[task.ID]
 				logf("task %s was reset after %s (failure %d/%d)", task.ID, time.Since(taskStart).Round(time.Second), count, maxFailures)
 
-				// Close the task as permanently failed once the limit is reached.
+				// Skip the task once it exceeds the retry limit (GH-1699).
+				// Label it cobbler-skipped so pickReadyIssue excludes it, and
+				// continue to the next task instead of halting the generation.
 				if maxFailures > 0 && count >= maxFailures {
-					logf("task %s reached max failures (%d), closing as permanently failed", task.ID, maxFailures)
-					o.closeTaskAsFailed(task, count)
+					logf("task %s reached max failures (%d), marking as skipped", task.ID, maxFailures)
+					o.skipTask(task, count)
 				}
 
 				// Back off before the next iteration to reduce API pressure.
@@ -674,14 +676,25 @@ func (o *Orchestrator) resetTask(task stitchTask, reason string) {
 // closeTaskAsFailed closes a task as permanently failed after exceeding the
 // maximum failure count. Posts a comment and closes the issue so measure can
 // create a replacement if needed (GH-1562).
-func (o *Orchestrator) closeTaskAsFailed(task stitchTask, failureCount int) {
+// skipTask labels a task as cobbler-skipped after it exceeds the retry limit
+// (GH-1699). The task remains open but is excluded from future pickReadyIssue
+// calls. The generation continues with the next available task.
+func (o *Orchestrator) skipTask(task stitchTask, failureCount int) {
 	comment := fmt.Sprintf(
-		"Stitch abandoned after %d consecutive failures. Closing as permanently failed (GH-1562).",
+		"Stitch skipped after %d consecutive failures. Task labeled cobbler-skipped and excluded from future picks (GH-1699).",
 		failureCount,
 	)
 	defaultGhTracker.CommentCobblerIssue(task.Repo, task.GhNumber, comment)
-	if err := defaultGhTracker.CloseCobblerIssue(task.Repo, task.GhNumber, task.Generation); err != nil {
-		logf("closeTaskAsFailed: warning closing #%d: %v", task.GhNumber, err)
+
+	// Remove in-progress and ready labels, add skipped label.
+	if err := defaultGhTracker.RemoveIssueLabel(task.Repo, task.GhNumber, gh.LabelInProgress); err != nil {
+		logf("skipTask: remove in-progress label from #%d: %v", task.GhNumber, err)
+	}
+	if err := defaultGhTracker.RemoveIssueLabel(task.Repo, task.GhNumber, gh.LabelReady); err != nil {
+		logf("skipTask: remove ready label from #%d: %v", task.GhNumber, err)
+	}
+	if err := defaultGhTracker.AddIssueLabel(task.Repo, task.GhNumber, gh.LabelSkipped); err != nil {
+		logf("skipTask: add skipped label to #%d: %v", task.GhNumber, err)
 	}
 }
 

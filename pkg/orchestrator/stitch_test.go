@@ -102,9 +102,9 @@ func TestFailedTaskCounts_IncrementsOnRepeatedFailure(t *testing.T) {
 	}
 }
 
-// TestCloseTaskAsFailed_PostsCommentAndCloses verifies that closeTaskAsFailed
-// does not panic with a fake repo (GitHub errors are logged, not fatal).
-func TestCloseTaskAsFailed_NoOp(t *testing.T) {
+// TestSkipTask_PostsCommentAndLabels verifies that skipTask does not panic
+// with a fake repo (GitHub errors are logged, not fatal).
+func TestSkipTask_NoOp(t *testing.T) {
 	t.Parallel()
 	o := New(Config{})
 	task := stitchTask{
@@ -114,7 +114,7 @@ func TestCloseTaskAsFailed_NoOp(t *testing.T) {
 		Repo:       "fake/repo",
 		Generation: "test-gen",
 	}
-	o.closeTaskAsFailed(task, 3) // must not panic
+	o.skipTask(task, 3) // must not panic
 }
 
 // TestStitchSleep_DefaultIsTimeSleep verifies the default stitchSleep is

@@ -8,6 +8,7 @@ import (
 	"os/exec"
 
 	"github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/claude"
+	gh "github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/github"
 )
 
 // ---------------------------------------------------------------------------
@@ -141,6 +142,33 @@ func (o *Orchestrator) hasOpenIssues() (bool, error) {
 			return len(issues), err
 		},
 	})
+}
+
+// hasOnlySkippedIssues returns true when there are open cobbler issues but
+// every one of them carries the cobbler-skipped label (GH-1699). This lets
+// the generator stop cleanly instead of looping on tasks that cannot succeed.
+func (o *Orchestrator) hasOnlySkippedIssues() (bool, error) {
+	repo, err := ghTrackerWithCfg(o.cfg).DetectGitHubRepo(".")
+	if err != nil {
+		return false, err
+	}
+	generation, err := defaultGitOps.CurrentBranch(".")
+	if err != nil {
+		return false, err
+	}
+	issues, err := defaultGhTracker.ListOpenCobblerIssues(repo, generation)
+	if err != nil {
+		return false, err
+	}
+	if len(issues) == 0 {
+		return false, nil // no open issues at all
+	}
+	for _, iss := range issues {
+		if !gh.HasLabel(iss, gh.LabelSkipped) {
+			return false, nil // at least one non-skipped issue
+		}
+	}
+	return true, nil
 }
 
 // HistoryClean removes the history subdirectory.

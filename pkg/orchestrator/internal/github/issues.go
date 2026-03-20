@@ -156,6 +156,7 @@ type ContextIssue struct {
 const (
 	LabelReady      = "cobbler-ready"
 	LabelInProgress = "cobbler-in-progress"
+	LabelSkipped    = "cobbler-skipped"
 )
 
 // GenLabelPrefix is the prefix for generation-scoped labels.
@@ -426,6 +427,7 @@ func (t *GitHubTracker) EnsureCobblerLabels(repo string) error {
 	}{
 		{LabelReady, "0075ca", "Cobbler task ready to be picked by stitch"},
 		{LabelInProgress, "e4e669", "Cobbler task currently being worked on"},
+		{LabelSkipped, "d93f0b", "Cobbler task skipped after exceeding retry limit"},
 	}
 
 	for _, l := range labels {
@@ -778,9 +780,10 @@ func (t *GitHubTracker) PickReadyIssue(repo, generation string) (CobblerIssue, e
 	}
 
 	// Filter to ready issues and sort by number ascending.
+	// Exclude skipped issues (GH-1699) — they exceeded their retry limit.
 	var ready []CobblerIssue
 	for _, iss := range issues {
-		if HasLabel(iss, LabelReady) && !HasLabel(iss, LabelInProgress) {
+		if HasLabel(iss, LabelReady) && !HasLabel(iss, LabelInProgress) && !HasLabel(iss, LabelSkipped) {
 			ready = append(ready, iss)
 		}
 	}
