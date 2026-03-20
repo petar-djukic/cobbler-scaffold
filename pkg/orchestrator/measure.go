@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	an "github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/analysis"
 	"github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/claude"
 	ictx "github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/context"
 	gh "github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/github"
@@ -126,7 +127,7 @@ func (o *Orchestrator) RunMeasure() error {
 	}
 
 	// Route target-repo defects to the target repo (prd003 R11).
-	if analysis := loadAnalysisDoc(o.cfg.Cobbler.Dir); analysis != nil && len(analysis.Defects) > 0 {
+	if analysis := an.LoadAnalysisDoc(o.cfg.Cobbler.Dir); analysis != nil && len(analysis.Defects) > 0 {
 		if targetRepo := ghTrackerWithCfg(o.cfg).ResolveTargetRepo(); targetRepo != "" {
 			logf("measure: filing %d defect(s) as bug issues in %s", len(analysis.Defects), targetRepo)
 			defaultGhTracker.FileTargetRepoDefects(targetRepo, analysis.Defects)

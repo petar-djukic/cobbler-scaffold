@@ -168,7 +168,7 @@ func TestAnalysisDocDefectsRoundTrip(t *testing.T) {
 		t.Fatalf("writeAnalysisDoc: %v", err)
 	}
 
-	loaded := loadAnalysisDoc(dir)
+	loaded := an.LoadAnalysisDoc(dir)
 	if loaded == nil {
 		t.Fatal("loadAnalysisDoc returned nil")
 	}
@@ -213,7 +213,7 @@ func TestWriteAndLoadAnalysisDoc(t *testing.T) {
 	}
 
 	// Load it back.
-	loaded := loadAnalysisDoc(dir)
+	loaded := an.LoadAnalysisDoc(dir)
 	if loaded == nil {
 		t.Fatal("loadAnalysisDoc returned nil")
 	}
@@ -253,7 +253,7 @@ func TestWriteAnalysisDoc_EmptyDoc(t *testing.T) {
 		t.Fatalf("writeAnalysisDoc: %v", err)
 	}
 
-	loaded := loadAnalysisDoc(dir)
+	loaded := an.LoadAnalysisDoc(dir)
 	if loaded == nil {
 		t.Fatal("loadAnalysisDoc returned nil")
 	}
@@ -267,7 +267,7 @@ func TestWriteAnalysisDoc_EmptyDoc(t *testing.T) {
 
 func TestLoadAnalysisDoc_NoFile(t *testing.T) {
 	dir := t.TempDir()
-	loaded := loadAnalysisDoc(dir)
+	loaded := an.LoadAnalysisDoc(dir)
 	if loaded != nil {
 		t.Errorf("expected nil for missing file, got %+v", loaded)
 	}
@@ -278,7 +278,7 @@ func TestLoadAnalysisDoc_InvalidYAML(t *testing.T) {
 	path := filepath.Join(dir, an.AnalysisFileName)
 	os.WriteFile(path, []byte("{{invalid yaml"), 0o644)
 
-	loaded := loadAnalysisDoc(dir)
+	loaded := an.LoadAnalysisDoc(dir)
 	if loaded != nil {
 		t.Errorf("expected nil for invalid YAML, got %+v", loaded)
 	}

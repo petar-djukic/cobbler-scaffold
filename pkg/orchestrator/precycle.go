@@ -27,8 +27,3 @@ func (o *Orchestrator) RunPreCycleAnalysis() {
 	})
 }
 
-// loadAnalysisDoc loads an AnalysisDoc from {cobblerDir}/analysis.yaml.
-// Returns nil if the file does not exist or cannot be parsed.
-func loadAnalysisDoc(cobblerDir string) *AnalysisDoc {
-	return an.LoadAnalysisDoc(cobblerDir)
-}

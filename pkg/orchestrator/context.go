@@ -4,6 +4,7 @@
 package orchestrator
 
 import (
+	an "github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/analysis"
 	ctx "github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/context"
 )
 
@@ -15,7 +16,7 @@ import (
 func init() {
 	ctx.Log = logf
 	ctx.LoadAnalysisDocFn = func(dir string) any {
-		return loadAnalysisDoc(dir)
+		return an.LoadAnalysisDoc(dir)
 	}
 }
 
