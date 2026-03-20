@@ -41,7 +41,3 @@ func (o *Orchestrator) enumerateContextFiles() []st.FileTokenStat {
 	return files
 }
 
-// sortedKeys delegates to the internal/stats package.
-func sortedKeys(m map[string]int) []string {
-	return st.SortedKeys(m)
-}

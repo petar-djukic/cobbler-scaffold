@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	st "github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/stats"
 )
 
 func TestBuildReleaseRows(t *testing.T) {
@@ -108,7 +110,7 @@ out_of_scope: []
 	t.Cleanup(func() { os.Chdir(orig) })
 	os.Chdir(dir)
 
-	rows, err := buildReleaseRows()
+	rows, err := st.BuildReleaseRows()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -157,7 +159,7 @@ func TestBuildReleaseRows_NoRoadmap(t *testing.T) {
 	t.Cleanup(func() { os.Chdir(orig) })
 	os.Chdir(dir)
 
-	rows, err := buildReleaseRows()
+	rows, err := st.BuildReleaseRows()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -179,8 +181,8 @@ func TestReleaseAllUCsDone(t *testing.T) {
 		{[]string{"implemented"}, true},
 	}
 	for _, tc := range tests {
-		if got := releaseAllUCsDone(tc.statuses); got != tc.want {
-			t.Errorf("releaseAllUCsDone(%v) = %v, want %v", tc.statuses, got, tc.want)
+		if got := st.ReleaseAllUCsDone(tc.statuses); got != tc.want {
+			t.Errorf("st.ReleaseAllUCsDone(%v) = %v, want %v", tc.statuses, got, tc.want)
 		}
 	}
 }
@@ -197,8 +199,8 @@ func TestReleaseAnyUCDone(t *testing.T) {
 		{[]string{"implemented"}, true},
 	}
 	for _, tc := range tests {
-		if got := releaseAnyUCDone(tc.statuses); got != tc.want {
-			t.Errorf("releaseAnyUCDone(%v) = %v, want %v", tc.statuses, got, tc.want)
+		if got := st.ReleaseAnyUCDone(tc.statuses); got != tc.want {
+			t.Errorf("st.ReleaseAnyUCDone(%v) = %v, want %v", tc.statuses, got, tc.want)
 		}
 	}
 }
@@ -289,7 +291,7 @@ out_of_scope: []
 	t.Cleanup(func() { os.Chdir(orig) })
 	os.Chdir(dir)
 
-	rows, err := buildReleaseRows()
+	rows, err := st.BuildReleaseRows()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

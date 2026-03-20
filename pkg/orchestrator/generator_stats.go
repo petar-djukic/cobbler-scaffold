@@ -11,12 +11,6 @@ import (
 	st "github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/stats"
 )
 
-// generatorIssueStats type alias for backward compatibility.
-type generatorIssueStats = st.GeneratorIssueStats
-
-// stitchCommentData type alias for backward compatibility.
-type stitchCommentData = st.StitchCommentData
-
 // GeneratorStats prints a status report for the current generation run.
 func (o *Orchestrator) GeneratorStats() error {
 	currentBranch, _ := defaultGitOps.CurrentBranch(".")
@@ -39,42 +33,3 @@ func (o *Orchestrator) GeneratorStats() error {
 	})
 }
 
-// parseStitchComment delegates to the internal/stats package.
-func parseStitchComment(body string) stitchCommentData {
-	return st.ParseStitchComment(body)
-}
-
-// countTotalPRDRequirements delegates to the internal/stats package.
-func countTotalPRDRequirements() (int, map[string]int) {
-	return st.CountTotalPRDRequirements()
-}
-
-// buildPRDReleaseMap delegates to the internal/stats package.
-func buildPRDReleaseMap() map[string]string {
-	return st.BuildPRDReleaseMap()
-}
-
-// countDescriptionReqs delegates to the internal/stats package.
-func countDescriptionReqs(description string) int {
-	return st.CountDescriptionReqs(description)
-}
-
-// extractRelease delegates to the internal/stats package.
-func extractRelease(text string) string {
-	return st.ExtractRelease(text)
-}
-
-// formatTokens delegates to the internal/stats package.
-func formatTokens(n int) string {
-	return st.FormatTokens(n)
-}
-
-// formatBytes delegates to the internal/stats package.
-func formatBytes(b int) string {
-	return st.FormatBytes(b)
-}
-
-// extractPRDRefs delegates to the internal/stats package.
-func extractPRDRefs(text string) []string {
-	return st.ExtractPRDRefs(text)
-}

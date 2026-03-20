@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	st "github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/stats"
 )
 
 // contextFileEntry describes a single file included in the assembled Claude prompt.
@@ -145,6 +147,6 @@ func (o *Orchestrator) resolveContextFileEntries() []contextFileEntry {
 
 // safeCountLines calls countLines and discards the error, returning 0 on failure.
 func safeCountLines(path string) int {
-	n, _ := countLines(path)
+	n, _ := st.CountLines(path)
 	return n
 }

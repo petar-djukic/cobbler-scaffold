@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	st "github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/stats"
 )
 
 // --- CollectStats ---
@@ -90,7 +92,7 @@ func TestCountLines_MultipleLines(t *testing.T) {
 	path := filepath.Join(dir, "test.go")
 	os.WriteFile(path, []byte("line 1\nline 2\nline 3\n"), 0644)
 
-	got, err := countLines(path)
+	got, err := st.CountLines(path)
 	if err != nil {
 		t.Fatalf("countLines: %v", err)
 	}
@@ -105,12 +107,12 @@ func TestCountLines_EmptyFile(t *testing.T) {
 	path := filepath.Join(dir, "empty.go")
 	os.WriteFile(path, []byte(""), 0644)
 
-	got, err := countLines(path)
+	got, err := st.CountLines(path)
 	if err != nil {
 		t.Fatalf("countLines: %v", err)
 	}
 	if got != 0 {
-		t.Errorf("countLines(empty) = %d, want 0", got)
+		t.Errorf("st.CountLines(empty) = %d, want 0", got)
 	}
 }
 
@@ -120,20 +122,20 @@ func TestCountLines_NoTrailingNewline(t *testing.T) {
 	path := filepath.Join(dir, "noeol.go")
 	os.WriteFile(path, []byte("line 1\nline 2"), 0644)
 
-	got, err := countLines(path)
+	got, err := st.CountLines(path)
 	if err != nil {
 		t.Fatalf("countLines: %v", err)
 	}
 	if got != 2 {
-		t.Errorf("countLines(no-eol) = %d, want 2", got)
+		t.Errorf("st.CountLines(no-eol) = %d, want 2", got)
 	}
 }
 
 func TestCountLines_MissingFile(t *testing.T) {
 	t.Parallel()
-	_, err := countLines("/nonexistent/file.go")
+	_, err := st.CountLines("/nonexistent/file.go")
 	if err == nil {
-		t.Error("countLines(missing) should return error")
+		t.Error("st.CountLines(missing) should return error")
 	}
 }
 
@@ -145,7 +147,7 @@ func TestCountWordsInFile_Basic(t *testing.T) {
 	path := filepath.Join(dir, "words.txt")
 	os.WriteFile(path, []byte("hello world foo bar"), 0644)
 
-	got, err := countWordsInFile(path)
+	got, err := st.CountWordsInFile(path)
 	if err != nil {
 		t.Fatalf("countWordsInFile: %v", err)
 	}
@@ -160,12 +162,12 @@ func TestCountWordsInFile_MultipleSpaces(t *testing.T) {
 	path := filepath.Join(dir, "spaces.txt")
 	os.WriteFile(path, []byte("  hello   world  \n\n  foo  "), 0644)
 
-	got, err := countWordsInFile(path)
+	got, err := st.CountWordsInFile(path)
 	if err != nil {
 		t.Fatalf("countWordsInFile: %v", err)
 	}
 	if got != 3 {
-		t.Errorf("countWordsInFile(multi-space) = %d, want 3", got)
+		t.Errorf("st.CountWordsInFile(multi-space) = %d, want 3", got)
 	}
 }
 
@@ -175,20 +177,20 @@ func TestCountWordsInFile_Empty(t *testing.T) {
 	path := filepath.Join(dir, "empty.txt")
 	os.WriteFile(path, []byte(""), 0644)
 
-	got, err := countWordsInFile(path)
+	got, err := st.CountWordsInFile(path)
 	if err != nil {
 		t.Fatalf("countWordsInFile: %v", err)
 	}
 	if got != 0 {
-		t.Errorf("countWordsInFile(empty) = %d, want 0", got)
+		t.Errorf("st.CountWordsInFile(empty) = %d, want 0", got)
 	}
 }
 
 func TestCountWordsInFile_MissingFile(t *testing.T) {
 	t.Parallel()
-	_, err := countWordsInFile("/nonexistent/file.txt")
+	_, err := st.CountWordsInFile("/nonexistent/file.txt")
 	if err == nil {
-		t.Error("countWordsInFile(missing) should return error")
+		t.Error("st.CountWordsInFile(missing) should return error")
 	}
 }
 

@@ -8,21 +8,23 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	st "github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/stats"
 )
 
 // --- sortedKeys ---
 
 func TestSortedKeys_Empty(t *testing.T) {
 	t.Parallel()
-	got := sortedKeys(map[string]int{})
+	got := st.SortedKeys(map[string]int{})
 	if len(got) != 0 {
-		t.Errorf("sortedKeys(empty) = %v, want []", got)
+		t.Errorf("st.SortedKeys(empty) = %v, want []", got)
 	}
 }
 
 func TestSortedKeys_Sorted(t *testing.T) {
 	t.Parallel()
-	got := sortedKeys(map[string]int{"c": 3, "a": 1, "b": 2})
+	got := st.SortedKeys(map[string]int{"c": 3, "a": 1, "b": 2})
 	want := []string{"a", "b", "c"}
 	if len(got) != len(want) {
 		t.Fatalf("sortedKeys len = %d, want %d", len(got), len(want))
@@ -36,9 +38,9 @@ func TestSortedKeys_Sorted(t *testing.T) {
 
 func TestSortedKeys_SingleKey(t *testing.T) {
 	t.Parallel()
-	got := sortedKeys(map[string]int{"only": 42})
+	got := st.SortedKeys(map[string]int{"only": 42})
 	if len(got) != 1 || got[0] != "only" {
-		t.Errorf("sortedKeys(single) = %v, want [only]", got)
+		t.Errorf("st.SortedKeys(single) = %v, want [only]", got)
 	}
 }
 

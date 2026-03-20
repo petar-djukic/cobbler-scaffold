@@ -12,9 +12,6 @@ import (
 // OutcomeRecord holds parsed outcome trailer data from a single task commit.
 type OutcomeRecord = st.OutcomeRecord
 
-// outcomeSep delimits commit blocks in the git log output used by Outcomes.
-const outcomeSep = st.OutcomeSep
-
 // Outcomes scans all git branches for commits that carry outcome trailers
 // and prints a summary table to stdout.
 func (o *Orchestrator) Outcomes() error {
@@ -22,24 +19,4 @@ func (o *Orchestrator) Outcomes() error {
 		Log:    logf,
 		GitBin: binGit,
 	})
-}
-
-// parseOutcomeRecords delegates to the internal/stats package.
-func parseOutcomeRecords(logOutput string) []OutcomeRecord {
-	return st.ParseOutcomeRecords(logOutput)
-}
-
-// parseOneOutcomeBlock delegates to the internal/stats package.
-func parseOneOutcomeBlock(block string) *OutcomeRecord {
-	return st.ParseOneOutcomeBlock(block)
-}
-
-// extractBranchFromRefs delegates to the internal/stats package.
-func extractBranchFromRefs(refs string) string {
-	return st.ExtractBranchFromRefs(refs)
-}
-
-// formatDuration delegates to the internal/stats package.
-func formatDuration(seconds int) string {
-	return st.FormatDuration(seconds)
 }

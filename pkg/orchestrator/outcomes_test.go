@@ -8,13 +8,15 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	st "github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/stats"
 )
 
 // --- parseOutcomeRecords ---
 
 func TestParseOutcomeRecords_SingleRecord(t *testing.T) {
 	t.Parallel()
-	logOutput := outcomeSep + "\n" +
+	logOutput := st.OutcomeSep + "\n" +
 		"HEAD -> task/gen-main-atlas-001\n" +
 		"Tokens-Input: 45000\n" +
 		"Tokens-Output: 12000\n" +
@@ -27,7 +29,7 @@ func TestParseOutcomeRecords_SingleRecord(t *testing.T) {
 		"Loc-Test-After: 45\n" +
 		"Duration-Seconds: 1234\n"
 
-	records := parseOutcomeRecords(logOutput)
+	records := st.ParseOutcomeRecords(logOutput)
 	if len(records) != 1 {
 		t.Fatalf("got %d records, want 1", len(records))
 	}
@@ -58,10 +60,10 @@ func TestParseOutcomeRecords_SingleRecord(t *testing.T) {
 func TestParseOutcomeRecords_SkipsCommitsWithoutTokensInput(t *testing.T) {
 	t.Parallel()
 	// Block without Tokens-Input trailer should be skipped.
-	logOutput := outcomeSep + "\n" +
+	logOutput := st.OutcomeSep + "\n" +
 		"HEAD -> main\n" +
 		"Some-Other-Trailer: value\n" +
-		outcomeSep + "\n" +
+		st.OutcomeSep + "\n" +
 		"task/gen-main-atlas-002\n" +
 		"Tokens-Input: 1000\n" +
 		"Tokens-Output: 200\n" +
@@ -74,7 +76,7 @@ func TestParseOutcomeRecords_SkipsCommitsWithoutTokensInput(t *testing.T) {
 		"Loc-Test-After: 0\n" +
 		"Duration-Seconds: 60\n"
 
-	records := parseOutcomeRecords(logOutput)
+	records := st.ParseOutcomeRecords(logOutput)
 	if len(records) != 1 {
 		t.Fatalf("got %d records, want 1 (second block only)", len(records))
 	}
@@ -85,7 +87,7 @@ func TestParseOutcomeRecords_SkipsCommitsWithoutTokensInput(t *testing.T) {
 
 func TestParseOutcomeRecords_EmptyInput(t *testing.T) {
 	t.Parallel()
-	records := parseOutcomeRecords("")
+	records := st.ParseOutcomeRecords("")
 	if len(records) != 0 {
 		t.Errorf("got %d records for empty input, want 0", len(records))
 	}
@@ -106,9 +108,9 @@ func TestExtractBranchFromRefs_HeadArrow(t *testing.T) {
 		{"", ""},
 	}
 	for _, tc := range tests {
-		got := extractBranchFromRefs(tc.refs)
+		got := st.ExtractBranchFromRefs(tc.refs)
 		if got != tc.want {
-			t.Errorf("extractBranchFromRefs(%q) = %q, want %q", tc.refs, got, tc.want)
+			t.Errorf("st.ExtractBranchFromRefs(%q) = %q, want %q", tc.refs, got, tc.want)
 		}
 	}
 }
@@ -129,9 +131,9 @@ func TestFormatDuration(t *testing.T) {
 		{1234, "20m34s"},
 	}
 	for _, tc := range cases {
-		got := formatDuration(tc.seconds)
+		got := st.FormatDuration(tc.seconds)
 		if got != tc.want {
-			t.Errorf("formatDuration(%d) = %q, want %q", tc.seconds, got, tc.want)
+			t.Errorf("st.FormatDuration(%d) = %q, want %q", tc.seconds, got, tc.want)
 		}
 	}
 }

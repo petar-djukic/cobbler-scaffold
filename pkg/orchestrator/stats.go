@@ -33,12 +33,3 @@ func (o *Orchestrator) statsDeps() st.StatsDeps {
 	}
 }
 
-// countLines delegates to the internal/stats package.
-func countLines(path string) (int, error) {
-	return st.CountLines(path)
-}
-
-// countWordsInFile delegates to the internal/stats package.
-func countWordsInFile(path string) (int, error) {
-	return st.CountWordsInFile(path)
-}

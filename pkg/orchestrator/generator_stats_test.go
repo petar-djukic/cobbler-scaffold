@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	gh "github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/github"
+	st "github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/stats"
 )
 
 // --- parseStitchComment (delegation sanity check) ---
@@ -16,7 +17,7 @@ import (
 func TestParseStitchComment_Completed(t *testing.T) {
 	t.Parallel()
 	body := "Stitch completed in 5m 32s. LOC delta: +45 prod, +17 test. Cost: $0.42."
-	d := parseStitchComment(body)
+	d := st.ParseStitchComment(body)
 	if d.CostUSD != 0.42 {
 		t.Errorf("CostUSD = %v, want 0.42", d.CostUSD)
 	}
@@ -34,7 +35,7 @@ func TestParseStitchComment_Completed(t *testing.T) {
 func TestParseStitchComment_Failed(t *testing.T) {
 	t.Parallel()
 	body := "Stitch failed after 2m 10s. Error: Claude failure."
-	d := parseStitchComment(body)
+	d := st.ParseStitchComment(body)
 	if d.DurationS != 2*60+10 {
 		t.Errorf("DurationS = %d, want %d", d.DurationS, 2*60+10)
 	}
@@ -46,7 +47,7 @@ func TestParseStitchComment_Failed(t *testing.T) {
 func TestParseStitchComment_SubMinuteDuration(t *testing.T) {
 	t.Parallel()
 	body := "Stitch completed in 45s. LOC delta: +0 prod, +0 test. Cost: $0.10."
-	d := parseStitchComment(body)
+	d := st.ParseStitchComment(body)
 	if d.DurationS != 45 {
 		t.Errorf("DurationS = %d, want 45", d.DurationS)
 	}
@@ -58,7 +59,7 @@ func TestParseStitchComment_SubMinuteDuration(t *testing.T) {
 func TestParseStitchComment_WithTurns(t *testing.T) {
 	t.Parallel()
 	body := "Stitch completed in 3m 15s. LOC delta: +20 prod, +10 test. Cost: $0.55. Turns: 12."
-	d := parseStitchComment(body)
+	d := st.ParseStitchComment(body)
 	if d.NumTurns != 12 {
 		t.Errorf("NumTurns = %d, want 12", d.NumTurns)
 	}
@@ -76,7 +77,7 @@ func TestParseStitchComment_WithTurns(t *testing.T) {
 func TestParseStitchComment_NegativeLOC(t *testing.T) {
 	t.Parallel()
 	body := "Stitch completed in 1m 5s. LOC delta: -12 prod, +30 test. Cost: $0.20. Turns: 5."
-	d := parseStitchComment(body)
+	d := st.ParseStitchComment(body)
 	if d.LocDeltaProd != -12 {
 		t.Errorf("LocDeltaProd = %d, want -12", d.LocDeltaProd)
 	}
@@ -87,7 +88,7 @@ func TestParseStitchComment_NegativeLOC(t *testing.T) {
 
 func TestParseStitchComment_NoMatch(t *testing.T) {
 	t.Parallel()
-	d := parseStitchComment("unrelated comment text")
+	d := st.ParseStitchComment("unrelated comment text")
 	if d.CostUSD != 0 || d.DurationS != 0 || d.NumTurns != 0 {
 		t.Errorf("expected zero values, got cost=%v dur=%d turns=%d", d.CostUSD, d.DurationS, d.NumTurns)
 	}
@@ -96,7 +97,7 @@ func TestParseStitchComment_NoMatch(t *testing.T) {
 func TestParseStitchComment_PromptBytes(t *testing.T) {
 	t.Parallel()
 	body := "Stitch started. Branch: `generation-main`, prompt: 524288 bytes."
-	d := parseStitchComment(body)
+	d := st.ParseStitchComment(body)
 	if d.PromptBytes != 524288 {
 		t.Errorf("PromptBytes = %d, want 524288", d.PromptBytes)
 	}
@@ -105,7 +106,7 @@ func TestParseStitchComment_PromptBytes(t *testing.T) {
 func TestParseStitchComment_PromptBytes_NoMatch(t *testing.T) {
 	t.Parallel()
 	body := "Stitch completed in 5m 32s. LOC delta: +45 prod, +17 test. Cost: $0.42."
-	d := parseStitchComment(body)
+	d := st.ParseStitchComment(body)
 	if d.PromptBytes != 0 {
 		t.Errorf("PromptBytes = %d, want 0", d.PromptBytes)
 	}
@@ -114,7 +115,7 @@ func TestParseStitchComment_PromptBytes_NoMatch(t *testing.T) {
 func TestParseStitchComment_Tokens(t *testing.T) {
 	t.Parallel()
 	body := "Stitch completed in 3m 15s. LOC delta: +20 prod, +10 test. Cost: $0.55. Turns: 12. Tokens: 125000in 5000out."
-	d := parseStitchComment(body)
+	d := st.ParseStitchComment(body)
 	if d.InputTokens != 125000 {
 		t.Errorf("InputTokens = %d, want 125000", d.InputTokens)
 	}
@@ -126,7 +127,7 @@ func TestParseStitchComment_Tokens(t *testing.T) {
 func TestParseStitchComment_Tokens_NoMatch(t *testing.T) {
 	t.Parallel()
 	body := "Stitch completed in 5m 32s. LOC delta: +45 prod, +17 test. Cost: $0.42."
-	d := parseStitchComment(body)
+	d := st.ParseStitchComment(body)
 	if d.InputTokens != 0 {
 		t.Errorf("InputTokens = %d, want 0", d.InputTokens)
 	}
@@ -154,9 +155,9 @@ func TestFormatBytes(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got := formatBytes(tc.bytes)
+			got := st.FormatBytes(tc.bytes)
 			if got != tc.want {
-				t.Errorf("formatBytes(%d) = %q, want %q", tc.bytes, got, tc.want)
+				t.Errorf("st.FormatBytes(%d) = %q, want %q", tc.bytes, got, tc.want)
 			}
 		})
 	}
@@ -181,9 +182,9 @@ func TestFormatTokens(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got := formatTokens(tc.tokens)
+			got := st.FormatTokens(tc.tokens)
 			if got != tc.want {
-				t.Errorf("formatTokens(%d) = %q, want %q", tc.tokens, got, tc.want)
+				t.Errorf("st.FormatTokens(%d) = %q, want %q", tc.tokens, got, tc.want)
 			}
 		})
 	}
@@ -208,9 +209,9 @@ func TestExtractRelease(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got := extractRelease(tc.text)
+			got := st.ExtractRelease(tc.text)
 			if got != tc.want {
-				t.Errorf("extractRelease(%q) = %q, want %q", tc.text, got, tc.want)
+				t.Errorf("st.ExtractRelease(%q) = %q, want %q", tc.text, got, tc.want)
 			}
 		})
 	}
@@ -246,14 +247,14 @@ func TestExtractPRDRefs(t *testing.T) {
 		},
 	}
 	for _, tc := range tests {
-		got := extractPRDRefs(tc.text)
+		got := st.ExtractPRDRefs(tc.text)
 		if len(got) != len(tc.want) {
-			t.Errorf("extractPRDRefs(%q): got %v, want %v", tc.text, got, tc.want)
+			t.Errorf("st.ExtractPRDRefs(%q): got %v, want %v", tc.text, got, tc.want)
 			continue
 		}
 		for i := range got {
 			if got[i] != tc.want[i] {
-				t.Errorf("extractPRDRefs(%q)[%d]: got %q, want %q", tc.text, i, got[i], tc.want[i])
+				t.Errorf("st.ExtractPRDRefs(%q)[%d]: got %q, want %q", tc.text, i, got[i], tc.want[i])
 			}
 		}
 	}
@@ -323,7 +324,7 @@ requirements:
 	t.Cleanup(func() { os.Chdir(orig) })
 	os.Chdir(dir)
 
-	total, byPRD := countTotalPRDRequirements()
+	total, byPRD := st.CountTotalPRDRequirements()
 	if total != 3 {
 		t.Errorf("total = %d, want 3", total)
 	}
@@ -339,7 +340,7 @@ func TestCountTotalPRDRequirements_NoPRDs(t *testing.T) {
 	t.Cleanup(func() { os.Chdir(orig) })
 	os.Chdir(dir)
 
-	total, byPRD := countTotalPRDRequirements()
+	total, byPRD := st.CountTotalPRDRequirements()
 	if total != 0 {
 		t.Errorf("total = %d, want 0", total)
 	}
@@ -386,9 +387,9 @@ func TestCountDescriptionReqs(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got := countDescriptionReqs(tc.desc)
+			got := st.CountDescriptionReqs(tc.desc)
 			if got != tc.want {
-				t.Errorf("countDescriptionReqs() = %d, want %d", got, tc.want)
+				t.Errorf("st.CountDescriptionReqs() = %d, want %d", got, tc.want)
 			}
 		})
 	}
@@ -443,7 +444,7 @@ out_of_scope: []
 	t.Cleanup(func() { os.Chdir(orig) })
 	os.Chdir(dir)
 
-	m := buildPRDReleaseMap()
+	m := st.BuildPRDReleaseMap()
 	if m["prd001-orchestrator-core"] != "01.0" {
 		t.Errorf("prd001-orchestrator-core release = %q, want %q", m["prd001-orchestrator-core"], "01.0")
 	}
@@ -462,7 +463,7 @@ func TestBuildPRDReleaseMap_NoUseCases(t *testing.T) {
 	t.Cleanup(func() { os.Chdir(orig) })
 	os.Chdir(dir)
 
-	m := buildPRDReleaseMap()
+	m := st.BuildPRDReleaseMap()
 	if len(m) != 0 {
 		t.Errorf("expected empty map, got %v", m)
 	}
@@ -493,7 +494,7 @@ out_of_scope: []
 	t.Cleanup(func() { os.Chdir(orig) })
 	os.Chdir(dir)
 
-	m := buildPRDReleaseMap()
+	m := st.BuildPRDReleaseMap()
 	if len(m) != 0 {
 		t.Errorf("expected empty map for malformed filename, got %v", m)
 	}
@@ -511,7 +512,7 @@ func TestBuildPRDReleaseMap_InvalidYAML(t *testing.T) {
 	t.Cleanup(func() { os.Chdir(orig) })
 	os.Chdir(dir)
 
-	m := buildPRDReleaseMap()
+	m := st.BuildPRDReleaseMap()
 	if len(m) != 0 {
 		t.Errorf("expected empty map for invalid YAML, got %v", m)
 	}
@@ -543,7 +544,7 @@ out_of_scope: []
 	t.Cleanup(func() { os.Chdir(orig) })
 	os.Chdir(dir)
 
-	m := buildPRDReleaseMap()
+	m := st.BuildPRDReleaseMap()
 	if len(m) != 0 {
 		t.Errorf("expected empty map for non-numeric PRD refs, got %v", m)
 	}
