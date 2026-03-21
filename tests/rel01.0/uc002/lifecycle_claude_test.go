@@ -37,10 +37,8 @@ func TestRel01_UC002_RunOneCycle(t *testing.T) {
 	if err := testutil.RunMage(t, dir, "reset"); err != nil {
 		t.Fatalf("reset: %v", err)
 	}
-	if err := testutil.RunMage(t, dir, "generator:start"); err != nil {
-		t.Fatalf("generator:start: %v", err)
-	}
-	genBranch := testutil.GitBranch(t, dir)
+	wtDir := testutil.GeneratorStart(t, dir)
+	genBranch := testutil.GitBranch(t, wtDir)
 
 	if err := testutil.RunMageTimeout(t, dir, claudeTimeout, "generator:run"); err != nil {
 		t.Fatalf("generator:run: %v", err)
