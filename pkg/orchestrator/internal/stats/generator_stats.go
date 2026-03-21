@@ -22,10 +22,11 @@ import (
 // GeneratorIssueStats holds per-issue stats derived from history files.
 type GeneratorIssueStats struct {
 	gh.CobblerIssue
-	Status       string  // "done", "failed", "in-progress", "pending"
-	CostUSD      float64
-	DurationS    int
-	NumTurns     int
+	Status        string  // "done", "failed", "in-progress", "pending"
+	CostUSD       float64
+	DurationS     int
+	DurationAPIMs int // Claude API execution time in ms (SDK mode, GH-1708)
+	NumTurns      int
 	LocDeltaProd int
 	LocDeltaTest int
 	NumReqs      int // number of requirements in the task description
@@ -114,16 +115,17 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 
 	// Build aggregated stitch stats and task metadata from history entries.
 	type stitchAgg struct {
-		Title        string
-		CostUSD      float64
-		DurationS    int
-		NumTurns     int
-		InputTokens  int
-		OutputTokens int
-		LocDeltaProd int
-		LocDeltaTest int
-		LastStatus   string // last history entry status: "success" or "failed"
-		StartedAt    string // earliest StartedAt for chronological ordering
+		Title         string
+		CostUSD       float64
+		DurationS     int
+		DurationAPIMs int // Claude API execution time (SDK mode only, GH-1708)
+		NumTurns      int
+		InputTokens   int
+		OutputTokens  int
+		LocDeltaProd  int
+		LocDeltaTest  int
+		LastStatus    string // last history entry status: "success" or "failed"
+		StartedAt     string // earliest StartedAt for chronological ordering
 	}
 	stitchByTask := make(map[string]*stitchAgg)
 	var taskOrder []string // insertion order for deterministic iteration
@@ -160,6 +162,7 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 			if hs.DurationS > agg.DurationS {
 				agg.DurationS = hs.DurationS
 			}
+			agg.DurationAPIMs += hs.DurationAPIMs
 			agg.NumTurns += hs.NumTurns
 			agg.InputTokens += hs.Tokens.Input
 			agg.OutputTokens += hs.Tokens.Output
@@ -220,7 +223,7 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 	// Build rows from history-derived task list.
 	rows := make([]GeneratorIssueStats, 0, len(stitchByTask))
 	var totalStitchCost float64
-	var totalStitchDurS int
+	var totalStitchDurS, totalStitchAPIMs int
 	var totalTurns, totalLocProd, totalLocTest, totalReqs int
 	var totalInputTokens, totalOutputTokens int
 	var nDone, nFailed, nSkipped, nInProgress, nPending int
@@ -238,9 +241,10 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 				Number: num,
 				Title:  agg.Title,
 			},
-			CostUSD:      agg.CostUSD,
-			DurationS:    agg.DurationS,
-			NumTurns:     agg.NumTurns,
+			CostUSD:       agg.CostUSD,
+			DurationS:     agg.DurationS,
+			DurationAPIMs: agg.DurationAPIMs,
+			NumTurns:      agg.NumTurns,
 			InputTokens:  agg.InputTokens,
 			OutputTokens: agg.OutputTokens,
 			LocDeltaProd: agg.LocDeltaProd,
@@ -291,6 +295,7 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 
 		totalStitchCost += s.CostUSD
 		totalStitchDurS += s.DurationS
+		totalStitchAPIMs += s.DurationAPIMs
 		totalTurns += s.NumTurns
 		totalLocProd += s.LocDeltaProd
 		totalLocTest += s.LocDeltaTest
@@ -381,13 +386,14 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 
 	// Aggregate measure costs.
 	var totalMeasureCost float64
-	var totalMeasureTurns, totalMeasureIn, totalMeasureOut, totalMeasureDurS int
+	var totalMeasureTurns, totalMeasureIn, totalMeasureOut, totalMeasureDurS, totalMeasureAPIMs int
 	for _, m := range measureEntries {
 		totalMeasureCost += m.CostUSD
 		totalMeasureTurns += m.NumTurns
 		totalMeasureIn += m.Tokens.Input
 		totalMeasureOut += m.Tokens.Output
 		totalMeasureDurS += m.DurationS
+		totalMeasureAPIMs += m.DurationAPIMs
 	}
 	totalCost := totalStitchCost + totalMeasureCost
 
@@ -717,14 +723,25 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 		fmt.Printf("\nRequirements: %d/%d addressed by this generation (%d%%)\n", addressed, total, pct)
 
 		// ETA and cost estimates based on observed averages (GH-1545).
+		// Prefer Claude API execution time (DurationAPIMs) over wall-clock
+		// DurationS to exclude rate limit pauses, machine suspends, and
+		// network delays from the estimate (GH-1708). Fall back to
+		// wall-clock time when API timing is unavailable (CLI mode).
+		totalAPIMs := totalStitchAPIMs + totalMeasureAPIMs
 		totalElapsedS := totalStitchDurS + totalMeasureDurS
+		etaBaseS := totalElapsedS
+		etaLabel := ""
+		if totalAPIMs > 0 {
+			etaBaseS = totalAPIMs / 1000
+			etaLabel = " (API time)"
+		}
 		remaining := total - addressed
 		if addressed > 0 && remaining > 0 {
-			avgTimePerReq := float64(totalElapsedS) / float64(addressed)
+			avgTimePerReq := float64(etaBaseS) / float64(addressed)
 			remainingS := int(avgTimePerReq * float64(remaining))
-			totalEstS := totalElapsedS + remainingS
-			fmt.Printf("ETA: %s remaining of estimated %s total\n",
-				FormatDurationLong(remainingS), FormatDurationLong(totalEstS))
+			totalEstS := etaBaseS + remainingS
+			fmt.Printf("ETA: %s remaining of estimated %s total%s\n",
+				FormatDurationLong(remainingS), FormatDurationLong(totalEstS), etaLabel)
 
 			estTotalCost := totalCost / float64(addressed) * float64(total)
 			remainingCost := estTotalCost - totalCost
