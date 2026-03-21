@@ -22,7 +22,8 @@ var claudeTimeout = testutil.ClaudeTestTimeout
 
 // StitchExecutesTask runs 1 measure (MaxMeasureIssues=1) then 1 stitch
 // (MaxStitchIssuesPerCycle=1) and verifies the task was processed.
-// Requires Claude: invokes cobbler:measure and cobbler:stitch which call Claude via podman.
+// Precondition: hasUnresolvedRequirements via MeasureAndExpectIssues (GH-1798).
+// Requires Claude: invokes cobbler:measure and cobbler:stitch.
 func TestRel01_UC004_StitchExecutesTask(t *testing.T) {
 	dir := testutil.SetupRepo(t, snapshotDir)
 	testutil.SetupClaude(t, dir)
@@ -39,12 +40,7 @@ func TestRel01_UC004_StitchExecutesTask(t *testing.T) {
 
 	headBefore := testutil.GitHead(t, dir)
 
-	if err := testutil.RunMageTimeout(t, dir, claudeTimeout, "cobbler:measure"); err != nil {
-		t.Fatalf("cobbler:measure: %v", err)
-	}
-	if n := testutil.WaitForReadyIssues(t, dir, 1, 60*time.Second); n == 0 {
-		t.Fatal("expected at least 1 ready issue after measure, got 0")
-	}
+	testutil.MeasureAndExpectIssues(t, dir, 60*time.Second)
 
 	if err := testutil.RunMageTimeout(t, dir, claudeTimeout, "cobbler:stitch"); err != nil {
 		t.Fatalf("cobbler:stitch: %v", err)
@@ -58,7 +54,8 @@ func TestRel01_UC004_StitchExecutesTask(t *testing.T) {
 
 // StitchRecordsInvocation runs measure+stitch and verifies that the stitch
 // history contains an InvocationRecord with diff stats and LOC data.
-// Requires Claude: invokes cobbler:measure and cobbler:stitch which call Claude via podman.
+// Precondition: hasUnresolvedRequirements via MeasureAndExpectIssues (GH-1798).
+// Requires Claude: invokes cobbler:measure and cobbler:stitch.
 func TestRel01_UC004_StitchRecordsInvocation(t *testing.T) {
 	dir := testutil.SetupRepo(t, snapshotDir)
 	testutil.SetupClaude(t, dir)
@@ -72,9 +69,9 @@ func TestRel01_UC004_StitchRecordsInvocation(t *testing.T) {
 		t.Fatalf("reset: %v", err)
 	}
 	_ = testutil.GeneratorStart(t, dir)
-	if err := testutil.RunMageTimeout(t, dir, claudeTimeout, "cobbler:measure"); err != nil {
-		t.Fatalf("cobbler:measure: %v", err)
-	}
+
+	testutil.MeasureAndExpectIssues(t, dir, 60*time.Second)
+
 	if err := testutil.RunMageTimeout(t, dir, claudeTimeout, "cobbler:stitch"); err != nil {
 		t.Fatalf("cobbler:stitch: %v", err)
 	}
@@ -114,8 +111,8 @@ func TestRel01_UC004_StitchRecordsInvocation(t *testing.T) {
 // implements the single proposed task and closes its issue, the second
 // measure should detect that the implementation satisfies the requirement
 // and return an empty task list rather than spinning with follow-up tasks.
-// This validates the multi-cycle termination behaviour introduced in GH-889.
-// Requires Claude: invokes cobbler:measure and cobbler:stitch which call Claude via podman.
+// Precondition: hasUnresolvedRequirements via MeasureAndExpectIssues (GH-1798).
+// Requires Claude: invokes cobbler:measure and cobbler:stitch.
 func TestRel01_UC004_SecondMeasureProducesNoNewTasks(t *testing.T) {
 	dir := testutil.SetupRepo(t, snapshotDir)
 	testutil.SetupClaude(t, dir)
@@ -130,13 +127,8 @@ func TestRel01_UC004_SecondMeasureProducesNoNewTasks(t *testing.T) {
 	}
 	_ = testutil.GeneratorStart(t, dir)
 
-	// First measure: propose one task.
-	if err := testutil.RunMageTimeout(t, dir, claudeTimeout, "cobbler:measure"); err != nil {
-		t.Fatalf("first cobbler:measure: %v", err)
-	}
-	if n := testutil.WaitForReadyIssues(t, dir, 1, 60*time.Second); n == 0 {
-		t.Fatal("expected at least 1 ready issue after first measure, got 0")
-	}
+	// First measure: propose one task (with precondition check and retry).
+	testutil.MeasureAndExpectIssues(t, dir, 60*time.Second)
 
 	// Stitch: implement the proposed task and close its issue.
 	if err := testutil.RunMageTimeout(t, dir, claudeTimeout, "cobbler:stitch"); err != nil {

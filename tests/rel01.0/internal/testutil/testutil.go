@@ -848,3 +848,104 @@ func CopyFile(src, dst string) error {
 	_, err = io.Copy(out, in)
 	return err
 }
+
+// MarkAllRequirementsComplete reads .cobbler/requirements.yaml (generating it
+// first via generator:start if absent) and overwrites every R-item status to
+// "complete". This creates a deterministic precondition for tests that expect
+// measure to return zero tasks (GH-1798).
+func MarkAllRequirementsComplete(t testing.TB, dir string) {
+	t.Helper()
+	reqFile := filepath.Join(dir, ".cobbler", "requirements.yaml")
+
+	data, err := os.ReadFile(reqFile)
+	if err != nil {
+		t.Fatalf("MarkAllRequirementsComplete: read %s: %v", reqFile, err)
+	}
+
+	type reqState struct {
+		Status string `yaml:"status"`
+		Issue  int    `yaml:"issue,omitempty"`
+	}
+	type reqFile_ struct {
+		Requirements map[string]map[string]reqState `yaml:"requirements"`
+	}
+	var rf reqFile_
+	if err := yaml.Unmarshal(data, &rf); err != nil {
+		t.Fatalf("MarkAllRequirementsComplete: parse: %v", err)
+	}
+	for prd, items := range rf.Requirements {
+		for id, st := range items {
+			st.Status = "complete"
+			items[id] = st
+		}
+		rf.Requirements[prd] = items
+	}
+	out, err := yaml.Marshal(&rf)
+	if err != nil {
+		t.Fatalf("MarkAllRequirementsComplete: marshal: %v", err)
+	}
+	if err := os.WriteFile(reqFile, out, 0o644); err != nil {
+		t.Fatalf("MarkAllRequirementsComplete: write: %v", err)
+	}
+	// Commit so measure sees the change.
+	cmd := exec.Command("git", "add", "-A")
+	cmd.Dir = dir
+	cmd.Run()
+	cmd = exec.Command("git", "commit", "-m", "Mark all requirements complete for test")
+	cmd.Dir = dir
+	cmd.Run()
+}
+
+// HasUnresolvedRequirements returns true if .cobbler/requirements.yaml contains
+// any R-item with status "ready". Returns false if the file does not exist.
+func HasUnresolvedRequirements(t testing.TB, dir string) bool {
+	t.Helper()
+	reqFile := filepath.Join(dir, ".cobbler", "requirements.yaml")
+	data, err := os.ReadFile(reqFile)
+	if err != nil {
+		return false
+	}
+	type reqState struct {
+		Status string `yaml:"status"`
+	}
+	type reqFile_ struct {
+		Requirements map[string]map[string]reqState `yaml:"requirements"`
+	}
+	var rf reqFile_
+	if err := yaml.Unmarshal(data, &rf); err != nil {
+		return false
+	}
+	for _, items := range rf.Requirements {
+		for _, st := range items {
+			if st.Status == "ready" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// MeasureAndExpectIssues runs cobbler:measure and waits for at least one ready
+// issue. If measure returns zero issues despite unresolved requirements, it
+// retries once (Claude non-determinism). Returns the issue count. Fatals if
+// both attempts return zero (GH-1798).
+func MeasureAndExpectIssues(t testing.TB, dir string, timeout time.Duration) int {
+	t.Helper()
+	if !HasUnresolvedRequirements(t, dir) {
+		t.Fatal("MeasureAndExpectIssues: precondition failed — no unresolved requirements in requirements.yaml")
+	}
+	for attempt := 1; attempt <= 2; attempt++ {
+		if err := RunMageTimeout(t, dir, ClaudeTestTimeout, "cobbler:measure"); err != nil {
+			t.Fatalf("cobbler:measure (attempt %d): %v", attempt, err)
+		}
+		n := WaitForReadyIssues(t, dir, 1, timeout)
+		if n > 0 {
+			return n
+		}
+		if attempt == 1 {
+			t.Logf("MeasureAndExpectIssues: Claude returned empty list despite unresolved requirements, retrying (attempt 2)")
+		}
+	}
+	t.Fatal("MeasureAndExpectIssues: Claude returned empty list on both attempts despite unresolved requirements")
+	return 0
+}
