@@ -61,10 +61,11 @@ func TestRel01_UC003_MeasureReturnsZeroForImplementedSpec(t *testing.T) {
 	if err := testutil.RunMage(t, dir, "reset"); err != nil {
 		t.Fatalf("reset: %v", err)
 	}
-	_ = testutil.GeneratorStart(t, dir)
+	wtDir := testutil.GeneratorStart(t, dir)
 
 	// Mark all requirements complete — deterministic precondition.
-	testutil.MarkAllRequirementsComplete(t, dir)
+	// Requirements.yaml lives in the generation worktree.
+	testutil.MarkAllRequirementsComplete(t, wtDir)
 
 	if err := testutil.RunMageTimeout(t, dir, claudeTimeout, "cobbler:measure"); err != nil {
 		t.Fatalf("cobbler:measure: %v", err)

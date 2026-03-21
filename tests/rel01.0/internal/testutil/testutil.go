@@ -929,9 +929,14 @@ func HasUnresolvedRequirements(t testing.TB, dir string) bool {
 // issue. If measure returns zero issues despite unresolved requirements, it
 // retries once (Claude non-determinism). Returns the issue count. Fatals if
 // both attempts return zero (GH-1798).
+//
+// The precondition check reads requirements.yaml from the generation worktree
+// (where generator:start writes it), not from dir (which stays on main).
 func MeasureAndExpectIssues(t testing.TB, dir string, timeout time.Duration) int {
 	t.Helper()
-	if !HasUnresolvedRequirements(t, dir) {
+	// Requirements.yaml lives in the generation worktree, not in dir.
+	wtDir := FindGenerationWorktree(t, dir)
+	if !HasUnresolvedRequirements(t, wtDir) {
 		t.Fatal("MeasureAndExpectIssues: precondition failed — no unresolved requirements in requirements.yaml")
 	}
 	for attempt := 1; attempt <= 2; attempt++ {
