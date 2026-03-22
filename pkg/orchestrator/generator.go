@@ -1017,6 +1017,24 @@ func (o *Orchestrator) GeneratorStop() error {
 		return fmt.Errorf("tagging generation: %w", err)
 	}
 
+	// Add a specs-only cleanup commit to the generation branch so that
+	// merging — whether directly or via PR — leaves the base branch
+	// clean. The generated code is preserved at the -finished tag
+	// (GH-1876).
+	if !o.cfg.Generation.PreserveSources {
+		logf("generator:stop: adding specs-only cleanup to generation branch")
+		o.cleanGoSources()
+		if err := o.HistoryClean(); err != nil {
+			logf("generator:stop: warning cleaning history on generation branch: %v", err)
+		}
+		_ = defaultGitOps.StageAll(".")
+		cleanupMsg := fmt.Sprintf("Reset %s to specs-only for merge\n\nGenerated code preserved at tag %s.",
+			branch, finishedTag)
+		if err := defaultGitOps.CommitAllowEmpty(cleanupMsg, "."); err != nil {
+			return fmt.Errorf("committing specs-only cleanup on generation branch: %w", err)
+		}
+	}
+
 	// If running in a worktree, switch to the main repo for the merge.
 	if repoRoot != "" {
 		logf("generator:stop: switching to main repo at %s", repoRoot)
@@ -1072,29 +1090,12 @@ func (o *Orchestrator) GeneratorStop() error {
 	return nil
 }
 
-// mergeGeneration resets Go sources, commits the clean state, merges the
-// generation branch into the base branch, tags the result, resets the base
-// branch to specs-only, and deletes the generation branch.
+// mergeGeneration merges the generation branch into the base branch, tags
+// the result, and deletes the generation branch. The generation branch is
+// expected to already be in specs-only state (cleanup committed before merge
+// by GeneratorStop, GH-1876) unless PreserveSources is true.
 func (o *Orchestrator) mergeGeneration(branch, baseBranch string) error {
-	if o.cfg.Generation.PreserveSources {
-		logf("generator:stop: preserve_sources=true, skipping pre-merge Go source reset on %s", baseBranch)
-	} else {
-		logf("generator:stop: resetting Go sources on %s", baseBranch)
-		_ = o.resetGoSources(branch) // best-effort; merge will overwrite these files
-	}
-
-	_ = defaultGitOps.StageAll(".") // best-effort; commit below handles empty index
-	var prepareMsg string
-	if o.cfg.Generation.PreserveSources {
-		prepareMsg = fmt.Sprintf("Prepare %s for generation merge (preserve_sources)\n\nSources preserved. Merging %s.", baseBranch, branch)
-	} else {
-		prepareMsg = fmt.Sprintf("Prepare %s for generation merge: delete Go code\n\nDocumentation preserved for merge. Code will be replaced by %s.", baseBranch, branch)
-	}
-	if err := defaultGitOps.CommitAllowEmpty(prepareMsg, "."); err != nil {
-		return fmt.Errorf("committing prepare step: %w", err)
-	}
-
-	logf("generator:stop: merging into %s", baseBranch)
+	logf("generator:stop: merging %s into %s", branch, baseBranch)
 	cmd := defaultGitOps.MergeCmd(branch, ".")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -1102,7 +1103,8 @@ func (o *Orchestrator) mergeGeneration(branch, baseBranch string) error {
 		return fmt.Errorf("merging %s: %w", branch, err)
 	}
 
-	// Restore Go files from earlier generations.
+	// Restore Go files from earlier generations that may not be on the
+	// generation branch (safety net for edge cases).
 	startTag := branch + "-start"
 	if err := o.restoreFromStartTag(startTag); err != nil {
 		logf("generator:stop: restore warning: %v", err)
@@ -1114,19 +1116,12 @@ func (o *Orchestrator) mergeGeneration(branch, baseBranch string) error {
 		return fmt.Errorf("tagging merge: %w", err)
 	}
 
-	// Reset base branch to specs-only.
-	if o.cfg.Generation.PreserveSources {
-		logf("generator:stop: preserve_sources=true, skipping post-tag source reset on %s", baseBranch)
-	} else {
-		logf("generator:stop: resetting %s to specs-only", baseBranch)
-		o.cleanGoSources()
-	}
+	// Clean history files that may have leaked onto the base branch.
 	if err := o.HistoryClean(); err != nil {
 		logf("generator:stop: warning cleaning history: %v", err)
 	}
 	_ = defaultGitOps.StageAll(".")
-	cleanupMsg := fmt.Sprintf("Reset %s to specs-only after v1 tag\n\nGenerated code preserved at version tags. Branch restored to documentation-only state.", baseBranch)
-	_ = defaultGitOps.Commit(cleanupMsg, ".") // best-effort; may be empty if nothing changed
+	_ = defaultGitOps.Commit("Clean history after generation merge", ".") // best-effort
 
 	logf("generator:stop: deleting branch %s", branch)
 	_ = defaultGitOps.ForceDeleteBranch(branch, ".") // force-delete: safe -d fails after specs-only reset

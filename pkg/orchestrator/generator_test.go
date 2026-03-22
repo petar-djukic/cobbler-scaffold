@@ -981,6 +981,67 @@ func TestGeneratorStop_CleansUpWorktree(t *testing.T) {
 	}
 }
 
+// TestGeneratorStop_CleansSourcesOnGenerationBranch verifies that when
+// PreserveSources is false, generator:stop commits a specs-only cleanup
+// to the generation branch before merging. After merge, the base branch
+// should not contain any .go files from the generation (GH-1876).
+func TestGeneratorStop_CleansSourcesOnGenerationBranch(t *testing.T) {
+	repoDir := initTestGitRepo(t)
+
+	o := &Orchestrator{cfg: Config{
+		Generation: GenerationConfig{
+			Prefix:          "generation-",
+			Name:            "clean-test",
+			PreserveSources: false,
+		},
+		Project: ProjectConfig{
+			ModulePath:  "example.com/test",
+			MagefilesDir: "magefiles",
+			GoSourceDirs: []string{"cmd", "pkg"},
+		},
+		Cobbler: CobblerConfig{Dir: ".cobbler/"},
+	}}
+
+	if err := o.GeneratorStart(); err != nil {
+		t.Fatalf("GeneratorStart() error = %v", err)
+	}
+
+	// Create a .go file on the generation branch to simulate generated code.
+	if err := os.MkdirAll("pkg/foo", 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile("pkg/foo/bar.go", []byte("package foo\n"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	_ = defaultGitOps.StageAll(".")
+	_ = defaultGitOps.Commit("Add generated code", ".")
+
+	// Verify the .go file is on the generation branch before stop.
+	if _, err := os.Stat("pkg/foo/bar.go"); os.IsNotExist(err) {
+		t.Fatal("bar.go should exist on generation branch before stop")
+	}
+
+	// Verify the -finished tag captures the generated code.
+	if err := o.GeneratorStop(); err != nil {
+		t.Fatalf("GeneratorStop() error = %v", err)
+	}
+
+	// After stop, the base branch should not have the .go file.
+	goFile := filepath.Join(repoDir, "pkg", "foo", "bar.go")
+	if _, err := os.Stat(goFile); !os.IsNotExist(err) {
+		t.Errorf("bar.go should not exist on base branch after merge — generation code leaked (GH-1876)")
+	}
+
+	// The -finished tag should still have the .go file.
+	out, err := exec.Command("git", "show", "generation-clean-test-finished:pkg/foo/bar.go").Output()
+	if err != nil {
+		t.Errorf("bar.go should exist at -finished tag: %v", err)
+	}
+	if !strings.Contains(string(out), "package foo") {
+		t.Errorf("-finished tag should contain the generated code, got: %s", out)
+	}
+}
+
 // --- appendToGitignore (parallel-safe, no git) ---
 
 func TestAppendToGitignore_CreatesFileWhenMissing(t *testing.T) {
