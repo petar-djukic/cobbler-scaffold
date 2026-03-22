@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"text/tabwriter"
+	"time"
 
 	cl "github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/claude"
 	"github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/generate"
@@ -487,6 +488,7 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 	type tableRow struct {
 		ID        string
 		Status    string
+		Started   string // display-formatted StartedAt timestamp (GH-1884)
 		Rel       string
 		Reqs      string
 		Cost      string
@@ -501,6 +503,16 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 		Title     string
 		SortTime  string // StartedAt for chronological ordering
 		IsMeasure bool   // true for measure rows, used for post-sort enrichment
+	}
+	formatStarted := func(rfc3339 string) string {
+		if rfc3339 == "" {
+			return "-"
+		}
+		t, err := time.Parse(time.RFC3339, rfc3339)
+		if err != nil {
+			return "-"
+		}
+		return t.Local().Format("Jan 02 15:04")
 	}
 	var tableRows []tableRow
 
@@ -559,6 +571,7 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 		if agg, ok := stitchByTask[taskID]; ok {
 			tr.SortTime = agg.StartedAt
 		}
+		tr.Started = formatStarted(tr.SortTime)
 		tableRows = append(tableRows, tr)
 	}
 
@@ -574,6 +587,7 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 		tr := tableRow{
 			ID:        mid,
 			Status:    "done",
+			Started:   formatStarted(m.StartedAt),
 			Rel:       "-",
 			Reqs:      "-",
 			RateLimit: "-",
@@ -612,6 +626,7 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 		tr := tableRow{
 			ID:        strconv.Itoa(iss.Number),
 			Status:    "in-progress",
+			Started:   "-",
 			Rel:       "-",
 			Reqs:      "-",
 			Prod:      "-",
@@ -682,10 +697,10 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 	}
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "#\tStatus\tRel\tReqs\tCost\tDuration\tRateLimit\tTurns\tTokIn\tTokOut\tProd\tTest\tParent\tTitle")
+	fmt.Fprintln(w, "#\tStatus\tStarted\tRel\tReqs\tCost\tDuration\tRateLimit\tTurns\tTokIn\tTokOut\tProd\tTest\tParent\tTitle")
 	for _, tr := range tableRows {
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-			tr.ID, tr.Status, tr.Rel, tr.Reqs, tr.Cost, tr.Dur, tr.RateLimit, tr.Turns, tr.TokIn, tr.TokOut, tr.Prod, tr.Test, tr.Parent, tr.Title)
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			tr.ID, tr.Status, tr.Started, tr.Rel, tr.Reqs, tr.Cost, tr.Dur, tr.RateLimit, tr.Turns, tr.TokIn, tr.TokOut, tr.Prod, tr.Test, tr.Parent, tr.Title)
 	}
 	if err := w.Flush(); err != nil {
 		return err
