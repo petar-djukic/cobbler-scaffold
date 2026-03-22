@@ -530,6 +530,18 @@ func (o *Orchestrator) buildMeasurePrompt(userInput, existingIssues string, limi
 	activeRelease := filterImplementedRelease(o.cfg.Project.Release)
 	doc.Constraints += measureReleasesConstraint(activeReleases, activeRelease)
 
+	// When MinMeasureIssues is set and unresolved requirements exist, add
+	// a constraint that overrides the "return [] when complete" instruction.
+	// This prevents the LLM from non-deterministically returning empty
+	// results for projects with high documentation-to-code ratios (GH-1882).
+	if minIssues := o.cfg.Cobbler.MinMeasureIssues; minIssues > 0 && o.hasUnresolvedRequirements() {
+		doc.Constraints += fmt.Sprintf("\n- MANDATORY: You MUST propose at least %d task(s). "+
+			"The requirements.yaml file shows unresolved R-items with status \"ready\". "+
+			"Returning an empty list [] is NOT acceptable when ready requirements exist. "+
+			"Analyze the ready R-items and propose implementation tasks for them.", minIssues)
+		logf("buildMeasurePrompt: min_measure_issues=%d constraint injected", minIssues)
+	}
+
 	out, err := yaml.Marshal(&doc)
 	if err != nil {
 		return "", fmt.Errorf("marshaling measure prompt: %w", err)

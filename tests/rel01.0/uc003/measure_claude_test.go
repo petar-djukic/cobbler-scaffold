@@ -31,6 +31,7 @@ func TestRel01_UC003_MeasureCreatesIssues(t *testing.T) {
 
 	testutil.WriteConfigOverride(t, dir, func(cfg *orchestrator.Config) {
 		cfg.Cobbler.MaxMeasureIssues = 1
+		cfg.Cobbler.MinMeasureIssues = 1 // prevent empty [] from LLM non-determinism (GH-1882)
 	})
 
 	if err := testutil.RunMage(t, dir, "reset"); err != nil {
@@ -87,6 +88,7 @@ func TestRel01_UC003_MeasureRecordsInvocation(t *testing.T) {
 
 	testutil.WriteConfigOverride(t, dir, func(cfg *orchestrator.Config) {
 		cfg.Cobbler.MaxMeasureIssues = 1
+		cfg.Cobbler.MinMeasureIssues = 1 // prevent empty [] from LLM non-determinism (GH-1882)
 	})
 
 	if err := testutil.RunMage(t, dir, "reset"); err != nil {
