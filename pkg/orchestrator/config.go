@@ -236,6 +236,13 @@ type CobblerConfig struct {
 	// Set to 0 to disable the guard.
 	MaxConsecutiveZeroLOCCycles int `yaml:"max_consecutive_zero_loc_cycles"`
 
+	// RateLimitBackoffSeconds is the number of seconds to wait before
+	// retrying a task that failed due to API rate limits. When a task's
+	// rate limit wait time exceeds half its total duration, the orchestrator
+	// uses this backoff instead of the short failure backoff. Default 60.
+	// Set to 0 to use the default (GH-1805).
+	RateLimitBackoffSeconds int `yaml:"rate_limit_backoff_seconds"`
+
 	// HistoryDir is the directory for saving measure artifacts (prompt,
 	// issues YAML, stream-json log) per iteration. Default "history".
 	HistoryDir string `yaml:"history_dir"`

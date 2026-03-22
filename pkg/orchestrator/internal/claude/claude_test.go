@@ -587,3 +587,83 @@ func TestEnsureCredentials_ExtractFails(t *testing.T) {
 		t.Fatal("expected error when extraction fails and file doesn't exist")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// ProgressWriter rate limit tracking (GH-1805)
+// ---------------------------------------------------------------------------
+
+func TestProgressWriter_RateLimitWaitS_NoRateLimit(t *testing.T) {
+	t.Parallel()
+	pw := NewProgressWriter(&bytes.Buffer{}, time.Now())
+
+	// Feed assistant and result events — no rate limit.
+	pw.LogLine([]byte(`{"type":"assistant","message":{"content":[{"type":"text","text":"hi"}]}}`))
+	pw.LogLine([]byte(`{"type":"result","total_cost_usd":0.01,"usage":{"input_tokens":10,"output_tokens":5}}`))
+
+	if pw.RateLimitWaitS != 0 {
+		t.Errorf("RateLimitWaitS = %d, want 0", pw.RateLimitWaitS)
+	}
+	if pw.InRateLimit {
+		t.Error("InRateLimit should be false")
+	}
+}
+
+func TestProgressWriter_RateLimitWaitS_SingleRateLimit(t *testing.T) {
+	t.Parallel()
+	start := time.Now()
+	pw := NewProgressWriter(&bytes.Buffer{}, start)
+
+	// Simulate a rate limit event.
+	pw.LogLine([]byte(`{"type":"rate_limit_event"}`))
+	if !pw.InRateLimit {
+		t.Fatal("InRateLimit should be true after rate_limit_event")
+	}
+
+	// Manually advance the rate limit start to simulate 10 seconds of waiting.
+	pw.RateLimitStart = time.Now().Add(-10 * time.Second)
+
+	// Next non-rate-limit event should close the rate limit window.
+	pw.LogLine([]byte(`{"type":"assistant","message":{"content":[{"type":"text","text":"back"}]}}`))
+	if pw.InRateLimit {
+		t.Error("InRateLimit should be false after assistant event")
+	}
+	if pw.RateLimitWaitS < 9 {
+		t.Errorf("RateLimitWaitS = %d, want >= 9", pw.RateLimitWaitS)
+	}
+}
+
+func TestProgressWriter_RateLimitWaitS_MultipleRateLimits(t *testing.T) {
+	t.Parallel()
+	pw := NewProgressWriter(&bytes.Buffer{}, time.Now())
+
+	// First rate limit window: 5 seconds.
+	pw.LogLine([]byte(`{"type":"rate_limit_event"}`))
+	pw.RateLimitStart = time.Now().Add(-5 * time.Second)
+	pw.LogLine([]byte(`{"type":"assistant","message":{"content":[{"type":"text","text":"a"}]}}`))
+	first := pw.RateLimitWaitS
+
+	// Second rate limit window: 8 seconds.
+	pw.LogLine([]byte(`{"type":"rate_limit_event"}`))
+	pw.RateLimitStart = time.Now().Add(-8 * time.Second)
+	pw.LogLine([]byte(`{"type":"result","total_cost_usd":0.01,"usage":{"input_tokens":1,"output_tokens":1}}`))
+
+	if pw.RateLimitWaitS < first+7 {
+		t.Errorf("RateLimitWaitS = %d, want >= %d (cumulative)", pw.RateLimitWaitS, first+7)
+	}
+}
+
+func TestProgressWriter_ConsecutiveRateLimitEvents(t *testing.T) {
+	t.Parallel()
+	pw := NewProgressWriter(&bytes.Buffer{}, time.Now())
+
+	// Multiple consecutive rate_limit_event messages should not reset
+	// the start time — only the first one starts the window.
+	pw.LogLine([]byte(`{"type":"rate_limit_event"}`))
+	firstStart := pw.RateLimitStart
+	time.Sleep(1 * time.Millisecond) // ensure clock advances
+	pw.LogLine([]byte(`{"type":"rate_limit_event"}`))
+
+	if !pw.RateLimitStart.Equal(firstStart) {
+		t.Error("consecutive rate_limit_events should not update RateLimitStart")
+	}
+}

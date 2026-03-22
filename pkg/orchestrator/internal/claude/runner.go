@@ -131,6 +131,7 @@ func (r *execRunner) run(ctx context.Context, prompt, workDir string, silence bo
 	result := ParseClaudeTokens(rawOutput)
 	if pw != nil {
 		result.NumTurns = pw.Turn
+		result.RateLimitWaitS = pw.RateLimitWaitS
 	}
 	result.RawOutput = make([]byte, len(rawOutput))
 	copy(result.RawOutput, rawOutput)

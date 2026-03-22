@@ -21,6 +21,28 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// rateLimitResetError wraps errTaskReset with rate limit context so the
+// stitch loop can distinguish rate-limit-dominated failures from genuine
+// task failures (GH-1805).
+type rateLimitResetError struct {
+	RateLimitWaitS int
+	TotalDurationS int
+}
+
+func (e *rateLimitResetError) Error() string {
+	return errTaskReset.Error()
+}
+
+func (e *rateLimitResetError) Unwrap() error {
+	return errTaskReset
+}
+
+// isRateLimitDominated returns true when rate limit waits consumed more
+// than half of the total task duration.
+func (e *rateLimitResetError) isRateLimitDominated() bool {
+	return e.TotalDurationS > 0 && e.RateLimitWaitS > e.TotalDurationS/2
+}
+
 //go:embed prompts/stitch.yaml
 var defaultStitchPrompt string
 
@@ -149,20 +171,43 @@ func (o *Orchestrator) RunStitchN(limit int) (int, error) {
 		logf("executing task %d: id=%s title=%q", totalTasks+1, task.ID, task.Title)
 		if err := o.doOneTask(task, baseBranch, repoRoot); err != nil {
 			if errors.Is(err, errTaskReset) {
-				failedTaskCounts[task.ID]++
-				count := failedTaskCounts[task.ID]
-				logf("task %s was reset after %s (failure %d/%d)", task.ID, time.Since(taskStart).Round(time.Second), count, maxFailures)
+				// Check whether this failure was dominated by rate limit
+				// waits. If so, don't count it toward the failure limit
+				// and use a longer backoff (GH-1805).
+				var rlErr *rateLimitResetError
+				rateLimited := errors.As(err, &rlErr) && rlErr.isRateLimitDominated()
 
-				// Skip the task once it exceeds the retry limit (GH-1699).
-				// Label it cobbler-skipped so pickReadyIssue excludes it, and
-				// continue to the next task instead of halting the generation.
-				if maxFailures > 0 && count >= maxFailures {
-					logf("task %s reached max failures (%d), marking as skipped", task.ID, maxFailures)
-					o.skipTask(task, count)
+				if rateLimited {
+					logf("task %s was reset after %s (rate-limited %ds/%ds, not counted as failure)",
+						task.ID, time.Since(taskStart).Round(time.Second),
+						rlErr.RateLimitWaitS, rlErr.TotalDurationS)
+				} else {
+					failedTaskCounts[task.ID]++
+					count := failedTaskCounts[task.ID]
+					logf("task %s was reset after %s (failure %d/%d)", task.ID, time.Since(taskStart).Round(time.Second), count, maxFailures)
+
+					// Skip the task once it exceeds the retry limit (GH-1699).
+					// Label it cobbler-skipped so pickReadyIssue excludes it, and
+					// continue to the next task instead of halting the generation.
+					if maxFailures > 0 && count >= maxFailures {
+						logf("task %s reached max failures (%d), marking as skipped", task.ID, maxFailures)
+						o.skipTask(task, count)
+					}
 				}
 
-				// Back off before the next iteration to reduce API pressure.
-				backoff := time.Duration(count) * 2 * time.Second
+				// Back off before the next iteration. Use a longer backoff
+				// when rate-limited to allow the API window to reset (GH-1805).
+				var backoff time.Duration
+				if rateLimited {
+					rlBackoff := o.cfg.Cobbler.RateLimitBackoffSeconds
+					if rlBackoff <= 0 {
+						rlBackoff = 60
+					}
+					backoff = time.Duration(rlBackoff) * time.Second
+				} else {
+					count := failedTaskCounts[task.ID]
+					backoff = time.Duration(count) * 2 * time.Second
+				}
 				logf("task %s: backing off %s before next task", task.ID, backoff)
 				stitchSleep(backoff)
 				continue
@@ -258,21 +303,28 @@ func (o *Orchestrator) doOneTask(task stitchTask, baseBranch, repoRoot string) e
 	o.saveHistoryLog(historyTS, "stitch", tokens.RawOutput)
 
 	if claudeErr != nil {
-		logf("doOneTask: Claude failed for %s after %s: %v", task.ID, time.Since(claudeStart).Round(time.Second), claudeErr)
+		durS := int(time.Since(taskStart).Seconds())
+		rlWaitS := tokens.RateLimitWaitS
+		logf("doOneTask: Claude failed for %s after %s (rate_limit_wait=%ds): %v",
+			task.ID, time.Since(claudeStart).Round(time.Second), rlWaitS, claudeErr)
 		o.saveHistoryStats(historyTS, "stitch", claude.HistoryStats{
-			Caller:    "stitch",
-			TaskID:    task.ID,
-			TaskTitle: task.Title,
-			Status:    "failed",
-			Error:     fmt.Sprintf("claude failure: %v", claudeErr),
-			StartedAt: claudeStart.UTC().Format(time.RFC3339),
-			Duration:  time.Since(taskStart).Round(time.Second).String(),
-			DurationS: int(time.Since(taskStart).Seconds()),
-			Tokens:    claude.HistoryTokens{Input: tokens.InputTokens, Output: tokens.OutputTokens, CacheCreation: tokens.CacheCreationTokens, CacheRead: tokens.CacheReadTokens},
-			CostUSD:   tokens.CostUSD,
-			LOCBefore: locBefore,
+			Caller:         "stitch",
+			TaskID:         task.ID,
+			TaskTitle:      task.Title,
+			Status:         "failed",
+			Error:          fmt.Sprintf("claude failure: %v", claudeErr),
+			StartedAt:      claudeStart.UTC().Format(time.RFC3339),
+			Duration:       time.Since(taskStart).Round(time.Second).String(),
+			DurationS:      durS,
+			RateLimitWaitS: rlWaitS,
+			Tokens:         claude.HistoryTokens{Input: tokens.InputTokens, Output: tokens.OutputTokens, CacheCreation: tokens.CacheCreationTokens, CacheRead: tokens.CacheReadTokens},
+			CostUSD:        tokens.CostUSD,
+			LOCBefore:      locBefore,
 		})
 		o.failTask(task, "Claude failure", taskStart)
+		if rlWaitS > 0 {
+			return &rateLimitResetError{RateLimitWaitS: rlWaitS, TotalDurationS: durS}
+		}
 		return errTaskReset
 	}
 	logf("doOneTask: Claude completed for %s in %s", task.ID, time.Since(claudeStart).Round(time.Second))
@@ -375,20 +427,21 @@ func (o *Orchestrator) doOneTask(task stitchTask, baseBranch, repoRoot string) e
 	// Save stitch stats.
 	taskDuration := time.Since(taskStart)
 	o.saveHistoryStats(historyTS, "stitch", claude.HistoryStats{
-		Caller:        "stitch",
-		TaskID:        task.ID,
-		TaskTitle:     task.Title,
-		Status:        "success",
-		StartedAt:     claudeStart.UTC().Format(time.RFC3339),
-		Duration:      taskDuration.Round(time.Second).String(),
-		DurationS:     int(taskDuration.Seconds()),
-		Tokens:        claude.HistoryTokens{Input: tokens.InputTokens, Output: tokens.OutputTokens, CacheCreation: tokens.CacheCreationTokens, CacheRead: tokens.CacheReadTokens},
-		CostUSD:       tokens.CostUSD,
-		NumTurns:      tokens.NumTurns,
-		DurationAPIMs: tokens.DurationAPIMs,
-		SessionID:     tokens.SessionID,
-		LOCBefore:     locBefore,
-		LOCAfter:      locAfter,
+		Caller:         "stitch",
+		TaskID:         task.ID,
+		TaskTitle:      task.Title,
+		Status:         "success",
+		StartedAt:      claudeStart.UTC().Format(time.RFC3339),
+		Duration:       taskDuration.Round(time.Second).String(),
+		DurationS:      int(taskDuration.Seconds()),
+		RateLimitWaitS: tokens.RateLimitWaitS,
+		Tokens:         claude.HistoryTokens{Input: tokens.InputTokens, Output: tokens.OutputTokens, CacheCreation: tokens.CacheCreationTokens, CacheRead: tokens.CacheReadTokens},
+		CostUSD:        tokens.CostUSD,
+		NumTurns:       tokens.NumTurns,
+		DurationAPIMs:  tokens.DurationAPIMs,
+		SessionID:      tokens.SessionID,
+		LOCBefore:      locBefore,
+		LOCAfter:       locAfter,
 		Diff:          claude.HistoryDiff{Files: diff.FilesChanged, Insertions: diff.Insertions, Deletions: diff.Deletions},
 	})
 

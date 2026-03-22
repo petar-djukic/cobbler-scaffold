@@ -4,6 +4,7 @@
 package orchestrator
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -1234,4 +1235,79 @@ func TestSweepCompletedTasks_NoCobblerDir(t *testing.T) {
 	// and sweep returns immediately.
 	o := New(Config{Cobbler: CobblerConfig{Dir: "/nonexistent/dir/xyz"}})
 	o.sweepCompletedTasks("fake/repo", "test-gen") // must not panic
+}
+
+// ---------------------------------------------------------------------------
+// Rate limit error handling (GH-1805)
+// ---------------------------------------------------------------------------
+
+func TestRateLimitResetError_UnwrapsToErrTaskReset(t *testing.T) {
+	t.Parallel()
+	err := &rateLimitResetError{RateLimitWaitS: 60, TotalDurationS: 100}
+	if !errors.Is(err, errTaskReset) {
+		t.Error("rateLimitResetError should unwrap to errTaskReset")
+	}
+}
+
+func TestRateLimitResetError_IsRateLimitDominated(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		rl, dur int
+		want    bool
+	}{
+		{"majority rate limited", 600, 900, true},
+		{"exactly half", 450, 900, false},
+		{"just over half", 451, 900, true},
+		{"minority rate limited", 100, 900, false},
+		{"no rate limit", 0, 900, false},
+		{"zero duration", 10, 0, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := &rateLimitResetError{RateLimitWaitS: tt.rl, TotalDurationS: tt.dur}
+			if got := e.isRateLimitDominated(); got != tt.want {
+				t.Errorf("isRateLimitDominated(%d/%d) = %v, want %v", tt.rl, tt.dur, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRateLimitResetError_SkipsFailureCounter(t *testing.T) {
+	t.Parallel()
+	// Simulates the RunStitchN logic: a rate-limit-dominated failure
+	// should NOT increment failedTaskCounts.
+	failedTaskCounts := map[string]int{}
+	taskID := "rl-test-42"
+
+	err := &rateLimitResetError{RateLimitWaitS: 700, TotalDurationS: 900}
+	var rlErr *rateLimitResetError
+	rateLimited := errors.As(err, &rlErr) && rlErr.isRateLimitDominated()
+
+	if !rateLimited {
+		failedTaskCounts[taskID]++
+	}
+
+	if failedTaskCounts[taskID] != 0 {
+		t.Errorf("rate-limited failure should not increment counter, got %d", failedTaskCounts[taskID])
+	}
+}
+
+func TestRateLimitResetError_CountsNonDominatedFailure(t *testing.T) {
+	t.Parallel()
+	// A failure with some rate limiting but not dominant should still count.
+	failedTaskCounts := map[string]int{}
+	taskID := "rl-test-43"
+
+	err := &rateLimitResetError{RateLimitWaitS: 100, TotalDurationS: 900}
+	var rlErr *rateLimitResetError
+	rateLimited := errors.As(err, &rlErr) && rlErr.isRateLimitDominated()
+
+	if !rateLimited {
+		failedTaskCounts[taskID]++
+	}
+
+	if failedTaskCounts[taskID] != 1 {
+		t.Errorf("non-dominated failure should increment counter, got %d", failedTaskCounts[taskID])
+	}
 }

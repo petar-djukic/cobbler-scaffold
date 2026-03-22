@@ -22,18 +22,19 @@ import (
 // GeneratorIssueStats holds per-issue stats derived from history files.
 type GeneratorIssueStats struct {
 	gh.CobblerIssue
-	Status        string  // "done", "failed", "in-progress", "pending"
-	CostUSD       float64
-	DurationS     int
-	DurationAPIMs int // Claude API execution time in ms (SDK mode, GH-1708)
-	NumTurns      int
-	LocDeltaProd int
-	LocDeltaTest int
-	NumReqs      int // number of requirements in the task description
-	InputTokens  int // total input tokens from history stats
-	OutputTokens int // total output tokens from history stats
-	PRDs         []string
-	Release      string // roadmap release version, e.g. "01.0"
+	Status         string  // "done", "failed", "in-progress", "pending"
+	CostUSD        float64
+	DurationS      int
+	DurationAPIMs  int // Claude API execution time in ms (SDK mode, GH-1708)
+	RateLimitWaitS int // seconds spent waiting on API rate limits (GH-1805)
+	NumTurns       int
+	LocDeltaProd   int
+	LocDeltaTest   int
+	NumReqs        int // number of requirements in the task description
+	InputTokens    int // total input tokens from history stats
+	OutputTokens   int // total output tokens from history stats
+	PRDs           []string
+	Release        string // roadmap release version, e.g. "01.0"
 }
 
 // GeneratorStatsDeps holds dependencies for generator stats collection.
@@ -115,17 +116,18 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 
 	// Build aggregated stitch stats and task metadata from history entries.
 	type stitchAgg struct {
-		Title         string
-		CostUSD       float64
-		DurationS     int
-		DurationAPIMs int // Claude API execution time (SDK mode only, GH-1708)
-		NumTurns      int
-		InputTokens   int
-		OutputTokens  int
-		LocDeltaProd  int
-		LocDeltaTest  int
-		LastStatus    string // last history entry status: "success" or "failed"
-		StartedAt     string // earliest StartedAt for chronological ordering
+		Title          string
+		CostUSD        float64
+		DurationS      int
+		DurationAPIMs  int // Claude API execution time (SDK mode only, GH-1708)
+		RateLimitWaitS int // cumulative rate limit wait seconds (GH-1805)
+		NumTurns       int
+		InputTokens    int
+		OutputTokens   int
+		LocDeltaProd   int
+		LocDeltaTest   int
+		LastStatus     string // last history entry status: "success" or "failed"
+		StartedAt      string // earliest StartedAt for chronological ordering
 	}
 	stitchByTask := make(map[string]*stitchAgg)
 	var taskOrder []string // insertion order for deterministic iteration
@@ -163,6 +165,7 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 				agg.DurationS = hs.DurationS
 			}
 			agg.DurationAPIMs += hs.DurationAPIMs
+			agg.RateLimitWaitS += hs.RateLimitWaitS
 			agg.NumTurns += hs.NumTurns
 			agg.InputTokens += hs.Tokens.Input
 			agg.OutputTokens += hs.Tokens.Output
@@ -223,7 +226,7 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 	// Build rows from history-derived task list.
 	rows := make([]GeneratorIssueStats, 0, len(stitchByTask))
 	var totalStitchCost float64
-	var totalStitchDurS, totalStitchAPIMs int
+	var totalStitchDurS, totalStitchAPIMs, totalRateLimitWaitS int
 	var totalTurns, totalLocProd, totalLocTest, totalReqs int
 	var totalInputTokens, totalOutputTokens int
 	var nDone, nFailed, nSkipped, nInProgress, nPending int
@@ -241,14 +244,15 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 				Number: num,
 				Title:  agg.Title,
 			},
-			CostUSD:       agg.CostUSD,
-			DurationS:     agg.DurationS,
-			DurationAPIMs: agg.DurationAPIMs,
-			NumTurns:      agg.NumTurns,
-			InputTokens:  agg.InputTokens,
-			OutputTokens: agg.OutputTokens,
-			LocDeltaProd: agg.LocDeltaProd,
-			LocDeltaTest: agg.LocDeltaTest,
+			CostUSD:        agg.CostUSD,
+			DurationS:      agg.DurationS,
+			DurationAPIMs:  agg.DurationAPIMs,
+			RateLimitWaitS: agg.RateLimitWaitS,
+			NumTurns:       agg.NumTurns,
+			InputTokens:    agg.InputTokens,
+			OutputTokens:   agg.OutputTokens,
+			LocDeltaProd:   agg.LocDeltaProd,
+			LocDeltaTest:   agg.LocDeltaTest,
 		}
 
 		// Derive status from history; override with GitHub data when available.
@@ -296,6 +300,7 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 		totalStitchCost += s.CostUSD
 		totalStitchDurS += s.DurationS
 		totalStitchAPIMs += s.DurationAPIMs
+		totalRateLimitWaitS += s.RateLimitWaitS
 		totalTurns += s.NumTurns
 		totalLocProd += s.LocDeltaProd
 		totalLocTest += s.LocDeltaTest
@@ -416,7 +421,11 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 	if totalMeasureCost > 0 {
 		fmt.Printf(" (stitch $%.2f + measure $%.2f)", totalStitchCost, totalMeasureCost)
 	}
-	fmt.Printf(", %d turns\n", totalTurns)
+	fmt.Printf(", %d turns", totalTurns)
+	if totalRateLimitWaitS > 0 {
+		fmt.Printf(", %s rate-limited", FormatDuration(totalRateLimitWaitS))
+	}
+	fmt.Println()
 	fmt.Printf("LOC created: %+d prod, %+d test\n", totalLocProd, totalLocTest)
 	fmt.Printf("Requirements: %d total in tasks\n", totalReqs)
 	combinedIn := totalInputTokens + totalMeasureIn
@@ -482,6 +491,7 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 		Reqs      string
 		Cost      string
 		Dur       string
+		RateLimit string // rate limit wait time (GH-1805)
 		Turns     string
 		TokIn     string
 		TokOut    string
@@ -511,6 +521,10 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 		tr.Dur = "-"
 		if r.DurationS > 0 {
 			tr.Dur = FormatDuration(r.DurationS)
+		}
+		tr.RateLimit = "-"
+		if r.RateLimitWaitS > 0 {
+			tr.RateLimit = FormatDuration(r.RateLimitWaitS)
 		}
 		tr.Turns = "-"
 		if r.NumTurns > 0 {
@@ -562,6 +576,7 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 			Status:    "done",
 			Rel:       "-",
 			Reqs:      "-",
+			RateLimit: "-",
 			Prod:      "-",
 			Test:      "-",
 			Parent:    "-",
@@ -603,6 +618,7 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 			Test:      "-",
 			Cost:      "-",
 			Dur:       "-",
+			RateLimit: "-",
 			Turns:     "-",
 			TokIn:     "-",
 			TokOut:    "-",
@@ -666,10 +682,10 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 	}
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "#\tStatus\tRel\tReqs\tCost\tDuration\tTurns\tTokIn\tTokOut\tProd\tTest\tParent\tTitle")
+	fmt.Fprintln(w, "#\tStatus\tRel\tReqs\tCost\tDuration\tRateLimit\tTurns\tTokIn\tTokOut\tProd\tTest\tParent\tTitle")
 	for _, tr := range tableRows {
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-			tr.ID, tr.Status, tr.Rel, tr.Reqs, tr.Cost, tr.Dur, tr.Turns, tr.TokIn, tr.TokOut, tr.Prod, tr.Test, tr.Parent, tr.Title)
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			tr.ID, tr.Status, tr.Rel, tr.Reqs, tr.Cost, tr.Dur, tr.RateLimit, tr.Turns, tr.TokIn, tr.TokOut, tr.Prod, tr.Test, tr.Parent, tr.Title)
 	}
 	if err := w.Flush(); err != nil {
 		return err

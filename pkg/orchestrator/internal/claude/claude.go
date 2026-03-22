@@ -64,6 +64,7 @@ type ClaudeResult struct {
 	DurationAPIMs       int    // SDK mode only; API-side latency in milliseconds
 	SessionID           string // SDK mode only; Claude session identifier
 	RawOutput           []byte
+	RateLimitWaitS      int // seconds spent waiting on rate limits (GH-1805)
 }
 
 // LocSnapshot holds a point-in-time LOC count.
@@ -116,9 +117,10 @@ type HistoryStats struct {
 	Tokens        HistoryTokens `yaml:"tokens"`
 	CostUSD       float64      `yaml:"cost_usd"`
 	NumTurns      int          `yaml:"num_turns,omitempty"`
-	DurationAPIMs int          `yaml:"duration_api_ms,omitempty"`
-	SessionID     string       `yaml:"session_id,omitempty"`
-	LOCBefore     LocSnapshot  `yaml:"loc_before"`
+	DurationAPIMs    int          `yaml:"duration_api_ms,omitempty"`
+	RateLimitWaitS   int          `yaml:"rate_limit_wait_s,omitempty"`
+	SessionID        string       `yaml:"session_id,omitempty"`
+	LOCBefore        LocSnapshot  `yaml:"loc_before"`
 	LOCAfter      LocSnapshot  `yaml:"loc_after"`
 	Diff          HistoryDiff  `yaml:"diff"`
 }
@@ -524,12 +526,15 @@ func SaveHistoryLog(dir, ts, phase string, rawOutput []byte) {
 // ProgressWriter wraps a bytes.Buffer, logging concise one-line summaries
 // of Claude stream-json events via Log(). All bytes pass through unchanged.
 type ProgressWriter struct {
-	Buf       *bytes.Buffer
-	Start     time.Time
-	LastEvent time.Time
-	Partial   []byte
-	Turn      int
-	GotFirst  bool
+	Buf              *bytes.Buffer
+	Start            time.Time
+	LastEvent        time.Time
+	Partial          []byte
+	Turn             int
+	GotFirst         bool
+	InRateLimit      bool      // true while waiting on a rate_limit_event (GH-1805)
+	RateLimitStart   time.Time // when the current rate limit wait began
+	RateLimitWaitS   int       // cumulative seconds spent waiting on rate limits
 }
 
 // NewProgressWriter creates a ProgressWriter writing to dst.
@@ -590,6 +595,13 @@ func (pw *ProgressWriter) LogLine(line []byte) {
 	total := now.Sub(pw.Start).Round(time.Second)
 	pw.LastEvent = now
 
+	// Accumulate rate limit wait time when a non-rate-limit event arrives
+	// after a rate limit period (GH-1805).
+	if pw.InRateLimit && msg.Type != "rate_limit_event" {
+		pw.RateLimitWaitS += int(now.Sub(pw.RateLimitStart).Seconds())
+		pw.InRateLimit = false
+	}
+
 	switch msg.Type {
 	case "assistant":
 		pw.Turn++
@@ -618,6 +630,11 @@ func (pw *ProgressWriter) LogLine(line []byte) {
 		Log("claude: [%s +%s] tools done, waiting for LLM", total, step)
 	case "rate_limit_event":
 		Log("claude: [%s] rate_limit", total)
+		if !pw.InRateLimit {
+			pw.InRateLimit = true
+			pw.RateLimitStart = now
+		}
+		return // don't clear InRateLimit on rate_limit events
 	case "system":
 		Log("claude: [%s] ready", total)
 	case "result":
