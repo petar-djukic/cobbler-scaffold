@@ -806,6 +806,73 @@ loc_after:
 	}
 }
 
+func TestPrintGeneratorStats_StartedColumn(t *testing.T) {
+	// Uses os.Chdir — do NOT use t.Parallel()
+	dir := t.TempDir()
+
+	histDir := filepath.Join(dir, "history")
+	os.MkdirAll(histDir, 0o755)
+
+	stitch1 := `caller: stitch
+task_id: "300"
+task_title: "[stitch] prd001 R1 with timestamp"
+status: success
+started_at: "2026-03-22T14:30:00Z"
+duration: "5m 0s"
+duration_s: 300
+tokens:
+  input: 100000
+  output: 5000
+  cache_creation: 0
+  cache_read: 0
+cost_usd: 1.00
+num_turns: 10
+loc_before:
+  production: 500
+  test: 200
+loc_after:
+  production: 550
+  test: 220
+`
+	os.WriteFile(filepath.Join(histDir, "2026-03-22-14-30-00-stitch-stats.yaml"), []byte(stitch1), 0o644)
+
+	orig, _ := os.Getwd()
+	t.Cleanup(func() { os.Chdir(orig) })
+	os.Chdir(dir)
+
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	deps := GeneratorStatsDeps{
+		Log:                    func(format string, args ...any) {},
+		ListGenerationBranches: func() []string { return []string{"generation-main"} },
+		GenerationBranch:       "generation-main",
+		CurrentBranch:          "generation-main",
+		HistoryDir:             histDir,
+	}
+
+	err := PrintGeneratorStats(deps)
+	w.Close()
+	captured, _ := io.ReadAll(r)
+	os.Stdout = oldStdout
+	output := string(captured)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Table header should include Started column.
+	if !strings.Contains(output, "Started") {
+		t.Errorf("expected 'Started' column header in output:\n%s", output)
+	}
+
+	// Task 300 should show a formatted start time (Mar 22).
+	if !strings.Contains(output, "Mar 22") {
+		t.Errorf("expected 'Mar 22' in Started column for task 300:\n%s", output)
+	}
+}
+
 func TestPrintGeneratorStats_RateLimitColumn(t *testing.T) {
 	// Uses os.Chdir — do NOT use t.Parallel()
 	dir := t.TempDir()
