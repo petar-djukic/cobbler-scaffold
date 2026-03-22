@@ -62,8 +62,10 @@ func TestRequirementTracking_GeneratorStartProducesRequirements(t *testing.T) {
 		t.Fatalf("GeneratorStart: %v", err)
 	}
 
-	// Read and verify the generated requirements.yaml.
-	reqPath := filepath.Join(dir, ".cobbler", "requirements.yaml")
+	// Read requirements.yaml from CWD (the generation worktree after
+	// GeneratorStart, not the original repo dir) (GH-1608, GH-1906).
+	cwd, _ := os.Getwd()
+	reqPath := filepath.Join(cwd, ".cobbler", "requirements.yaml")
 	data, err := os.ReadFile(reqPath)
 	if err != nil {
 		t.Fatalf("reading requirements.yaml: %v", err)
