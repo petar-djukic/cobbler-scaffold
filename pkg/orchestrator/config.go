@@ -216,6 +216,14 @@ type CobblerConfig struct {
 	// no retries are attempted. A value of 2-3 is recommended.
 	MaxMeasureRetries int `yaml:"max_measure_retries"`
 
+	// MinMeasureIssues is the minimum number of tasks that measure must
+	// propose when unresolved requirements exist. When set, an additional
+	// prompt constraint tells Claude that returning [] is not acceptable.
+	// Default 0 (disabled — Claude may return [] when it judges the spec
+	// complete). Useful for test configurations where the LLM occasionally
+	// misinterprets a specs-only project as already implemented (GH-1882).
+	MinMeasureIssues int `yaml:"min_measure_issues"`
+
 	// MaxRequirementsPerTask is the maximum number of requirements a single
 	// proposed task may contain. When exceeded the task is rejected and the
 	// measure agent is re-prompted to split it. When 0 (default), the limit

@@ -31,6 +31,7 @@ func TestRel01_UC002_RunOneCycle(t *testing.T) {
 
 	testutil.WriteConfigOverride(t, dir, func(cfg *orchestrator.Config) {
 		cfg.Cobbler.MaxMeasureIssues = 1
+		cfg.Cobbler.MinMeasureIssues = 1 // prevent empty [] from LLM non-determinism (GH-1882)
 		cfg.Generation.Cycles = 1
 	})
 
