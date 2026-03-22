@@ -134,6 +134,19 @@ document_types:
       requirement_groups: "R1, R2, R3, ..."
       requirement_items: "R1.1, R1.2, R2.1, ..."
       requirement_id_format: "R{group}.{item} — numeric dotted only (e.g., R1.1, R2.3). Letter suffixes (R2a) are not valid and are flagged by mage analyze."
+      requirement_weight: |
+        Each R-item may optionally specify a weight indicating implementation
+        complexity. Weight is a positive integer with no upper bound, default 1.
+        The measure agent uses weights to batch requirements into tasks that fit
+        within the max_weight_per_task budget. Two YAML formats are supported:
+
+        Simple (weight defaults to 1):
+          - R1.1: Must accept -f flag
+
+        Weighted:
+          - R6.1:
+              text: Must scan each input line for known timestamp patterns
+              weight: 3
       acceptance_criteria_ids: "AC1, AC2, AC3, ... (sequential within each PRD)"
     acceptance_criteria_schema:
       description: |
