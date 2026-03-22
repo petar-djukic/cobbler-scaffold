@@ -32,6 +32,7 @@ type GeneratorIssueStats struct {
 	LocDeltaProd   int
 	LocDeltaTest   int
 	NumReqs        int // number of requirements in the task description
+	TotalWeight    int // sum of PRD weights for the task's R-items (GH-1832)
 	InputTokens    int // total input tokens from history stats
 	OutputTokens   int // total output tokens from history stats
 	PRDs           []string
@@ -228,11 +229,12 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 	rows := make([]GeneratorIssueStats, 0, len(stitchByTask))
 	var totalStitchCost float64
 	var totalStitchDurS, totalStitchAPIMs, totalRateLimitWaitS int
-	var totalTurns, totalLocProd, totalLocTest, totalReqs int
+	var totalTurns, totalLocProd, totalLocTest, totalReqs, totalWeight int
 	var totalInputTokens, totalOutputTokens int
 	var nDone, nFailed, nSkipped, nInProgress, nPending int
 	prdStatus := make(map[string]string) // prd name → highest-priority status
 	prdReleaseMap := BuildPRDReleaseMap()
+	weightReqStates := loadRequirementStatesForStats(deps, genBranch) // for weight lookup (GH-1832)
 	seen := make(map[string]bool) // track task IDs already added
 
 	for _, tid := range taskOrder {
@@ -310,6 +312,8 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 
 		s.NumReqs = CountDescriptionReqs(s.Description)
 		totalReqs += s.NumReqs
+		s.TotalWeight = CountDescriptionWeight(s.Description, weightReqStates)
+		totalWeight += s.TotalWeight
 
 		// Extract release directly from title; fall back to PRD mapping.
 		s.Release = ExtractRelease(s.Title)
@@ -365,6 +369,8 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 		}
 		s.NumReqs = CountDescriptionReqs(ghIss.Description)
 		totalReqs += s.NumReqs
+		s.TotalWeight = CountDescriptionWeight(ghIss.Description, weightReqStates)
+		totalWeight += s.TotalWeight
 		s.Release = ExtractRelease(ghIss.Title)
 		s.PRDs = ExtractPRDRefs(ghIss.Title + " " + ghIss.Description)
 		for _, prd := range s.PRDs {
@@ -491,6 +497,7 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 		Started   string // display-formatted StartedAt timestamp (GH-1884)
 		Rel       string
 		Reqs      string
+		Weight    string // total weight from PRD annotations (GH-1832)
 		Cost      string
 		Dur       string
 		RateLimit string // rate limit wait time (GH-1805)
@@ -562,6 +569,10 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 		if r.NumReqs > 0 {
 			tr.Reqs = strconv.Itoa(r.NumReqs)
 		}
+		tr.Weight = "-"
+		if r.TotalWeight > 0 {
+			tr.Weight = strconv.Itoa(r.TotalWeight)
+		}
 		tr.Title = r.Title
 		if len(tr.Title) > 48 {
 			tr.Title = tr.Title[:45] + "..."
@@ -590,6 +601,7 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 			Started:   formatStarted(m.StartedAt),
 			Rel:       "-",
 			Reqs:      "-",
+			Weight:    "-",
 			RateLimit: "-",
 			Prod:      "-",
 			Test:      "-",
@@ -629,6 +641,7 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 			Started:   "-",
 			Rel:       "-",
 			Reqs:      "-",
+			Weight:    "-",
 			Prod:      "-",
 			Test:      "-",
 			Cost:      "-",
@@ -697,10 +710,10 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 	}
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "#\tStatus\tStarted\tRel\tReqs\tCost\tDuration\tRateLimit\tTurns\tTokIn\tTokOut\tProd\tTest\tParent\tTitle")
+	fmt.Fprintln(w, "#\tStatus\tStarted\tRel\tReqs\tWeight\tCost\tDuration\tRateLimit\tTurns\tTokIn\tTokOut\tProd\tTest\tParent\tTitle")
 	for _, tr := range tableRows {
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-			tr.ID, tr.Status, tr.Started, tr.Rel, tr.Reqs, tr.Cost, tr.Dur, tr.RateLimit, tr.Turns, tr.TokIn, tr.TokOut, tr.Prod, tr.Test, tr.Parent, tr.Title)
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			tr.ID, tr.Status, tr.Started, tr.Rel, tr.Reqs, tr.Weight, tr.Cost, tr.Dur, tr.RateLimit, tr.Turns, tr.TokIn, tr.TokOut, tr.Prod, tr.Test, tr.Parent, tr.Title)
 	}
 	if err := w.Flush(); err != nil {
 		return err
@@ -941,6 +954,35 @@ func CountDescriptionReqs(description string) int {
 	}
 	if total == 0 {
 		return len(parsed.Requirements)
+	}
+	return total
+}
+
+// rePRDRef matches PRD requirement references like "prd001 R1.1" in text.
+var rePRDRef = regexp.MustCompile(`(prd\d+[-\w]*)\s+R(\d+)\.(\d+)`)
+
+// CountDescriptionWeight sums the PRD weights for all R-item references
+// found in a task description. When reqStates is nil or an R-item has no
+// weight, each reference counts as 1 (equivalent to CountDescriptionReqs).
+func CountDescriptionWeight(description string, reqStates map[string]map[string]generate.RequirementState) int {
+	if len(reqStates) == 0 {
+		return CountDescriptionReqs(description)
+	}
+	refs := rePRDRef.FindAllStringSubmatch(description, -1)
+	if len(refs) == 0 {
+		return CountDescriptionReqs(description)
+	}
+	total := 0
+	for _, m := range refs {
+		prdStem, group, item := m[1], m[2], m[3]
+		key := "R" + group + "." + item
+		w := 1
+		if prdReqs, ok := reqStates[prdStem]; ok {
+			if st, ok := prdReqs[key]; ok && st.Weight > 0 {
+				w = st.Weight
+			}
+		}
+		total += w
 	}
 	return total
 }
