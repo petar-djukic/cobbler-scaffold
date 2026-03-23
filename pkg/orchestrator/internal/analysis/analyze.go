@@ -37,6 +37,7 @@ type AnalyzeResult struct {
 	UntracedSuccessCriteria        []string // S-items with no AC traces (warning)
 	UnreachableUCs                 []string // UCs whose touchpoint PRDs have no R-items (warning)
 	FailedRequirements             []string // R-items marked complete_with_failures (warning)
+	MissingWeights                 []string // R-items without explicit weight annotation (warning, GH-1946)
 }
 
 // AnalyzeCounts holds the artifact counts discovered during analysis.
@@ -85,8 +86,21 @@ func CollectAnalyzeResult(deps AnalyzeDeps) (AnalyzeResult, AnalyzeCounts, error
 				groups[groupKey] = true
 				for _, item := range group.Items {
 					if m, ok := item.(map[string]interface{}); ok {
-						for itemKey := range m {
+						for itemKey, val := range m {
 							prdRItems[id] = append(prdRItems[id], itemKey)
+							// Check for missing weight annotation (GH-1946).
+							// Simple string value = no weight; nested map with
+							// "weight" key = has weight.
+							hasWeight := false
+							if nested, ok := val.(map[string]interface{}); ok {
+								if _, ok := nested["weight"]; ok {
+									hasWeight = true
+								}
+							}
+							if !hasWeight {
+								result.MissingWeights = append(result.MissingWeights,
+									fmt.Sprintf("%s %s: no weight (defaults to 1)", id, itemKey))
+							}
 						}
 					}
 				}
@@ -500,6 +514,9 @@ func CollectAnalyzeResult(deps AnalyzeDeps) (AnalyzeResult, AnalyzeCounts, error
 	}
 	deps.Log("analyze: failed requirements found %d (warning)", len(result.FailedRequirements))
 
+	sort.Strings(result.MissingWeights)
+	deps.Log("analyze: missing weights found %d (warning)", len(result.MissingWeights))
+
 	// Check 7: YAML schema validation.
 	result.SchemaErrors = deps.ValidateDocSchemas()
 	deps.Log("analyze: schema validation found %d error(s)", len(result.SchemaErrors))
@@ -566,6 +583,7 @@ func (r AnalyzeResult) PrintReport(prdCount, ucCount, tsCount, smCount int) erro
 	PrintSection("Untraced success criteria (S-item with no AC trace — warning)", r.UntracedSuccessCriteria)
 	PrintSection("Unreachable UCs (touchpoint PRDs have no R-items — warning)", r.UnreachableUCs)
 	PrintSection("Failed requirements (R-items complete with test failures — warning)", r.FailedRequirements)
+	PrintSection("Missing weights (R-items without explicit weight annotation — warning)", r.MissingWeights)
 
 	if !hasIssues {
 		fmt.Printf("\n✅ All consistency checks passed\n")
