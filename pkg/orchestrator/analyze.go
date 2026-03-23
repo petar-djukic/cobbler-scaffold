@@ -141,5 +141,5 @@ func computeCodeStatus(roadmap *RoadmapDoc, scan map[string]int) CodeStatusRepor
 			UseCases: ucs,
 		})
 	}
-	return an.ComputeCodeStatus(&internalRoadmap, scan)
+	return an.ComputeCodeStatus(&internalRoadmap, scan, nil)
 }

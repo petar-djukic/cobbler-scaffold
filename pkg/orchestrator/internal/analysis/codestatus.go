@@ -99,9 +99,102 @@ func ScanTestDirectories(testsRoot string) map[string]int {
 	return result
 }
 
-// ComputeCodeStatus builds the code status report from the roadmap and
-// a test directory scan.
-func ComputeCodeStatus(roadmap *RoadmapDoc, testDirScan map[string]int) CodeStatusReport {
+// isRequirementComplete returns true if the status represents a completed
+// or skipped R-item.
+func isRequirementComplete(status string) bool {
+	return status == "complete" || status == "complete_with_failures" || status == "skip"
+}
+
+// findPRDRequirements looks up the requirement map for a PRD stem, trying
+// exact match first, then dash-delimited prefix match (e.g. "prd001" matches
+// "prd001-core" but not "prd0011-other").
+func findPRDRequirements(reqs map[string]map[string]RequirementState, stem string) map[string]RequirementState {
+	if r, ok := reqs[stem]; ok {
+		return r
+	}
+	var bestKey string
+	var bestReqs map[string]RequirementState
+	for key, r := range reqs {
+		if strings.HasPrefix(key, stem+"-") {
+			if bestKey == "" || len(key) > len(bestKey) {
+				bestKey = key
+				bestReqs = r
+			}
+		}
+	}
+	return bestReqs
+}
+
+// ComputeReqCompletion loads .cobbler/requirements.yaml and use case files,
+// then determines which use cases have all their cited R-items complete.
+// Returns a map from UC prefix (e.g. "rel01.0-uc001") to completion status.
+// Returns nil when requirements.yaml is missing or empty (GH-1948).
+func ComputeReqCompletion(cobblerDir string) map[string]bool {
+	reqFile := loadYAML[RequirementsFile](filepath.Join(cobblerDir, "requirements.yaml"))
+	if reqFile == nil || len(reqFile.Requirements) == 0 {
+		return nil
+	}
+
+	ucFiles, err := filepath.Glob("docs/specs/use-cases/rel*.yaml")
+	if err != nil || len(ucFiles) == 0 {
+		return nil
+	}
+
+	result := make(map[string]bool)
+	for _, path := range ucFiles {
+		uc, err := LoadUseCase(path)
+		if err != nil || len(uc.Touchpoints) == 0 {
+			continue
+		}
+		prefix := UCPrefixFromID(uc.ID)
+		if prefix == "" {
+			continue
+		}
+
+		citations := ExtractCitationsFromTouchpoints(uc.Touchpoints)
+		if len(citations) == 0 {
+			continue
+		}
+
+		allComplete := true
+		for _, cite := range citations {
+			prdReqs := findPRDRequirements(reqFile.Requirements, cite.PRDID)
+			if prdReqs == nil {
+				allComplete = false
+				break
+			}
+			for _, group := range cite.Groups {
+				groupPrefix := group + "."
+				found := false
+				for key, st := range prdReqs {
+					if strings.HasPrefix(key, groupPrefix) {
+						found = true
+						if !isRequirementComplete(st.Status) {
+							allComplete = false
+							break
+						}
+					}
+				}
+				if !found || !allComplete {
+					allComplete = false
+					break
+				}
+			}
+			if !allComplete {
+				break
+			}
+		}
+		result[prefix] = allComplete
+	}
+	return result
+}
+
+// ComputeCodeStatus builds the code status report from the roadmap,
+// a test directory scan, and optional per-UC requirements completion.
+// When reqComplete is non-nil, a use case is considered implemented if
+// it has test files OR all its cited R-items are complete in
+// requirements.yaml (GH-1948).
+func ComputeCodeStatus(roadmap *RoadmapDoc, testDirScan map[string]int, reqComplete map[string]bool) CodeStatusReport {
 	var report CodeStatusReport
 
 	for _, release := range roadmap.Releases {
@@ -126,6 +219,9 @@ func ComputeCodeStatus(roadmap *RoadmapDoc, testDirScan map[string]int) CodeStat
 				codeStatus = "implemented"
 				implemented++
 				testDir = TestDirForUC(uc.ID)
+			} else if reqComplete[prefix] {
+				codeStatus = "implemented"
+				implemented++
 			}
 
 			relStatus.UseCases = append(relStatus.UseCases, UCCodeStatus{
@@ -184,7 +280,7 @@ func PrintCodeStatus() error {
 
 	testScan := ScanTestDirectories("tests")
 
-	report := ComputeCodeStatus(roadmap, testScan)
+	report := ComputeCodeStatus(roadmap, testScan, nil)
 	report.Gaps = DetectSpecCodeGaps(&report)
 
 	PrintCodeStatusReport(&report)

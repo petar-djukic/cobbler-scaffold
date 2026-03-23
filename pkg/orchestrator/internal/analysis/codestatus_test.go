@@ -152,7 +152,7 @@ func TestComputeCodeStatus_AllImplemented(t *testing.T) {
 		"rel01.0-uc001": 1,
 		"rel01.0-uc002": 3,
 	}
-	report := ComputeCodeStatus(roadmap, scan)
+	report := ComputeCodeStatus(roadmap, scan, nil)
 
 	if len(report.Releases) != 1 {
 		t.Fatalf("got %d releases, want 1", len(report.Releases))
@@ -183,7 +183,7 @@ func TestComputeCodeStatus_Partial(t *testing.T) {
 	scan := map[string]int{
 		"rel01.0-uc001": 1,
 	}
-	report := ComputeCodeStatus(roadmap, scan)
+	report := ComputeCodeStatus(roadmap, scan, nil)
 
 	if report.Releases[0].CodeReadiness != "partial" {
 		t.Errorf("CodeReadiness: got %q, want %q", report.Releases[0].CodeReadiness, "partial")
@@ -205,7 +205,7 @@ func TestComputeCodeStatus_None(t *testing.T) {
 		}},
 	}
 	scan := map[string]int{}
-	report := ComputeCodeStatus(roadmap, scan)
+	report := ComputeCodeStatus(roadmap, scan, nil)
 
 	if report.Releases[0].CodeReadiness != "none" {
 		t.Errorf("CodeReadiness: got %q, want %q", report.Releases[0].CodeReadiness, "none")
@@ -222,7 +222,7 @@ func TestComputeCodeStatus_SkipsEmptyReleases(t *testing.T) {
 		},
 	}
 	scan := map[string]int{"rel01.0-uc001": 1}
-	report := ComputeCodeStatus(roadmap, scan)
+	report := ComputeCodeStatus(roadmap, scan, nil)
 
 	if len(report.Releases) != 1 {
 		t.Errorf("got %d releases, want 1 (empty release should be skipped)", len(report.Releases))
@@ -241,7 +241,7 @@ func TestComputeCodeStatus_MultipleReleases(t *testing.T) {
 		},
 	}
 	scan := map[string]int{"rel01.0-uc001": 2}
-	report := ComputeCodeStatus(roadmap, scan)
+	report := ComputeCodeStatus(roadmap, scan, nil)
 
 	if len(report.Releases) != 2 {
 		t.Fatalf("got %d releases, want 2", len(report.Releases))
@@ -488,6 +488,363 @@ func TestPrintCodeStatus_WithGap(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "gap") {
 		t.Errorf("error should mention 'gap', got: %v", err)
+	}
+}
+
+// --- ComputeCodeStatus with reqComplete (GH-1948) ---
+
+func TestComputeCodeStatus_ReqCompleteMarksImplemented(t *testing.T) {
+	roadmap := &RoadmapDoc{
+		Releases: []RoadmapRelease{{
+			Version: "01.0",
+			Name:    "Core",
+			Status:  "done",
+			UseCases: []RoadmapUseCase{
+				{ID: "rel01.0-uc001-init", Status: "done"},
+				{ID: "rel01.0-uc002-lifecycle", Status: "done"},
+			},
+		}},
+	}
+	scan := map[string]int{} // no test files
+	reqComplete := map[string]bool{
+		"rel01.0-uc001": true,
+		"rel01.0-uc002": true,
+	}
+	report := ComputeCodeStatus(roadmap, scan, reqComplete)
+
+	if report.Releases[0].CodeReadiness != "all implemented" {
+		t.Errorf("CodeReadiness: got %q, want %q", report.Releases[0].CodeReadiness, "all implemented")
+	}
+	for i, uc := range report.Releases[0].UseCases {
+		if uc.CodeStatus != "implemented" {
+			t.Errorf("UC[%d] CodeStatus: got %q, want %q", i, uc.CodeStatus, "implemented")
+		}
+		if uc.TestFiles != 0 {
+			t.Errorf("UC[%d] TestFiles: got %d, want 0 (implemented via reqs, not tests)", i, uc.TestFiles)
+		}
+	}
+}
+
+func TestComputeCodeStatus_ReqCompletePartial(t *testing.T) {
+	roadmap := &RoadmapDoc{
+		Releases: []RoadmapRelease{{
+			Version: "01.0",
+			Name:    "Core",
+			Status:  "done",
+			UseCases: []RoadmapUseCase{
+				{ID: "rel01.0-uc001-init", Status: "done"},
+				{ID: "rel01.0-uc002-lifecycle", Status: "done"},
+			},
+		}},
+	}
+	scan := map[string]int{}
+	reqComplete := map[string]bool{
+		"rel01.0-uc001": true,
+		"rel01.0-uc002": false, // not all reqs complete
+	}
+	report := ComputeCodeStatus(roadmap, scan, reqComplete)
+
+	if report.Releases[0].CodeReadiness != "partial" {
+		t.Errorf("CodeReadiness: got %q, want %q", report.Releases[0].CodeReadiness, "partial")
+	}
+}
+
+func TestComputeCodeStatus_TestFilesTakePrecedence(t *testing.T) {
+	roadmap := &RoadmapDoc{
+		Releases: []RoadmapRelease{{
+			Version: "01.0",
+			Name:    "Core",
+			Status:  "done",
+			UseCases: []RoadmapUseCase{
+				{ID: "rel01.0-uc001-init", Status: "done"},
+			},
+		}},
+	}
+	scan := map[string]int{"rel01.0-uc001": 3}
+	reqComplete := map[string]bool{"rel01.0-uc001": true}
+	report := ComputeCodeStatus(roadmap, scan, reqComplete)
+
+	uc := report.Releases[0].UseCases[0]
+	if uc.CodeStatus != "implemented" {
+		t.Errorf("CodeStatus: got %q, want %q", uc.CodeStatus, "implemented")
+	}
+	if uc.TestFiles != 3 {
+		t.Errorf("TestFiles: got %d, want 3 (test files should be counted when present)", uc.TestFiles)
+	}
+	if uc.TestDir == "" {
+		t.Error("TestDir should be set when test files exist")
+	}
+}
+
+func TestComputeCodeStatus_NilReqCompleteBackwardCompat(t *testing.T) {
+	roadmap := &RoadmapDoc{
+		Releases: []RoadmapRelease{{
+			Version: "01.0",
+			Name:    "Core",
+			Status:  "done",
+			UseCases: []RoadmapUseCase{
+				{ID: "rel01.0-uc001-init", Status: "done"},
+			},
+		}},
+	}
+	scan := map[string]int{}
+	report := ComputeCodeStatus(roadmap, scan, nil)
+
+	if report.Releases[0].UseCases[0].CodeStatus != "not started" {
+		t.Errorf("CodeStatus: got %q, want %q (nil reqComplete should not change behavior)",
+			report.Releases[0].UseCases[0].CodeStatus, "not started")
+	}
+}
+
+// --- ComputeReqCompletion (GH-1948) ---
+
+func TestComputeReqCompletion_AllComplete(t *testing.T) {
+	dir := t.TempDir()
+	origDir, _ := os.Getwd()
+	os.Chdir(dir)
+	t.Cleanup(func() { os.Chdir(origDir) })
+
+	cobblerDir := filepath.Join(dir, ".cobbler")
+	os.MkdirAll(cobblerDir, 0o755)
+	os.MkdirAll("docs/specs/use-cases", 0o755)
+
+	os.WriteFile(filepath.Join(cobblerDir, "requirements.yaml"), []byte(`requirements:
+  prd001-core:
+    R1.1:
+      status: complete
+    R1.2:
+      status: complete
+`), 0o644)
+
+	os.WriteFile("docs/specs/use-cases/rel01.0-uc001-init.yaml", []byte(`id: rel01.0-uc001-init
+title: Init
+touchpoints:
+  - T1: prd001-core R1
+`), 0o644)
+
+	result := ComputeReqCompletion(cobblerDir)
+	if result == nil {
+		t.Fatal("expected non-nil result")
+	}
+	if !result["rel01.0-uc001"] {
+		t.Error("rel01.0-uc001 should be complete")
+	}
+}
+
+func TestComputeReqCompletion_PartiallyComplete(t *testing.T) {
+	dir := t.TempDir()
+	origDir, _ := os.Getwd()
+	os.Chdir(dir)
+	t.Cleanup(func() { os.Chdir(origDir) })
+
+	cobblerDir := filepath.Join(dir, ".cobbler")
+	os.MkdirAll(cobblerDir, 0o755)
+	os.MkdirAll("docs/specs/use-cases", 0o755)
+
+	os.WriteFile(filepath.Join(cobblerDir, "requirements.yaml"), []byte(`requirements:
+  prd001-core:
+    R1.1:
+      status: complete
+    R1.2:
+      status: ready
+`), 0o644)
+
+	os.WriteFile("docs/specs/use-cases/rel01.0-uc001-init.yaml", []byte(`id: rel01.0-uc001-init
+title: Init
+touchpoints:
+  - T1: prd001-core R1
+`), 0o644)
+
+	result := ComputeReqCompletion(cobblerDir)
+	if result["rel01.0-uc001"] {
+		t.Error("rel01.0-uc001 should NOT be complete (R1.2 is ready)")
+	}
+}
+
+func TestComputeReqCompletion_NoRequirementsFile(t *testing.T) {
+	dir := t.TempDir()
+	result := ComputeReqCompletion(dir)
+	if result != nil {
+		t.Errorf("expected nil, got %v", result)
+	}
+}
+
+func TestComputeReqCompletion_SkipStatusCountsAsComplete(t *testing.T) {
+	dir := t.TempDir()
+	origDir, _ := os.Getwd()
+	os.Chdir(dir)
+	t.Cleanup(func() { os.Chdir(origDir) })
+
+	cobblerDir := filepath.Join(dir, ".cobbler")
+	os.MkdirAll(cobblerDir, 0o755)
+	os.MkdirAll("docs/specs/use-cases", 0o755)
+
+	os.WriteFile(filepath.Join(cobblerDir, "requirements.yaml"), []byte(`requirements:
+  prd001-core:
+    R1.1:
+      status: complete
+    R1.2:
+      status: skip
+`), 0o644)
+
+	os.WriteFile("docs/specs/use-cases/rel01.0-uc001-init.yaml", []byte(`id: rel01.0-uc001-init
+title: Init
+touchpoints:
+  - T1: prd001-core R1
+`), 0o644)
+
+	result := ComputeReqCompletion(cobblerDir)
+	if !result["rel01.0-uc001"] {
+		t.Error("rel01.0-uc001 should be complete (skip counts as complete)")
+	}
+}
+
+func TestComputeReqCompletion_CompleteWithFailuresCountsAsComplete(t *testing.T) {
+	dir := t.TempDir()
+	origDir, _ := os.Getwd()
+	os.Chdir(dir)
+	t.Cleanup(func() { os.Chdir(origDir) })
+
+	cobblerDir := filepath.Join(dir, ".cobbler")
+	os.MkdirAll(cobblerDir, 0o755)
+	os.MkdirAll("docs/specs/use-cases", 0o755)
+
+	os.WriteFile(filepath.Join(cobblerDir, "requirements.yaml"), []byte(`requirements:
+  prd001-core:
+    R1.1:
+      status: complete_with_failures
+`), 0o644)
+
+	os.WriteFile("docs/specs/use-cases/rel01.0-uc001-init.yaml", []byte(`id: rel01.0-uc001-init
+title: Init
+touchpoints:
+  - T1: prd001-core R1
+`), 0o644)
+
+	result := ComputeReqCompletion(cobblerDir)
+	if !result["rel01.0-uc001"] {
+		t.Error("rel01.0-uc001 should be complete (complete_with_failures counts)")
+	}
+}
+
+func TestComputeReqCompletion_MissingPRDInReqs(t *testing.T) {
+	dir := t.TempDir()
+	origDir, _ := os.Getwd()
+	os.Chdir(dir)
+	t.Cleanup(func() { os.Chdir(origDir) })
+
+	cobblerDir := filepath.Join(dir, ".cobbler")
+	os.MkdirAll(cobblerDir, 0o755)
+	os.MkdirAll("docs/specs/use-cases", 0o755)
+
+	os.WriteFile(filepath.Join(cobblerDir, "requirements.yaml"), []byte(`requirements:
+  prd099-other:
+    R1.1:
+      status: complete
+`), 0o644)
+
+	os.WriteFile("docs/specs/use-cases/rel01.0-uc001-init.yaml", []byte(`id: rel01.0-uc001-init
+title: Init
+touchpoints:
+  - T1: prd001-core R1
+`), 0o644)
+
+	result := ComputeReqCompletion(cobblerDir)
+	if result["rel01.0-uc001"] {
+		t.Error("rel01.0-uc001 should NOT be complete (prd001-core not in requirements)")
+	}
+}
+
+func TestComputeReqCompletion_PrefixMatch(t *testing.T) {
+	dir := t.TempDir()
+	origDir, _ := os.Getwd()
+	os.Chdir(dir)
+	t.Cleanup(func() { os.Chdir(origDir) })
+
+	cobblerDir := filepath.Join(dir, ".cobbler")
+	os.MkdirAll(cobblerDir, 0o755)
+	os.MkdirAll("docs/specs/use-cases", 0o755)
+
+	// requirements.yaml has full stem "prd001-core", touchpoint cites "prd001"
+	os.WriteFile(filepath.Join(cobblerDir, "requirements.yaml"), []byte(`requirements:
+  prd001-core:
+    R1.1:
+      status: complete
+`), 0o644)
+
+	os.WriteFile("docs/specs/use-cases/rel01.0-uc001-init.yaml", []byte(`id: rel01.0-uc001-init
+title: Init
+touchpoints:
+  - T1: prd001 R1
+`), 0o644)
+
+	result := ComputeReqCompletion(cobblerDir)
+	if !result["rel01.0-uc001"] {
+		t.Error("rel01.0-uc001 should be complete (prd001 prefix matches prd001-core)")
+	}
+}
+
+// --- isRequirementComplete ---
+
+func TestIsRequirementComplete(t *testing.T) {
+	cases := []struct {
+		status string
+		want   bool
+	}{
+		{"complete", true},
+		{"complete_with_failures", true},
+		{"skip", true},
+		{"ready", false},
+		{"", false},
+	}
+	for _, tc := range cases {
+		if got := isRequirementComplete(tc.status); got != tc.want {
+			t.Errorf("isRequirementComplete(%q) = %v, want %v", tc.status, got, tc.want)
+		}
+	}
+}
+
+// --- findPRDRequirements ---
+
+func TestFindPRDRequirements_ExactMatch(t *testing.T) {
+	reqs := map[string]map[string]RequirementState{
+		"prd001-core": {"R1.1": {Status: "complete"}},
+	}
+	got := findPRDRequirements(reqs, "prd001-core")
+	if got == nil || got["R1.1"].Status != "complete" {
+		t.Errorf("expected exact match for prd001-core")
+	}
+}
+
+func TestFindPRDRequirements_PrefixMatch(t *testing.T) {
+	reqs := map[string]map[string]RequirementState{
+		"prd001-core": {"R1.1": {Status: "ready"}},
+	}
+	got := findPRDRequirements(reqs, "prd001")
+	if got == nil || got["R1.1"].Status != "ready" {
+		t.Errorf("expected prefix match prd001 -> prd001-core")
+	}
+}
+
+func TestFindPRDRequirements_NoMatch(t *testing.T) {
+	reqs := map[string]map[string]RequirementState{
+		"prd001-core": {"R1.1": {Status: "ready"}},
+	}
+	got := findPRDRequirements(reqs, "prd999")
+	if got != nil {
+		t.Errorf("expected nil for non-matching stem, got %v", got)
+	}
+}
+
+func TestFindPRDRequirements_LongestPrefixWins(t *testing.T) {
+	reqs := map[string]map[string]RequirementState{
+		"prd001-core":     {"R1.1": {Status: "ready"}},
+		"prd001-core-ext": {"R1.1": {Status: "complete"}},
+	}
+	got := findPRDRequirements(reqs, "prd001-core")
+	// Exact match should win over prefix
+	if got == nil || got["R1.1"].Status != "ready" {
+		t.Errorf("exact match should take precedence")
 	}
 }
 
