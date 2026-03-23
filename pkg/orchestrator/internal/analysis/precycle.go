@@ -107,7 +107,8 @@ func RunPreCycleAnalysis(deps PreCycleDeps) {
 	roadmap := loadYAML[RoadmapDoc]("docs/road-map.yaml")
 	if roadmap != nil {
 		testScan := ScanTestDirectories("tests")
-		report := ComputeCodeStatus(roadmap, testScan)
+		reqComplete := ComputeReqCompletion(deps.CobblerDir)
+		report := ComputeCodeStatus(roadmap, testScan, reqComplete)
 		report.Gaps = DetectSpecCodeGaps(&report)
 		doc.CodeStatus = &report
 	} else {

@@ -115,6 +115,17 @@ type ArchDependencyRule struct {
 	Description string `yaml:"description"`
 }
 
+// RequirementState holds the status of a single R-item from
+// .cobbler/requirements.yaml.
+type RequirementState struct {
+	Status string `yaml:"status"`
+}
+
+// RequirementsFile is the top-level structure of .cobbler/requirements.yaml.
+type RequirementsFile struct {
+	Requirements map[string]map[string]RequirementState `yaml:"requirements"`
+}
+
 // loadYAML reads a YAML file and unmarshals it into T.
 // Returns nil if the file does not exist or cannot be parsed.
 func loadYAML[T any](path string) *T {
