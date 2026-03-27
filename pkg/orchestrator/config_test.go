@@ -120,6 +120,40 @@ func TestLoadConfig_AppliesDefaults(t *testing.T) {
 	}
 }
 
+func TestApplyDefaults_DerivesMaxWeightFromMaxRequirements(t *testing.T) {
+	// When MaxRequirementsPerTask is set but MaxWeightPerTask is not,
+	// applyDefaults derives MaxWeightPerTask from MaxRequirementsPerTask.
+	cfg := Config{Cobbler: CobblerConfig{MaxRequirementsPerTask: 6}}
+	cfg.applyDefaults()
+	if cfg.Cobbler.MaxWeightPerTask != 6 {
+		t.Errorf("MaxWeightPerTask = %d, want 6 (derived from MaxRequirementsPerTask)",
+			cfg.Cobbler.MaxWeightPerTask)
+	}
+}
+
+func TestApplyDefaults_ExplicitMaxWeightPreserved(t *testing.T) {
+	// When both are explicitly set, the explicit MaxWeightPerTask is kept.
+	cfg := Config{Cobbler: CobblerConfig{
+		MaxRequirementsPerTask: 6,
+		MaxWeightPerTask:       10,
+	}}
+	cfg.applyDefaults()
+	if cfg.Cobbler.MaxWeightPerTask != 10 {
+		t.Errorf("MaxWeightPerTask = %d, want 10 (explicit value preserved)",
+			cfg.Cobbler.MaxWeightPerTask)
+	}
+}
+
+func TestApplyDefaults_NoMaxRequirements_NoMaxWeight(t *testing.T) {
+	// When neither is set, MaxWeightPerTask stays 0 (disabled).
+	cfg := Config{}
+	cfg.applyDefaults()
+	if cfg.Cobbler.MaxWeightPerTask != 0 {
+		t.Errorf("MaxWeightPerTask = %d, want 0 (both disabled)",
+			cfg.Cobbler.MaxWeightPerTask)
+	}
+}
+
 func TestLoadConfig_ConstitutionFileOverride(t *testing.T) {
 	dir := t.TempDir()
 	planningPath := filepath.Join(dir, "planning.yaml")

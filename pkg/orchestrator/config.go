@@ -233,9 +233,12 @@ type CobblerConfig struct {
 	// MaxWeightPerTask is the maximum total weight a single proposed task
 	// may carry. When set, the measure agent batches requirements by total
 	// weight (from PRD weight annotations) instead of count. Requirements
-	// without explicit weights default to weight 1. When 0 (default), the
-	// limit is disabled and MaxRequirementsPerTask governs batching.
-	// When both are set, MaxWeightPerTask takes precedence (GH-1832).
+	// without explicit weights default to weight 1. When 0 and
+	// MaxRequirementsPerTask > 0, applyDefaults derives MaxWeightPerTask
+	// from MaxRequirementsPerTask so that weight-based validation is always
+	// active when count-based batching is configured (GH-1951).
+	// When both are explicitly set, MaxWeightPerTask takes precedence
+	// (GH-1832).
 	MaxWeightPerTask int `yaml:"max_weight_per_task"`
 
 	// MaxTaskFailures is the maximum number of times a task may fail within
@@ -567,6 +570,14 @@ func (c *Config) applyDefaults() {
 	}
 	if c.Claude.MaxTimeSec == 0 {
 		c.Claude.MaxTimeSec = 300
+	}
+	// When count-based batching is configured but weight-based is not,
+	// derive a weight budget equal to the count limit. Since the default
+	// weight per requirement is 1, this preserves count-based behavior
+	// for uniformly-weighted tasks while catching tasks whose total
+	// weight exceeds the budget (GH-1951).
+	if c.Cobbler.MaxRequirementsPerTask > 0 && c.Cobbler.MaxWeightPerTask == 0 {
+		c.Cobbler.MaxWeightPerTask = c.Cobbler.MaxRequirementsPerTask
 	}
 }
 

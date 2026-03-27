@@ -107,6 +107,7 @@ requirements:
       - R7.3: importIssues must order issues by dependency index so dependent issues are created after their prerequisites
       - R7.4: Reserved (GitHub Issues are created remotely; no local commit required)
       - R7.5: When Config.Cobbler.MaxRequirementsPerTask is greater than zero, measure must count the number of requirement items in each proposed issue's description and reject issues that exceed the limit; rejected issues must trigger a re-prompt (up to Config.Cobbler.MaxMeasureRetries attempts) instructing Claude to split them into smaller tasks
+      - R7.6: When Config.Cobbler.MaxRequirementsPerTask is greater than zero and Config.Cobbler.MaxWeightPerTask is zero, applyDefaults must set MaxWeightPerTask equal to MaxRequirementsPerTask so that weight-based validation is always active when count-based batching is configured (GH-1951)
 
   R8:
     title: Pre-flight Checks
@@ -253,6 +254,7 @@ acceptance_criteria:
       - R7.3
       - R7.4
       - R7.5
+      - R7.6
   - id: AC7
     criterion: Reserved (pre-flight podman checks removed — podman support dropped)
     traces:
