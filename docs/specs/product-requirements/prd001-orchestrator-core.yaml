@@ -31,8 +31,8 @@ requirements:
       - R1.8: CobblerConfig must include IssuesRepo (string) for the GitHub repository (owner/repo) used as the issue tracker; auto-detected from module_path when empty
       - R1.9: CobblerConfig must include Dir (string, default ".cobbler/") for the scratch directory
       - R1.10: ProjectConfig must include MagefilesDir (string, default "magefiles") for the directory skipped during Go file deletion
-      - R1.11: ClaudeConfig must include SecretsDir (string, default ".secrets") for token files
-      - R1.12: ClaudeConfig must include DefaultTokenFile (string, default "claude.json") for the credential filename
+      - R1.11: ClaudeConfig must include SecretsDir (string, default ".secrets", omitempty) for token files; omitted from scaffolded configuration.yaml
+      - R1.12: ClaudeConfig must include DefaultTokenFile (string, default "claude.json", omitempty) for the credential filename; omitted from scaffolded configuration.yaml
       - R1.13: ProjectConfig must include SeedFiles (map[string]string) mapping destination paths to template source file paths
       - R1.14: CobblerConfig must include MeasurePrompt (string) as a file path to a custom measure prompt template; LoadConfig reads the referenced file and replaces the path with its content
       - R1.15: CobblerConfig must include StitchPrompt (string) as a file path to a custom stitch prompt template; LoadConfig reads the referenced file and replaces the path with its content
@@ -43,7 +43,7 @@ requirements:
       - R1.20: GenerationConfig must include Cycles (int) for the number of measure+stitch cycles per run; 0 means run until all issues are closed
       - R1.21: CobblerConfig must include UserPrompt (string) for additional context in the measure prompt
       - R1.22: GenerationConfig must include Branch (string) for explicit branch selection
-      - R1.23: ClaudeConfig must include TokenFile (string) for a credential file override in SecretsDir
+      - R1.23: ClaudeConfig must include TokenFile (string, omitempty) for a credential file override in SecretsDir; omitted from scaffolded configuration.yaml
       - R1.24: All Config fields must have YAML struct tags using snake_case names
       - R1.25: CobblerConfig must include EstimatedLinesMin (int, default 250) for the minimum estimated lines per task, passed to the measure prompt as LinesMin
       - R1.26: CobblerConfig must include EstimatedLinesMax (int, default 350) for the maximum estimated lines per task, passed to the measure prompt as LinesMax

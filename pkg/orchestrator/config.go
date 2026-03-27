@@ -376,14 +376,17 @@ type ClaudeConfig struct {
 	SilenceAgent *bool `yaml:"silence_agent"`
 
 	// SecretsDir is the directory containing token files (default ".secrets").
-	SecretsDir string `yaml:"secrets_dir"`
+	// Omitted from scaffolded configuration.yaml; resolved internally.
+	SecretsDir string `yaml:"secrets_dir,omitempty"`
 
 	// DefaultTokenFile is the default credential filename (default "claude.json").
-	DefaultTokenFile string `yaml:"default_token_file"`
+	// Omitted from scaffolded configuration.yaml; resolved internally.
+	DefaultTokenFile string `yaml:"default_token_file,omitempty"`
 
 	// TokenFile overrides the credential filename in SecretsDir.
 	// If empty, DefaultTokenFile is used.
-	TokenFile string `yaml:"token_file"`
+	// Omitted from scaffolded configuration.yaml; resolved internally.
+	TokenFile string `yaml:"token_file,omitempty"`
 
 	// MaxTimeSec is the maximum duration in seconds for a single Claude
 	// invocation (default 300, i.e. 5 minutes). If the time expires, the
