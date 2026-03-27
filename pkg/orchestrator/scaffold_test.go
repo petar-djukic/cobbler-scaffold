@@ -281,6 +281,44 @@ func TestWriteScaffoldConfig_WritesValidYAML(t *testing.T) {
 	}
 }
 
+func TestWriteScaffoldConfig_OmitsSecretsFields(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "configuration.yaml")
+	cfg := DefaultConfig()
+	// Clear secrets fields the same way Scaffold does.
+	cfg.Claude.SecretsDir = ""
+	cfg.Claude.DefaultTokenFile = ""
+	cfg.Claude.TokenFile = ""
+
+	if err := writeScaffoldConfig(path, cfg); err != nil {
+		t.Fatalf("writeScaffoldConfig: %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading written config: %v", err)
+	}
+	content := string(data)
+
+	for _, field := range []string{"secrets_dir", "default_token_file", "token_file"} {
+		if strings.Contains(content, field) {
+			t.Errorf("scaffolded config contains %q, want it omitted", field)
+		}
+	}
+
+	// Verify the config still loads correctly with defaults applied.
+	var parsed Config
+	if err := yaml.Unmarshal(data, &parsed); err != nil {
+		t.Fatalf("config not valid YAML: %v", err)
+	}
+	parsed.applyDefaults()
+	if parsed.Claude.SecretsDir != ".secrets" {
+		t.Errorf("SecretsDir after applyDefaults = %q, want %q", parsed.Claude.SecretsDir, ".secrets")
+	}
+	if parsed.Claude.DefaultTokenFile != "claude.json" {
+		t.Errorf("DefaultTokenFile after applyDefaults = %q, want %q", parsed.Claude.DefaultTokenFile, "claude.json")
+	}
+}
+
 // --- copyFile ---
 
 func TestCopyFile_Success(t *testing.T) {

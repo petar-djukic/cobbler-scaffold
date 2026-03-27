@@ -148,6 +148,14 @@ func (o *Orchestrator) Scaffold(targetDir, orchestratorRoot string) error {
 		logf("scaffold: created seed template %s -> %s", seedPath, tmplPath)
 	}
 
+	// Clear secrets fields so they are not written to the scaffolded
+	// configuration.yaml. These are internal defaults resolved by
+	// applyDefaults at load time; exposing them in committed config
+	// leaks credential-storage implementation details.
+	cfg.Claude.SecretsDir = ""
+	cfg.Claude.DefaultTokenFile = ""
+	cfg.Claude.TokenFile = ""
+
 	cfgPath := filepath.Join(targetDir, DefaultConfigFile)
 	if _, err := os.Stat(cfgPath); os.IsNotExist(err) {
 		logf("scaffold: writing %s", cfgPath)
