@@ -559,7 +559,16 @@ func (o *Orchestrator) checkAutoAdvanceRelease() (bool, string) {
 		}
 	}
 
-	// All UCs done — auto-advance this release.
+	// All UCs are done, but check that all PRD requirements from this
+	// release are also complete. UC touchpoints may not cite every R-group
+	// in a PRD, leaving orphaned ready requirements that become invisible
+	// once the release is filtered from the measure prompt (GH-1952).
+	if o.releaseHasReadyRequirements(target.UseCases) {
+		logf("checkAutoAdvanceRelease: release %s has all UCs done but ready requirements remain, not advancing", target.Version)
+		return false, ""
+	}
+
+	// All UCs done and all requirements complete — auto-advance.
 	logf("checkAutoAdvanceRelease: release %s has all use cases done, advancing", target.Version)
 	if err := o.ReleaseUpdate(target.Version); err != nil {
 		logf("checkAutoAdvanceRelease: ReleaseUpdate(%s) failed: %v", target.Version, err)
@@ -579,6 +588,48 @@ func (o *Orchestrator) checkAutoAdvanceRelease() (bool, string) {
 	}
 
 	return true, target.Version
+}
+
+// releaseHasReadyRequirements returns true if any requirement from PRDs
+// referenced by the release's use case touchpoints is still "ready" in
+// requirements.yaml. This checks ALL requirements in each referenced PRD,
+// not just the R-groups cited by touchpoints, to catch orphaned R-items
+// that no UC touchpoint covers (GH-1952).
+func (o *Orchestrator) releaseHasReadyRequirements(useCases []RoadmapUseCase) bool {
+	states := generate.LoadRequirementStates(o.cfg.Cobbler.Dir)
+	if states == nil {
+		return false
+	}
+
+	// Collect all PRD stems referenced by this release's UC touchpoints.
+	prdStems := make(map[string]bool)
+	for _, uc := range useCases {
+		touchpoints := loadUCTouchpoints(uc.ID)
+		for _, tp := range touchpoints {
+			// extractTouchpointCitations is in the generate package and
+			// unexported; reuse the same regex pattern to extract PRD stems.
+			matches := generate.TouchpointPRDRefRe.FindAllStringSubmatch(tp, -1)
+			for _, m := range matches {
+				prdStems[m[1]] = true
+			}
+		}
+	}
+
+	// Check if any requirement in those PRDs is still ready.
+	for stem := range prdStems {
+		for prdKey, prdReqs := range states {
+			if prdKey != stem && !strings.HasPrefix(prdKey, stem+"-") {
+				continue
+			}
+			for id, st := range prdReqs {
+				if st.Status == "ready" {
+					logf("releaseHasReadyRequirements: %s %s is still ready", prdKey, id)
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 // validateAndMarkUCs finds the first non-implemented release in road-map.yaml
