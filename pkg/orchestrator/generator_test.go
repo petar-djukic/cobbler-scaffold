@@ -1878,6 +1878,60 @@ releases:
 	}
 }
 
+func TestCheckAutoAdvanceRelease_ReadyRequirementsBlockAdvance(t *testing.T) {
+	dir := initTestGitRepo(t)
+
+	// Release 00.0: all UCs done, but a PRD requirement is still ready.
+	roadmapContent := `id: rm1
+title: Test Roadmap
+releases:
+  - version: "00.0"
+    name: Release 0
+    status: in_progress
+    use_cases:
+      - id: rel00.0-uc001-format
+        status: done
+        summary: Format output
+`
+	writeRoadmapFile(t, dir, roadmapContent)
+	cfgPath := filepath.Join(dir, DefaultConfigFile)
+	writeConfigFile(t, cfgPath, []string{"00.0"})
+
+	// Create a UC file with touchpoints referencing prd025.
+	ucDir := filepath.Join(dir, "docs", "specs", "use-cases")
+	os.MkdirAll(ucDir, 0o755)
+	ucContent := `id: rel00.0-uc001-format
+touchpoints:
+  - T1: "Format output prd025 R1, R2"
+`
+	os.WriteFile(filepath.Join(ucDir, "rel00.0-uc001-format.yaml"), []byte(ucContent), 0o644)
+
+	// Create requirements.yaml with a ready R-item in prd025 (R4 group,
+	// not cited by the UC touchpoint which only cites R1 and R2).
+	cobblerDir := filepath.Join(dir, ".cobbler")
+	os.MkdirAll(cobblerDir, 0o755)
+	reqContent := `requirements:
+  prd025-unexpand:
+    R1.1:
+      status: complete
+      issue: 100
+    R2.1:
+      status: complete
+      issue: 101
+    R4.3:
+      status: ready
+    R4.4:
+      status: ready
+`
+	os.WriteFile(filepath.Join(cobblerDir, "requirements.yaml"), []byte(reqContent), 0o644)
+
+	o := &Orchestrator{cfg: Config{Cobbler: CobblerConfig{Dir: ".cobbler/"}}}
+	advanced, _ := o.checkAutoAdvanceRelease()
+	if advanced {
+		t.Error("should not advance when PRD requirements are still ready")
+	}
+}
+
 // --- resetImplementedReleases (GH-1021) ---
 
 func TestResetImplementedReleases(t *testing.T) {

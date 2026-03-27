@@ -355,8 +355,8 @@ type touchpointCitation struct {
 	groups []string // e.g. ["R1", "R2"]
 }
 
-// touchpointPRDRefRe matches PRD + R-group references in touchpoint text.
-var touchpointPRDRefRe = regexp.MustCompile(`(prd\d+[-\w]*)\s+(R\d+(?:\s*,\s*R\d+)*)`)
+// TouchpointPRDRefRe matches PRD + R-group references in touchpoint text.
+var TouchpointPRDRefRe = regexp.MustCompile(`(prd\d+[-\w]*)\s+(R\d+(?:\s*,\s*R\d+)*)`)
 
 // extractTouchpointCitations parses touchpoint strings to extract PRD
 // citations with their requirement groups.
@@ -364,7 +364,7 @@ func extractTouchpointCitations(touchpoints []string) []touchpointCitation {
 	var citations []touchpointCitation
 	seen := make(map[string]map[string]bool) // prdID → set of groups
 	for _, tp := range touchpoints {
-		matches := touchpointPRDRefRe.FindAllStringSubmatch(tp, -1)
+		matches := TouchpointPRDRefRe.FindAllStringSubmatch(tp, -1)
 		for _, m := range matches {
 			prdID := m[1]
 			groupStr := m[2]
