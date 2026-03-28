@@ -358,6 +358,11 @@ type touchpointCitation struct {
 // TouchpointPRDRefRe matches PRD + R-group references in touchpoint text.
 var TouchpointPRDRefRe = regexp.MustCompile(`(prd\d+[-\w]*)\s+(R\d+(?:\s*,\s*R\d+)*)`)
 
+// BarePRDRefRe matches bare PRD stems in touchpoint text, including those
+// without R-group references (e.g., "prd096-users" in parentheses). This
+// catches touchpoints that omit R-group citations (GH-1960).
+var BarePRDRefRe = regexp.MustCompile(`prd\d+[-\w]*`)
+
 // extractTouchpointCitations parses touchpoint strings to extract PRD
 // citations with their requirement groups.
 func extractTouchpointCitations(touchpoints []string) []touchpointCitation {
