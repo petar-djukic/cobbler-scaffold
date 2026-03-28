@@ -39,6 +39,7 @@ type AnalyzeResult struct {
 	FailedRequirements             []string // R-items marked complete_with_failures (warning)
 	MissingWeights                 []string // R-items without explicit weight annotation (warning, GH-1946)
 	BareTouchpoints                []string // Touchpoints citing PRDs without R-group references (warning, GH-1961)
+	UCIDPrefixMismatch             []string // Use case ID prefix doesn't match assigned release in roadmap (GH-1964)
 }
 
 // AnalyzeCounts holds the artifact counts discovered during analysis.
@@ -196,6 +197,7 @@ func CollectAnalyzeResult(deps AnalyzeDeps) (AnalyzeResult, AnalyzeCounts, error
 
 	// 4. Load road-map.yaml — collect release IDs, use case IDs, and depends_on
 	roadmapUCs := make(map[string]bool)
+	roadmapUCToRelease := make(map[string]string)            // use case ID -> assigned release version
 	roadmapReleaseIDs := make(map[string]bool)
 	roadmapAllVersions := make(map[string]bool)             // all release versions (including those without UCs)
 	releaseDependsOn := make(map[string][]string)            // release version -> depends_on entries
@@ -220,6 +222,7 @@ func CollectAnalyzeResult(deps AnalyzeDeps) (AnalyzeResult, AnalyzeCounts, error
 				}
 				for _, uc := range release.UseCases {
 					roadmapUCs[uc.ID] = true
+					roadmapUCToRelease[uc.ID] = release.ID
 				}
 			}
 			deps.Log("analyze: found %d releases, %d use cases in roadmap", len(roadmapReleaseIDs), len(roadmapUCs))
@@ -291,6 +294,15 @@ func CollectAnalyzeResult(deps AnalyzeDeps) (AnalyzeResult, AnalyzeCounts, error
 	for ucID := range ucIDs {
 		if !roadmapUCs[ucID] {
 			result.UseCasesNotInRoadmap = append(result.UseCasesNotInRoadmap, ucID)
+		}
+	}
+
+	// Check 5b: Use case ID prefix doesn't match assigned release in roadmap (GH-1964)
+	for ucID, releaseVersion := range roadmapUCToRelease {
+		prefix := ExtractIDRelease(ucID)
+		if prefix != "" && prefix != releaseVersion {
+			result.UCIDPrefixMismatch = append(result.UCIDPrefixMismatch,
+				fmt.Sprintf("%s: ID prefix %q does not match assigned release %q in roadmap", ucID, prefix, releaseVersion))
 		}
 	}
 
@@ -590,6 +602,7 @@ func (r AnalyzeResult) PrintReport(prdCount, ucCount, tsCount, smCount int) erro
 	hasIssues = PrintSection("Broken struct_refs (prd_id or requirement group not found)", r.BrokenStructRefs) || hasIssues
 	hasIssues = PrintSection("component_dependencies gaps (depends_on entries missing from component_dependencies)", r.ComponentDepViolations) || hasIssues
 	hasIssues = PrintSection("Semantic model errors (SM1 sections, SM3 traceability, SM7 naming)", r.SemanticModelErrors) || hasIssues
+	hasIssues = PrintSection("Use case ID prefix mismatch (ID prefix does not match assigned release in roadmap)", r.UCIDPrefixMismatch) || hasIssues
 	hasIssues = PrintSection("Uncovered R-items (R-item not traced by any acceptance criterion)", r.UncoveredRItems) || hasIssues
 	PrintSection("Uncovered ACs (AC not covered by any test case — warning)", r.UncoveredACs)
 	PrintSection("Untraced success criteria (S-item with no AC trace — warning)", r.UntracedSuccessCriteria)
@@ -779,6 +792,18 @@ func ExtractFileRelease(path string) string {
 	}
 	if dash := strings.Index(base, "-uc"); dash > 3 {
 		return base[3:dash]
+	}
+	return ""
+}
+
+// ExtractIDRelease extracts the release version from a use case ID.
+// "rel01.0-uc003-measure-workflow" -> "01.0"
+func ExtractIDRelease(id string) string {
+	if !strings.HasPrefix(id, "rel") {
+		return ""
+	}
+	if dash := strings.Index(id, "-uc"); dash > 3 {
+		return id[3:dash]
 	}
 	return ""
 }

@@ -279,6 +279,24 @@ func TestExtractFileRelease(t *testing.T) {
 	}
 }
 
+func TestExtractIDRelease(t *testing.T) {
+	cases := []struct {
+		id   string
+		want string
+	}{
+		{"rel01.0-uc003-measure-workflow", "01.0"},
+		{"rel15.0-uc001-ts", "15.0"},
+		{"rel05.5-uc001-ts", "05.5"},
+		{"something-else", ""},
+		{"", ""},
+	}
+	for _, tc := range cases {
+		if got := ExtractIDRelease(tc.id); got != tc.want {
+			t.Errorf("ExtractIDRelease(%q) = %q, want %q", tc.id, got, tc.want)
+		}
+	}
+}
+
 // --- DetectConstitutionDrift ---
 
 func TestDetectConstitutionDrift_Matching(t *testing.T) {
@@ -1864,5 +1882,99 @@ func TestCollectAnalyzeResult_BareTouchpoint_NotFlaggedWithRGroups(t *testing.T)
 	if len(result.BareTouchpoints) != 0 {
 		t.Errorf("expected 0 bare touchpoints when R-groups present, got %d: %v",
 			len(result.BareTouchpoints), result.BareTouchpoints)
+	}
+}
+
+// --- UC ID Prefix Mismatch (GH-1964) ---
+
+func TestCollectAnalyzeResult_UCIDPrefixMismatch_Pass(t *testing.T) {
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(orig)
+	setupMinimalAnalyzeDir(t)
+
+	os.WriteFile("docs/specs/product-requirements/prd001-core.yaml",
+		[]byte("id: prd001-core\ntitle: Core\nrequirements:\n  R1:\n    title: Req 1\n    items:\n      - R1.1: Do X\n"), 0o644)
+	os.WriteFile("docs/specs/use-cases/rel01.0-uc001-init.yaml",
+		[]byte("id: rel01.0-uc001-init\ntitle: Init\ntouchpoints:\n  - T1: prd001-core R1\n"), 0o644)
+
+	roadmap := "id: rm\ntitle: R\nreleases:\n  - version: \"01.0\"\n    name: Core\n    status: done\n    use_cases:\n      - id: rel01.0-uc001-init\n        summary: Init\n        status: done\n"
+	os.WriteFile("docs/road-map.yaml", []byte(roadmap), 0o644)
+	os.WriteFile("docs/specs/test-suites/test-rel01.0.yaml",
+		[]byte("id: test-rel01.0\ntitle: T\ntraces:\n  - rel01.0-uc001-init\n"), 0o644)
+
+	result, _, err := CollectAnalyzeResult(noopDeps())
+	if err != nil {
+		t.Fatalf("CollectAnalyzeResult: %v", err)
+	}
+	if len(result.UCIDPrefixMismatch) != 0 {
+		t.Errorf("expected 0 UC ID prefix mismatches, got %d: %v",
+			len(result.UCIDPrefixMismatch), result.UCIDPrefixMismatch)
+	}
+}
+
+func TestCollectAnalyzeResult_UCIDPrefixMismatch_Fail(t *testing.T) {
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(orig)
+	setupMinimalAnalyzeDir(t)
+
+	os.WriteFile("docs/specs/product-requirements/prd001-core.yaml",
+		[]byte("id: prd001-core\ntitle: Core\nrequirements:\n  R1:\n    title: Req 1\n    items:\n      - R1.1: Do X\n"), 0o644)
+	// File and ID have rel05.5 prefix, but roadmap assigns it to release 15.0
+	os.WriteFile("docs/specs/use-cases/rel05.5-uc001-ts.yaml",
+		[]byte("id: rel05.5-uc001-ts\ntitle: TS\ntouchpoints:\n  - T1: prd001-core R1\n"), 0o644)
+
+	roadmap := "id: rm\ntitle: R\nreleases:\n  - version: \"15.0\"\n    name: Moved\n    status: pending\n    use_cases:\n      - id: rel05.5-uc001-ts\n        summary: TS\n        status: pending\n"
+	os.WriteFile("docs/road-map.yaml", []byte(roadmap), 0o644)
+	os.WriteFile("docs/specs/test-suites/test-rel15.0.yaml",
+		[]byte("id: test-rel15.0\ntitle: T\ntraces:\n  - rel05.5-uc001-ts\n"), 0o644)
+
+	result, _, err := CollectAnalyzeResult(noopDeps())
+	if err != nil {
+		t.Fatalf("CollectAnalyzeResult: %v", err)
+	}
+	if len(result.UCIDPrefixMismatch) != 1 {
+		t.Fatalf("expected 1 UC ID prefix mismatch, got %d: %v",
+			len(result.UCIDPrefixMismatch), result.UCIDPrefixMismatch)
+	}
+	got := result.UCIDPrefixMismatch[0]
+	if !strings.Contains(got, "rel05.5-uc001-ts") || !strings.Contains(got, "05.5") || !strings.Contains(got, "15.0") {
+		t.Errorf("unexpected mismatch message: %s", got)
+	}
+}
+
+func TestCollectAnalyzeResult_UCIDPrefixMismatch_Multiple(t *testing.T) {
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(orig)
+	setupMinimalAnalyzeDir(t)
+
+	os.WriteFile("docs/specs/product-requirements/prd001-core.yaml",
+		[]byte("id: prd001-core\ntitle: Core\nrequirements:\n  R1:\n    title: Req 1\n    items:\n      - R1.1: Do X\n"), 0o644)
+	// Two mismatched use cases assigned to release 15.0
+	os.WriteFile("docs/specs/use-cases/rel05.5-uc001-ts.yaml",
+		[]byte("id: rel05.5-uc001-ts\ntitle: TS\ntouchpoints:\n  - T1: prd001-core R1\n"), 0o644)
+	os.WriteFile("docs/specs/use-cases/rel12.1-uc001-join.yaml",
+		[]byte("id: rel12.1-uc001-join\ntitle: Join\ntouchpoints:\n  - T1: prd001-core R1\n"), 0o644)
+	// One correctly prefixed use case
+	os.WriteFile("docs/specs/use-cases/rel15.0-uc001-sort.yaml",
+		[]byte("id: rel15.0-uc001-sort\ntitle: Sort\ntouchpoints:\n  - T1: prd001-core R1\n"), 0o644)
+
+	roadmap := "id: rm\ntitle: R\nreleases:\n  - version: \"15.0\"\n    name: Batch\n    status: pending\n    use_cases:\n      - id: rel05.5-uc001-ts\n        summary: TS\n      - id: rel12.1-uc001-join\n        summary: Join\n      - id: rel15.0-uc001-sort\n        summary: Sort\n"
+	os.WriteFile("docs/road-map.yaml", []byte(roadmap), 0o644)
+	os.WriteFile("docs/specs/test-suites/test-rel15.0.yaml",
+		[]byte("id: test-rel15.0\ntitle: T\ntraces:\n  - rel05.5-uc001-ts\n  - rel12.1-uc001-join\n  - rel15.0-uc001-sort\n"), 0o644)
+
+	result, _, err := CollectAnalyzeResult(noopDeps())
+	if err != nil {
+		t.Fatalf("CollectAnalyzeResult: %v", err)
+	}
+	if len(result.UCIDPrefixMismatch) != 2 {
+		t.Fatalf("expected 2 UC ID prefix mismatches, got %d: %v",
+			len(result.UCIDPrefixMismatch), result.UCIDPrefixMismatch)
 	}
 }
