@@ -1793,3 +1793,76 @@ func TestCollectAnalyzeResult_UnreachableUC_MissingPRD(t *testing.T) {
 		t.Fatalf("expected 1 unreachable UC, got %d: %v", len(result.UnreachableUCs), result.UnreachableUCs)
 	}
 }
+
+// --- Check 6b: Bare touchpoints (GH-1961) ---
+
+func TestCollectAnalyzeResult_BareTouchpoint_FlagsMissingRGroups(t *testing.T) {
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(orig)
+
+	os.MkdirAll("docs/specs/product-requirements", 0o755)
+	os.MkdirAll("docs/specs/use-cases", 0o755)
+	os.MkdirAll("docs/specs/test-suites", 0o755)
+	os.MkdirAll("docs/constitutions", 0o755)
+	os.MkdirAll("pkg/orchestrator/constitutions", 0o755)
+
+	// PRD with R-items.
+	prd := "id: prd096-users\ntitle: Users\nrequirements:\n  R1:\n    title: Core\n    items:\n      - R1.1: Must print users\n"
+	os.WriteFile("docs/specs/product-requirements/prd096-users.yaml", []byte(prd), 0o644)
+
+	// UC that cites PRD WITHOUT R-group references.
+	uc := "id: rel01.0-uc001-users\ntitle: Users\ntouchpoints:\n  - T1: \"cmd/users — prints logged-in usernames (prd096-users)\"\n"
+	os.WriteFile("docs/specs/use-cases/rel01.0-uc001-users.yaml", []byte(uc), 0o644)
+
+	roadmap := "id: rm\ntitle: R\nreleases:\n  - version: \"01.0\"\n    name: R1\n    status: pending\n    use_cases:\n      - id: rel01.0-uc001-users\n        summary: Users\n"
+	os.WriteFile("docs/road-map.yaml", []byte(roadmap), 0o644)
+	os.WriteFile("docs/specs/test-suites/test-rel01.0.yaml",
+		[]byte("id: test-rel01.0\ntitle: T\ntraces:\n  - rel01.0-uc001-users\n"), 0o644)
+
+	result, _, err := CollectAnalyzeResult(noopDeps())
+	if err != nil {
+		t.Fatalf("CollectAnalyzeResult: %v", err)
+	}
+	if len(result.BareTouchpoints) != 1 {
+		t.Fatalf("expected 1 bare touchpoint, got %d: %v", len(result.BareTouchpoints), result.BareTouchpoints)
+	}
+	if !strings.Contains(result.BareTouchpoints[0], "prd096-users") {
+		t.Errorf("expected bare touchpoint to mention prd096-users, got %q", result.BareTouchpoints[0])
+	}
+}
+
+func TestCollectAnalyzeResult_BareTouchpoint_NotFlaggedWithRGroups(t *testing.T) {
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(orig)
+
+	os.MkdirAll("docs/specs/product-requirements", 0o755)
+	os.MkdirAll("docs/specs/use-cases", 0o755)
+	os.MkdirAll("docs/specs/test-suites", 0o755)
+	os.MkdirAll("docs/constitutions", 0o755)
+	os.MkdirAll("pkg/orchestrator/constitutions", 0o755)
+
+	prd := "id: prd096-users\ntitle: Users\nrequirements:\n  R1:\n    title: Core\n    items:\n      - R1.1: Must print users\n"
+	os.WriteFile("docs/specs/product-requirements/prd096-users.yaml", []byte(prd), 0o644)
+
+	// UC that cites PRD WITH R-group references — no warning expected.
+	uc := "id: rel01.0-uc001-users\ntitle: Users\ntouchpoints:\n  - T1: \"cmd/users — prints usernames (prd096-users R1)\"\n"
+	os.WriteFile("docs/specs/use-cases/rel01.0-uc001-users.yaml", []byte(uc), 0o644)
+
+	roadmap := "id: rm\ntitle: R\nreleases:\n  - version: \"01.0\"\n    name: R1\n    status: pending\n    use_cases:\n      - id: rel01.0-uc001-users\n        summary: Users\n"
+	os.WriteFile("docs/road-map.yaml", []byte(roadmap), 0o644)
+	os.WriteFile("docs/specs/test-suites/test-rel01.0.yaml",
+		[]byte("id: test-rel01.0\ntitle: T\ntraces:\n  - rel01.0-uc001-users\n"), 0o644)
+
+	result, _, err := CollectAnalyzeResult(noopDeps())
+	if err != nil {
+		t.Fatalf("CollectAnalyzeResult: %v", err)
+	}
+	if len(result.BareTouchpoints) != 0 {
+		t.Errorf("expected 0 bare touchpoints when R-groups present, got %d: %v",
+			len(result.BareTouchpoints), result.BareTouchpoints)
+	}
+}

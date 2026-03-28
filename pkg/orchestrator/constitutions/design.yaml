@@ -359,6 +359,7 @@ completeness_checklists:
     - id matches filename without extension
     - flow steps are numbered (F1, F2, ...), end-to-end, map to real components
     - touchpoints are numbered (T1, T2, ...) and list interfaces, components, protocols
+    - touchpoints that cite PRDs must include R-group references (e.g., "prd030-md5sum R1, R2, R3"); bare PRD citations without R-groups break codereadiness computation
     - success_criteria are structured objects with id, criterion, and traces to PRD AC IDs
     - test_suite references a corresponding test suite ID
     - Test suite YAML exists and traces back to this use case

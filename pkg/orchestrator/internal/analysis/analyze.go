@@ -38,6 +38,7 @@ type AnalyzeResult struct {
 	UnreachableUCs                 []string // UCs whose touchpoint PRDs have no R-items (warning)
 	FailedRequirements             []string // R-items marked complete_with_failures (warning)
 	MissingWeights                 []string // R-items without explicit weight annotation (warning, GH-1946)
+	BareTouchpoints                []string // Touchpoints citing PRDs without R-group references (warning, GH-1961)
 }
 
 // AnalyzeCounts holds the artifact counts discovered during analysis.
@@ -309,6 +310,17 @@ func CollectAnalyzeResult(deps AnalyzeDeps) (AnalyzeResult, AnalyzeCounts, error
 		}
 	}
 	deps.Log("analyze: broken citations found %d", len(result.BrokenCitations))
+
+	// Check 6b: Bare touchpoints (PRD cited without R-group references, GH-1961).
+	// This breaks codereadiness computation and requirement traceability.
+	for ucID, tps := range ucTouchpoints {
+		for _, cite := range ExtractCitationsFromTouchpoints(tps) {
+			if len(cite.Groups) == 0 {
+				result.BareTouchpoints = append(result.BareTouchpoints,
+					fmt.Sprintf("%s: cites %s without R-group references", ucID, cite.PRDID))
+			}
+		}
+	}
 
 	// Check 9: PRDs spanning multiple releases
 	for prdID, releases := range prdToReleases {
@@ -584,6 +596,7 @@ func (r AnalyzeResult) PrintReport(prdCount, ucCount, tsCount, smCount int) erro
 	PrintSection("Unreachable UCs (touchpoint PRDs have no R-items — warning)", r.UnreachableUCs)
 	PrintSection("Failed requirements (R-items complete with test failures — warning)", r.FailedRequirements)
 	PrintSection("Missing weights (R-items without explicit weight annotation — warning)", r.MissingWeights)
+	PrintSection("Bare touchpoints (PRD cited without R-group references — warning)", r.BareTouchpoints)
 
 	if !hasIssues {
 		fmt.Printf("\n✅ All consistency checks passed\n")
