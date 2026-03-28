@@ -598,7 +598,7 @@ func (t *GitHubTracker) FinalizeMeasurePlaceholder(repo string, number int, gene
 // issue URL (https://github.com/owner/repo/issues/123) on success.
 func (t *GitHubTracker) CreateCobblerIssue(repo, generation string, issue ProposedIssue) (int, error) {
 	body := FormatIssueFrontMatter(generation, issue.Index, issue.Dependency) + issue.Description
-	title := "[measure] " + issue.Title
+	title := "[measure] " + NormalizeIssueTitle(issue.Title)
 
 	genLabel := GenLabel(generation)
 	out, err := exec.Command(t.GhBin, "issue", "create",

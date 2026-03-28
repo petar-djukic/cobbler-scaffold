@@ -821,6 +821,8 @@ func TestNormalizeIssueTitle(t *testing.T) {
 		{"extra whitespace", "  [measure]  prd001: Implement Foo  ", "prd001: Implement Foo"},
 		{"empty string", "", ""},
 		{"prefix only", "[measure] ", "[measure]"},
+		{"double stitch", "[stitch] [stitch] prd001: Implement Foo", "[stitch] prd001: Implement Foo"},
+		{"stitch in proposed title", "[stitch] prd001: Implement Foo", "prd001: Implement Foo"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
