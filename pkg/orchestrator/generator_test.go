@@ -1932,6 +1932,53 @@ touchpoints:
 	}
 }
 
+func TestCheckAutoAdvanceRelease_BarePRDRefBlocksAdvance(t *testing.T) {
+	dir := initTestGitRepo(t)
+
+	// Release 00.0: all UCs done, touchpoint cites PRD without R-groups.
+	roadmapContent := `id: rm1
+title: Test Roadmap
+releases:
+  - version: "00.0"
+    name: Release 0
+    status: in_progress
+    use_cases:
+      - id: rel00.0-uc001-users
+        status: done
+        summary: Users utility
+`
+	writeRoadmapFile(t, dir, roadmapContent)
+	cfgPath := filepath.Join(dir, DefaultConfigFile)
+	writeConfigFile(t, cfgPath, []string{"00.0"})
+
+	// UC touchpoint references prd096-users WITHOUT R-group citations.
+	ucDir := filepath.Join(dir, "docs", "specs", "use-cases")
+	os.MkdirAll(ucDir, 0o755)
+	ucContent := `id: rel00.0-uc001-users
+touchpoints:
+  - T1: "cmd/users — users prints logged-in usernames (prd096-users)"
+`
+	os.WriteFile(filepath.Join(ucDir, "rel00.0-uc001-users.yaml"), []byte(ucContent), 0o644)
+
+	// requirements.yaml has ready R-items in prd096-users.
+	cobblerDir := filepath.Join(dir, ".cobbler")
+	os.MkdirAll(cobblerDir, 0o755)
+	reqContent := `requirements:
+  prd096-users:
+    R1.1:
+      status: ready
+    R2.1:
+      status: ready
+`
+	os.WriteFile(filepath.Join(cobblerDir, "requirements.yaml"), []byte(reqContent), 0o644)
+
+	o := &Orchestrator{cfg: Config{Cobbler: CobblerConfig{Dir: ".cobbler/"}}}
+	advanced, _ := o.checkAutoAdvanceRelease()
+	if advanced {
+		t.Error("should not advance when bare PRD touchpoint has ready requirements (GH-1960)")
+	}
+}
+
 // --- resetImplementedReleases (GH-1021) ---
 
 func TestResetImplementedReleases(t *testing.T) {

@@ -602,15 +602,21 @@ func (o *Orchestrator) releaseHasReadyRequirements(useCases []RoadmapUseCase) bo
 	}
 
 	// Collect all PRD stems referenced by this release's UC touchpoints.
+	// TouchpointPRDRefRe matches "prdNNN-name R1, R2" (with R-groups).
+	// BarePRDRefRe matches "prdNNN-name" even without R-groups, catching
+	// touchpoints like "(prd096-users)" that omit R-group refs (GH-1960).
 	prdStems := make(map[string]bool)
 	for _, uc := range useCases {
 		touchpoints := loadUCTouchpoints(uc.ID)
 		for _, tp := range touchpoints {
-			// extractTouchpointCitations is in the generate package and
-			// unexported; reuse the same regex pattern to extract PRD stems.
 			matches := generate.TouchpointPRDRefRe.FindAllStringSubmatch(tp, -1)
 			for _, m := range matches {
 				prdStems[m[1]] = true
+			}
+			// Also match bare PRD references without R-groups.
+			bareMatches := generate.BarePRDRefRe.FindAllString(tp, -1)
+			for _, stem := range bareMatches {
+				prdStems[stem] = true
 			}
 		}
 	}
