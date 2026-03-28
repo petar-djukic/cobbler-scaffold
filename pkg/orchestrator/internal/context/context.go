@@ -699,6 +699,7 @@ type DocSection struct {
 type GoStyleDoc struct {
 	CopyrightHeader         string                `yaml:"copyright_header"`
 	Duplication             string                `yaml:"duplication"`
+	ImplementationStrategy  string                `yaml:"implementation_strategy"`
 	DesignPatterns          []GoStylePattern      `yaml:"design_patterns"`
 	Interfaces              string                `yaml:"interfaces"`
 	StructAndFunctionDesign string                `yaml:"struct_and_function_design"`

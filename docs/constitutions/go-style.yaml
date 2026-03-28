@@ -26,6 +26,28 @@ duplication: |
   share fields. Use helper functions to share behavior. Use interfaces to share
   contracts. The threshold is two: if you write the same thing twice, extract it.
 
+implementation_strategy: |
+  Write all source files before running any build or test commands. Plan the
+  full implementation (types, functions, imports) mentally, then write each
+  file in dependency order. Only run `go build` or `go vet` after all files
+  are written. This minimizes turns and avoids incremental compile-fix loops
+  that re-send the entire prompt context on each iteration.
+
+  When writing a new cmd/ utility:
+  1. Read the PRD and existing pkg/ contracts.
+  2. Write main.go with all flag parsing, logic, and error handling in one pass.
+  3. Write the test file with all test cases in one pass.
+  4. Run `go vet` once to verify compilation.
+  5. Run `go test` once to verify behavior.
+  6. Fix any issues in a single edit pass.
+
+  Common Go compilation errors to avoid on first write:
+  - Missing imports: always include fmt, os, io, strings when doing I/O.
+  - Unused imports: do not import packages speculatively.
+  - Type mismatches: check pkg/ contract signatures before calling.
+  - Missing error handling: every function that returns error must be checked.
+  - Unused variables: do not declare variables before they are needed.
+
 design_patterns:
   - name: Strategy
     description: |
@@ -362,6 +384,7 @@ code_review_checklist:
   - "No init() function performs I/O or returns an error."
   - "No panic() is reachable from a runtime condition or user-provided input."
   - "Typed iota enums are used for any fixed set of integer values."
+  - "All source files are written before running build or test commands — no incremental compile-fix loops."
 
 sections:
   - tag: copyright_header
@@ -374,6 +397,13 @@ sections:
       Search for existing code before writing a new function. Extract shared
       logic at the two-occurrence threshold — if you write the same thing twice,
       extract it.
+  - tag: implementation_strategy
+    title: Implementation Strategy
+    content: |
+      Write all source files before running any build or test commands. Plan
+      the full implementation, write each file in dependency order, then
+      compile and test once. This avoids incremental compile-fix loops that
+      waste turns re-sending the entire prompt context.
   - tag: design_patterns
     title: Design Patterns
     content: |
