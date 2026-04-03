@@ -1,6 +1,11 @@
 id: prd002-generation-lifecycle
 title: Generation Lifecycle Management
 
+used_by:
+  - Git Operations
+  - Issue Tracking
+  - Claude Execution
+
 problem: |
   AI code generation produces many intermediate commits that should not
   pollute the main branch. Without a structured lifecycle for generation

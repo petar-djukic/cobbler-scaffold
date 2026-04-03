@@ -75,11 +75,8 @@ interfaces:
     data_structures:
       - "Orchestrator: holds Config, provides New() and NewFromFile() constructors"
       - "Config: all orchestrator settings with YAML tags (see prd001-orchestrator-core for full field spec)"
-      - "MeasurePromptData: template data for measure prompt (ProjectContext, Limit, OutputPath, UserInput, LinesMin, LinesMax, PlanningConstitution)"
-      - "StitchPromptData: template data for stitch prompt (Title, ID, IssueType, Description, ExecutionConstitution, ProjectContext)"
-      - "InvocationRecord: metrics per Claude invocation (Caller, StartedAt, DurationS, Tokens, LOCBefore, LOCAfter, Diff)"
-      - "HistoryStats: YAML-serializable per-invocation stats saved to history directory (Caller, TaskID, TaskTitle, StartedAt, Duration, Tokens, CostUSD, LOCBefore, LOCAfter, Diff, NumTurns, DurationAPIMs, SessionID)"
-      - "ClaudeResult: token usage from a Claude invocation (InputTokens, OutputTokens, CacheCreationTokens, CacheReadTokens, CostUSD, RawOutput, NumTurns, DurationAPIMs, SessionID)"
+      - "InvocationRecord: metrics per Claude invocation (Caller, StartedAt, DurationS, Tokens, LOCBefore, LOCAfter, Diff, NumTurns)"
+      - "HistoryStats: YAML-serializable per-invocation stats saved to history directory (Caller, TaskID, TaskTitle, StartedAt, Duration, Tokens, CostUSD, LOCBefore, LOCAfter, Diff, NumTurns, DurationAPIMs, RateLimitWaitS, SessionID)"
     operations:
       - "New(cfg Config) *Orchestrator: construct with explicit config"
       - "NewFromFile(path string) (*Orchestrator, error): construct from configuration.yaml"
@@ -90,7 +87,7 @@ interfaces:
       - "GeneratorReset(): destroy all generations, return to clean main (prd002)"
       - "GeneratorList(): show active and past generations (prd002)"
       - "GeneratorSwitch(): switch between generation branches (prd002)"
-      - "GeneratorStats(): print status report for the current generation run — issue table with release, cost, duration, turns, LOC deltas; per-release breakdown; PRD coverage table; requirements progress (stats:generator target)"
+      - "GeneratorStats(): print status report for the current generation run — issue table with release, cost, duration, turns, attempts, LOC deltas; per-release breakdown; PRD coverage table; requirements progress (stats:generator target)"
       - "ReleaseStats(): print per-release table with PRD counts (complete/started/untouched) and requirement totals (stats:releases target)"
       - "ReleaseUpdate(version string) error: mark a release complete — set UC statuses to implemented, remove from project.releases in configuration.yaml (release:update target)"
       - "ReleaseClear(version string) error: reverse ReleaseUpdate — reset UC statuses to spec_complete, re-add to project.releases (release:clear target)"
@@ -101,6 +98,8 @@ interfaces:
       - "RunStitchN(limit int): run stitch phase up to limit tasks (prd003)"
       - "RunCycles(label string): run measure+stitch cycles until no open issues remain (prd002)"
       - "Stats(): print LOC and documentation metrics (prd005)"
+      - "RunStats(name string): print aggregate statistics for a completed generation run; lists available generations when name is empty (stats:run target)"
+      - "CompareRunStats(name1, name2 string): print side-by-side comparison of two generation runs (stats:compare target)"
       - "Scaffold(): scaffold orchestrator into consuming project"
       - "Uninstall(): remove scaffold artifacts from target project"
       - "Tag(): create versioned doc-release tag, update version file"
@@ -134,6 +133,79 @@ interfaces:
       - "GeneratorInit(): package-level function to initialize generator state from configuration.yaml"
       - "WriteDefaultConfig(): package-level function to write a default configuration.yaml file"
 
+  - name: Git Operations
+    summary: |
+      Abstracts all git operations behind a GitOps interface with six role-based
+      sub-interfaces. The ShellGitOps implementation executes git commands via
+      exec.Command. Components declare dependencies on the narrowest sub-interface
+      they need, enabling testability and future non-shell backends.
+    data_structures:
+      - "GitOps: primary interface, 33 methods covering all git operations"
+      - "RepoReader: read-only access (CurrentBranch, BranchExists, ListBranches, ListTags, LsFiles, RevParseHEAD)"
+      - "WorktreeManager: worktree lifecycle (WorktreeAdd, WorktreeRemove, WorktreePrune)"
+      - "BranchManager: branch operations (Checkout, CheckoutNew, CreateBranch, DeleteBranch, ForceDeleteBranch, MergeCmd)"
+      - "CommitWriter: staging and commits (StageAll, StageDir, UnstageAll, HasChanges, Stash, Commit, CommitAllowEmpty, CommitAmendTrailers, ResetSoft)"
+      - "TagManager: tag operations (Tag, TagAt, DeleteTag, RenameTag, ListTags)"
+      - "DiffInspector: diff operations (DiffShortstat, DiffNameStatus, LsTreeFiles, ShowFileContent)"
+      - "DiffStat: parsed output from git diff --shortstat (FilesChanged, Insertions, Deletions)"
+      - "FileChange: per-file diff information (Path, Status, Insertions, Deletions)"
+      - "ShellGitOps: implements GitOps using exec.Command"
+
+  - name: Issue Tracking
+    summary: |
+      Abstracts all issue-tracking operations behind a WorkTracker interface.
+      GitHubTracker implements WorkTracker using the gh CLI and GitHub REST API.
+      The interface manages issue CRUD, DAG-based dependency promotion, generation
+      labelling with 50-char truncation, sub-issue hierarchy, and garbage collection
+      of stale generation issues.
+    data_structures:
+      - "WorkTracker: primary interface, 27 methods for issue lifecycle, labels, DAG promotion, defects"
+      - "GitHubTracker: implements WorkTracker using gh CLI and REST API"
+      - "CobblerIssue: issue record (Number, Title, State, Index, DependsOn, Generation, Description, Labels)"
+      - "ProposedIssue: measure output (Index, Title, Description, Dependency)"
+      - "ContextIssue: issue summary for context assembly (ID, Title, Status, Type)"
+      - "CobblerFrontMatter: YAML front-matter parsed from issue body (Generation, Index, DependsOn)"
+    operations:
+      - "DetectGitHubRepo: discover repo from git remote"
+      - "EnsureCobblerLabels: create standard cobbler labels"
+      - "CreateCobblerIssue: create issue with generation label and dependency front-matter"
+      - "ListOpenCobblerIssues: list open issues filtered by generation label"
+      - "PromoteReadyIssues: promote unblocked issues to cobbler-ready based on dependency DAG"
+      - "PickReadyIssue: pick lowest-numbered ready issue, mark in-progress (excludes cobbler-skipped)"
+      - "CloseCobblerIssue: close issue and re-promote dependents"
+      - "GcStaleGenerationIssues: garbage-collect stale generation issues in a single bulk API call"
+      - "LinkSubIssue: link child issue to parent via GitHub sub-issues API"
+      - "FileTargetRepoDefects: file defects in target repos"
+      - "GenLabel: truncate/hash generation labels to 50-char GitHub limit"
+
+  - name: Claude Execution
+    summary: |
+      Abstracts Claude invocation behind a Runner interface. Two implementations
+      exist: CLIRunner invokes the claude binary directly on the host, SDKRunner
+      uses the Go Agent SDK. The effectiveMode() function selects the implementation
+      based on cobbler.mode in configuration.yaml. Both return a ClaudeResult with
+      token usage, cost, and session metadata.
+    data_structures:
+      - "Runner: interface with Run(ctx, prompt, workDir, silence, extraArgs) returning ClaudeResult"
+      - "CLIRunner: implements Runner via claude CLI binary"
+      - "SDKRunner: implements Runner via Go Agent SDK with sdkEnvMu-serialised env mutation"
+      - "ClaudeResult: token usage (InputTokens, OutputTokens, CacheCreationTokens, CacheReadTokens, CostUSD, RawOutput, NumTurns, DurationAPIMs, RateLimitWaitS, SessionID)"
+
+  - name: Binary Resolution
+    summary: |
+      Abstracts binary resolution for cross-generation differential comparison
+      behind a BinaryResolver interface. Three implementations resolve binaries
+      from different sources: git tags, GNU coreutils on PATH, and pre-built
+      directories. The comparison runner resolves both sides, runs test cases
+      from YAML spec test suites, and reports differences.
+    data_structures:
+      - "BinaryResolver: interface with Resolve(utility) and ListUtilities()"
+      - "GitTagResolver: builds binaries from git tags into a temp directory"
+      - "GNUResolver: resolves Homebrew GNU coreutils via g-prefix convention"
+      - "PathResolver: resolves binaries from PATH"
+      - "CompareTestCase: test case loaded from YAML test suite (Input, Expected)"
+      - "TestResult: per-test pass/fail with diff details"
+
   - name: Prompt Templates
     summary: |
       Prompts are Go text/template strings embedded from pkg/orchestrator/prompts/measure.tmpl
@@ -144,6 +216,23 @@ interfaces:
     data_structures:
       - "MeasurePromptDoc: Role (string), ProjectContext (*ProjectContext), PlanningConstitution (*yaml.Node), IssueFormatConstitution (*yaml.Node), Task (string), Constraints (string), OutputFormat (string), GoldenExample (string), AdditionalContext (string), ValidationErrors ([]string), PackageContracts ([]OODPackageContractRef)"
       - "StitchPromptDoc: Role (string), RepositoryFiles ([]string), ProjectContext (*ProjectContext), Context (string), ExecutionConstitution (*yaml.Node), GoStyleConstitution (*yaml.Node), Task (string), Constraints (string), Description (string), SemanticModel (*yaml.Node), SharedProtocols ([]ArchSharedProtocol), PackageContracts ([]OODPackageContractRef)"
+
+  - name: Context Assembly
+    summary: |
+      Builds a comprehensive YAML blob (ProjectContext) from the consuming project's
+      documentation, specifications, source code, and existing issues. Over 30 struct
+      types model the document schema. Phase-specific context files override global
+      context settings at invocation time. The assembled context is injected into
+      both measure and stitch prompts.
+    data_structures:
+      - "ProjectContext: top-level container (Vision, Architecture, Specifications, Roadmap, Specs, Engineering, Analysis, SourceCode, Issues, CompletedWork, RequirementStates, Extra)"
+      - "PhaseContext: per-phase overrides (Include, Exclude, Sources, Release, ExcludeSource, SourcePatterns, ExcludeTests, SourceMode, SummarizeCommand)"
+      - "VisionDoc, ArchitectureDoc, SpecificationsDoc, RoadmapDoc: top-level document types"
+      - "PRDDoc: product requirement with RequirementGroups, AcceptanceCriteria, ImplementedBy, UsedBy"
+      - "PRDRequirementItem: individual requirement (ID, Text, Weight)"
+      - "UseCaseDoc: use case with SuccessCriteria, InteractionSteps, Touchpoints"
+      - "TestSuiteDoc: test suite with TestCases"
+      - "SourceFile: Go source file (File, Lines)"
 
 components:
   - name: Orchestrator
@@ -169,6 +258,9 @@ components:
       - Re-seed template files at start and reset (skipped in library mode)
       - "Library mode: preserve Go source files when preserve_sources is true (prd002 R10)"
       - Stop cleanly when only cobbler-skipped tasks remain (GH-1699)
+      - Handle rate limits separately from task failures — rate-limit waits do not count as task retries (GH-1805)
+      - Commit specs-only cleanup to generation branch before merge (GH-1876)
+      - Block auto-advance when release has ready requirements in requirements.yaml (GH-1952)
     references:
       - prd002-generation-lifecycle
 
@@ -183,6 +275,11 @@ components:
       - Parse Claude YAML output into task list
       - Create GitHub Issues for proposed tasks with dependency labels
       - Reject proposed tasks for out-of-scope releases (hard filter, GH-1703)
+      - "Strip [stitch] prefix from measure-proposed titles before import (GH-1953)"
+      - Enforce MinMeasureIssues — re-prompt when too few tasks are proposed and unresolved requirements exist (GH-1882)
+      - Validate requirement weight per task against MaxWeightPerTask (GH-1951)
+      - Include per-requirement completion status in measure prompt code status (GH-1948)
+      - Match bare PRD references in touchpoints for release advance check (GH-1960)
       - Save history artifacts per iteration
     references:
       - prd003-cobbler-workflows
@@ -202,6 +299,7 @@ components:
       - Recover stale tasks on resume
       - Skip tasks that exceed the retry limit (cobbler-skipped label) instead of halting the generation (GH-1699)
       - Sweep open tasks after each close, auto-closing any whose R-items are already complete (GH-1647)
+      - Track requirement weight in batching and validation (GH-1832)
     references:
       - prd003-cobbler-workflows
 
@@ -219,6 +317,7 @@ components:
       - Filter SDK stderr to replace rate_limit_event warnings with structured log entries (filterSDKStderr)
       - Capture and parse token usage from Claude stream-json or SDK result output
       - Capture SDK metadata (NumTurns, DurationAPIMs, SessionID) from ResultMessage
+      - Track rate-limit wait time separately from task failures (RateLimitWaitS, GH-1805)
       - Snapshot LOC before and after Claude
       - Save history artifacts (prompt, log, stats YAML) to configurable directory
       - Log real-time Claude progress (turns, tool calls, timing)
@@ -282,10 +381,13 @@ components:
     responsibility: |
       Collects Go LOC counts (production and test) and documentation word counts. Uses the
       configured GoSourceDirs and SpecGlobs. Output feeds invocation records and the mage
-      stats target.
+      stats target. Run statistics aggregate per-generation-run metrics from history
+      artifacts, and cross-generation comparison places two runs side by side.
     capabilities:
       - Count Go LOC by production and test files
       - Count documentation words by glob pattern
+      - Aggregate per-generation-run statistics from history artifacts (RunStats)
+      - Compare two generation runs side by side (CompareRunStats)
     references:
       - prd005-metrics-collection
 
@@ -307,6 +409,10 @@ components:
       - "Validate structured acceptance criteria: AcceptanceCriterion (id, criterion, traces) in PRDs"
       - "Validate structured success criteria: SuccessCriterion (id, criterion, traces) in use cases"
       - "Check R-item coverage by ACs, AC coverage by test cases, S-item trace validity"
+      - "Warn on R-items without explicit weight annotation (MissingWeights, GH-1946)"
+      - "Warn on touchpoints citing PRDs without R-group references (BareTouchpoints, GH-1961)"
+      - "Detect use case ID prefix vs. roadmap release mismatch (UCIDPrefixMismatch, GH-1964)"
+      - "Validate PRD implemented_by/used_by references resolve to ARCHITECTURE.yaml interface names (BrokenInterfaceRefs, GH-1968)"
       - Generate detailed consistency report with artifact counts
     references:
       - Similar to spec-kit analyze functionality
@@ -315,11 +421,15 @@ components:
     responsibility: |
       Config struct with YAML tags, LoadConfig() for reading configuration.yaml, SeedData
       template data, Silence() and EffectiveTokenFile() helpers, and applyDefaults() for
-      zero-value fields.
+      zero-value fields. CobblerConfig includes MinMeasureIssues (minimum tasks measure
+      must propose when unresolved requirements exist), MaxRequirementsPerTask (maximum
+      requirements per task), and MaxWeightPerTask (maximum total weight per task, derived
+      from MaxRequirementsPerTask when unset per GH-1951).
     capabilities:
       - Load and validate configuration.yaml
       - Apply defaults to zero-value fields
       - Resolve SeedFiles and prompt paths to content
+      - Derive MaxWeightPerTask from MaxRequirementsPerTask when unset (GH-1951)
     references:
       - prd001-orchestrator-core
 
@@ -380,20 +490,21 @@ components:
 
   - name: Constitutions
     responsibility: |
-      Six YAML constitutions govern different workflow phases. Design, planning, and execution
+      Seven YAML constitutions govern different workflow phases. Design, planning, and execution
       are the three primary constitutions aligned to workflow phases. Go-style, issue-format,
-      and testing provide supplementary rules for specific concerns. Design constitution is
-      scaffolded to consuming projects. All others are embedded in the binary and injected
-      into prompts or analysis as needed. constitution_md.go provides ConstitutionToMarkdown()
-      and ConstitutionPreviewFile() to render any YAML constitution to markdown for human
-      inspection.
+      testing, and interface provide supplementary rules for specific concerns. Design and
+      interface constitutions are scaffolded to consuming projects. All others are embedded
+      in the binary and injected into prompts or analysis as needed. constitution_md.go
+      provides ConstitutionToMarkdown() and ConstitutionPreviewFile() to render any YAML
+      constitution to markdown for human inspection.
     capabilities:
       - Design constitution (design.yaml) defines documentation standards, format schemas, and traceability model
       - Planning constitution (planning.yaml) defines release priority, task sizing, and issue structure
       - Execution constitution (execution.yaml) defines coding standards, design patterns, and session completion
-      - Go-style constitution (go-style.yaml) defines Go coding conventions, injected into stitch prompts as GoStyleConstitution
+      - Go-style constitution (go-style.yaml) defines Go coding conventions, injected into stitch prompts as GoStyleConstitution; includes write-first-compile-later guidance (GH-1954)
       - Issue-format constitution (issue-format.yaml) defines task issue structure, injected into measure prompts as IssueFormatConstitution
       - Testing constitution (testing.yaml) defines test writing standards, injected into analysis
+      - Interface constitution (interface.yaml) defines interface declaration, naming, PRD reference conventions (I1-I6), and analysis validation rules for implemented_by/used_by traceability (GH-1968)
       - ConstitutionToMarkdown converts a constitution's sections slice to markdown
       - ConstitutionPreviewFile reads a constitution YAML file and prints rendered markdown to stdout
     references:
@@ -751,9 +862,11 @@ project_structure:
   - path: pkg/orchestrator/prompt_files.go
     role: Context file enumeration — list files included in Claude prompts with sizes and token estimates
   - path: pkg/orchestrator/generator_stats.go
-    role: Generation status report — issue table with status, release, cost, duration, turns, LOC deltas, parent measure per task; measure rows show task count and PRD refs; per-release task breakdown; PRD coverage table; requirements progress; shared helpers buildPRDReleaseMap, countTotalPRDRequirements, extractPRDRefs (stats:generator target)
+    role: Generation status report — issue table with status, release, cost, duration, turns, attempts, LOC deltas, parent measure per task; measure rows show task count and PRD refs; per-release task breakdown; PRD coverage table; requirements progress; shared helpers buildPRDReleaseMap, countTotalPRDRequirements, extractPRDRefs (stats:generator target)
   - path: pkg/orchestrator/release_stats.go
     role: Release statistics — per-release table with PRD counts (complete/started/untouched) and requirement totals sourced from road-map.yaml, PRD files, and use case touchpoints (stats:releases target)
+  - path: pkg/orchestrator/run_stats.go
+    role: Run statistics — RunStats() and CompareRunStats() delegate to internal/stats for aggregate per-generation-run reporting and side-by-side comparison (stats:run and stats:compare targets)
   - path: pkg/orchestrator/release.go
     role: Release lifecycle management — ReleaseUpdate sets UC statuses to implemented and removes a release from configuration.yaml; ReleaseClear reverses it (release:update/clear targets)
   - path: pkg/orchestrator/token_stats.go
@@ -779,13 +892,13 @@ project_structure:
   - path: pkg/orchestrator/internal/release/
     role: Release lifecycle (update/clear), tagging, version management
   - path: pkg/orchestrator/internal/stats/
-    role: LOC metrics, generator stats, release stats, outcomes, token stats
+    role: LOC metrics, generator stats, release stats, run stats, outcomes, token stats
   - path: pkg/orchestrator/internal/vscode/
     role: VS Code extension build, package, install
   - path: pkg/orchestrator/prompts/
     role: Embedded prompt templates (measure.tmpl, stitch.tmpl)
   - path: pkg/orchestrator/constitutions/
-    role: Embedded constitutions (design.yaml, planning.yaml, execution.yaml, go-style.yaml, issue-format.yaml, testing.yaml)
+    role: Embedded constitutions (design.yaml, planning.yaml, execution.yaml, go-style.yaml, issue-format.yaml, testing.yaml, interface.yaml)
   - path: magefiles/
     role: Mage targets exposing orchestrator methods
   - path: vscode-extension/
@@ -816,6 +929,11 @@ implementation_status:
     - done: WorkTracker interface and GitHubTracker implementation for issue tracking abstraction
     - done: Structured traceability — AcceptanceCriterion and SuccessCriterion types with id/criterion/traces fields
     - done: Semantic model injection into stitch prompts via LoadPRDSemanticModel and StitchPromptDoc.SemanticModel
+    - done: Interface constitution (interface.yaml) and PRD interface reference validation in mage analyze (GH-1968)
+    - done: Requirement weight parsing, weight-based measure batching, and MaxWeightPerTask derivation (GH-1832, GH-1951)
+    - done: Run statistics — aggregate per-generation-run reporting and cross-generation comparison (stats:run, stats:compare targets)
+    - done: Rate-limit handling separated from task failures (GH-1805)
+    - done: MinMeasureIssues enforcement to prevent empty measure results (GH-1882)
 
 related_documents:
   - doc: docs/VISION.yaml
@@ -848,6 +966,8 @@ related_documents:
     purpose: Specification-as-semantic-model analogy, limits, and integration with generation pipeline
   - doc: docs/constitutions/semantic-model.yaml
     purpose: Ten principles governing semantic model authoring (SM1-SM10)
+  - doc: docs/constitutions/interface.yaml
+    purpose: Interface declaration, naming, PRD reference conventions (I1-I6), and analysis validation rules
 
 figures:
   - path: docs/ARCHITECTURE-diagrams.md
