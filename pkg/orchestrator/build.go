@@ -4,32 +4,34 @@
 package orchestrator
 
 import (
-	"fmt"
-	"os"
-
 	"github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/build"
 )
 
-// ---------------------------------------------------------------------------
-// Dependency injection: wire the parent package's logf, binary paths,
-// and helper functions into the internal/build package at init time.
-// ---------------------------------------------------------------------------
+// Builder provides build, lint, install, and clean operations.
+type Builder struct {
+	cfg Config
+}
+
+// NewBuilder creates a Builder with the given configuration.
+func NewBuilder(cfg Config) *Builder {
+	return &Builder{cfg: cfg}
+}
 
 // NOTE: build.Log and build.Bin* are wired in the Orchestrator
 // constructor (New) instead of an init function.
 
 // Build compiles the project binary. If MainPackage is empty, the
 // target is skipped.
-func (o *Orchestrator) Build() error {
-	return build.Build(o.buildConfig())
+func (b *Builder) Build() error {
+	return build.Build(b.buildConfig())
 }
 
 // BuildAll compiles all cmd/ sub-packages to BinaryDir when MainPackage is
 // empty. It discovers every cmd/*/main.go package and builds each to
 // bin/<name> using go build -o bin/<name> ./cmd/<name>/. If no cmd/
 // directory exists the target is skipped. prd003 B1.1.
-func (o *Orchestrator) BuildAll() error {
-	return build.BuildAll(o.buildConfig())
+func (b *Builder) BuildAll() error {
+	return build.BuildAll(b.buildConfig())
 }
 
 // discoverCmdPackages returns the import paths of all packages under cmd/
@@ -39,63 +41,32 @@ func discoverCmdPackages(root string) ([]string, error) {
 }
 
 // Lint runs golangci-lint on the project.
-func (o *Orchestrator) Lint() error {
+func (b *Builder) Lint() error {
 	return build.Lint()
 }
 
 // Install runs go install for the main package. If MainPackage
 // is empty, the target is skipped.
-func (o *Orchestrator) Install() error {
-	return build.Install(o.buildConfig())
+func (b *Builder) Install() error {
+	return build.Install(b.buildConfig())
 }
 
 // Clean removes the build artifact directory.
-func (o *Orchestrator) Clean() error {
-	return build.Clean(o.cfg.Project.BinaryDir)
-}
-
-// DumpMeasurePrompt assembles and prints the measure prompt to stdout.
-func (o *Orchestrator) DumpMeasurePrompt() error {
-	prompt, err := o.buildMeasurePrompt("", "[]", 1)
-	if err != nil {
-		return fmt.Errorf("building measure prompt: %w", err)
-	}
-	fmt.Print(prompt)
-	return nil
-}
-
-// DumpStitchPrompt assembles and prints the stitch prompt to stdout.
-// Uses a placeholder task so the template structure is visible.
-func (o *Orchestrator) DumpStitchPrompt() error {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return fmt.Errorf("getting working directory: %w", err)
-	}
-	prompt, err := o.buildStitchPrompt(stitchTask{
-		WorktreeDir: cwd,
-		ID:          "EXAMPLE-001",
-		Title:       "Example task",
-		Description: "Placeholder task description for prompt preview.",
-		IssueType:   "task",
-	})
-	if err != nil {
-		return fmt.Errorf("building stitch prompt: %w", err)
-	}
-	fmt.Print(prompt)
-	return nil
+func (b *Builder) Clean() error {
+	return build.Clean(b.cfg.Project.BinaryDir)
 }
 
 // ExtractCredentials reads Claude credentials from the macOS Keychain
 // and writes them to SecretsDir/TokenFile.
-func (o *Orchestrator) ExtractCredentials() error {
-	return build.ExtractCredentials(o.cfg.Claude.SecretsDir, o.cfg.EffectiveTokenFile())
+func (b *Builder) ExtractCredentials() error {
+	return build.ExtractCredentials(b.cfg.Claude.SecretsDir, b.cfg.EffectiveTokenFile())
 }
 
-// buildConfig returns a build.BuildConfig from the orchestrator's config.
-func (o *Orchestrator) buildConfig() build.BuildConfig {
+// buildConfig returns a build.BuildConfig from the builder's config.
+func (b *Builder) buildConfig() build.BuildConfig {
 	return build.BuildConfig{
-		MainPackage: o.cfg.Project.MainPackage,
-		BinaryDir:   o.cfg.Project.BinaryDir,
-		BinaryName:  o.cfg.Project.BinaryName,
+		MainPackage: b.cfg.Project.MainPackage,
+		BinaryDir:   b.cfg.Project.BinaryDir,
+		BinaryName:  b.cfg.Project.BinaryName,
 	}
 }

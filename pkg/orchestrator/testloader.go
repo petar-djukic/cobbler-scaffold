@@ -23,13 +23,4 @@ type TestResult = compare.TestResult
 // BinaryResolver is re-exported from the internal compare package.
 type BinaryResolver = compare.BinaryResolver
 
-// ResolverFromArg delegates to the internal compare package.
-func (o *Orchestrator) ResolverFromArg(arg string) BinaryResolver {
-	deps := compare.Deps{
-		Log:            o.logf,
-		GitBin:         binGit,
-		GoBin:          binGo,
-		RemoveWorktree: o.git.WorktreeRemove,
-	}
-	return compare.ResolverFromArg(arg, deps)
-}
+// ResolverFromArg is now a method on Comparer (see compare.go).

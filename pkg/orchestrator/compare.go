@@ -9,23 +9,41 @@ package orchestrator
 
 import (
 	"github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/compare"
+	"github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/gitops"
 )
 
-// Comparer runs differential comparison between binary sources.
-type Comparer interface {
-	Compare(argA, argB, utility string) error
+// Comparer provides cross-generation differential comparison.
+type Comparer struct {
+	logf func(string, ...any)
+	git  gitops.GitOps
+}
+
+// NewComparer creates a Comparer with explicit dependencies.
+func NewComparer(logf func(string, ...any), git gitops.GitOps) *Comparer {
+	return &Comparer{logf: logf, git: git}
 }
 
 // Compare runs differential comparison between two binary sources.
 // argA and argB are passed to compare.ResolverFromArg (git tag, "gnu",
 // or directory). When utility is non-empty, only that utility is compared;
 // otherwise all common utilities between the two sources are compared.
-func (o *Orchestrator) Compare(argA, argB, utility string) error {
+func (c *Comparer) Compare(argA, argB, utility string) error {
 	deps := compare.Deps{
-		Log:            o.logf,
+		Log:            c.logf,
 		GitBin:         binGit,
 		GoBin:          binGo,
-		RemoveWorktree: o.git.WorktreeRemove,
+		RemoveWorktree: c.git.WorktreeRemove,
 	}
 	return compare.Run(argA, argB, utility, deps)
+}
+
+// ResolverFromArg delegates to the internal compare package.
+func (c *Comparer) ResolverFromArg(arg string) BinaryResolver {
+	deps := compare.Deps{
+		Log:            c.logf,
+		GitBin:         binGit,
+		GoBin:          binGo,
+		RemoveWorktree: c.git.WorktreeRemove,
+	}
+	return compare.ResolverFromArg(arg, deps)
 }

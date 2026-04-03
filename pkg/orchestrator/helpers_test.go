@@ -16,24 +16,16 @@ func testGitOps() *gitops.Repository {
 }
 
 // testOrch returns a minimal Orchestrator suitable for tests that need
-// tracker or git operations. It replaces the former package-level
-// defaultGhTracker global that was removed as part of GH-1709.
+// tracker, git, or domain struct operations.
 func testOrch() *Orchestrator {
-	git := &gitops.ShellGitOps{}
-	return &Orchestrator{
-		git: git,
-		tracker: &gh.GitHubTracker{
-			GhBin:        binGh,
-			BranchExists: git.BranchExists,
-		},
-	}
+	return testOrchWithCfg(Config{})
 }
 
 // testOrchWithCfg returns an Orchestrator with the given config and
-// properly initialized git and tracker dependencies.
+// properly initialized git, tracker, and domain struct dependencies.
 func testOrchWithCfg(cfg Config) *Orchestrator {
 	git := &gitops.ShellGitOps{}
-	return &Orchestrator{
+	o := &Orchestrator{
 		cfg: cfg,
 		git: git,
 		tracker: &gh.GitHubTracker{
@@ -41,4 +33,9 @@ func testOrchWithCfg(cfg Config) *Orchestrator {
 			BranchExists: git.BranchExists,
 		},
 	}
+	o.Builder = NewBuilder(cfg)
+	o.Scaffolder = NewScaffolder(o.git, o.logf)
+	o.Comparer = NewComparer(o.logf, o.git)
+	o.VsCode = NewVsCode(o.logf)
+	return o
 }

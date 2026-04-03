@@ -14,14 +14,14 @@ import (
 
 func TestBuild_SkipsWhenNoMainPackage(t *testing.T) {
 	t.Parallel()
-	o := &Orchestrator{cfg: Config{
+	o := testOrchWithCfg( Config{
 		Project: ProjectConfig{
 			MainPackage: "",
 			BinaryDir:   t.TempDir(),
 			BinaryName:  "mybin",
 		},
-	}}
-	if err := o.Build(); err != nil {
+	})
+	if err := o.Builder.Build(); err != nil {
 		t.Errorf("Build() with empty MainPackage should not error, got: %v", err)
 	}
 }
@@ -30,17 +30,17 @@ func TestBuild_CreatesBinaryDir(t *testing.T) {
 	dir := t.TempDir()
 	binDir := filepath.Join(dir, "bin", "nested")
 
-	o := &Orchestrator{cfg: Config{
+	o := testOrchWithCfg( Config{
 		Project: ProjectConfig{
 			MainPackage: "nonexistent/package/that/will/fail",
 			BinaryDir:   binDir,
 			BinaryName:  "mybin",
 		},
-	}}
+	})
 
 	// Build will fail because the package doesn't exist, but the directory
 	// should have been created before the go build attempt.
-	_ = o.Build()
+	_ = o.Builder.Build()
 
 	if _, err := os.Stat(binDir); os.IsNotExist(err) {
 		t.Error("Build() should create binary directory even on build failure")
@@ -51,24 +51,24 @@ func TestBuild_CreatesBinaryDir(t *testing.T) {
 
 func TestInstall_SkipsWhenNoMainPackage(t *testing.T) {
 	t.Parallel()
-	o := &Orchestrator{cfg: Config{
+	o := testOrchWithCfg( Config{
 		Project: ProjectConfig{
 			MainPackage: "",
 		},
-	}}
-	if err := o.Install(); err != nil {
+	})
+	if err := o.Builder.Install(); err != nil {
 		t.Errorf("Install() with empty MainPackage should not error, got: %v", err)
 	}
 }
 
 func TestInstall_ErrorsWhenGoInstallFails(t *testing.T) {
 	t.Parallel()
-	o := &Orchestrator{cfg: Config{
+	o := testOrchWithCfg( Config{
 		Project: ProjectConfig{
 			MainPackage: "nonexistent/package/that/will/fail",
 		},
-	}}
-	if err := o.Install(); err == nil {
+	})
+	if err := o.Builder.Install(); err == nil {
 		t.Error("Install() with nonexistent package should return error")
 	}
 }
@@ -78,10 +78,10 @@ func TestInstall_ErrorsWhenGoInstallFails(t *testing.T) {
 func TestBuildAll_SkipsWhenNoCmdDir(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	o := &Orchestrator{cfg: Config{
+	o := testOrchWithCfg( Config{
 		Project: ProjectConfig{BinaryDir: filepath.Join(dir, "bin")},
-	}}
-	if err := o.BuildAll(); err != nil {
+	})
+	if err := o.Builder.BuildAll(); err != nil {
 		t.Errorf("BuildAll() with no cmd/ should not error, got: %v", err)
 	}
 	// bin/ should not be created when there are no packages.
@@ -92,16 +92,16 @@ func TestBuildAll_SkipsWhenNoCmdDir(t *testing.T) {
 
 func TestBuildAll_DelegatesToBuildWhenMainPackageSet(t *testing.T) {
 	t.Parallel()
-	o := &Orchestrator{cfg: Config{
+	o := testOrchWithCfg( Config{
 		Project: ProjectConfig{
 			MainPackage: "nonexistent/pkg",
 			BinaryDir:   t.TempDir(),
 			BinaryName:  "mybin",
 		},
-	}}
+	})
 	// Should attempt Build() and fail because package doesn't exist.
 	// Key is it does NOT fall through to multi-cmd path.
-	err := o.BuildAll()
+	err := o.Builder.BuildAll()
 	if err == nil {
 		t.Error("BuildAll() with nonexistent MainPackage should fail")
 	}
@@ -163,13 +163,13 @@ func TestClean_RemovesBinaryDir(t *testing.T) {
 	os.MkdirAll(binDir, 0o755)
 	os.WriteFile(filepath.Join(binDir, "mybin"), []byte("binary"), 0o755)
 
-	o := &Orchestrator{cfg: Config{
+	o := testOrchWithCfg( Config{
 		Project: ProjectConfig{
 			BinaryDir: binDir,
 		},
-	}}
+	})
 
-	if err := o.Clean(); err != nil {
+	if err := o.Builder.Clean(); err != nil {
 		t.Fatalf("Clean() error = %v", err)
 	}
 
@@ -180,12 +180,12 @@ func TestClean_RemovesBinaryDir(t *testing.T) {
 
 func TestClean_NonExistentDir(t *testing.T) {
 	t.Parallel()
-	o := &Orchestrator{cfg: Config{
+	o := testOrchWithCfg( Config{
 		Project: ProjectConfig{
 			BinaryDir: "/nonexistent/dir/that/does/not/exist/build_test",
 		},
-	}}
-	if err := o.Clean(); err != nil {
+	})
+	if err := o.Builder.Clean(); err != nil {
 		t.Errorf("Clean() on nonexistent dir should not error, got: %v", err)
 	}
 }
@@ -196,13 +196,13 @@ func TestClean_EmptyDir(t *testing.T) {
 	binDir := filepath.Join(dir, "bin")
 	os.MkdirAll(binDir, 0o755)
 
-	o := &Orchestrator{cfg: Config{
+	o := testOrchWithCfg( Config{
 		Project: ProjectConfig{
 			BinaryDir: binDir,
 		},
-	}}
+	})
 
-	if err := o.Clean(); err != nil {
+	if err := o.Builder.Clean(); err != nil {
 		t.Fatalf("Clean() error = %v", err)
 	}
 

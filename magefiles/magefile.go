@@ -83,19 +83,19 @@ func Init() error { return newOrch().Init() }
 func Reset() error { return newOrch().FullReset() }
 
 // Build compiles the project binary.
-func Build() error { return newOrch().Build() }
+func Build() error { return newOrch().Builder.Build() }
 
 // Lint runs golangci-lint on the project.
-func Lint() error { return newOrch().Lint() }
+func Lint() error { return newOrch().Builder.Lint() }
 
 // Install runs go install for the main package.
-func Install() error { return newOrch().Install() }
+func Install() error { return newOrch().Builder.Install() }
 
 // Clean removes build artifacts.
-func Clean() error { return newOrch().Clean() }
+func Clean() error { return newOrch().Builder.Clean() }
 
 // Credentials extracts Claude credentials from the macOS Keychain.
-func Credentials() error { return newOrch().ExtractCredentials() }
+func Credentials() error { return newOrch().Builder.ExtractCredentials() }
 
 // Analyze performs cross-artifact consistency checks (PRDs, use cases, test suites, roadmap).
 func Analyze() error { return newOrch().Analyze() }
@@ -144,7 +144,7 @@ func (Scaffold) Push(target string) error {
 	if parts := strings.SplitN(target, "@", 2); len(parts) == 2 && parts[1] != "" {
 		module, version := parts[0], parts[1]
 		logf("scaffold:push: using go mod download for %s@%s", module, version)
-		repoDir, err := newOrch().PrepareTestRepo(module, version, orchRoot)
+		repoDir, err := newOrch().Scaffolder.PrepareTestRepo(module, version, orchRoot)
 		if err != nil {
 			return err
 		}
@@ -155,7 +155,7 @@ func (Scaffold) Push(target string) error {
 	if err := rejectSelfTarget(target, orchRoot); err != nil {
 		return err
 	}
-	return newOrch().Scaffold(target, orchRoot)
+	return newOrch().Scaffolder.Scaffold(target, orchRoot)
 }
 
 // Pop removes orchestrator-managed files from the target repository:
@@ -169,7 +169,7 @@ func (Scaffold) Pop(target string) error {
 	if err := rejectSelfTarget(target, orchRoot); err != nil {
 		return err
 	}
-	return newOrch().Uninstall(target)
+	return newOrch().Scaffolder.Uninstall(target)
 }
 
 // rejectSelfTarget returns an error if target resolves to orchRoot.
@@ -328,24 +328,24 @@ func (Prompt) Files() error { return newOrch().PrintContextFiles() }
 // environment variable to compare a single utility (e.g., UTILITY=cat).
 func (Compare) Run(argA, argB string) error {
 	utility := os.Getenv("UTILITY")
-	return newOrch().Compare(argA, argB, utility)
+	return newOrch().Comparer.Compare(argA, argB, utility)
 }
 
 // --- Vscode targets ---
 
 // Push compiles the extension and installs it into the default VS Code profile.
-func (Vscode) Push() error { return newOrch().VscodePush("") }
+func (Vscode) Push() error { return newOrch().VsCode.VscodePush("") }
 
 // PushProfile compiles the extension and installs it into a named VS Code profile
 // (e.g., mage vscode:pushProfile GO).
-func (Vscode) PushProfile(profile string) error { return newOrch().VscodePush(profile) }
+func (Vscode) PushProfile(profile string) error { return newOrch().VsCode.VscodePush(profile) }
 
 // Pop uninstalls the extension from the default VS Code profile.
-func (Vscode) Pop() error { return newOrch().VscodePop("") }
+func (Vscode) Pop() error { return newOrch().VsCode.VscodePop("") }
 
 // PopProfile uninstalls the extension from a named VS Code profile
 // (e.g., mage vscode:popProfile GO).
-func (Vscode) PopProfile(profile string) error { return newOrch().VscodePop(profile) }
+func (Vscode) PopProfile(profile string) error { return newOrch().VsCode.VscodePop(profile) }
 
 // --- Constitution targets ---
 

@@ -215,9 +215,9 @@ func TestUninstall_RemovesCobblerDir(t *testing.T) {
 		}
 	}
 
-	o := &Orchestrator{}
+	o := testOrch()
 	// Uninstall should not fail even when other scaffolded files are absent.
-	if err := o.Uninstall(dir); err != nil {
+	if err := o.Scaffolder.Uninstall(dir); err != nil {
 		t.Fatalf("Uninstall: %v", err)
 	}
 

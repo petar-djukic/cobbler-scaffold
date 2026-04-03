@@ -11,19 +11,23 @@ import (
 	"github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/vscode"
 )
 
-// VscodeManager manages VS Code extension packaging and installation.
-type VscodeManager interface {
-	VscodePush(profile string) error
-	VscodePop(profile string) error
+// VsCode manages VS Code extension packaging and installation.
+type VsCode struct {
+	logf func(string, ...any)
+}
+
+// NewVsCode creates a VsCode manager with explicit dependencies.
+func NewVsCode(logf func(string, ...any)) *VsCode {
+	return &VsCode{logf: logf}
 }
 
 // VscodePush compiles the VS Code extension from source, packages it as a
 // .vsix archive, and installs it into VS Code.
-func (o *Orchestrator) VscodePush(profile string) error {
-	return vscode.Push(profile, o.logf)
+func (v *VsCode) VscodePush(profile string) error {
+	return vscode.Push(profile, v.logf)
 }
 
 // VscodePop uninstalls the VS Code extension.
-func (o *Orchestrator) VscodePop(profile string) error {
-	return vscode.Pop(profile, o.logf)
+func (v *VsCode) VscodePop(profile string) error {
+	return vscode.Pop(profile, v.logf)
 }

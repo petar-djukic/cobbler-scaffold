@@ -31,6 +31,12 @@ type Orchestrator struct {
 	tracker    gh.WorkTracker
 	git        gitops.GitOps
 
+	// Domain structs — composed in New().
+	Builder    *Builder
+	Scaffolder *Scaffolder
+	Comparer   *Comparer
+	VsCode     *VsCode
+
 	// Logging state — previously package-level globals.
 	phaseMu           sync.RWMutex
 	currentGeneration string
@@ -85,7 +91,44 @@ func New(cfg Config) *Orchestrator {
 	rel.GitTags = o.git
 	rel.GitCommitter = o.git
 
+	// Construct domain structs.
+	o.Builder = NewBuilder(cfg)
+	o.Scaffolder = NewScaffolder(o.git, o.logf)
+	o.Comparer = NewComparer(o.logf, o.git)
+	o.VsCode = NewVsCode(o.logf)
+
 	return o
+}
+
+// DumpMeasurePrompt assembles and prints the measure prompt to stdout.
+func (o *Orchestrator) DumpMeasurePrompt() error {
+	prompt, err := o.buildMeasurePrompt("", "[]", 1)
+	if err != nil {
+		return fmt.Errorf("building measure prompt: %w", err)
+	}
+	fmt.Print(prompt)
+	return nil
+}
+
+// DumpStitchPrompt assembles and prints the stitch prompt to stdout.
+// Uses a placeholder task so the template structure is visible.
+func (o *Orchestrator) DumpStitchPrompt() error {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("getting working directory: %w", err)
+	}
+	prompt, err := o.buildStitchPrompt(stitchTask{
+		WorktreeDir: cwd,
+		ID:          "EXAMPLE-001",
+		Title:       "Example task",
+		Description: "Placeholder task description for prompt preview.",
+		IssueType:   "task",
+	})
+	if err != nil {
+		return fmt.Errorf("building stitch prompt: %w", err)
+	}
+	fmt.Print(prompt)
+	return nil
 }
 
 // Tracker returns the work tracker interface for issue operations.

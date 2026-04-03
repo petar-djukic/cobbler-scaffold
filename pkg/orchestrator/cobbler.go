@@ -69,7 +69,7 @@ func (o *Orchestrator) ensureCredentials() error {
 	return claude.EnsureCredentials(
 		o.cfg.Claude.SecretsDir,
 		o.cfg.EffectiveTokenFile(),
-		o.ExtractCredentials,
+		o.Builder.ExtractCredentials,
 	)
 }
 
@@ -107,7 +107,7 @@ func (o *Orchestrator) runClaudeDeps() claude.RunClaudeDeps {
 		TokenFile:            o.cfg.EffectiveTokenFile(),
 		IdleTimeoutS:         o.cfg.Cobbler.IdleTimeoutSeconds,
 		SdkQueryFn:           o.sdkQueryFn,
-		ExtractCredentialsFn: o.ExtractCredentials,
+		ExtractCredentialsFn: o.Builder.ExtractCredentials,
 	}
 }
 

@@ -17,7 +17,7 @@ import (
 
 func TestResolverFromArg_Delegation(t *testing.T) {
 	t.Parallel()
-	r := testOrch().ResolverFromArg("gnu")
+	r := testOrch().Comparer.ResolverFromArg("gnu")
 	if r == nil {
 		t.Fatal("ResolverFromArg returned nil")
 	}
