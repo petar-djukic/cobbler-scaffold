@@ -98,11 +98,11 @@ func Clean() error { return newOrch().Builder.Clean() }
 func Credentials() error { return newOrch().Builder.ExtractCredentials() }
 
 // Analyze performs cross-artifact consistency checks (PRDs, use cases, test suites, roadmap).
-func Analyze() error { return newOrch().Analyze() }
+func Analyze() error { return newOrch().Analyzer.Analyze() }
 
 // Status reports code implementation status per use case and release,
 // comparing road-map.yaml spec status with test file presence.
-func Status() error { return newOrch().CodeStatus() }
+func Status() error { return newOrch().Analyzer.CodeStatus() }
 
 // Tag creates a documentation release tag (v0.YYYYMMDD.N) and builds the container image.
 func Tag() error { return newOrch().Releaser.Tag() }

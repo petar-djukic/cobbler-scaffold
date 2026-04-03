@@ -473,7 +473,7 @@ func TestCodeStatus_NoGaps(t *testing.T) {
 	}
 
 	o := New(Config{})
-	if err := o.CodeStatus(); err != nil {
+	if err := o.Analyzer.CodeStatus(); err != nil {
 		t.Errorf("CodeStatus() returned error: %v", err)
 	}
 }
@@ -500,7 +500,7 @@ func TestCodeStatus_WithGap(t *testing.T) {
 	// Do not create tests/ directory — gaps should be detected.
 
 	o := New(Config{})
-	err = o.CodeStatus()
+	err = o.Analyzer.CodeStatus()
 	if err == nil {
 		t.Fatal("CodeStatus() expected error for spec-vs-code gap, got nil")
 	}
@@ -523,7 +523,7 @@ func TestCodeStatus_MissingRoadmap(t *testing.T) {
 
 	// No docs/road-map.yaml present.
 	o := New(Config{})
-	if err := o.CodeStatus(); err == nil {
+	if err := o.Analyzer.CodeStatus(); err == nil {
 		t.Fatal("CodeStatus() expected error when road-map.yaml missing, got nil")
 	}
 }

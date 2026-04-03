@@ -39,5 +39,6 @@ func testOrchWithCfg(cfg Config) *Orchestrator {
 	o.VsCode = NewVsCode(o.logf)
 	o.Stats = NewStats(cfg, o.logf, o.git, o.tracker)
 	o.Releaser = NewReleaser(cfg)
+	o.Analyzer = NewAnalyzer(cfg, o.logf)
 	return o
 }

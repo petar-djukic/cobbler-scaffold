@@ -306,8 +306,8 @@ func TestRunPreCycleAnalysis_WritesFile(t *testing.T) {
 		[]byte("id: test-rel01.0\ntitle: Tests\nrelease: rel01.0\ntraces:\n  - rel01.0-uc001-init\n"), 0o644)
 
 	scratchDir := filepath.Join(dir, ".cobbler")
-	o := &Orchestrator{cfg: Config{Cobbler: CobblerConfig{Dir: scratchDir}}}
-	o.RunPreCycleAnalysis()
+	o := testOrchWithCfg(Config{Cobbler: CobblerConfig{Dir: scratchDir}})
+	o.Analyzer.RunPreCycleAnalysis()
 
 	outPath := filepath.Join(scratchDir, an.AnalysisFileName)
 	if _, err := os.Stat(outPath); os.IsNotExist(err) {
@@ -333,8 +333,8 @@ func TestRunPreCycleAnalysis_NoRoadmap(t *testing.T) {
 	// No docs at all — collectAnalyzeResult will fail but RunPreCycleAnalysis
 	// should not panic.
 	scratchDir := filepath.Join(dir, ".cobbler")
-	o := &Orchestrator{cfg: Config{Cobbler: CobblerConfig{Dir: scratchDir}}}
-	o.RunPreCycleAnalysis()
+	o := testOrchWithCfg(Config{Cobbler: CobblerConfig{Dir: scratchDir}})
+	o.Analyzer.RunPreCycleAnalysis()
 
 	// Should still write a file even if analysis had errors.
 	outPath := filepath.Join(scratchDir, an.AnalysisFileName)

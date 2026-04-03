@@ -17,25 +17,36 @@ import (
 // Type aliases for backward-compatible re-exports.
 type AnalyzeResult = an.AnalyzeResult
 
+// Analyzer provides cross-artifact consistency checks and code status.
+type Analyzer struct {
+	cfg  Config
+	logf func(string, ...any)
+}
+
+// NewAnalyzer creates an Analyzer with explicit dependencies.
+func NewAnalyzer(cfg Config, logf func(string, ...any)) *Analyzer {
+	return &Analyzer{cfg: cfg, logf: logf}
+}
+
 // collectAnalyzeResult performs all cross-artifact consistency checks and
 // returns the structured result without printing.
-func (o *Orchestrator) collectAnalyzeResult() (AnalyzeResult, an.AnalyzeCounts, error) {
-	return an.CollectAnalyzeResult(an.AnalyzeDeps{
-		Log:                    o.logf,
-		Releases:               o.cfg.Project.Releases,
-		ValidateDocSchemas:     o.validateDocSchemas,
-		ValidatePromptTemplate: ictx.ValidatePromptTemplate,
-	})
+func (a *Analyzer) collectAnalyzeResult() (AnalyzeResult, an.AnalyzeCounts, error) {
+	return an.CollectAnalyzeResult(a.analyzeDeps())
 }
 
 // Analyze performs cross-artifact consistency checks.
-func (o *Orchestrator) Analyze() error {
-	return an.Analyze(an.AnalyzeDeps{
-		Log:                    o.logf,
-		Releases:               o.cfg.Project.Releases,
-		ValidateDocSchemas:     o.validateDocSchemas,
+func (a *Analyzer) Analyze() error {
+	return an.Analyze(a.analyzeDeps())
+}
+
+// analyzeDeps builds the AnalyzeDeps struct.
+func (a *Analyzer) analyzeDeps() an.AnalyzeDeps {
+	return an.AnalyzeDeps{
+		Log:                    a.logf,
+		Releases:               a.cfg.Project.Releases,
+		ValidateDocSchemas:     a.validateDocSchemas,
 		ValidatePromptTemplate: ictx.ValidatePromptTemplate,
-	})
+	}
 }
 
 // validateDocSchemas resolves configured context sources and validates
@@ -43,7 +54,7 @@ func (o *Orchestrator) Analyze() error {
 // (KnownFields). Any YAML key that doesn't map to a struct field is
 // reported — these indicate schema drift that causes data loss during
 // measure prompt assembly.
-func (o *Orchestrator) validateDocSchemas() []string {
+func (a *Analyzer) validateDocSchemas() []string {
 	var errs []string
 
 	// Validate standard documentation files.

@@ -14,6 +14,6 @@ type CodeStatusReport = an.CodeStatusReport
 
 // CodeStatus reports the code implementation status per use case and
 // release by comparing road-map.yaml spec status with test file presence.
-func (o *Orchestrator) CodeStatus() error {
+func (a *Analyzer) CodeStatus() error {
 	return an.PrintCodeStatus()
 }

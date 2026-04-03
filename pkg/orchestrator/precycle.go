@@ -5,7 +5,6 @@ package orchestrator
 
 import (
 	an "github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/analysis"
-	ictx "github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/context"
 )
 
 // Type aliases for backward-compatible re-exports.
@@ -14,16 +13,10 @@ type AnalysisDoc = an.AnalysisDoc
 // RunPreCycleAnalysis performs cross-artifact consistency checks and code
 // status detection, writes the combined result to {ScratchDir}/analysis.yaml,
 // and logs a summary.
-func (o *Orchestrator) RunPreCycleAnalysis() {
+func (a *Analyzer) RunPreCycleAnalysis() {
 	an.RunPreCycleAnalysis(an.PreCycleDeps{
-		Log:        o.logf,
-		CobblerDir: o.cfg.Cobbler.Dir,
-		AnalyzeDeps: an.AnalyzeDeps{
-			Log:                    o.logf,
-			Releases:               o.cfg.Project.Releases,
-			ValidateDocSchemas:     o.validateDocSchemas,
-			ValidatePromptTemplate: ictx.ValidatePromptTemplate,
-		},
+		Log:         a.logf,
+		CobblerDir:  a.cfg.Cobbler.Dir,
+		AnalyzeDeps: a.analyzeDeps(),
 	})
 }
-

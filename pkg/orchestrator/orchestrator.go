@@ -38,6 +38,7 @@ type Orchestrator struct {
 	VsCode     *VsCode
 	Stats      *Stats
 	Releaser   *Releaser
+	Analyzer   *Analyzer
 
 	// Logging state — previously package-level globals.
 	phaseMu           sync.RWMutex
@@ -100,6 +101,7 @@ func New(cfg Config) *Orchestrator {
 	o.VsCode = NewVsCode(o.logf)
 	o.Stats = NewStats(cfg, o.logf, o.git, o.tracker)
 	o.Releaser = NewReleaser(cfg)
+	o.Analyzer = NewAnalyzer(cfg, o.logf)
 
 	return o
 }

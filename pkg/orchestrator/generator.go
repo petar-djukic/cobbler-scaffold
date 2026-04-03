@@ -434,7 +434,7 @@ func (o *Orchestrator) RunCycles(label string) error {
 		}
 
 		// Refresh analysis before each cycle so stitch sees current state.
-		o.RunPreCycleAnalysis()
+		o.Analyzer.RunPreCycleAnalysis()
 
 		// Capture LOC before stitch to detect zero-change cycles.
 		locBefore := o.captureLOC()

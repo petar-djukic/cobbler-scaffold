@@ -119,7 +119,7 @@ func (o *Orchestrator) RunMeasure() error {
 	o.tracker.EnsureCobblerGenLabel(repo, generation) // nolint: best-effort
 
 	// Run pre-cycle analysis so the measure prompt sees current project state.
-	o.RunPreCycleAnalysis()
+	o.Analyzer.RunPreCycleAnalysis()
 
 	// Warn about PRD requirement groups whose sub-item count exceeds
 	// max_requirements_per_task.

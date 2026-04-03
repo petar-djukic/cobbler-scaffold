@@ -399,13 +399,13 @@ releases:
 		[]byte("id: test-rel01.0\ntitle: Tests\nrelease: rel01.0\ntraces:\n  - rel01.0-uc001-init\n"), 0o644)
 
 	// Configure releases with one that doesn't exist.
-	o := &Orchestrator{cfg: Config{
+	o := testOrchWithCfg(Config{
 		Project: ProjectConfig{
 			Releases: []string{"01.0", "99.0"},
 		},
-	}}
+	})
 
-	result, _, err := o.collectAnalyzeResult()
+	result, _, err := o.Analyzer.collectAnalyzeResult()
 	if err != nil {
 		t.Fatalf("collectAnalyzeResult: %v", err)
 	}
@@ -450,13 +450,13 @@ releases:
 		[]byte("id: test-rel01.0\ntitle: Tests\nrelease: rel01.0\ntraces:\n  - rel01.0-uc001-init\n"), 0o644)
 
 	// All configured releases exist in roadmap.
-	o := &Orchestrator{cfg: Config{
+	o := testOrchWithCfg(Config{
 		Project: ProjectConfig{
 			Releases: []string{"01.0"},
 		},
-	}}
+	})
 
-	result, _, err := o.collectAnalyzeResult()
+	result, _, err := o.Analyzer.collectAnalyzeResult()
 	if err != nil {
 		t.Fatalf("collectAnalyzeResult: %v", err)
 	}
@@ -489,8 +489,8 @@ func TestCollectAnalyzeResult_PRDsSpanningMultipleReleases_Pass(t *testing.T) {
 		[]byte("id: rel01.0-uc002-b\ntitle: B\ntouchpoints:\n  - T1: prd001-core R1\n"), 0o644)
 	os.WriteFile("docs/road-map.yaml", []byte("id: rm\ntitle: RM\nreleases: []\n"), 0o644)
 
-	o := &Orchestrator{cfg: Config{}}
-	result, _, err := o.collectAnalyzeResult()
+	o := testOrchWithCfg(Config{})
+	result, _, err := o.Analyzer.collectAnalyzeResult()
 	if err != nil {
 		t.Fatalf("collectAnalyzeResult: %v", err)
 	}
@@ -520,8 +520,8 @@ func TestCollectAnalyzeResult_PRDsSpanningMultipleReleases_Fail(t *testing.T) {
 		[]byte("id: rel03.0-uc001-compare\ntitle: Compare\ntouchpoints:\n  - T1: prd003-workflows R1\n"), 0o644)
 	os.WriteFile("docs/road-map.yaml", []byte("id: rm\ntitle: RM\nreleases: []\n"), 0o644)
 
-	o := &Orchestrator{cfg: Config{}}
-	result, _, err := o.collectAnalyzeResult()
+	o := testOrchWithCfg(Config{})
+	result, _, err := o.Analyzer.collectAnalyzeResult()
 	if err != nil {
 		t.Fatalf("collectAnalyzeResult: %v", err)
 	}
@@ -1003,9 +1003,9 @@ releases:
 		[]byte("id: test-rel01.0\ntitle: Tests\nrelease: rel01.0\ntraces:\n  - rel01.0-uc001-init\n"), 0o644)
 
 	// No releases configured → no validation.
-	o := &Orchestrator{cfg: Config{}}
+	o := testOrchWithCfg(Config{})
 
-	result, _, err := o.collectAnalyzeResult()
+	result, _, err := o.Analyzer.collectAnalyzeResult()
 	if err != nil {
 		t.Fatalf("collectAnalyzeResult: %v", err)
 	}
@@ -1169,10 +1169,10 @@ func TestAnalyze_WithIssues(t *testing.T) {
 	os.WriteFile("docs/specs/product-requirements/prd001-orphan.yaml",
 		[]byte("id: prd001-orphan\ntitle: Orphan\nrequirements:\n  - id: R1\n    title: Req 1\n"), 0o644)
 
-	o := &Orchestrator{cfg: Config{}}
+	o := testOrchWithCfg(Config{})
 
 	out := captureStdout(t, func() {
-		err := o.Analyze()
+		err := o.Analyzer.Analyze()
 		if err == nil {
 			t.Error("expected error for orphaned PRDs")
 		}
@@ -1195,11 +1195,11 @@ func TestAnalyze_EmptyDocs(t *testing.T) {
 	os.MkdirAll("docs/specs/use-cases", 0o755)
 	os.MkdirAll("docs/specs/test-suites", 0o755)
 
-	o := &Orchestrator{cfg: Config{}}
+	o := testOrchWithCfg(Config{})
 	captureStdout(t, func() {
 		// We don't check the error — just verify it runs without panicking.
 		// Without a road-map, it can't find releases.
-		o.Analyze()
+		o.Analyzer.Analyze()
 	})
 }
 
@@ -1234,8 +1234,8 @@ depends_on:
       - SomeFunc
 `), 0o644)
 
-	o := &Orchestrator{cfg: Config{}}
-	result, _, err := o.collectAnalyzeResult()
+	o := testOrchWithCfg(Config{})
+	result, _, err := o.Analyzer.collectAnalyzeResult()
 	if err != nil {
 		t.Fatalf("collectAnalyzeResult: %v", err)
 	}
@@ -1272,8 +1272,8 @@ depends_on:
       - FuncB
 `), 0o644)
 
-	o := &Orchestrator{cfg: Config{}}
-	result, _, err := o.collectAnalyzeResult()
+	o := testOrchWithCfg(Config{})
+	result, _, err := o.Analyzer.collectAnalyzeResult()
 	if err != nil {
 		t.Fatalf("collectAnalyzeResult: %v", err)
 	}
@@ -1310,8 +1310,8 @@ depends_on:
       - FuncB
 `), 0o644)
 
-	o := &Orchestrator{cfg: Config{}}
-	result, _, err := o.collectAnalyzeResult()
+	o := testOrchWithCfg(Config{})
+	result, _, err := o.Analyzer.collectAnalyzeResult()
 	if err != nil {
 		t.Fatalf("collectAnalyzeResult: %v", err)
 	}
@@ -1347,8 +1347,8 @@ component_dependencies:
     to: "cmd/b"
 `), 0o644)
 
-	o := &Orchestrator{cfg: Config{}}
-	result, _, err := o.collectAnalyzeResult()
+	o := testOrchWithCfg(Config{})
+	result, _, err := o.Analyzer.collectAnalyzeResult()
 	if err != nil {
 		t.Fatalf("collectAnalyzeResult: %v", err)
 	}
@@ -1385,8 +1385,8 @@ component_dependencies:
     to: "pkg/b"
 `), 0o644)
 
-	o := &Orchestrator{cfg: Config{}}
-	result, _, err := o.collectAnalyzeResult()
+	o := testOrchWithCfg(Config{})
+	result, _, err := o.Analyzer.collectAnalyzeResult()
 	if err != nil {
 		t.Fatalf("collectAnalyzeResult: %v", err)
 	}
@@ -1413,8 +1413,8 @@ struct_refs:
     requirement: R1
 `), 0o644)
 
-	o := &Orchestrator{cfg: Config{}}
-	result, _, err := o.collectAnalyzeResult()
+	o := testOrchWithCfg(Config{})
+	result, _, err := o.Analyzer.collectAnalyzeResult()
 	if err != nil {
 		t.Fatalf("collectAnalyzeResult: %v", err)
 	}
@@ -1450,8 +1450,8 @@ struct_refs:
     requirement: R9
 `), 0o644)
 
-	o := &Orchestrator{cfg: Config{}}
-	result, _, err := o.collectAnalyzeResult()
+	o := testOrchWithCfg(Config{})
+	result, _, err := o.Analyzer.collectAnalyzeResult()
 	if err != nil {
 		t.Fatalf("collectAnalyzeResult: %v", err)
 	}
@@ -1487,8 +1487,8 @@ struct_refs:
     requirement: R1
 `), 0o644)
 
-	o := &Orchestrator{cfg: Config{}}
-	result, _, err := o.collectAnalyzeResult()
+	o := testOrchWithCfg(Config{})
+	result, _, err := o.Analyzer.collectAnalyzeResult()
 	if err != nil {
 		t.Fatalf("collectAnalyzeResult: %v", err)
 	}
@@ -1528,8 +1528,8 @@ component_dependencies:
     to: "pkg/other"
 `), 0o644)
 
-	o := &Orchestrator{cfg: Config{}}
-	result, _, err := o.collectAnalyzeResult()
+	o := testOrchWithCfg(Config{})
+	result, _, err := o.Analyzer.collectAnalyzeResult()
 	if err != nil {
 		t.Fatalf("collectAnalyzeResult: %v", err)
 	}
@@ -1567,8 +1567,8 @@ overview:
   coordination_pattern: test
 `), 0o644)
 
-	o := &Orchestrator{cfg: Config{}}
-	result, _, err := o.collectAnalyzeResult()
+	o := testOrchWithCfg(Config{})
+	result, _, err := o.Analyzer.collectAnalyzeResult()
 	if err != nil {
 		t.Fatalf("collectAnalyzeResult: %v", err)
 	}
@@ -1943,8 +1943,8 @@ func TestCollectAnalyzeResult_SemanticModelErrors(t *testing.T) {
       type: report
 `), 0o644)
 
-	o := &Orchestrator{cfg: Config{}}
-	result, counts, err := o.collectAnalyzeResult()
+	o := testOrchWithCfg(Config{})
+	result, counts, err := o.Analyzer.collectAnalyzeResult()
 	if err != nil {
 		t.Fatalf("collectAnalyzeResult: %v", err)
 	}
