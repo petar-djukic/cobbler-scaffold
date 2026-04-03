@@ -26,17 +26,19 @@ type GeneratorIssueStats struct {
 	Status         string  // "done", "failed", "in-progress", "pending"
 	CostUSD        float64
 	DurationS      int
-	DurationAPIMs  int // Claude API execution time in ms (SDK mode, GH-1708)
-	RateLimitWaitS int // seconds spent waiting on API rate limits (GH-1805)
+	DurationAPIMs  int     // Claude API execution time in ms (SDK mode, GH-1708)
+	RateLimitWaitS int     // seconds spent waiting on API rate limits (GH-1805)
 	NumTurns       int
 	LocDeltaProd   int
 	LocDeltaTest   int
-	NumReqs        int // number of requirements in the task description
-	TotalWeight    int // sum of PRD weights for the task's R-items (GH-1832)
-	InputTokens    int // total input tokens from history stats
-	OutputTokens   int // total output tokens from history stats
+	NumReqs        int     // number of requirements in the task description
+	TotalWeight    int     // sum of PRD weights for the task's R-items (GH-1832)
+	InputTokens    int     // total input tokens from history stats
+	OutputTokens   int     // total output tokens from history stats
+	Attempts       int     // number of stitch invocations for this task (GH-1967)
+	FailedCostUSD  float64 // cost from failed attempts (GH-1967)
 	PRDs           []string
-	Release        string // roadmap release version, e.g. "01.0"
+	Release        string  // roadmap release version, e.g. "01.0"
 }
 
 // GeneratorStatsDeps holds dependencies for generator stats collection.
@@ -128,8 +130,10 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 		OutputTokens   int
 		LocDeltaProd   int
 		LocDeltaTest   int
-		LastStatus     string // last history entry status: "success" or "failed"
-		StartedAt      string // earliest StartedAt for chronological ordering
+		LastStatus     string  // last history entry status: "success" or "failed"
+		StartedAt      string  // earliest StartedAt for chronological ordering
+		Attempts       int     // number of stitch invocations (GH-1967)
+		FailedCostUSD  float64 // cost from failed invocations (GH-1967)
 	}
 	stitchByTask := make(map[string]*stitchAgg)
 	var taskOrder []string // insertion order for deterministic iteration
@@ -162,7 +166,11 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 			if hs.TaskTitle != "" {
 				agg.Title = hs.TaskTitle
 			}
+			agg.Attempts++
 			agg.CostUSD += hs.CostUSD
+			if hs.Status == "failed" {
+				agg.FailedCostUSD += hs.CostUSD
+			}
 			if hs.DurationS > agg.DurationS {
 				agg.DurationS = hs.DurationS
 			}
@@ -231,6 +239,8 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 	var totalStitchDurS, totalStitchAPIMs, totalRateLimitWaitS int
 	var totalTurns, totalLocProd, totalLocTest, totalReqs, totalWeight int
 	var totalInputTokens, totalOutputTokens int
+	var totalAttempts int
+	var totalFailedCost float64
 	var nDone, nFailed, nSkipped, nInProgress, nPending int
 	prdStatus := make(map[string]string) // prd name → highest-priority status
 	prdReleaseMap := BuildPRDReleaseMap()
@@ -256,6 +266,8 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 			OutputTokens:   agg.OutputTokens,
 			LocDeltaProd:   agg.LocDeltaProd,
 			LocDeltaTest:   agg.LocDeltaTest,
+			Attempts:       agg.Attempts,
+			FailedCostUSD:  agg.FailedCostUSD,
 		}
 
 		// Derive status from history; override with GitHub data when available.
@@ -309,6 +321,8 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 		totalLocTest += s.LocDeltaTest
 		totalInputTokens += s.InputTokens
 		totalOutputTokens += s.OutputTokens
+		totalAttempts += s.Attempts
+		totalFailedCost += s.FailedCostUSD
 
 		s.NumReqs = CountDescriptionReqs(s.Description)
 		totalReqs += s.NumReqs
@@ -433,6 +447,16 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 		fmt.Printf(", %s rate-limited", FormatDuration(totalRateLimitWaitS))
 	}
 	fmt.Println()
+	nTasks := nDone + nFailed + nSkipped + nInProgress + nPending
+	totalRetries := totalAttempts - nTasks
+	if totalRetries < 0 {
+		totalRetries = 0
+	}
+	if totalAttempts > nTasks {
+		retryRate := float64(totalRetries) * 100 / float64(totalAttempts)
+		fmt.Printf("Retries: %d retries across %d attempts (%.0f%%), $%.2f wasted\n",
+			totalRetries, totalAttempts, retryRate, totalFailedCost)
+	}
 	fmt.Printf("LOC created: %+d prod, %+d test\n", totalLocProd, totalLocTest)
 	fmt.Printf("Requirements: %d total in tasks\n", totalReqs)
 	combinedIn := totalInputTokens + totalMeasureIn
@@ -495,6 +519,7 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 		ID        string
 		Status    string
 		Started   string // display-formatted StartedAt timestamp (GH-1884)
+		Att       string // attempt count (GH-1967)
 		Rel       string
 		Reqs      string
 		Weight    string // total weight from PRD annotations (GH-1832)
@@ -532,6 +557,10 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 		}
 		if tr.Rel == "" {
 			tr.Rel = "-"
+		}
+		tr.Att = "-"
+		if r.Attempts > 0 {
+			tr.Att = strconv.Itoa(r.Attempts)
 		}
 		tr.Cost = "-"
 		if r.CostUSD > 0 {
@@ -599,6 +628,7 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 			ID:        mid,
 			Status:    "done",
 			Started:   formatStarted(m.StartedAt),
+			Att:       "-",
 			Rel:       "-",
 			Reqs:      "-",
 			Weight:    "-",
@@ -639,6 +669,7 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 			ID:        strconv.Itoa(iss.Number),
 			Status:    "in-progress",
 			Started:   "-",
+			Att:       "-",
 			Rel:       "-",
 			Reqs:      "-",
 			Weight:    "-",
@@ -710,10 +741,10 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 	}
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "#\tStatus\tStarted\tRel\tReqs\tWeight\tCost\tDuration\tRateLimit\tTurns\tTokIn\tTokOut\tProd\tTest\tParent\tTitle")
+	fmt.Fprintln(w, "#\tStatus\tStarted\tAtt\tRel\tReqs\tWeight\tCost\tDuration\tRateLimit\tTurns\tTokIn\tTokOut\tProd\tTest\tParent\tTitle")
 	for _, tr := range tableRows {
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-			tr.ID, tr.Status, tr.Started, tr.Rel, tr.Reqs, tr.Weight, tr.Cost, tr.Dur, tr.RateLimit, tr.Turns, tr.TokIn, tr.TokOut, tr.Prod, tr.Test, tr.Parent, tr.Title)
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			tr.ID, tr.Status, tr.Started, tr.Att, tr.Rel, tr.Reqs, tr.Weight, tr.Cost, tr.Dur, tr.RateLimit, tr.Turns, tr.TokIn, tr.TokOut, tr.Prod, tr.Test, tr.Parent, tr.Title)
 	}
 	if err := w.Flush(); err != nil {
 		return err

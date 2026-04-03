@@ -1936,3 +1936,197 @@ requirements:
 		t.Errorf("expected 'Cost: calculating...' in output, got:\n%s", output)
 	}
 }
+
+// --- Attempt tracking (GH-1967) ---
+
+// TestPrintGeneratorStats_AttemptsColumn verifies that the Att column shows
+// the number of stitch invocations per task, and the retry summary line is
+// printed when retries occur.
+func TestPrintGeneratorStats_AttemptsColumn(t *testing.T) {
+	dir := t.TempDir()
+
+	histDir := filepath.Join(dir, "history")
+	os.MkdirAll(histDir, 0o755)
+
+	// Task 200: two failed attempts, then one success = 3 attempts.
+	fail1 := `caller: stitch
+task_id: "200"
+task_title: "[stitch] prd001 R1 flaky task"
+status: failed
+started_at: "2026-03-10T10:00:00Z"
+duration_s: 120
+tokens:
+  input: 50000
+  output: 2000
+cost_usd: 0.40
+num_turns: 5
+loc_before:
+  production: 500
+  test: 200
+loc_after:
+  production: 0
+  test: 0
+`
+	fail2 := `caller: stitch
+task_id: "200"
+task_title: "[stitch] prd001 R1 flaky task"
+status: failed
+started_at: "2026-03-10T10:05:00Z"
+duration_s: 90
+tokens:
+  input: 50000
+  output: 2000
+cost_usd: 0.35
+num_turns: 4
+loc_before:
+  production: 500
+  test: 200
+loc_after:
+  production: 0
+  test: 0
+`
+	success := `caller: stitch
+task_id: "200"
+task_title: "[stitch] prd001 R1 flaky task"
+status: success
+started_at: "2026-03-10T10:10:00Z"
+duration_s: 200
+tokens:
+  input: 60000
+  output: 3000
+cost_usd: 0.50
+num_turns: 8
+loc_before:
+  production: 500
+  test: 200
+loc_after:
+  production: 530
+  test: 220
+`
+	// Task 201: single success = 1 attempt.
+	single := `caller: stitch
+task_id: "201"
+task_title: "[stitch] prd002 R1 clean task"
+status: success
+started_at: "2026-03-10T11:00:00Z"
+duration_s: 150
+tokens:
+  input: 40000
+  output: 2000
+cost_usd: 0.30
+num_turns: 6
+loc_before:
+  production: 530
+  test: 220
+loc_after:
+  production: 560
+  test: 240
+`
+	os.WriteFile(filepath.Join(histDir, "2026-03-10-10-00-00-stitch-stats.yaml"), []byte(fail1), 0o644)
+	os.WriteFile(filepath.Join(histDir, "2026-03-10-10-05-00-stitch-stats.yaml"), []byte(fail2), 0o644)
+	os.WriteFile(filepath.Join(histDir, "2026-03-10-10-10-00-stitch-stats.yaml"), []byte(success), 0o644)
+	os.WriteFile(filepath.Join(histDir, "2026-03-10-11-00-00-stitch-stats.yaml"), []byte(single), 0o644)
+
+	orig, _ := os.Getwd()
+	t.Cleanup(func() { os.Chdir(orig) })
+	os.Chdir(dir)
+
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	deps := GeneratorStatsDeps{
+		Log:                    func(format string, args ...any) {},
+		ListGenerationBranches: func() []string { return []string{"generation-main"} },
+		GenerationBranch:       "generation-main",
+		CurrentBranch:          "generation-main",
+		HistoryDir:             histDir,
+	}
+
+	err := PrintGeneratorStats(deps)
+	w.Close()
+	captured, _ := io.ReadAll(r)
+	os.Stdout = oldStdout
+	output := string(captured)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Table header should include Att column.
+	if !strings.Contains(output, "Att") {
+		t.Errorf("expected Att column header in output:\n%s", output)
+	}
+
+	// The retry summary line should appear.
+	if !strings.Contains(output, "Retries: 2 retries across 4 attempts") {
+		t.Errorf("expected retry summary in output:\n%s", output)
+	}
+	if !strings.Contains(output, "50%") {
+		t.Errorf("expected 50%% retry rate in output:\n%s", output)
+	}
+	// Wasted cost = $0.40 + $0.35 = $0.75
+	if !strings.Contains(output, "$0.75 wasted") {
+		t.Errorf("expected $0.75 wasted in output:\n%s", output)
+	}
+}
+
+// TestPrintGeneratorStats_NoRetrySummaryWhenNoRetries verifies that the retry
+// summary line is omitted when all tasks succeed on the first attempt.
+func TestPrintGeneratorStats_NoRetrySummaryWhenNoRetries(t *testing.T) {
+	dir := t.TempDir()
+
+	histDir := filepath.Join(dir, "history")
+	os.MkdirAll(histDir, 0o755)
+
+	single := `caller: stitch
+task_id: "300"
+task_title: "[stitch] prd001 R1 clean"
+status: success
+started_at: "2026-03-10T12:00:00Z"
+duration_s: 100
+tokens:
+  input: 30000
+  output: 1000
+cost_usd: 0.20
+num_turns: 4
+loc_before:
+  production: 100
+  test: 50
+loc_after:
+  production: 120
+  test: 60
+`
+	os.WriteFile(filepath.Join(histDir, "2026-03-10-12-00-00-stitch-stats.yaml"), []byte(single), 0o644)
+
+	orig, _ := os.Getwd()
+	t.Cleanup(func() { os.Chdir(orig) })
+	os.Chdir(dir)
+
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	deps := GeneratorStatsDeps{
+		Log:                    func(format string, args ...any) {},
+		ListGenerationBranches: func() []string { return []string{"generation-main"} },
+		GenerationBranch:       "generation-main",
+		CurrentBranch:          "generation-main",
+		HistoryDir:             histDir,
+	}
+
+	err := PrintGeneratorStats(deps)
+	w.Close()
+	captured, _ := io.ReadAll(r)
+	os.Stdout = oldStdout
+	output := string(captured)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// No retry summary when all tasks have 1 attempt.
+	if strings.Contains(output, "Retries:") {
+		t.Errorf("retry summary should not appear when no retries:\n%s", output)
+	}
+}
