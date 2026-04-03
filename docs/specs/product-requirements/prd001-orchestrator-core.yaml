@@ -1,6 +1,12 @@
 id: prd001-orchestrator-core
 title: Orchestrator Core Interface
 
+implemented_by:
+  - Orchestrator and Config
+  - Git Operations
+used_by:
+  - Context Assembly
+
 problem: |
   Consuming projects need a stable entry point to configure and use
   the orchestrator. Without a well-defined Config struct and constructor,

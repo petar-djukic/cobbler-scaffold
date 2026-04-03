@@ -1,6 +1,9 @@
 id: prd005-metrics-collection
 title: Metrics Collection and Reporting
 
+used_by:
+  - Issue Tracking
+
 problem: |
   Without visibility into what each Claude invocation produces, developers
   cannot assess the efficiency of the generation process. Token counts,

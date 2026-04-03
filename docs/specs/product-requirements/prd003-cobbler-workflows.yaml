@@ -1,6 +1,14 @@
 id: prd003-cobbler-workflows
 title: Cobbler Measure and Stitch Workflows
 
+implemented_by:
+  - Issue Tracking
+  - Claude Execution
+  - Prompt Templates
+  - Context Assembly
+used_by:
+  - Git Operations
+
 problem: |
   Turning project specifications into working code requires two distinct
   capabilities: analyzing what needs to be built and executing individual
