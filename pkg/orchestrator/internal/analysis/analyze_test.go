@@ -1978,3 +1978,150 @@ func TestCollectAnalyzeResult_UCIDPrefixMismatch_Multiple(t *testing.T) {
 			len(result.UCIDPrefixMismatch), result.UCIDPrefixMismatch)
 	}
 }
+
+// --- Check 20: interface reference validation (GH-1968) ---
+
+func TestCollectAnalyzeResult_BrokenInterfaceRef_Missing(t *testing.T) {
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(orig)
+	setupMinimalAnalyzeDir(t)
+
+	os.WriteFile("docs/ARCHITECTURE.yaml", []byte(`id: arch
+title: Arch
+interfaces:
+  - name: Orchestrator and Config
+    summary: Entry point
+`), 0o644)
+	os.WriteFile("docs/specs/product-requirements/prd001-core.yaml", []byte(`id: prd001-core
+title: Core
+implemented_by:
+  - Nonexistent Interface
+`), 0o644)
+
+	result, _, err := CollectAnalyzeResult(noopDeps())
+	if err != nil {
+		t.Fatalf("CollectAnalyzeResult: %v", err)
+	}
+	if len(result.BrokenInterfaceRefs) != 1 {
+		t.Fatalf("expected 1 broken interface ref, got %d: %v",
+			len(result.BrokenInterfaceRefs), result.BrokenInterfaceRefs)
+	}
+	if !strings.Contains(result.BrokenInterfaceRefs[0], "Nonexistent Interface") {
+		t.Errorf("violation should mention Nonexistent Interface, got %q", result.BrokenInterfaceRefs[0])
+	}
+}
+
+func TestCollectAnalyzeResult_BrokenInterfaceRef_UsedByMissing(t *testing.T) {
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(orig)
+	setupMinimalAnalyzeDir(t)
+
+	os.WriteFile("docs/ARCHITECTURE.yaml", []byte(`id: arch
+title: Arch
+interfaces:
+  - name: Prompt Templates
+    summary: Templates
+`), 0o644)
+	os.WriteFile("docs/specs/product-requirements/prd001-core.yaml", []byte(`id: prd001-core
+title: Core
+used_by:
+  - Missing Interface
+`), 0o644)
+
+	result, _, err := CollectAnalyzeResult(noopDeps())
+	if err != nil {
+		t.Fatalf("CollectAnalyzeResult: %v", err)
+	}
+	if len(result.BrokenInterfaceRefs) != 1 {
+		t.Fatalf("expected 1 broken interface ref, got %d: %v",
+			len(result.BrokenInterfaceRefs), result.BrokenInterfaceRefs)
+	}
+	if !strings.Contains(result.BrokenInterfaceRefs[0], "Missing Interface") {
+		t.Errorf("violation should mention Missing Interface, got %q", result.BrokenInterfaceRefs[0])
+	}
+}
+
+func TestCollectAnalyzeResult_InterfaceRef_Valid(t *testing.T) {
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(orig)
+	setupMinimalAnalyzeDir(t)
+
+	os.WriteFile("docs/ARCHITECTURE.yaml", []byte(`id: arch
+title: Arch
+interfaces:
+  - name: Orchestrator and Config
+    summary: Entry point
+  - name: Prompt Templates
+    summary: Templates
+`), 0o644)
+	os.WriteFile("docs/specs/product-requirements/prd001-core.yaml", []byte(`id: prd001-core
+title: Core
+implemented_by:
+  - Orchestrator and Config
+used_by:
+  - Prompt Templates
+`), 0o644)
+
+	result, _, err := CollectAnalyzeResult(noopDeps())
+	if err != nil {
+		t.Fatalf("CollectAnalyzeResult: %v", err)
+	}
+	if len(result.BrokenInterfaceRefs) != 0 {
+		t.Errorf("expected no broken interface refs, got %v", result.BrokenInterfaceRefs)
+	}
+}
+
+func TestCollectAnalyzeResult_InterfaceRef_NoArchDoc(t *testing.T) {
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(orig)
+	setupMinimalAnalyzeDir(t)
+
+	// No ARCHITECTURE.yaml — interface refs should not cause errors
+	os.WriteFile("docs/specs/product-requirements/prd001-core.yaml", []byte(`id: prd001-core
+title: Core
+implemented_by:
+  - Some Interface
+`), 0o644)
+
+	result, _, err := CollectAnalyzeResult(noopDeps())
+	if err != nil {
+		t.Fatalf("CollectAnalyzeResult: %v", err)
+	}
+	if len(result.BrokenInterfaceRefs) != 0 {
+		t.Errorf("expected no violations without ARCHITECTURE.yaml, got %v", result.BrokenInterfaceRefs)
+	}
+}
+
+func TestCollectAnalyzeResult_InterfaceRef_NoRefs(t *testing.T) {
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(orig)
+	setupMinimalAnalyzeDir(t)
+
+	os.WriteFile("docs/ARCHITECTURE.yaml", []byte(`id: arch
+title: Arch
+interfaces:
+  - name: Orchestrator and Config
+    summary: Entry point
+`), 0o644)
+	os.WriteFile("docs/specs/product-requirements/prd001-core.yaml", []byte(`id: prd001-core
+title: Core
+`), 0o644)
+
+	result, _, err := CollectAnalyzeResult(noopDeps())
+	if err != nil {
+		t.Fatalf("CollectAnalyzeResult: %v", err)
+	}
+	if len(result.BrokenInterfaceRefs) != 0 {
+		t.Errorf("expected no violations when PRDs have no interface refs, got %v", result.BrokenInterfaceRefs)
+	}
+}

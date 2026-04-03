@@ -428,6 +428,8 @@ type PRDDoc struct {
 	PackageContract    *PRDPackageContract            `yaml:"package_contract,omitempty"`
 	DependsOn          []PRDDependsOn                 `yaml:"depends_on,omitempty"`
 	StructRefs         []PRDStructRef                 `yaml:"struct_refs,omitempty"`
+	ImplementedBy      []string                       `yaml:"implemented_by,omitempty"`
+	UsedBy             []string                       `yaml:"used_by,omitempty"`
 	SemanticModel      *yaml.Node                     `yaml:"semantic_model,omitempty"`
 }
 
@@ -940,6 +942,17 @@ type TestingDoc struct {
 // SemanticModelDoc corresponds to docs/constitutions/semantic-model.yaml.
 // The constitution only defines articles and sections — no additional sections.
 type SemanticModelDoc struct {
+	Articles []ConstitutionArticle `yaml:"articles"`
+	Sections []ConstitutionSection `yaml:"sections,omitempty"`
+}
+
+// ---------------------------------------------------------------------------
+// Interface constitution (docs/constitutions/interface.yaml)
+// ---------------------------------------------------------------------------
+
+// InterfaceDoc corresponds to docs/constitutions/interface.yaml.
+// The constitution defines articles and sections for interface governance.
+type InterfaceDoc struct {
 	Articles []ConstitutionArticle `yaml:"articles"`
 	Sections []ConstitutionSection `yaml:"sections,omitempty"`
 }

@@ -40,6 +40,7 @@ type AnalyzeResult struct {
 	MissingWeights                 []string // R-items without explicit weight annotation (warning, GH-1946)
 	BareTouchpoints                []string // Touchpoints citing PRDs without R-group references (warning, GH-1961)
 	UCIDPrefixMismatch             []string // Use case ID prefix doesn't match assigned release in roadmap (GH-1964)
+	BrokenInterfaceRefs            []string // implemented_by/used_by references non-existent architecture interface (GH-1968)
 }
 
 // AnalyzeCounts holds the artifact counts discovered during analysis.
@@ -77,6 +78,7 @@ func CollectAnalyzeResult(deps AnalyzeDeps) (AnalyzeResult, AnalyzeCounts, error
 	prdStructRefs := make(map[string][]PRDStructRef)     // PRD ID -> struct_refs entries
 	prdACs := make(map[string][]AcceptanceCriterion)     // PRD ID -> acceptance criteria
 	prdRItems := make(map[string][]string)               // PRD ID -> all R-item IDs (R1.1, R1.2, etc.)
+	prdInterfaceRefs := make(map[string][]string)        // PRD ID -> all interface names from implemented_by + used_by
 	for _, path := range prdFiles {
 		id := ExtractID(path)
 		if id != "" {
@@ -123,6 +125,12 @@ func CollectAnalyzeResult(deps AnalyzeDeps) (AnalyzeResult, AnalyzeCounts, error
 			}
 			if len(prd.StructRefs) > 0 {
 				prdStructRefs[id] = prd.StructRefs
+			}
+			var ifaceRefs []string
+			ifaceRefs = append(ifaceRefs, prd.ImplementedBy...)
+			ifaceRefs = append(ifaceRefs, prd.UsedBy...)
+			if len(ifaceRefs) > 0 {
+				prdInterfaceRefs[id] = ifaceRefs
 			}
 		}
 	}
@@ -436,6 +444,25 @@ func CollectAnalyzeResult(deps AnalyzeDeps) (AnalyzeResult, AnalyzeCounts, error
 	sort.Strings(result.ComponentDepViolations)
 	deps.Log("analyze: component_dep violations found %d", len(result.ComponentDepViolations))
 
+	// Check 20: interface references — implemented_by/used_by must resolve to
+	// an interface name in ARCHITECTURE.yaml (GH-1968).
+	if archDoc != nil && len(prdInterfaceRefs) > 0 {
+		archIfaceNames := make(map[string]bool)
+		for _, iface := range archDoc.Interfaces {
+			archIfaceNames[iface.Name] = true
+		}
+		for prdID, refs := range prdInterfaceRefs {
+			for _, ref := range refs {
+				if !archIfaceNames[ref] {
+					result.BrokenInterfaceRefs = append(result.BrokenInterfaceRefs,
+						fmt.Sprintf("%s: interface %q not found in ARCHITECTURE.yaml", prdID, ref))
+				}
+			}
+		}
+	}
+	sort.Strings(result.BrokenInterfaceRefs)
+	deps.Log("analyze: broken interface refs found %d", len(result.BrokenInterfaceRefs))
+
 	// Check 15: R-item coverage by acceptance criteria.
 	// Every R-item in a PRD should appear in at least one AC's traces list.
 	for prdID, rItems := range prdRItems {
@@ -603,6 +630,7 @@ func (r AnalyzeResult) PrintReport(prdCount, ucCount, tsCount, smCount int) erro
 	hasIssues = PrintSection("component_dependencies gaps (depends_on entries missing from component_dependencies)", r.ComponentDepViolations) || hasIssues
 	hasIssues = PrintSection("Semantic model errors (SM1 sections, SM3 traceability, SM7 naming)", r.SemanticModelErrors) || hasIssues
 	hasIssues = PrintSection("Use case ID prefix mismatch (ID prefix does not match assigned release in roadmap)", r.UCIDPrefixMismatch) || hasIssues
+	hasIssues = PrintSection("Broken interface refs (implemented_by/used_by references non-existent architecture interface)", r.BrokenInterfaceRefs) || hasIssues
 	hasIssues = PrintSection("Uncovered R-items (R-item not traced by any acceptance criterion)", r.UncoveredRItems) || hasIssues
 	PrintSection("Uncovered ACs (AC not covered by any test case — warning)", r.UncoveredACs)
 	PrintSection("Untraced success criteria (S-item with no AC trace — warning)", r.UntracedSuccessCriteria)

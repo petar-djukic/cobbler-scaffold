@@ -133,6 +133,9 @@ type TestingDoc = ctx.TestingDoc
 // Semantic model types.
 type SemanticModelDoc = ctx.SemanticModelDoc
 
+// Interface constitution types.
+type InterfaceDoc = ctx.InterfaceDoc
+
 // Issue format types.
 type IssueFormatDoc = ctx.IssueFormatDoc
 type IssueFormatSchema = ctx.IssueFormatSchema

@@ -1,0 +1,103 @@
+# Interface Constitution
+#
+# This constitution governs the definition, naming, and traceability of
+# interfaces in the architecture and PRDs. It is scaffolded into consuming
+# projects so Claude knows how to write well-formed interface specifications
+# and how PRDs reference interfaces.
+
+articles:
+  - id: I1
+    title: Interfaces live in ARCHITECTURE.yaml
+    rule: |
+      Every interface is declared in the interfaces section of
+      ARCHITECTURE.yaml. An interface groups related data structures and
+      operations under a name that components reference. Interfaces are not
+      declared in PRDs; PRDs reference interfaces defined in the architecture.
+
+  - id: I2
+    title: Required interface fields
+    rule: |
+      Every interface entry must have a name and a summary. The name is a
+      short, unique identifier (e.g., "Orchestrator and Config", "Prompt
+      Templates"). The summary describes what the interface provides in one
+      to three sentences. Optional fields are data_structures (list of type
+      names with brief descriptions) and operations (list of method or
+      function signatures).
+
+  - id: I3
+    title: Naming conventions
+    rule: |
+      Interface names use title case with spaces (e.g., "Generation
+      Lifecycle", "Issue Tracker"). Names must be unique within
+      ARCHITECTURE.yaml. Abbreviations are permitted when the abbreviation
+      is standard in the domain (e.g., "OOD" for object-oriented design),
+      but must be explained in the summary on first use.
+
+  - id: I4
+    title: PRD interface references
+    rule: |
+      PRDs may declare interface relationships using two optional fields:
+      implemented_by and used_by. Both are lists of interface names that
+      must resolve to entries in ARCHITECTURE.yaml's interfaces section.
+
+      implemented_by declares that the PRD's requirements define the
+      implementation of the named interface. The PRD's package_contract
+      exports correspond to the interface's operations.
+
+      used_by declares that the PRD's implementation consumes the named
+      interface. The PRD depends on the interface being available but does
+      not define it.
+
+      A single PRD may appear in both lists for different interfaces. An
+      interface may be implemented by one PRD and used by many.
+
+  - id: I5
+    title: Port and adapter semantics
+    rule: |
+      Interfaces follow the ports and adapters pattern. The interface
+      declaration in ARCHITECTURE.yaml is the port: it defines the
+      contract without specifying implementation. PRDs that list the
+      interface in implemented_by are adapters: they provide a concrete
+      implementation of the port.
+
+      This separation means changing an adapter (rewriting a PRD's
+      implementation) does not change the port (the interface definition).
+      Consumers that reference the interface via used_by depend on the
+      port, not the adapter. Analysis enforces that every referenced
+      interface name resolves to a declared port.
+
+  - id: I6
+    title: Interface traceability
+    rule: |
+      The traceability chain for interfaces runs: ARCHITECTURE.yaml
+      (declares the interface) -> PRD implemented_by (provides the
+      implementation) -> PRD used_by (consumes the interface). Analysis
+      validates both directions: every name in implemented_by and used_by
+      must match an interface name in ARCHITECTURE.yaml. Broken references
+      fail the analysis check.
+
+sections:
+  - tag: articles
+    title: Core Principles
+    content: |
+      Six principles govern interface specifications: interfaces live in
+      ARCHITECTURE.yaml (I1), required fields are name and summary (I2),
+      names use title case and must be unique (I3), PRDs reference
+      interfaces via implemented_by and used_by (I4), interfaces follow
+      ports and adapters semantics (I5), and traceability runs from
+      architecture through PRDs (I6).
+  - tag: structure
+    title: Interface Structure
+    content: |
+      An interface entry in ARCHITECTURE.yaml is a YAML mapping with four
+      fields: name (required), summary (required), data_structures
+      (optional list), and operations (optional list). PRDs reference
+      interfaces by name using implemented_by and used_by string lists.
+  - tag: validation
+    title: Analysis Validation
+    content: |
+      The mage analyze target validates interface references. Every entry
+      in a PRD's implemented_by and used_by lists must match the name
+      field of an interface in ARCHITECTURE.yaml. Unresolved references
+      are reported as errors. Missing or empty interface lists are not
+      errors; the fields are optional.

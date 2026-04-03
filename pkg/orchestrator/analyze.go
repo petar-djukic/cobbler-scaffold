@@ -73,6 +73,7 @@ func (o *Orchestrator) validateDocSchemas() []string {
 	errs = append(errs, validateYAMLStrict[ExecutionDoc]("docs/constitutions/execution.yaml")...)
 	errs = append(errs, validateYAMLStrict[GoStyleDoc]("docs/constitutions/go-style.yaml")...)
 	errs = append(errs, validateYAMLStrict[PlanningDoc]("docs/constitutions/planning.yaml")...)
+	errs = append(errs, validateYAMLStrict[InterfaceDoc]("docs/constitutions/interface.yaml")...)
 	errs = append(errs, validateYAMLStrict[SemanticModelDoc]("docs/constitutions/semantic-model.yaml")...)
 	errs = append(errs, validateYAMLStrict[TestingDoc]("docs/constitutions/testing.yaml")...)
 
@@ -80,6 +81,7 @@ func (o *Orchestrator) validateDocSchemas() []string {
 	errs = append(errs, validateYAMLStrict[DesignDoc]("pkg/orchestrator/constitutions/design.yaml")...)
 	errs = append(errs, validateYAMLStrict[ExecutionDoc]("pkg/orchestrator/constitutions/execution.yaml")...)
 	errs = append(errs, validateYAMLStrict[GoStyleDoc]("pkg/orchestrator/constitutions/go-style.yaml")...)
+	errs = append(errs, validateYAMLStrict[InterfaceDoc]("pkg/orchestrator/constitutions/interface.yaml")...)
 	errs = append(errs, validateYAMLStrict[IssueFormatDoc]("pkg/orchestrator/constitutions/issue-format.yaml")...)
 	errs = append(errs, validateYAMLStrict[PlanningDoc]("pkg/orchestrator/constitutions/planning.yaml")...)
 	errs = append(errs, validateYAMLStrict[TestingDoc]("pkg/orchestrator/constitutions/testing.yaml")...)

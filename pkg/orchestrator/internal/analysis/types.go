@@ -46,6 +46,8 @@ type PRDDoc struct {
 	PackageContract    *PRDPackageContract            `yaml:"package_contract,omitempty"`
 	DependsOn          []PRDDependsOn                 `yaml:"depends_on,omitempty"`
 	StructRefs         []PRDStructRef                 `yaml:"struct_refs,omitempty"`
+	ImplementedBy      []string                       `yaml:"implemented_by,omitempty"`
+	UsedBy             []string                       `yaml:"used_by,omitempty"`
 }
 
 // AcceptanceCriterion is a structured acceptance criterion with an ID,
@@ -97,8 +99,14 @@ type PRDStructRef struct {
 // ArchitectureDoc corresponds to docs/ARCHITECTURE.yaml
 // (analysis-relevant fields).
 type ArchitectureDoc struct {
+	Interfaces            []ArchInterface           `yaml:"interfaces,omitempty"`
 	ComponentDependencies []ArchComponentDependency `yaml:"component_dependencies,omitempty"`
 	DependencyRules       []ArchDependencyRule      `yaml:"dependency_rules,omitempty"`
+}
+
+// ArchInterface is an interface entry from ARCHITECTURE.yaml.
+type ArchInterface struct {
+	Name string `yaml:"name"`
 }
 
 // ArchComponentDependency is a single dependency edge in the architecture.
