@@ -324,6 +324,88 @@ func PrintRunStats(name string, deps RunStatsDeps) error {
 	return nil
 }
 
+// PrintCompareStats prints a side-by-side comparison of two generation runs.
+func PrintCompareStats(name1, name2 string, deps RunStatsDeps) error {
+	s1, err := CollectRunSummary(name1, deps)
+	if err != nil {
+		return fmt.Errorf("collecting %s: %w", name1, err)
+	}
+	s2, err := CollectRunSummary(name2, deps)
+	if err != nil {
+		return fmt.Errorf("collecting %s: %w", name2, err)
+	}
+
+	// Compute short labels from generation names.
+	label1 := shortLabel(name1)
+	label2 := shortLabel(name2)
+
+	// Column widths: metric label (24), col1 (20), col2 (20)
+	hdr := fmt.Sprintf("%-24s %-20s %-20s", "", label1, label2)
+	fmt.Println(hdr)
+	fmt.Println(strings.Repeat("-", len(hdr)))
+
+	addr1 := s1.Complete + s1.CompleteWithFailures
+	addr2 := s2.Complete + s2.CompleteWithFailures
+	printCompareRow("Requirements", fmtReqPct(addr1, s1.TotalReqs), fmtReqPct(addr2, s2.TotalReqs))
+	printCompareRow("Tasks", fmt.Sprintf("%d", s1.StitchTasks), fmt.Sprintf("%d", s2.StitchTasks))
+	printCompareRow("Total cost", fmt.Sprintf("$%.0f", s1.TotalCostUSD), fmt.Sprintf("$%.0f", s2.TotalCostUSD))
+	printCompareRow("Cost/req", fmtCostPerReq(s1.AvgCostPerReq), fmtCostPerReq(s2.AvgCostPerReq))
+	printCompareRow("Avg turns/task", fmtFloat1(s1.AvgTurnsPerTask), fmtFloat1(s2.AvgTurnsPerTask))
+	printCompareRow("Avg time/task", fmtDurOrDash(s1.AvgTimePerTaskS), fmtDurOrDash(s2.AvgTimePerTaskS))
+	printCompareRow("Avg tokens in", fmtTokOrDash(s1.AvgTokensIn), fmtTokOrDash(s2.AvgTokensIn))
+	printCompareRow("Avg tokens out", fmtTokOrDash(s1.AvgTokensOut), fmtTokOrDash(s2.AvgTokensOut))
+
+	return nil
+}
+
+func printCompareRow(label, val1, val2 string) {
+	fmt.Printf("%-24s %-20s %-20s\n", label, val1, val2)
+}
+
+func shortLabel(name string) string {
+	name = strings.TrimPrefix(name, "generation-")
+	if len(name) > 18 {
+		name = name[:15] + "..."
+	}
+	return name
+}
+
+func fmtReqPct(addressed, total int) string {
+	if total == 0 {
+		return "—"
+	}
+	pct := float64(addressed) * 100 / float64(total)
+	return fmt.Sprintf("%d/%d (%.0f%%)", addressed, total, pct)
+}
+
+func fmtCostPerReq(v float64) string {
+	if v == 0 {
+		return "—"
+	}
+	return fmt.Sprintf("$%.2f", v)
+}
+
+func fmtFloat1(v float64) string {
+	if v == 0 {
+		return "—"
+	}
+	return fmt.Sprintf("%.1f", v)
+}
+
+func fmtDurOrDash(s int) string {
+	if s == 0 {
+		return "—"
+	}
+	return FormatDuration(s)
+}
+
+func fmtTokOrDash(n int) string {
+	if n == 0 {
+		return "—"
+	}
+	return FormatTokens(n)
+}
+
 // loadHistoryFromRef reads all *-stats.yaml files from .cobbler/history/
 // on the given git ref by listing the tree and reading each file.
 func loadHistoryFromRef(deps RunStatsDeps, ref string) []cl.HistoryStats {

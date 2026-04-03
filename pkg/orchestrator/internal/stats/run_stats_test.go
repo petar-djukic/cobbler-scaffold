@@ -204,3 +204,59 @@ func TestPrintRunStats_WithName_NoHistory(t *testing.T) {
 		t.Errorf("expected zero task counts in output:\n%s", output)
 	}
 }
+
+// --- Compare tests (GH-1972) ---
+
+func TestPrintCompareStats_SideBySide(t *testing.T) {
+	deps := noopRunDeps()
+	// Both generations have no data, but comparison should still print the table.
+	deps.ShowFile = func(ref, path string) ([]byte, error) {
+		return nil, fmt.Errorf("not found")
+	}
+
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	err := PrintCompareStats("generation-run1", "generation-run2", deps)
+	w.Close()
+	captured, _ := io.ReadAll(r)
+	os.Stdout = oldStdout
+	output := string(captured)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Should contain both short labels.
+	if !strings.Contains(output, "run1") {
+		t.Errorf("expected run1 label in output:\n%s", output)
+	}
+	if !strings.Contains(output, "run2") {
+		t.Errorf("expected run2 label in output:\n%s", output)
+	}
+	// Should contain comparison rows.
+	if !strings.Contains(output, "Requirements") {
+		t.Errorf("expected Requirements row in output:\n%s", output)
+	}
+	if !strings.Contains(output, "Total cost") {
+		t.Errorf("expected Total cost row in output:\n%s", output)
+	}
+}
+
+func TestShortLabel(t *testing.T) {
+	cases := []struct {
+		input string
+		want  string
+	}{
+		{"generation-run40b", "run40b"},
+		{"generation-gh-3652-run40b", "gh-3652-run40b"},
+		{"short", "short"},
+		{"generation-very-long-name-that-exceeds", "very-long-name-..."},
+	}
+	for _, tc := range cases {
+		got := shortLabel(tc.input)
+		if got != tc.want {
+			t.Errorf("shortLabel(%q) = %q, want %q", tc.input, got, tc.want)
+		}
+	}
+}

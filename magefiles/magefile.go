@@ -307,6 +307,9 @@ func (Stats) Releases() error { return newOrch().ReleaseStats() }
 // Pass a generation name (e.g. "generation-main") or omit to list available runs.
 func (Stats) Run(name string) error { return newOrch().RunStats(name) }
 
+// Compare prints a side-by-side comparison of two generation runs.
+func (Stats) Compare(name1, name2 string) error { return newOrch().CompareRunStats(name1, name2) }
+
 // --- Prompt targets ---
 
 // Measure prints the assembled measure prompt to stdout.
