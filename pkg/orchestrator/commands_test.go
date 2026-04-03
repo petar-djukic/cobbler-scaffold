@@ -163,16 +163,16 @@ func TestCommandsInit_PopulatesPath(t *testing.T) {
 func TestGitTagAt(t *testing.T) {
 	initTestGitRepo(t)
 
-	head, err := defaultGitOps.RevParseHEAD("")
+	head, err := testGitOps().RevParseHEAD("")
 	if err != nil {
 		t.Fatalf("gitRevParseHEAD: %v", err)
 	}
 
-	if err := defaultGitOps.TagAt("v1.2.3", head, ""); err != nil {
+	if err := testGitOps().TagAt("v1.2.3", head, ""); err != nil {
 		t.Fatalf("gitTagAt: %v", err)
 	}
 
-	tags := defaultGitOps.ListTags("v1.2.3", "")
+	tags := testGitOps().ListTags("v1.2.3", "")
 	if len(tags) != 1 || tags[0] != "v1.2.3" {
 		t.Errorf("gitListTags after gitTagAt: got %v, want [v1.2.3]", tags)
 	}
@@ -194,11 +194,11 @@ func TestGitStash(t *testing.T) {
 	}
 
 	const stashMsg = "my-test-stash"
-	if err := defaultGitOps.Stash(stashMsg, ""); err != nil {
+	if err := testGitOps().Stash(stashMsg, ""); err != nil {
 		t.Fatalf("gitStash: %v", err)
 	}
 
-	if defaultGitOps.HasChanges("") {
+	if testGitOps().HasChanges("") {
 		t.Error("gitHasChanges: want false after stash, got true")
 	}
 
@@ -222,7 +222,7 @@ func TestGitStageDir(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := defaultGitOps.StageDir("mydir", ""); err != nil {
+	if err := testGitOps().StageDir("mydir", ""); err != nil {
 		t.Fatalf("gitStageDir: %v", err)
 	}
 
@@ -238,16 +238,16 @@ func TestGitStageDir(t *testing.T) {
 func TestGitCommitAllowEmpty(t *testing.T) {
 	initTestGitRepo(t)
 
-	head1, err := defaultGitOps.RevParseHEAD("")
+	head1, err := testGitOps().RevParseHEAD("")
 	if err != nil {
 		t.Fatalf("gitRevParseHEAD before: %v", err)
 	}
 
-	if err := defaultGitOps.CommitAllowEmpty("empty commit", ""); err != nil {
+	if err := testGitOps().CommitAllowEmpty("empty commit", ""); err != nil {
 		t.Fatalf("gitCommitAllowEmpty: %v", err)
 	}
 
-	head2, err := defaultGitOps.RevParseHEAD("")
+	head2, err := testGitOps().RevParseHEAD("")
 	if err != nil {
 		t.Fatalf("gitRevParseHEAD after: %v", err)
 	}
@@ -268,7 +268,7 @@ func TestGitLsTreeFiles(t *testing.T) {
 	gitRun(t, "add", "-A")
 	gitRun(t, "commit", "--no-verify", "-m", "add two files")
 
-	files, err := defaultGitOps.LsTreeFiles("HEAD", "")
+	files, err := testGitOps().LsTreeFiles("HEAD", "")
 	if err != nil {
 		t.Fatalf("gitLsTreeFiles: %v", err)
 	}
@@ -295,7 +295,7 @@ func TestGitShowFileContent(t *testing.T) {
 	gitRun(t, "add", "-A")
 	gitRun(t, "commit", "--no-verify", "-m", "add hello file")
 
-	got, err := defaultGitOps.ShowFileContent("HEAD", "hello.txt", "")
+	got, err := testGitOps().ShowFileContent("HEAD", "hello.txt", "")
 	if err != nil {
 		t.Fatalf("gitShowFileContent: %v", err)
 	}
@@ -318,7 +318,7 @@ func TestGitDiffShortstat(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ds, err := defaultGitOps.DiffShortstat("HEAD", "")
+	ds, err := testGitOps().DiffShortstat("HEAD", "")
 	if err != nil {
 		t.Fatalf("gitDiffShortstat: %v", err)
 	}
@@ -340,7 +340,7 @@ func TestGitDiffNameStatus(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	changes, err := diffNameStatus("HEAD", "")
+	changes, err := testOrch().diffNameStatus("HEAD", "")
 	if err != nil {
 		t.Fatalf("gitDiffNameStatus: %v", err)
 	}

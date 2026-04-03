@@ -16,10 +16,10 @@ type AnalysisDoc = an.AnalysisDoc
 // and logs a summary.
 func (o *Orchestrator) RunPreCycleAnalysis() {
 	an.RunPreCycleAnalysis(an.PreCycleDeps{
-		Log:        logf,
+		Log:        o.logf,
 		CobblerDir: o.cfg.Cobbler.Dir,
 		AnalyzeDeps: an.AnalyzeDeps{
-			Log:                    logf,
+			Log:                    o.logf,
 			Releases:               o.cfg.Project.Releases,
 			ValidateDocSchemas:     o.validateDocSchemas,
 			ValidatePromptTemplate: ictx.ValidatePromptTemplate,

@@ -32,7 +32,7 @@ var issueFormatConstitution string
 // Reads all options from Config.
 func (o *Orchestrator) Measure() error {
 	// If invoked from the main repo, enter the generation worktree (GH-1608).
-	if _, err := enterGenerationWorktree(); err != nil {
+	if _, err := o.enterGenerationWorktree(); err != nil {
 		return err
 	}
 	return o.RunMeasure()
@@ -59,22 +59,22 @@ func (o *Orchestrator) MeasurePrompt() error {
 // avoid duplicates. This avoids the super-linear thinking-time scaling observed
 // when requesting multiple issues in a single call (see eng04-measure-scaling).
 func (o *Orchestrator) RunMeasure() error {
-	setPhase("measure")
-	defer clearPhase()
+	o.setPhase("measure")
+	defer o.clearPhase()
 	measureStart := time.Now()
 
 	// Start orchestrator log capture.
 	if hdir := o.historyDir(); hdir != "" {
 		logPath := filepath.Join(hdir,
 			measureStart.Format("2006-01-02-15-04-05")+"-measure-orchestrator.log")
-		if err := openLogSink(logPath); err != nil {
-			logf("warning: could not open orchestrator log: %v", err)
+		if err := o.openLogSink(logPath); err != nil {
+			o.logf("warning: could not open orchestrator log: %v", err)
 		} else {
-			defer closeLogSink()
+			defer o.closeLogSink()
 		}
 	}
 
-	logf("starting (iterative, %d issue(s) requested)", o.cfg.Cobbler.MaxMeasureIssues)
+	o.logf("starting (iterative, %d issue(s) requested)", o.cfg.Cobbler.MaxMeasureIssues)
 	o.logConfig("measure")
 
 	if err := o.checkClaude(); err != nil {
@@ -83,18 +83,18 @@ func (o *Orchestrator) RunMeasure() error {
 
 	branch, err := o.resolveBranch(o.cfg.Generation.Branch)
 	if err != nil {
-		logf("resolveBranch failed: %v", err)
+		o.logf("resolveBranch failed: %v", err)
 		return err
 	}
-	logf("resolved branch=%s", branch)
-	if currentGeneration == "" {
-		setGeneration(branch)
-		defer clearGeneration()
+	o.logf("resolved branch=%s", branch)
+	if o.currentGeneration == "" {
+		o.setGeneration(branch)
+		defer o.clearGeneration()
 	}
 	generation := branch
 
-	if err := ensureOnBranch(branch); err != nil {
-		logf("ensureOnBranch failed: %v", err)
+	if err := o.ensureOnBranch(branch); err != nil {
+		o.logf("ensureOnBranch failed: %v", err)
 		return fmt.Errorf("switching to branch: %w", err)
 	}
 
@@ -105,18 +105,18 @@ func (o *Orchestrator) RunMeasure() error {
 	if err != nil {
 		return fmt.Errorf("getting working directory: %w", err)
 	}
-	repo, err := ghTrackerWithCfg(o.cfg).DetectGitHubRepo(repoRoot)
+	repo, err := o.tracker.DetectGitHubRepo(repoRoot)
 	if err != nil {
-		logf("detectGitHubRepo failed: %v", err)
+		o.logf("detectGitHubRepo failed: %v", err)
 		return fmt.Errorf("detecting GitHub repo: %w", err)
 	}
-	logf("using GitHub repo %s for issues", repo)
+	o.logf("using GitHub repo %s for issues", repo)
 
 	// Ensure the cobbler labels and generation label exist on the repo.
-	if err := defaultGhTracker.EnsureCobblerLabels(repo); err != nil {
-		logf("ensureCobblerLabels warning: %v", err)
+	if err := o.tracker.EnsureCobblerLabels(repo); err != nil {
+		o.logf("ensureCobblerLabels warning: %v", err)
 	}
-	defaultGhTracker.EnsureCobblerGenLabel(repo, generation) // nolint: best-effort
+	o.tracker.EnsureCobblerGenLabel(repo, generation) // nolint: best-effort
 
 	// Run pre-cycle analysis so the measure prompt sees current project state.
 	o.RunPreCycleAnalysis()
@@ -129,33 +129,33 @@ func (o *Orchestrator) RunMeasure() error {
 
 	// Route target-repo defects to the target repo (prd003 R11).
 	if analysis := an.LoadAnalysisDoc(o.cfg.Cobbler.Dir); analysis != nil && len(analysis.Defects) > 0 {
-		if targetRepo := ghTrackerWithCfg(o.cfg).ResolveTargetRepo(); targetRepo != "" {
-			logf("measure: filing %d defect(s) as bug issues in %s", len(analysis.Defects), targetRepo)
-			defaultGhTracker.FileTargetRepoDefects(targetRepo, analysis.Defects)
+		if targetRepo := o.tracker.ResolveTargetRepo(); targetRepo != "" {
+			o.logf("measure: filing %d defect(s) as bug issues in %s", len(analysis.Defects), targetRepo)
+			o.tracker.FileTargetRepoDefects(targetRepo, analysis.Defects)
 		} else {
-			logf("measure: no target repo configured; skipping %d defect(s)", len(analysis.Defects))
+			o.logf("measure: no target repo configured; skipping %d defect(s)", len(analysis.Defects))
 		}
 	}
 
 	// Clean up old measure temp files.
 	matches, _ := filepath.Glob(o.cfg.Cobbler.Dir + "measure-*.yaml") // empty list on error is acceptable
 	if len(matches) > 0 {
-		logf("cleaning %d old measure temp file(s)", len(matches))
+		o.logf("cleaning %d old measure temp file(s)", len(matches))
 	}
 	for _, f := range matches {
 		os.Remove(f) // nolint: best-effort temp file cleanup
 	}
 
 	// Get initial state: open GitHub issues for this generation.
-	existingIssues, _ := defaultGhTracker.ListActiveIssuesContext(repo, generation)
-	commitSHA, _ := defaultGitOps.RevParseHEAD(".") // empty string on error is acceptable for logging
+	existingIssues, _ := o.tracker.ListActiveIssuesContext(repo, generation)
+	commitSHA, _ := o.git.RevParseHEAD(".") // empty string on error is acceptable for logging
 
-	logf("existing issues context len=%d, maxMeasureIssues=%d, commit=%s",
+	o.logf("existing issues context len=%d, maxMeasureIssues=%d, commit=%s",
 		len(existingIssues), o.cfg.Cobbler.MaxMeasureIssues, commitSHA)
 
 	// Snapshot LOC before Claude.
 	locBefore := o.captureLOC()
-	logf("locBefore prod=%d test=%d", locBefore.Production, locBefore.Test)
+	o.logf("locBefore prod=%d test=%d", locBefore.Production, locBefore.Test)
 
 	// Measure loop: call Claude with limit=tasksPerCall, up to maxIssues total.
 	maxIssues := o.cfg.Cobbler.MaxMeasureIssues
@@ -164,22 +164,22 @@ func (o *Orchestrator) RunMeasure() error {
 		tasksPerCall = maxIssues
 	}
 	totalCalls := (maxIssues + tasksPerCall - 1) / tasksPerCall // ceiling division
-	logf("measure: maxIssues=%d tasksPerCall=%d totalCalls=%d", maxIssues, tasksPerCall, totalCalls)
+	o.logf("measure: maxIssues=%d tasksPerCall=%d totalCalls=%d", maxIssues, tasksPerCall, totalCalls)
 	var allCreatedIDs []string
 	var totalTokens claude.ClaudeResult
 	maxRetries := o.cfg.Cobbler.MaxMeasureRetries
 
 	// Create a single placeholder issue for the entire measure pass (GH-1467).
 	// Previously one placeholder was created per iteration, flooding the tracker.
-	placeholderNum, placeholderErr := defaultGhTracker.CreateMeasuringPlaceholder(repo, generation, 0)
+	placeholderNum, placeholderErr := o.tracker.CreateMeasuringPlaceholder(repo, generation, 0)
 	if placeholderErr != nil {
-		logf("measure: warning: createMeasuringPlaceholder: %v", placeholderErr)
+		o.logf("measure: warning: createMeasuringPlaceholder: %v", placeholderErr)
 	}
 	placeholderResolved := false
 	if placeholderNum > 0 {
 		defer func() {
 			if !placeholderResolved {
-				defaultGhTracker.CloseMeasuringPlaceholderWithComment(repo, placeholderNum, "Measure did not complete; closed automatically.")
+				o.tracker.CloseMeasuringPlaceholderWithComment(repo, placeholderNum, "Measure did not complete; closed automatically.")
 			}
 		}()
 	}
@@ -194,13 +194,13 @@ func (o *Orchestrator) RunMeasure() error {
 		if remaining := maxIssues - len(allCreatedIDs); callLimit > remaining {
 			callLimit = remaining
 		}
-		logf("--- iteration %d/%d (limit=%d, created so far=%d) ---", i+1, totalCalls, callLimit, len(allCreatedIDs))
+		o.logf("--- iteration %d/%d (limit=%d, created so far=%d) ---", i+1, totalCalls, callLimit, len(allCreatedIDs))
 
 		// Refresh existing issues from GitHub before each call (except the first).
 		if i > 0 {
-			refreshed, refreshErr := defaultGhTracker.ListActiveIssuesContext(repo, generation)
+			refreshed, refreshErr := o.tracker.ListActiveIssuesContext(repo, generation)
 			if refreshErr != nil {
-				logf("measure: warning: refreshing issue list: %v", refreshErr)
+				o.logf("measure: warning: refreshing issue list: %v", refreshErr)
 			} else {
 				existingIssues = refreshed
 			}
@@ -213,7 +213,7 @@ func (o *Orchestrator) RunMeasure() error {
 		// Attempt loop: try Claude + import, retrying on validation failure.
 		for attempt := 0; attempt <= maxRetries; attempt++ {
 			if attempt > 0 {
-				logf("iteration %d retry %d/%d (validation rejected previous output)",
+				o.logf("iteration %d retry %d/%d (validation rejected previous output)",
 					i+1, attempt, maxRetries)
 			}
 
@@ -225,7 +225,7 @@ func (o *Orchestrator) RunMeasure() error {
 			if promptErr != nil {
 				return promptErr
 			}
-			logf("iteration %d prompt built, length=%d bytes", i+1, len(prompt))
+			o.logf("iteration %d prompt built, length=%d bytes", i+1, len(prompt))
 
 			// Save prompt BEFORE calling Claude so it's on disk even if Claude times out.
 			historyTS := time.Now().Format("2006-01-02-15-04-05")
@@ -242,7 +242,7 @@ func (o *Orchestrator) RunMeasure() error {
 			totalTokens.CostUSD += tokens.CostUSD
 
 			if err != nil {
-				logf("Claude failed on iteration %d after %s: %v",
+				o.logf("Claude failed on iteration %d after %s: %v",
 					i+1, iterDuration.Round(time.Second), err)
 				// Save log and stats even on failure.
 				o.saveHistoryLog(historyTS, "measure", tokens.RawOutput)
@@ -264,7 +264,7 @@ func (o *Orchestrator) RunMeasure() error {
 				})
 				return fmt.Errorf("running Claude (iteration %d/%d): %w", i+1, totalCalls, err)
 			}
-			logf("iteration %d Claude completed in %s", i+1, iterDuration.Round(time.Second))
+			o.logf("iteration %d Claude completed in %s", i+1, iterDuration.Round(time.Second))
 
 			// Save remaining history artifacts (log, issues, stats) after Claude.
 			o.saveHistory(historyTS, tokens.RawOutput, outputFile)
@@ -288,45 +288,45 @@ func (o *Orchestrator) RunMeasure() error {
 			textOutput := claude.ExtractTextFromStreamJSON(tokens.RawOutput)
 			yamlContent, extractErr := claude.ExtractYAMLBlock(textOutput)
 			if extractErr != nil {
-				logf("iteration %d YAML extraction failed: %v", i+1, extractErr)
+				o.logf("iteration %d YAML extraction failed: %v", i+1, extractErr)
 				if attempt < maxRetries {
 					continue // retry
 				}
-				logf("iteration %d retries exhausted, no YAML extracted", i+1)
+				o.logf("iteration %d retries exhausted, no YAML extracted", i+1)
 				break
 			}
 			if err := os.WriteFile(outputFile, yamlContent, 0o644); err != nil {
-				logf("iteration %d failed to write output file: %v", i+1, err)
+				o.logf("iteration %d failed to write output file: %v", i+1, err)
 				break
 			}
-			logf("iteration %d extracted YAML, size=%d bytes", i+1, len(yamlContent))
+			o.logf("iteration %d extracted YAML, size=%d bytes", i+1, len(yamlContent))
 
 			var importErr error
 			var validationErrs []string
 			createdIDs, validationErrs, importErr = o.importIssues(outputFile, repo, generation, placeholderNum)
 			if importErr != nil {
-				logf("iteration %d import failed: %v", i+1, importErr)
+				o.logf("iteration %d import failed: %v", i+1, importErr)
 				if attempt < maxRetries {
 					lastValidationErrors = validationErrs // feed errors back into next prompt
 					_ = os.Remove(outputFile)             // best-effort cleanup before retry
 					continue                              // retry
 				}
 				// Retries exhausted: accept with warning (R5).
-				logf("iteration %d retries exhausted, accepting last result with warnings", i+1)
+				o.logf("iteration %d retries exhausted, accepting last result with warnings", i+1)
 				var forceErr error
 				createdIDs, forceErr = o.importIssuesForce(outputFile, repo, generation, placeholderNum)
 				if forceErr != nil {
-					logf("iteration %d force import failed: %v", i+1, forceErr)
+					o.logf("iteration %d force import failed: %v", i+1, forceErr)
 				}
 			}
 			break // success or retries exhausted
 		}
 
-		logf("iteration %d imported %d issue(s)", i+1, len(createdIDs))
+		o.logf("iteration %d imported %d issue(s)", i+1, len(createdIDs))
 		allCreatedIDs = append(allCreatedIDs, createdIDs...)
 
 		if len(createdIDs) == 0 && lastOutputFile != "" {
-			logf("iteration %d created no issues, keeping %s for inspection", i+1, lastOutputFile)
+			o.logf("iteration %d created no issues, keeping %s for inspection", i+1, lastOutputFile)
 		} else if lastOutputFile != "" {
 			os.Remove(lastOutputFile) // nolint: best-effort temp file cleanup
 		}
@@ -336,10 +336,10 @@ func (o *Orchestrator) RunMeasure() error {
 	// Claude non-deterministically returns [] on large prompts; a single retry
 	// recovers ~95% of these cases (GH-1513).
 	if len(allCreatedIDs) == 0 && o.hasUnresolvedRequirements() {
-		logf("measure: 0 issues created but unresolved requirements remain — retrying once")
+		o.logf("measure: 0 issues created but unresolved requirements remain — retrying once")
 
 		// Refresh existing issues for the retry.
-		refreshed, refreshErr := defaultGhTracker.ListActiveIssuesContext(repo, generation)
+		refreshed, refreshErr := o.tracker.ListActiveIssuesContext(repo, generation)
 		if refreshErr == nil {
 			existingIssues = refreshed
 		}
@@ -387,7 +387,7 @@ func (o *Orchestrator) RunMeasure() error {
 						retryIDs, _, importErr := o.importIssues(outputFile, repo, generation, placeholderNum)
 						if importErr == nil {
 							allCreatedIDs = append(allCreatedIDs, retryIDs...)
-							logf("measure: retry created %d issue(s)", len(retryIDs))
+							o.logf("measure: retry created %d issue(s)", len(retryIDs))
 						}
 					}
 				}
@@ -411,10 +411,10 @@ func (o *Orchestrator) RunMeasure() error {
 			comment += fmt.Sprintf("\nCost: $%.2f, Tokens: %din %dout",
 				totalTokens.CostUSD, totalTokens.InputTokens, totalTokens.OutputTokens)
 		}
-		defaultGhTracker.FinalizeMeasurePlaceholder(repo, placeholderNum, generation, comment, childNums)
+		o.tracker.FinalizeMeasurePlaceholder(repo, placeholderNum, generation, comment, childNums)
 	}
 
-	logf("completed %d iteration(s), %d issue(s) created in %s",
+	o.logf("completed %d iteration(s), %d issue(s) created in %s",
 		totalCalls, len(allCreatedIDs), time.Since(measureStart).Round(time.Second))
 	return nil
 }
@@ -434,9 +434,9 @@ func (o *Orchestrator) buildMeasurePrompt(userInput, existingIssues string, limi
 		return "", fmt.Errorf("loading measure context: %w", phaseErr)
 	}
 	if phaseCtx != nil {
-		logf("buildMeasurePrompt: using phase context from %s", measureCtxPath)
+		o.logf("buildMeasurePrompt: using phase context from %s", measureCtxPath)
 	} else {
-		logf("buildMeasurePrompt: no phase context file, using config defaults")
+		o.logf("buildMeasurePrompt: no phase context file, using config defaults")
 	}
 
 	// Apply CobblerConfig measure source settings to phaseCtx (GH-565).
@@ -445,23 +445,23 @@ func (o *Orchestrator) buildMeasurePrompt(userInput, existingIssues string, limi
 	}
 	if o.cfg.Cobbler.MeasureExcludeSource && !phaseCtx.ExcludeSource {
 		phaseCtx.ExcludeSource = true
-		logf("buildMeasurePrompt: measure_exclude_source=true from config")
+		o.logf("buildMeasurePrompt: measure_exclude_source=true from config")
 	}
 	if o.cfg.Cobbler.MeasureSourcePatterns != "" && phaseCtx.SourcePatterns == "" {
 		phaseCtx.SourcePatterns = o.cfg.Cobbler.MeasureSourcePatterns
-		logf("buildMeasurePrompt: measure_source_patterns set from config")
+		o.logf("buildMeasurePrompt: measure_source_patterns set from config")
 	}
 	if o.cfg.Cobbler.effectiveMeasureExcludeTests() && !phaseCtx.ExcludeTests {
 		phaseCtx.ExcludeTests = true
-		logf("buildMeasurePrompt: measure_exclude_tests=true, _test.go files will be excluded")
+		o.logf("buildMeasurePrompt: measure_exclude_tests=true, _test.go files will be excluded")
 	}
 	if o.cfg.Cobbler.MeasureSourceMode != "" && phaseCtx.SourceMode == "" {
 		phaseCtx.SourceMode = o.cfg.Cobbler.MeasureSourceMode
-		logf("buildMeasurePrompt: measure_source_mode=%q from config", phaseCtx.SourceMode)
+		o.logf("buildMeasurePrompt: measure_source_mode=%q from config", phaseCtx.SourceMode)
 	}
 	if o.cfg.Cobbler.MeasureSummarizeCommand != "" && phaseCtx.SummarizeCommand == "" {
 		phaseCtx.SummarizeCommand = o.cfg.Cobbler.MeasureSummarizeCommand
-		logf("buildMeasurePrompt: measure_summarize_command set from config")
+		o.logf("buildMeasurePrompt: measure_summarize_command set from config")
 	}
 
 	// Auto-derive SourcePatterns from the road-map when MeasureRoadmapSource
@@ -469,7 +469,7 @@ func (o *Orchestrator) buildMeasurePrompt(userInput, existingIssues string, limi
 	if o.cfg.Cobbler.MeasureRoadmapSource && !phaseCtx.ExcludeSource && phaseCtx.SourcePatterns == "" {
 		uc, err := selectNextPendingUseCase(o.cfg.Project)
 		if err != nil {
-			logf("buildMeasurePrompt: road-map source selection error: %v", err)
+			o.logf("buildMeasurePrompt: road-map source selection error: %v", err)
 		} else if uc != nil {
 			pkgPaths := ictx.ParseTouchpointPackages(uc.Touchpoints)
 			if len(pkgPaths) > 0 {
@@ -478,18 +478,18 @@ func (o *Orchestrator) buildMeasurePrompt(userInput, existingIssues string, limi
 					patterns = append(patterns, p+"/**/*.go")
 				}
 				phaseCtx.SourcePatterns = strings.Join(patterns, "\n")
-				logf("buildMeasurePrompt: road-map source: UC=%s packages=%v", uc.ID, pkgPaths)
+				o.logf("buildMeasurePrompt: road-map source: UC=%s packages=%v", uc.ID, pkgPaths)
 			} else {
-				logf("buildMeasurePrompt: road-map source: UC=%s has no package touchpoints, loading all source", uc.ID)
+				o.logf("buildMeasurePrompt: road-map source: UC=%s has no package touchpoints, loading all source", uc.ID)
 			}
 		} else {
-			logf("buildMeasurePrompt: road-map source: all use cases done, loading all source")
+			o.logf("buildMeasurePrompt: road-map source: all use cases done, loading all source")
 		}
 	}
 
 	projectCtx, ctxErr := buildProjectContext(existingIssues, o.cfg.Project, phaseCtx)
 	if ctxErr != nil {
-		logf("buildMeasurePrompt: buildProjectContext error: %v", ctxErr)
+		o.logf("buildMeasurePrompt: buildProjectContext error: %v", ctxErr)
 		projectCtx = &ProjectContext{}
 	}
 
@@ -508,7 +508,7 @@ func (o *Orchestrator) buildMeasurePrompt(userInput, existingIssues string, limi
 		contracts, _ := ictx.LoadOODPromptContext()
 		if len(contracts) > 0 {
 			measureContracts = contracts
-			logf("buildMeasurePrompt: injecting %d package_contracts (source_mode=%s)", len(contracts), sourceMode)
+			o.logf("buildMeasurePrompt: injecting %d package_contracts (source_mode=%s)", len(contracts), sourceMode)
 		}
 	}
 
@@ -541,7 +541,7 @@ func (o *Orchestrator) buildMeasurePrompt(userInput, existingIssues string, limi
 			"(default 1). When batching requirements into tasks, sum the weights of all "+
 			"R-items. Each task's total weight must not exceed %d. A task with one weight-4 "+
 			"requirement has budget for at most %d more weight-1 requirements.", maxW, maxW-4)
-		logf("buildMeasurePrompt: max_weight_per_task=%d constraint injected", maxW)
+		o.logf("buildMeasurePrompt: max_weight_per_task=%d constraint injected", maxW)
 	}
 
 	// results for projects with high documentation-to-code ratios (GH-1882).
@@ -550,7 +550,7 @@ func (o *Orchestrator) buildMeasurePrompt(userInput, existingIssues string, limi
 			"The requirements.yaml file shows unresolved R-items with status \"ready\". "+
 			"Returning an empty list [] is NOT acceptable when ready requirements exist. "+
 			"Analyze the ready R-items and propose implementation tasks for them.", minIssues)
-		logf("buildMeasurePrompt: min_measure_issues=%d constraint injected", minIssues)
+		o.logf("buildMeasurePrompt: min_measure_issues=%d constraint injected", minIssues)
 	}
 
 	out, err := yaml.Marshal(&doc)
@@ -558,7 +558,7 @@ func (o *Orchestrator) buildMeasurePrompt(userInput, existingIssues string, limi
 		return "", fmt.Errorf("marshaling measure prompt: %w", err)
 	}
 
-	logf("buildMeasurePrompt: %d bytes limit=%d userInput=%v",
+	o.logf("buildMeasurePrompt: %d bytes limit=%d userInput=%v",
 		len(out), limit, userInput != "")
 	return string(out), nil
 }
@@ -577,22 +577,22 @@ func (o *Orchestrator) importIssuesForce(yamlFile, repo, generation string, ph i
 }
 
 func (o *Orchestrator) importIssuesImpl(yamlFile, repo, generation string, skipEnforcement bool, ph int) ([]string, []string, error) {
-	logf("importIssues: reading %s", yamlFile)
+	o.logf("importIssues: reading %s", yamlFile)
 	data, err := os.ReadFile(yamlFile)
 	if err != nil {
 		return nil, nil, fmt.Errorf("reading YAML file: %w", err)
 	}
-	logf("importIssues: read %d bytes", len(data))
+	o.logf("importIssues: read %d bytes", len(data))
 
 	var issues []proposedIssue
 	if err := yaml.Unmarshal(data, &issues); err != nil {
-		logf("importIssues: YAML parse error: %v", err)
+		o.logf("importIssues: YAML parse error: %v", err)
 		return nil, nil, fmt.Errorf("parsing YAML: %w", err)
 	}
 
-	logf("importIssues: parsed %d proposed issue(s)", len(issues))
+	o.logf("importIssues: parsed %d proposed issue(s)", len(issues))
 	for i, issue := range issues {
-		logf("importIssues: [%d] title=%q dep=%d", i, issue.Title, issue.Dependency)
+		o.logf("importIssues: [%d] title=%q dep=%d", i, issue.Title, issue.Dependency)
 	}
 
 	// Validate proposed issues against P9/P7 rules and completed R-items (GH-1386).
@@ -600,7 +600,7 @@ func (o *Orchestrator) importIssuesImpl(yamlFile, repo, generation string, skipE
 	reqStates := loadRequirementStates(o.cfg.Cobbler.Dir)
 	vr := validateMeasureOutput(issues, o.cfg.Cobbler.MaxRequirementsPerTask, o.cfg.Cobbler.MaxWeightPerTask, subItemCounts, reqStates)
 	if len(vr.Warnings) > 0 {
-		logf("importIssues: %d warning(s)", len(vr.Warnings))
+		o.logf("importIssues: %d warning(s)", len(vr.Warnings))
 	}
 	if vr.HasErrors() && o.cfg.Cobbler.EnforceMeasureValidation && !skipEnforcement {
 		return nil, vr.Errors, fmt.Errorf("measure validation failed (%d error(s)): %s",
@@ -612,7 +612,7 @@ func (o *Orchestrator) importIssuesImpl(yamlFile, repo, generation string, skipE
 	// one (GH-1026, GH-1352, GH-1373).
 	existingTitles := make(map[string]int) // normalized title → issue number
 	existingFiles := make(map[string]int)  // file path → issue number
-	if existing, err := defaultGhTracker.ListAllCobblerIssues(repo, generation); err == nil {
+	if existing, err := o.tracker.ListAllCobblerIssues(repo, generation); err == nil {
 		hasOpen := false
 		for _, ex := range existing {
 			if ex.State == "open" {
@@ -633,12 +633,12 @@ func (o *Orchestrator) importIssuesImpl(yamlFile, repo, generation string, skipE
 	for _, issue := range issues {
 		norm := gh.NormalizeIssueTitle(issue.Title)
 		if dup, ok := existingTitles[norm]; ok {
-			logf("importIssues: skipping duplicate %q — title matches #%d", issue.Title, dup)
+			o.logf("importIssues: skipping duplicate %q — title matches #%d", issue.Title, dup)
 			continue
 		}
 		// Check if any proposed output file overlaps with an existing issue (GH-1373).
 		if dup, overlap := fileOverlap(gh.ExtractDescriptionFiles(issue.Description), existingFiles); overlap {
-			logf("importIssues: skipping duplicate %q — output files overlap with #%d", issue.Title, dup)
+			o.logf("importIssues: skipping duplicate %q — output files overlap with #%d", issue.Title, dup)
 			continue
 		}
 		filtered = append(filtered, issue)
@@ -659,7 +659,7 @@ func (o *Orchestrator) importIssuesImpl(yamlFile, repo, generation string, skipE
 		for _, issue := range issues {
 			if generate.IsOutOfScopeRelease(issue.Title, issue.Description, activeReleases) {
 				rel := generate.ExtractReleaseFromText(issue.Title + " " + issue.Description)
-				logf("importIssues: rejecting out-of-scope task %q (release %s not in %v)", issue.Title, rel, activeReleases)
+				o.logf("importIssues: rejecting out-of-scope task %q (release %s not in %v)", issue.Title, rel, activeReleases)
 				continue
 			}
 			scoped = append(scoped, issue)
@@ -671,22 +671,22 @@ func (o *Orchestrator) importIssuesImpl(yamlFile, repo, generation string, skipE
 	// The measure placeholder remains a distinct [measure] issue.
 	var ids []string
 	for _, issue := range issues {
-		logf("importIssues: creating task %d: %s (dep=%d)", issue.Index, issue.Title, issue.Dependency)
-		ghNum, err := defaultGhTracker.CreateCobblerIssue(repo, generation, issue)
+		o.logf("importIssues: creating task %d: %s (dep=%d)", issue.Index, issue.Title, issue.Dependency)
+		ghNum, err := o.tracker.CreateCobblerIssue(repo, generation, issue)
 		if err != nil {
-			logf("importIssues: createCobblerIssue failed for %q: %v", issue.Title, err)
+			o.logf("importIssues: createCobblerIssue failed for %q: %v", issue.Title, err)
 			continue
 		}
 		ids = append(ids, fmt.Sprintf("%d", ghNum))
 	}
 
 	if len(ids) > 0 {
-		defaultGhTracker.WaitForIssuesVisible(repo, generation, len(ids))
-		if err := defaultGhTracker.PromoteReadyIssues(repo, generation); err != nil {
-			logf("importIssues: promoteReadyIssues warning: %v", err)
+		o.tracker.WaitForIssuesVisible(repo, generation, len(ids))
+		if err := o.tracker.PromoteReadyIssues(repo, generation); err != nil {
+			o.logf("importIssues: promoteReadyIssues warning: %v", err)
 		}
 	}
-	logf("importIssues: %d of %d issue(s) imported", len(ids), len(issues))
+	o.logf("importIssues: %d of %d issue(s) imported", len(ids), len(issues))
 
 	// Append new issues to the persistent measure list.
 	appendMeasureLog(o.cfg.Cobbler.Dir, issues)
@@ -717,7 +717,7 @@ func (o *Orchestrator) saveHistory(ts string, rawOutput []byte, issuesFile strin
 	base := ts + "-measure"
 	if data, err := os.ReadFile(issuesFile); err == nil {
 		if err := os.WriteFile(filepath.Join(dir, base+"-issues.yaml"), data, 0o644); err != nil {
-			logf("saveHistory: write issues: %v", err)
+			o.logf("saveHistory: write issues: %v", err)
 		}
 	}
 }

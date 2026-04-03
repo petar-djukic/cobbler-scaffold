@@ -22,10 +22,10 @@ type Comparer interface {
 // otherwise all common utilities between the two sources are compared.
 func (o *Orchestrator) Compare(argA, argB, utility string) error {
 	deps := compare.Deps{
-		Log:            logf,
+		Log:            o.logf,
 		GitBin:         binGit,
 		GoBin:          binGo,
-		RemoveWorktree: defaultGitOps.WorktreeRemove,
+		RemoveWorktree: o.git.WorktreeRemove,
 	}
 	return compare.Run(argA, argB, utility, deps)
 }

@@ -45,7 +45,7 @@ func (o *Orchestrator) saveHistoryLog(ts, phase string, rawOutput []byte) {
 func (o *Orchestrator) captureLOC() claude.LocSnapshot {
 	rec, err := o.CollectStats()
 	if err != nil {
-		logf("captureLOC: collectStats error: %v", err)
+		o.logf("captureLOC: collectStats error: %v", err)
 		return claude.LocSnapshot{}
 	}
 	return claude.LocSnapshot{Production: rec.GoProdLOC, Test: rec.GoTestLOC}
@@ -134,11 +134,11 @@ func (o *Orchestrator) buildDirectCmd(ctx context.Context, workDir string, extra
 func (o *Orchestrator) hasOpenIssues() (bool, error) {
 	return claude.HasOpenIssues(claude.HasOpenIssuesDeps{
 		DetectGitHubRepoFn: func(repoRoot string) (string, error) {
-			return ghTrackerWithCfg(o.cfg).DetectGitHubRepo(repoRoot)
+			return o.tracker.DetectGitHubRepo(repoRoot)
 		},
-		GitReader: defaultGitOps,
+		GitReader: o.git,
 		ListOpenCobblerIssuesFn: func(repo, branch string) (int, error) {
-			issues, err := defaultGhTracker.ListOpenCobblerIssues(repo, branch)
+			issues, err := o.tracker.ListOpenCobblerIssues(repo, branch)
 			return len(issues), err
 		},
 	})
@@ -148,15 +148,15 @@ func (o *Orchestrator) hasOpenIssues() (bool, error) {
 // every one of them carries the cobbler-skipped label (GH-1699). This lets
 // the generator stop cleanly instead of looping on tasks that cannot succeed.
 func (o *Orchestrator) hasOnlySkippedIssues() (bool, error) {
-	repo, err := ghTrackerWithCfg(o.cfg).DetectGitHubRepo(".")
+	repo, err := o.tracker.DetectGitHubRepo(".")
 	if err != nil {
 		return false, err
 	}
-	generation, err := defaultGitOps.CurrentBranch(".")
+	generation, err := o.git.CurrentBranch(".")
 	if err != nil {
 		return false, err
 	}
-	issues, err := defaultGhTracker.ListOpenCobblerIssues(repo, generation)
+	issues, err := o.tracker.ListOpenCobblerIssues(repo, generation)
 	if err != nil {
 		return false, err
 	}

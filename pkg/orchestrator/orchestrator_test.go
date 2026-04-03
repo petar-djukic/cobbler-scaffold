@@ -81,24 +81,20 @@ func TestNewFromFile_InvalidYAML(t *testing.T) {
 // --- setGeneration / clearGeneration ---
 
 func TestSetClearGeneration(t *testing.T) {
-	t.Cleanup(func() {
-		phaseMu.Lock()
-		currentGeneration = ""
-		phaseMu.Unlock()
-	})
+	o := testOrch()
 
-	setGeneration("gen-abc")
-	phaseMu.RLock()
-	got := currentGeneration
-	phaseMu.RUnlock()
+	o.setGeneration("gen-abc")
+	o.phaseMu.RLock()
+	got := o.currentGeneration
+	o.phaseMu.RUnlock()
 	if got != "gen-abc" {
 		t.Errorf("currentGeneration = %q, want %q", got, "gen-abc")
 	}
 
-	clearGeneration()
-	phaseMu.RLock()
-	got = currentGeneration
-	phaseMu.RUnlock()
+	o.clearGeneration()
+	o.phaseMu.RLock()
+	got = o.currentGeneration
+	o.phaseMu.RUnlock()
 	if got != "" {
 		t.Errorf("currentGeneration = %q, want empty after clearGeneration", got)
 	}
@@ -107,19 +103,13 @@ func TestSetClearGeneration(t *testing.T) {
 // --- setPhase / clearPhase ---
 
 func TestSetClearPhase(t *testing.T) {
-	t.Cleanup(func() {
-		phaseMu.Lock()
-		currentPhase = ""
-		phaseStart = phaseStart.Round(0) // zero value
-		phaseMu.Unlock()
-		clearPhase()
-	})
+	o := testOrch()
 
-	setPhase("stitch")
-	phaseMu.RLock()
-	phase := currentPhase
-	start := phaseStart
-	phaseMu.RUnlock()
+	o.setPhase("stitch")
+	o.phaseMu.RLock()
+	phase := o.currentPhase
+	start := o.phaseStart
+	o.phaseMu.RUnlock()
 
 	if phase != "stitch" {
 		t.Errorf("currentPhase = %q, want %q", phase, "stitch")
@@ -128,11 +118,11 @@ func TestSetClearPhase(t *testing.T) {
 		t.Error("phaseStart is zero after setPhase")
 	}
 
-	clearPhase()
-	phaseMu.RLock()
-	phase = currentPhase
-	start = phaseStart
-	phaseMu.RUnlock()
+	o.clearPhase()
+	o.phaseMu.RLock()
+	phase = o.currentPhase
+	start = o.phaseStart
+	o.phaseMu.RUnlock()
 
 	if phase != "" {
 		t.Errorf("currentPhase = %q, want empty after clearPhase", phase)
@@ -145,12 +135,13 @@ func TestSetClearPhase(t *testing.T) {
 // --- openLogSink ---
 
 func TestOpenLogSink_CreatesFile(t *testing.T) {
+	o := testOrch()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "test.log")
 
-	t.Cleanup(func() { closeLogSink() })
+	t.Cleanup(func() { o.closeLogSink() })
 
-	if err := openLogSink(path); err != nil {
+	if err := o.openLogSink(path); err != nil {
 		t.Fatalf("openLogSink: %v", err)
 	}
 	if _, err := os.Stat(path); err != nil {
@@ -159,12 +150,13 @@ func TestOpenLogSink_CreatesFile(t *testing.T) {
 }
 
 func TestOpenLogSink_CreatesNestedDirectory(t *testing.T) {
+	o := testOrch()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "a", "b", "c", "test.log")
 
-	t.Cleanup(func() { closeLogSink() })
+	t.Cleanup(func() { o.closeLogSink() })
 
-	if err := openLogSink(path); err != nil {
+	if err := o.openLogSink(path); err != nil {
 		t.Fatalf("openLogSink: %v", err)
 	}
 	if _, err := os.Stat(path); err != nil {
@@ -173,7 +165,8 @@ func TestOpenLogSink_CreatesNestedDirectory(t *testing.T) {
 }
 
 func TestOpenLogSink_InvalidPath(t *testing.T) {
-	err := openLogSink("/dev/null/impossible/dir/log.txt")
+	o := testOrch()
+	err := o.openLogSink("/dev/null/impossible/dir/log.txt")
 	if err == nil {
 		t.Error("expected error for invalid path, got nil")
 	}

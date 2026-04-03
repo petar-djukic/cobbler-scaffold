@@ -20,12 +20,12 @@ func (o *Orchestrator) CompareRunStats(name1, name2 string) error {
 
 func (o *Orchestrator) runStatsDeps() st.RunStatsDeps {
 	return st.RunStatsDeps{
-		Log: logf,
+		Log: o.logf,
 		ListTags: func(pattern string) []string {
-			return defaultGitOps.ListTags(pattern, ".")
+			return o.git.ListTags(pattern, ".")
 		},
 		ShowFile: func(ref, path string) ([]byte, error) {
-			return defaultGitOps.ShowFileContent(ref, path, ".")
+			return o.git.ShowFileContent(ref, path, ".")
 		},
 		GenerationPrefix: o.cfg.Generation.Prefix,
 		CobblerDir:       o.cfg.Cobbler.Dir,

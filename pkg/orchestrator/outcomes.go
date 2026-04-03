@@ -16,7 +16,7 @@ type OutcomeRecord = st.OutcomeRecord
 // and prints a summary table to stdout.
 func (o *Orchestrator) Outcomes() error {
 	return st.PrintOutcomes(st.OutcomesDeps{
-		Log:    logf,
+		Log:    o.logf,
 		GitBin: binGit,
 	})
 }

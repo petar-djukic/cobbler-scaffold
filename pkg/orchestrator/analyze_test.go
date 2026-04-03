@@ -282,7 +282,7 @@ func TestDetectConstitutionDrift_Matching(t *testing.T) {
 	os.Chdir(dir)
 	defer os.Chdir(orig)
 
-	got := an.DetectConstitutionDrift(logf)
+	got := an.DetectConstitutionDrift(func(string, ...any) {})
 	if len(got) != 0 {
 		t.Errorf("got %v, want no drift", got)
 	}
@@ -302,7 +302,7 @@ func TestDetectConstitutionDrift_Differs(t *testing.T) {
 	os.Chdir(dir)
 	defer os.Chdir(orig)
 
-	got := an.DetectConstitutionDrift(logf)
+	got := an.DetectConstitutionDrift(func(string, ...any) {})
 	if len(got) != 1 || got[0] != "design.yaml" {
 		t.Errorf("got %v, want [design.yaml]", got)
 	}
@@ -322,7 +322,7 @@ func TestDetectConstitutionDrift_OnlyInDocs(t *testing.T) {
 	os.Chdir(dir)
 	defer os.Chdir(orig)
 
-	got := an.DetectConstitutionDrift(logf)
+	got := an.DetectConstitutionDrift(func(string, ...any) {})
 	if len(got) != 0 {
 		t.Errorf("got %v, want no drift", got)
 	}

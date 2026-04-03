@@ -4,7 +4,6 @@
 package orchestrator
 
 import (
-	an "github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/analysis"
 	ctx "github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/context"
 )
 
@@ -13,12 +12,8 @@ import (
 // into the internal/context package at init time.
 // ---------------------------------------------------------------------------
 
-func init() {
-	ctx.Log = logf
-	ctx.LoadAnalysisDocFn = func(dir string) any {
-		return an.LoadAnalysisDoc(dir)
-	}
-}
+// NOTE: ctx.Log and ctx.LoadAnalysisDocFn are wired in the Orchestrator
+// constructor (New) instead of an init function.
 
 // ---------------------------------------------------------------------------
 // Type aliases — re-export all types from internal/context so that

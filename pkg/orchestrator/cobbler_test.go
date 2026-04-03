@@ -1162,7 +1162,7 @@ func TestAppendOutcomeTrailers_AmendsLastCommit(t *testing.T) {
 		LOCBefore: claude.LocSnapshot{Production: 100, Test: 20},
 		LOCAfter:  claude.LocSnapshot{Production: 150, Test: 30},
 	}
-	if err := claude.AppendOutcomeTrailers(dir, rec, defaultGitOps.CommitAmendTrailers); err != nil {
+	if err := claude.AppendOutcomeTrailers(dir, rec, testGitOps().CommitAmendTrailers); err != nil {
 		// git commit --amend --trailer requires git >= 2.38; skip if unsupported.
 		t.Skipf("appendOutcomeTrailers: %v", err)
 	}

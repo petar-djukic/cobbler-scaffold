@@ -23,15 +23,9 @@ import (
 	gh "github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/github"
 )
 
-// ---------------------------------------------------------------------------
-// Dependency injection: wire the parent package's logf and binary paths
-// into the internal/generate package at init time.
-// ---------------------------------------------------------------------------
-
-func init() {
-	generate.Log = logf
-	generate.BinGit = binGit
-}
+// NOTE: generate.Log and generate.BinGit are wired in the Orchestrator
+// constructor (New) instead of an init function, eliminating the
+// package-level dependency on logf.
 
 // ---------------------------------------------------------------------------
 // Type aliases for backward compatibility
@@ -82,28 +76,28 @@ var prdRefPattern = generate.PRDRefPattern
 // gitDeps builds the GitDeps struct for the generate package.
 // ---------------------------------------------------------------------------
 
-func genGitDeps() generate.GitDeps {
+func (o *Orchestrator) genGitDeps() generate.GitDeps {
 	return generate.GitDeps{
-		RepoReader:    defaultGitOps,
-		BranchManager: defaultGitOps,
-		CommitWriter:  defaultGitOps,
+		RepoReader:    o.git,
+		BranchManager: o.git,
+		CommitWriter:  o.git,
 	}
 }
 
 // stitchGitDeps builds the StitchGitDeps struct for stitch operations.
-func stitchGitDeps() generate.StitchGitDeps {
+func (o *Orchestrator) stitchGitDeps() generate.StitchGitDeps {
 	return generate.StitchGitDeps{
-		RepoReader:      defaultGitOps,
-		BranchManager:   defaultGitOps,
-		WorktreeManager: defaultGitOps,
+		RepoReader:      o.git,
+		BranchManager:   o.git,
+		WorktreeManager: o.git,
 	}
 }
 
 // stitchIssueDeps builds the StitchIssueDeps struct for stitch operations.
-func stitchIssueDeps(repo, generation string) generate.StitchIssueDeps {
+func (o *Orchestrator) stitchIssueDeps(repo, generation string) generate.StitchIssueDeps {
 	return generate.StitchIssueDeps{
 		ListOpenCobblerIssues: func(r, g string) ([]generate.StitchIssue, error) {
-			issues, err := defaultGhTracker.ListOpenCobblerIssues(r, g)
+			issues, err := o.tracker.ListOpenCobblerIssues(r, g)
 			if err != nil {
 				return nil, err
 			}
@@ -122,7 +116,7 @@ func stitchIssueDeps(repo, generation string) generate.StitchIssueDeps {
 			return result, nil
 		},
 		PickReadyIssue: func(r, g string) (generate.StitchIssue, error) {
-			iss, err := defaultGhTracker.PickReadyIssue(r, g)
+			iss, err := o.tracker.PickReadyIssue(r, g)
 			if err != nil {
 				return generate.StitchIssue{}, err
 			}
@@ -135,7 +129,7 @@ func stitchIssueDeps(repo, generation string) generate.StitchIssueDeps {
 			}, nil
 		},
 		RemoveInProgressLabel: func(r string, num int) error {
-			return defaultGhTracker.RemoveIssueLabel(r, num, gh.LabelInProgress)
+			return o.tracker.RemoveIssueLabel(r, num, gh.LabelInProgress)
 		},
 		HasLabel: func(iss generate.StitchIssue, label string) bool {
 			for _, l := range iss.Labels {
@@ -162,12 +156,12 @@ func generationName(tag string) string {
 	return generate.GenerationName(tag)
 }
 
-func saveAndSwitchBranch(target string) error {
-	return generate.SaveAndSwitchBranch(target, genGitDeps())
+func (o *Orchestrator) saveAndSwitchBranch(target string) error {
+	return generate.SaveAndSwitchBranch(target, o.genGitDeps())
 }
 
-func ensureOnBranch(branch string) error {
-	return generate.EnsureOnBranch(branch, genGitDeps())
+func (o *Orchestrator) ensureOnBranch(branch string) error {
+	return generate.EnsureOnBranch(branch, o.genGitDeps())
 }
 
 func removeEmptyDirs(root string) {
@@ -277,20 +271,20 @@ func validateIssueDescription(desc string) error {
 	return generate.ValidateIssueDescription(desc)
 }
 
-func recoverStaleBranches(baseBranch, worktreeBase, repo string) bool {
-	return generate.RecoverStaleBranches(baseBranch, worktreeBase, repo, stitchGitDeps(), stitchIssueDeps(repo, ""))
+func (o *Orchestrator) recoverStaleBranches(baseBranch, worktreeBase, repo string) bool {
+	return generate.RecoverStaleBranches(baseBranch, worktreeBase, repo, o.stitchGitDeps(), o.stitchIssueDeps(repo, ""))
 }
 
-func resetOrphanedIssues(baseBranch, repo, generation string) bool {
-	return generate.ResetOrphanedIssues(baseBranch, repo, generation, stitchGitDeps(), stitchIssueDeps(repo, generation))
+func (o *Orchestrator) resetOrphanedIssues(baseBranch, repo, generation string) bool {
+	return generate.ResetOrphanedIssues(baseBranch, repo, generation, o.stitchGitDeps(), o.stitchIssueDeps(repo, generation))
 }
 
-func pickTask(baseBranch, worktreeBase, repo, generation string) (stitchTask, error) {
-	return generate.PickTask(baseBranch, worktreeBase, repo, generation, stitchIssueDeps(repo, generation))
+func (o *Orchestrator) pickTask(baseBranch, worktreeBase, repo, generation string) (stitchTask, error) {
+	return generate.PickTask(baseBranch, worktreeBase, repo, generation, o.stitchIssueDeps(repo, generation))
 }
 
-func createWorktree(task stitchTask) error {
-	return generate.CreateWorktree(task, stitchGitDeps())
+func (o *Orchestrator) createWorktree(task stitchTask) error {
+	return generate.CreateWorktree(task, o.stitchGitDeps())
 }
 
 func commitWorktreeChanges(task stitchTask) error {
@@ -301,12 +295,12 @@ func cleanGoBinaries(dir string) {
 	generate.CleanGoBinaries(dir)
 }
 
-func mergeBranch(branchName, baseBranch, repoRoot string) error {
-	return generate.MergeBranch(branchName, baseBranch, repoRoot, stitchGitDeps())
+func (o *Orchestrator) mergeBranch(branchName, baseBranch, repoRoot string) error {
+	return generate.MergeBranch(branchName, baseBranch, repoRoot, o.stitchGitDeps())
 }
 
-func cleanupWorktree(task stitchTask) bool {
-	return generate.CleanupWorktree(task, stitchGitDeps())
+func (o *Orchestrator) cleanupWorktree(task stitchTask) bool {
+	return generate.CleanupWorktree(task, o.stitchGitDeps())
 }
 
 // ---------------------------------------------------------------------------
@@ -319,11 +313,11 @@ func cleanupWorktree(task stitchTask) bool {
 func (o *Orchestrator) GeneratorRun(cycles int) error {
 	// If not on a generation branch, try to enter the worktree created by
 	// GeneratorStart (GH-1608).
-	if _, err := enterGenerationWorktree(); err != nil {
+	if _, err := o.enterGenerationWorktree(); err != nil {
 		return err
 	}
 
-	currentBranch, err := defaultGitOps.CurrentBranch(".")
+	currentBranch, err := o.git.CurrentBranch(".")
 	if err != nil {
 		return fmt.Errorf("getting current branch: %w", err)
 	}
@@ -332,8 +326,8 @@ func (o *Orchestrator) GeneratorRun(cycles int) error {
 		o.cfg.Generation.Cycles = cycles
 	}
 	o.cfg.Generation.Branch = currentBranch
-	setGeneration(currentBranch)
-	defer clearGeneration()
+	o.setGeneration(currentBranch)
+	defer o.clearGeneration()
 	return o.RunCycles("run")
 }
 
@@ -341,7 +335,7 @@ func (o *Orchestrator) GeneratorRun(cycles int) error {
 // Reads generation branch from Config.GenerationBranch or auto-detects.
 func (o *Orchestrator) GeneratorResume() error {
 	// If not on a generation branch, try to enter the worktree (GH-1608).
-	if _, err := enterGenerationWorktree(); err != nil {
+	if _, err := o.enterGenerationWorktree(); err != nil {
 		return err
 	}
 
@@ -357,49 +351,49 @@ func (o *Orchestrator) GeneratorResume() error {
 	if !strings.HasPrefix(branch, o.cfg.Generation.Prefix) {
 		return fmt.Errorf("not a generation branch: %s\nSet generation.branch in configuration.yaml", branch)
 	}
-	if !defaultGitOps.BranchExists(branch, ".") {
+	if !o.git.BranchExists(branch, ".") {
 		return fmt.Errorf("branch does not exist: %s", branch)
 	}
 
-	setGeneration(branch)
-	defer clearGeneration()
+	o.setGeneration(branch)
+	defer o.clearGeneration()
 
-	logf("resume: target branch=%s", branch)
+	o.logf("resume: target branch=%s", branch)
 
 	// Commit or stash uncommitted work, then switch to the generation branch.
-	if err := saveAndSwitchBranch(branch); err != nil {
+	if err := o.saveAndSwitchBranch(branch); err != nil {
 		return fmt.Errorf("switching to %s: %w", branch, err)
 	}
 
 	// Pre-flight cleanup.
-	logf("resume: pre-flight cleanup")
+	o.logf("resume: pre-flight cleanup")
 	wtBase := claude.WorktreeBasePath()
 
-	logf("resume: pruning worktrees")
-	if err := defaultGitOps.WorktreePrune("."); err != nil {
-		logf("resume: warning: worktree prune: %v", err)
+	o.logf("resume: pruning worktrees")
+	if err := o.git.WorktreePrune("."); err != nil {
+		o.logf("resume: warning: worktree prune: %v", err)
 	}
 
-	logf("resume: removing worktree directory %s", wtBase)
+	o.logf("resume: removing worktree directory %s", wtBase)
 	if err := os.RemoveAll(wtBase); err != nil {
-		logf("resume: warning: removing worktree directory %s: %v", wtBase, err)
+		o.logf("resume: warning: removing worktree directory %s: %v", wtBase, err)
 	}
 
-	logf("resume: recovering stale tasks")
-	ghRepo, err := ghTrackerWithCfg(o.cfg).DetectGitHubRepo(".")
+	o.logf("resume: recovering stale tasks")
+	ghRepo, err := o.tracker.DetectGitHubRepo(".")
 	if err != nil {
-		logf("resume: warning: detectGitHubRepo: %v", err)
+		o.logf("resume: warning: detectGitHubRepo: %v", err)
 	}
 	if err := o.recoverStaleTasks(branch, wtBase, ghRepo, branch); err != nil {
-		logf("resume: recoverStaleTasks warning: %v", err)
+		o.logf("resume: recoverStaleTasks warning: %v", err)
 	}
 
 	o.cfg.Generation.Branch = branch
 
 	// Drain existing ready issues before starting measure+stitch cycles.
-	logf("resume: draining existing ready issues")
+	o.logf("resume: draining existing ready issues")
 	if _, err := o.RunStitch(); err != nil {
-		logf("resume: drain stitch warning: %v", err)
+		o.logf("resume: drain stitch warning: %v", err)
 	}
 
 	return o.RunCycles("resume")
@@ -415,14 +409,14 @@ func (o *Orchestrator) GeneratorResume() error {
 // runaway refinement loops on fully-implemented specs.
 func (o *Orchestrator) RunCycles(label string) error {
 	maxZeroLOC := o.cfg.Cobbler.MaxConsecutiveZeroLOCCycles
-	logf("generator %s: starting (stitchTotal=%d stitchPerCycle=%d measure=%d safetyCycles=%d maxZeroLOC=%d)",
+	o.logf("generator %s: starting (stitchTotal=%d stitchPerCycle=%d measure=%d safetyCycles=%d maxZeroLOC=%d)",
 		label, o.cfg.Cobbler.MaxStitchIssues, o.cfg.Cobbler.MaxStitchIssuesPerCycle, o.cfg.Cobbler.MaxMeasureIssues, o.cfg.Generation.Cycles, maxZeroLOC)
 
 	totalStitched := 0
 	consecutiveZeroLOC := 0
 	for cycle := 1; ; cycle++ {
 		if o.cfg.Generation.Cycles > 0 && cycle > o.cfg.Generation.Cycles {
-			logf("generator %s: reached max cycles (%d), stopping", label, o.cfg.Generation.Cycles)
+			o.logf("generator %s: reached max cycles (%d), stopping", label, o.cfg.Generation.Cycles)
 			break
 		}
 
@@ -431,7 +425,7 @@ func (o *Orchestrator) RunCycles(label string) error {
 		if o.cfg.Cobbler.MaxStitchIssues > 0 {
 			remaining := o.cfg.Cobbler.MaxStitchIssues - totalStitched
 			if remaining <= 0 {
-				logf("generator %s: reached total stitch limit (%d), stopping", label, o.cfg.Cobbler.MaxStitchIssues)
+				o.logf("generator %s: reached total stitch limit (%d), stopping", label, o.cfg.Cobbler.MaxStitchIssues)
 				break
 			}
 			if perCycle == 0 || remaining < perCycle {
@@ -444,7 +438,7 @@ func (o *Orchestrator) RunCycles(label string) error {
 
 		// Capture LOC before stitch to detect zero-change cycles.
 		locBefore := o.captureLOC()
-		logf("generator %s: cycle %d — stitch (limit=%d, stitched so far=%d)", label, cycle, perCycle, totalStitched)
+		o.logf("generator %s: cycle %d — stitch (limit=%d, stitched so far=%d)", label, cycle, perCycle, totalStitched)
 		n, err := o.RunStitchN(perCycle)
 		totalStitched += n
 		if err != nil {
@@ -452,15 +446,15 @@ func (o *Orchestrator) RunCycles(label string) error {
 		}
 		locAfter := o.captureLOC()
 		locDelta := (locAfter.Production - locBefore.Production) + (locAfter.Test - locBefore.Test)
-		logf("generator %s: cycle %d — LOC delta=%d (prod %d→%d, test %d→%d)",
+		o.logf("generator %s: cycle %d — LOC delta=%d (prod %d→%d, test %d→%d)",
 			label, cycle, locDelta, locBefore.Production, locAfter.Production, locBefore.Test, locAfter.Test)
 
 		// Track consecutive zero-LOC cycles as a refinement-loop guard.
 		if locDelta == 0 {
 			consecutiveZeroLOC++
-			logf("generator %s: cycle %d — zero LOC change (%d consecutive)", label, cycle, consecutiveZeroLOC)
+			o.logf("generator %s: cycle %d — zero LOC change (%d consecutive)", label, cycle, consecutiveZeroLOC)
 			if maxZeroLOC > 0 && consecutiveZeroLOC >= maxZeroLOC {
-				logf("generator %s: %d consecutive zero-LOC cycles reached limit (%d); spec likely complete — stopping",
+				o.logf("generator %s: %d consecutive zero-LOC cycles reached limit (%d); spec likely complete — stopping",
 					label, consecutiveZeroLOC, maxZeroLOC)
 				break
 			}
@@ -477,21 +471,21 @@ func (o *Orchestrator) RunCycles(label string) error {
 
 		// Check if the current release is complete and auto-advance if so.
 		if advanced, ver := o.checkAutoAdvanceRelease(); advanced {
-			logf("generator %s: cycle %d — auto-advanced release %s", label, cycle, ver)
+			o.logf("generator %s: cycle %d — auto-advanced release %s", label, cycle, ver)
 		}
 
 		// If the only remaining open issues are skipped, stop the generation
 		// immediately rather than wasting cycles (GH-1699).
 		if onlySkipped, skippedErr := o.hasOnlySkippedIssues(); skippedErr == nil && onlySkipped {
-			logf("generator %s: cycle %d — only skipped tasks remain, stopping", label, cycle)
+			o.logf("generator %s: cycle %d — only skipped tasks remain, stopping", label, cycle)
 			break
 		}
 
 		// Skip measure if open issues remain — stitch should drain them first (GH-1352).
 		if openBefore, err := o.hasOpenIssues(); err == nil && openBefore {
-			logf("generator %s: cycle %d — skipping measure, open issues remain", label, cycle)
+			o.logf("generator %s: cycle %d — skipping measure, open issues remain", label, cycle)
 		} else {
-			logf("generator %s: cycle %d — measure", label, cycle)
+			o.logf("generator %s: cycle %d — measure", label, cycle)
 			if err := o.RunMeasure(); err != nil {
 				return fmt.Errorf("cycle %d measure: %w", cycle, err)
 			}
@@ -499,7 +493,7 @@ func (o *Orchestrator) RunCycles(label string) error {
 
 		open, err := o.hasOpenIssues()
 		if err != nil {
-			logf("generator %s: hasOpenIssues error (assuming open): %v", label, err)
+			o.logf("generator %s: hasOpenIssues error (assuming open): %v", label, err)
 		}
 		if !open && err == nil {
 			// Before stopping, check if unresolved requirements remain.
@@ -508,20 +502,20 @@ func (o *Orchestrator) RunCycles(label string) error {
 			// requirements are still "ready", run measure to create new
 			// tasks instead of stopping prematurely (GH-1475).
 			if o.hasUnresolvedRequirements() {
-				logf("generator %s: cycle %d — no open issues but unresolved requirements remain, running measure",
+				o.logf("generator %s: cycle %d — no open issues but unresolved requirements remain, running measure",
 					label, cycle)
 				if err := o.RunMeasure(); err != nil {
 					return fmt.Errorf("cycle %d measure (fallback): %w", cycle, err)
 				}
 			} else {
-				logf("generator %s: no open issues remain, stopping after %d cycle(s)", label, cycle)
+				o.logf("generator %s: no open issues remain, stopping after %d cycle(s)", label, cycle)
 				break
 			}
 		}
-		logf("generator %s: open issues remain, continuing to cycle %d", label, cycle+1)
+		o.logf("generator %s: open issues remain, continuing to cycle %d", label, cycle+1)
 	}
 
-	logf("generator %s: complete (total stitched=%d)", label, totalStitched)
+	o.logf("generator %s: complete (total stitched=%d)", label, totalStitched)
 	return nil
 }
 
@@ -564,22 +558,22 @@ func (o *Orchestrator) checkAutoAdvanceRelease() (bool, string) {
 	// in a PRD, leaving orphaned ready requirements that become invisible
 	// once the release is filtered from the measure prompt (GH-1952).
 	if o.releaseHasReadyRequirements(target.UseCases) {
-		logf("checkAutoAdvanceRelease: release %s has all UCs done but ready requirements remain, not advancing", target.Version)
+		o.logf("checkAutoAdvanceRelease: release %s has all UCs done but ready requirements remain, not advancing", target.Version)
 		return false, ""
 	}
 
 	// All UCs done and all requirements complete — auto-advance.
-	logf("checkAutoAdvanceRelease: release %s has all use cases done, advancing", target.Version)
+	o.logf("checkAutoAdvanceRelease: release %s has all use cases done, advancing", target.Version)
 	if err := o.ReleaseUpdate(target.Version); err != nil {
-		logf("checkAutoAdvanceRelease: ReleaseUpdate(%s) failed: %v", target.Version, err)
+		o.logf("checkAutoAdvanceRelease: ReleaseUpdate(%s) failed: %v", target.Version, err)
 		return false, ""
 	}
 
 	// Commit the changes on the current branch.
-	_ = defaultGitOps.StageAll(".")
+	_ = o.git.StageAll(".")
 	msg := fmt.Sprintf("Auto-advance release %s: all use cases complete\n\nMarked use cases as implemented in road-map.yaml.\nRemoved %s from project.releases in configuration.yaml.", target.Version, target.Version)
-	if err := defaultGitOps.Commit(msg, "."); err != nil {
-		logf("checkAutoAdvanceRelease: commit failed: %v", err)
+	if err := o.git.Commit(msg, "."); err != nil {
+		o.logf("checkAutoAdvanceRelease: commit failed: %v", err)
 	}
 
 	// Reload config so subsequent measure sees updated releases.
@@ -629,7 +623,7 @@ func (o *Orchestrator) releaseHasReadyRequirements(useCases []RoadmapUseCase) bo
 			}
 			for id, st := range prdReqs {
 				if st.Status == "ready" {
-					logf("releaseHasReadyRequirements: %s %s is still ready", prdKey, id)
+					o.logf("releaseHasReadyRequirements: %s %s is still ready", prdKey, id)
 					return true
 				}
 			}
@@ -671,25 +665,25 @@ func (o *Orchestrator) validateAndMarkUCs() {
 		// Load UC touchpoints to extract PRD citations.
 		ucTouchpoints := loadUCTouchpoints(uc.ID)
 		if len(ucTouchpoints) == 0 {
-			logf("validateAndMarkUCs: UC %s — no touchpoints found, skipping", uc.ID)
+			o.logf("validateAndMarkUCs: UC %s — no touchpoints found, skipping", uc.ID)
 			continue
 		}
 
 		// Requirement-based completion is the primary gate (GH-1378).
 		complete, remaining := generate.UCRequirementsComplete(o.cfg.Cobbler.Dir, ucTouchpoints)
 		if !complete {
-			logf("validateAndMarkUCs: UC %s — %d requirements still pending: %v", uc.ID, len(remaining), remaining)
+			o.logf("validateAndMarkUCs: UC %s — %d requirements still pending: %v", uc.ID, len(remaining), remaining)
 			continue
 		}
 
 		// Test-based validation is a secondary signal (log-only).
-		if !validateUCImplemented(uc.ID) {
-			logf("validateAndMarkUCs: UC %s — requirements complete but tests missing/failing (non-blocking)", uc.ID)
+		if !o.validateUCImplemented(uc.ID) {
+			o.logf("validateAndMarkUCs: UC %s — requirements complete but tests missing/failing (non-blocking)", uc.ID)
 		}
 
-		logf("validateAndMarkUCs: UC %s validated — marking as implemented", uc.ID)
+		o.logf("validateAndMarkUCs: UC %s validated — marking as implemented", uc.ID)
 		if err := updateRoadmapSingleUCStatus(target.Version, uc.ID, "implemented"); err != nil {
-			logf("validateAndMarkUCs: failed to mark %s: %v", uc.ID, err)
+			o.logf("validateAndMarkUCs: failed to mark %s: %v", uc.ID, err)
 			continue
 		}
 		marked = append(marked, uc.ID)
@@ -699,11 +693,11 @@ func (o *Orchestrator) validateAndMarkUCs() {
 		return
 	}
 
-	_ = defaultGitOps.StageAll(".")
+	_ = o.git.StageAll(".")
 	msg := fmt.Sprintf("Mark validated UCs as implemented in release %s\n\nUCs with complete requirements: %s",
 		target.Version, strings.Join(marked, ", "))
-	if err := defaultGitOps.Commit(msg, "."); err != nil {
-		logf("validateAndMarkUCs: commit failed: %v", err)
+	if err := o.git.Commit(msg, "."); err != nil {
+		o.logf("validateAndMarkUCs: commit failed: %v", err)
 	}
 }
 
@@ -721,14 +715,14 @@ func loadUCTouchpoints(ucID string) []string {
 
 // validateUCImplemented checks whether a use case has test files and whether
 // those tests pass. Returns true only if both conditions are met.
-func validateUCImplemented(ucID string) bool {
+func (o *Orchestrator) validateUCImplemented(ucID string) bool {
 	testDir := an.TestDirForUC(ucID)
 	if testDir == "" {
 		return false
 	}
 	testCount := an.CountTestFiles(testDir)
 	if testCount == 0 {
-		logf("validateUCImplemented: %s — no test files in %s", ucID, testDir)
+		o.logf("validateUCImplemented: %s — no test files in %s", ucID, testDir)
 		return false
 	}
 
@@ -736,10 +730,10 @@ func validateUCImplemented(ucID string) bool {
 	cmd := exec.Command("go", "test", "-tags=usecase", "-count=1", "-timeout", "300s", "./"+testDir+"/...")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		logf("validateUCImplemented: %s — tests failed: %v\n%s", ucID, err, string(out))
+		o.logf("validateUCImplemented: %s — tests failed: %v\n%s", ucID, err, string(out))
 		return false
 	}
-	logf("validateUCImplemented: %s — %d test file(s) pass", ucID, testCount)
+	o.logf("validateUCImplemented: %s — %d test file(s) pass", ucID, testCount)
 	return true
 }
 
@@ -748,13 +742,13 @@ func validateUCImplemented(ucID string) bool {
 // branch, deletes Go files, reinitializes the Go module, and commits the clean
 // state. Any clean branch is a valid starting point (prd002 R2.1).
 func (o *Orchestrator) GeneratorStart() error {
-	baseBranch, err := defaultGitOps.CurrentBranch(".")
+	baseBranch, err := o.git.CurrentBranch(".")
 	if err != nil {
 		return fmt.Errorf("getting current branch: %w", err)
 	}
 
 	// Reject dirty worktrees — a generation must start from a clean state.
-	if defaultGitOps.HasChanges(".") {
+	if o.git.HasChanges(".") {
 		return fmt.Errorf("worktree has uncommitted changes on %s; commit or stash before starting a generation", baseBranch)
 	}
 
@@ -763,13 +757,13 @@ func (o *Orchestrator) GeneratorStart() error {
 	// survive across generations when it is gitignored or when
 	// generator:stop was not called.
 	if err := o.HistoryClean(); err != nil {
-		logf("generator:start: warning clearing history: %v", err)
+		o.logf("generator:start: warning clearing history: %v", err)
 	}
 
 	// Garbage-collect issues from generations whose branch no longer exists.
 	// This catches leaks from crashed tests or prior runs without cleanup.
-	if ghRepo, err := ghTrackerWithCfg(o.cfg).DetectGitHubRepo("."); err == nil && ghRepo != "" {
-		defaultGhTracker.GcStaleGenerationIssues(ghRepo, o.cfg.Generation.Prefix)
+	if ghRepo, err := o.tracker.DetectGitHubRepo("."); err == nil && ghRepo != "" {
+		o.tracker.GcStaleGenerationIssues(ghRepo, o.cfg.Generation.Prefix)
 	}
 
 	suffix := os.Getenv("COBBLER_GEN_NAME")
@@ -782,14 +776,14 @@ func (o *Orchestrator) GeneratorStart() error {
 	genName := o.cfg.Generation.Prefix + suffix
 	startTag := genName + "-start"
 
-	setGeneration(genName)
-	defer clearGeneration()
+	o.setGeneration(genName)
+	defer o.clearGeneration()
 
-	logf("generator:start: beginning (base branch: %s)", baseBranch)
+	o.logf("generator:start: beginning (base branch: %s)", baseBranch)
 
 	// Tag the current base branch state before the generation begins.
-	logf("generator:start: tagging current state as %s", startTag)
-	if err := defaultGitOps.Tag(startTag, "."); err != nil {
+	o.logf("generator:start: tagging current state as %s", startTag)
+	if err := o.git.Tag(startTag, "."); err != nil {
 		return fmt.Errorf("tagging base branch: %w", err)
 	}
 
@@ -804,17 +798,17 @@ func (o *Orchestrator) GeneratorStart() error {
 	// stays on the base branch so generator:stop does not accidentally
 	// merge into the wrong place (GH-1608).
 	worktreeDir := filepath.Join(filepath.Dir(repoRoot), genName)
-	logf("generator:start: creating worktree at %s", worktreeDir)
+	o.logf("generator:start: creating worktree at %s", worktreeDir)
 
-	if err := defaultGitOps.CreateBranch(genName, "."); err != nil {
+	if err := o.git.CreateBranch(genName, "."); err != nil {
 		return fmt.Errorf("creating branch: %w", err)
 	}
-	cmd := defaultGitOps.WorktreeAdd(worktreeDir, genName, ".")
+	cmd := o.git.WorktreeAdd(worktreeDir, genName, ".")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
 		// Clean up the branch if worktree creation fails.
-		_ = defaultGitOps.DeleteBranch(genName, ".")
+		_ = o.git.DeleteBranch(genName, ".")
 		return fmt.Errorf("creating worktree: %w", err)
 	}
 
@@ -825,7 +819,7 @@ func (o *Orchestrator) GeneratorStart() error {
 	}
 
 	// Record branch point so intermediate commits can be squashed.
-	branchSHA, err := defaultGitOps.RevParseHEAD(".")
+	branchSHA, err := o.git.RevParseHEAD(".")
 	if err != nil {
 		return fmt.Errorf("getting branch HEAD: %w", err)
 	}
@@ -845,38 +839,38 @@ func (o *Orchestrator) GeneratorStart() error {
 	// Ensure bin/ is ignored on the generation branch so compiled binaries
 	// are never staged by git add -A (GH-469).
 	if err := appendToGitignore(".", o.cfg.Project.BinaryDir+"/"); err != nil {
-		logf("generator:start: warning: could not update .gitignore: %v", err)
+		o.logf("generator:start: warning: could not update .gitignore: %v", err)
 	}
 
 	// Reset Go sources and reinitialize module unless preserve_sources is set.
 	// Library repos (e.g. cobbler-scaffold itself) set preserve_sources: true so
 	// generator:start does not destroy the library code. See prd002 R10.1.
 	if o.cfg.Generation.PreserveSources {
-		logf("generator:start: preserve_sources=true, skipping Go source reset")
+		o.logf("generator:start: preserve_sources=true, skipping Go source reset")
 	} else {
-		logf("generator:start: resetting Go sources")
+		o.logf("generator:start: resetting Go sources")
 		if err := o.resetGoSources(genName); err != nil {
 			return fmt.Errorf("resetting Go sources: %w", err)
 		}
 		// Reset roadmap statuses so measure does not skip releases whose
 		// code was just deleted (GH-1368).
 		if err := o.resetImplementedReleases(); err != nil {
-			logf("generator:start: warning resetting releases: %v", err)
+			o.logf("generator:start: warning resetting releases: %v", err)
 		}
 	}
 
 	// Generate requirements state file from PRD R-items (GH-1378).
 	prdDir := "docs/specs/product-requirements"
 	if _, err := generate.GenerateRequirementsFile(prdDir, o.cfg.Cobbler.Dir, o.cfg.Generation.PreserveSources); err != nil {
-		logf("generator:start: warning generating requirements file: %v", err)
+		o.logf("generator:start: warning generating requirements file: %v", err)
 	}
 
 	// Squash intermediate commits into one clean commit.
-	logf("generator:start: squashing into single commit")
-	if err := defaultGitOps.ResetSoft(branchSHA, "."); err != nil {
+	o.logf("generator:start: squashing into single commit")
+	if err := o.git.ResetSoft(branchSHA, "."); err != nil {
 		return fmt.Errorf("squashing start commits: %w", err)
 	}
-	_ = defaultGitOps.StageAll(".")
+	_ = o.git.StageAll(".")
 	var msg string
 	if o.cfg.Generation.PreserveSources {
 		msg = fmt.Sprintf("Start generation: %s\n\nBase branch: %s. Sources preserved (preserve_sources=true).\nTagged previous state as %s.", genName, baseBranch, genName)
@@ -885,12 +879,12 @@ func (o *Orchestrator) GeneratorStart() error {
 	}
 	// Use allow-empty because a specs-only repo may have no Go files
 	// to delete, leaving no changes to commit after source reset.
-	if err := defaultGitOps.CommitAllowEmpty(msg, "."); err != nil {
+	if err := o.git.CommitAllowEmpty(msg, "."); err != nil {
 		return fmt.Errorf("committing clean state: %w", err)
 	}
 
-	logf("generator:start: done, worktree is at %s", worktreeDir)
-	logf("generator:start: run mage generator:run to begin building")
+	o.logf("generator:start: done, worktree is at %s", worktreeDir)
+	o.logf("generator:start: run mage generator:run to begin building")
 	return nil
 }
 
@@ -946,9 +940,9 @@ func findGenerationWorktree(prefix string) string {
 // enterGenerationWorktree checks whether the current repo has a worktree
 // on a generation branch. If so, it changes the working directory to that
 // worktree. Returns the worktree path (empty if none found) and any error.
-func enterGenerationWorktree() (string, error) {
+func (o *Orchestrator) enterGenerationWorktree() (string, error) {
 	// If we're already on a generation branch, no need to search.
-	if branch, err := defaultGitOps.CurrentBranch("."); err == nil {
+	if branch, err := o.git.CurrentBranch("."); err == nil {
 		if strings.HasPrefix(branch, "generation-") {
 			return "", nil
 		}
@@ -958,7 +952,7 @@ func enterGenerationWorktree() (string, error) {
 	if wtPath == "" {
 		return "", nil
 	}
-	logf("auto-entering generation worktree at %s", wtPath)
+	o.logf("auto-entering generation worktree at %s", wtPath)
 	if err := os.Chdir(wtPath); err != nil {
 		return "", fmt.Errorf("switching to generation worktree %s: %w", wtPath, err)
 	}
@@ -989,23 +983,23 @@ func (o *Orchestrator) readBaseBranch() string {
 // the merge, and removes the worktree afterward.
 func (o *Orchestrator) GeneratorStop() error {
 	// If invoked from the main repo, try to enter the worktree (GH-1608).
-	if _, err := enterGenerationWorktree(); err != nil {
+	if _, err := o.enterGenerationWorktree(); err != nil {
 		return err
 	}
 
 	branch := o.cfg.Generation.Branch
 	if branch != "" {
-		if !defaultGitOps.BranchExists(branch, ".") {
+		if !o.git.BranchExists(branch, ".") {
 			return fmt.Errorf("branch does not exist: %s", branch)
 		}
 	} else {
-		current, err := defaultGitOps.CurrentBranch(".")
+		current, err := o.git.CurrentBranch(".")
 		if err != nil {
 			return fmt.Errorf("getting current branch: %w", err)
 		}
 		if strings.HasPrefix(current, o.cfg.Generation.Prefix) {
 			branch = current
-			logf("generator:stop: stopping current branch %s", branch)
+			o.logf("generator:stop: stopping current branch %s", branch)
 		} else {
 			resolved, err := o.resolveBranch("")
 			if err != nil {
@@ -1019,12 +1013,12 @@ func (o *Orchestrator) GeneratorStop() error {
 		return fmt.Errorf("not a generation branch: %s\nSet generation.branch in configuration.yaml", branch)
 	}
 
-	setGeneration(branch)
-	defer clearGeneration()
+	o.setGeneration(branch)
+	defer o.clearGeneration()
 
 	finishedTag := branch + "-finished"
 
-	logf("generator:stop: beginning")
+	o.logf("generator:stop: beginning")
 
 	// Detect whether we are inside a worktree created by GeneratorStart.
 	repoRoot := o.readRepoRoot()
@@ -1035,17 +1029,17 @@ func (o *Orchestrator) GeneratorStop() error {
 		if err != nil {
 			return fmt.Errorf("resolving worktree directory: %w", err)
 		}
-		logf("generator:stop: running in worktree %s (main repo: %s)", worktreeDir, repoRoot)
+		o.logf("generator:stop: running in worktree %s (main repo: %s)", worktreeDir, repoRoot)
 	}
 
 	// Capture the caller's branch before switching to the generation branch.
-	callerBranch, err := defaultGitOps.CurrentBranch(".")
+	callerBranch, err := o.git.CurrentBranch(".")
 	if err != nil {
 		return fmt.Errorf("getting current branch: %w", err)
 	}
 
 	// Switch to the generation branch and tag its final state.
-	if err := ensureOnBranch(branch); err != nil {
+	if err := o.ensureOnBranch(branch); err != nil {
 		return fmt.Errorf("switching to generation branch: %w", err)
 	}
 
@@ -1056,21 +1050,21 @@ func (o *Orchestrator) GeneratorStop() error {
 		// Legacy path (no worktree): respect caller branch override.
 		baseBranch = resolveStopTarget(callerBranch, branch, recordedBase)
 		if baseBranch != recordedBase {
-			logf("generator:stop: caller was on %s; using it as merge target instead of recorded base %s", callerBranch, recordedBase)
+			o.logf("generator:stop: caller was on %s; using it as merge target instead of recorded base %s", callerBranch, recordedBase)
 		}
 	}
 
 	// Commit any uncommitted history files (orchestrator logs, late stats)
 	// so they are captured in the finished tag for post-hoc analysis (GH-1452).
 	if hdir := o.historyDir(); hdir != "" {
-		if err := defaultGitOps.StageDir(hdir, "."); err == nil && defaultGitOps.HasChanges(".") {
-			logf("generator:stop: committing history files before tagging")
-			_ = defaultGitOps.Commit("Commit history files before generator:stop tag", ".")
+		if err := o.git.StageDir(hdir, "."); err == nil && o.git.HasChanges(".") {
+			o.logf("generator:stop: committing history files before tagging")
+			_ = o.git.Commit("Commit history files before generator:stop tag", ".")
 		}
 	}
 
-	logf("generator:stop: tagging as %s", finishedTag)
-	if err := defaultGitOps.Tag(finishedTag, "."); err != nil {
+	o.logf("generator:stop: tagging as %s", finishedTag)
+	if err := o.git.Tag(finishedTag, "."); err != nil {
 		return fmt.Errorf("tagging generation: %w", err)
 	}
 
@@ -1079,29 +1073,29 @@ func (o *Orchestrator) GeneratorStop() error {
 	// clean. The generated code is preserved at the -finished tag
 	// (GH-1876).
 	if !o.cfg.Generation.PreserveSources {
-		logf("generator:stop: adding specs-only cleanup to generation branch")
+		o.logf("generator:stop: adding specs-only cleanup to generation branch")
 		o.cleanGoSources()
 		if err := o.HistoryClean(); err != nil {
-			logf("generator:stop: warning cleaning history on generation branch: %v", err)
+			o.logf("generator:stop: warning cleaning history on generation branch: %v", err)
 		}
-		_ = defaultGitOps.StageAll(".")
+		_ = o.git.StageAll(".")
 		cleanupMsg := fmt.Sprintf("Reset %s to specs-only for merge\n\nGenerated code preserved at tag %s.",
 			branch, finishedTag)
-		if err := defaultGitOps.CommitAllowEmpty(cleanupMsg, "."); err != nil {
+		if err := o.git.CommitAllowEmpty(cleanupMsg, "."); err != nil {
 			return fmt.Errorf("committing specs-only cleanup on generation branch: %w", err)
 		}
 	}
 
 	// If running in a worktree, switch to the main repo for the merge.
 	if repoRoot != "" {
-		logf("generator:stop: switching to main repo at %s", repoRoot)
+		o.logf("generator:stop: switching to main repo at %s", repoRoot)
 		if err := os.Chdir(repoRoot); err != nil {
 			return fmt.Errorf("switching to main repo: %w", err)
 		}
 	} else {
 		// Legacy path: switch to the base branch in the current repo.
-		logf("generator:stop: switching to %s", baseBranch)
-		if err := defaultGitOps.Checkout(baseBranch, "."); err != nil {
+		o.logf("generator:stop: switching to %s", baseBranch)
+		if err := o.git.Checkout(baseBranch, "."); err != nil {
 			return fmt.Errorf("checking out %s: %w", baseBranch, err)
 		}
 	}
@@ -1110,7 +1104,7 @@ func (o *Orchestrator) GeneratorStop() error {
 	// persist across branches (GH-1356). The history is preserved in the
 	// finished tag above (GH-1452).
 	if err := o.HistoryClean(); err != nil {
-		logf("generator:stop: warning clearing history: %v", err)
+		o.logf("generator:stop: warning clearing history: %v", err)
 	}
 
 	// Remove the worktree before merging so the generation branch is not
@@ -1118,11 +1112,11 @@ func (o *Orchestrator) GeneratorStop() error {
 	// after a successful merge; git refuses to delete a branch that is
 	// checked out in any worktree (GH-1608).
 	if worktreeDir != "" {
-		logf("generator:stop: removing worktree %s", worktreeDir)
-		if err := defaultGitOps.WorktreeRemove(worktreeDir, "."); err != nil {
-			logf("generator:stop: worktree remove warning: %v", err)
+		o.logf("generator:stop: removing worktree %s", worktreeDir)
+		if err := o.git.WorktreeRemove(worktreeDir, "."); err != nil {
+			o.logf("generator:stop: worktree remove warning: %v", err)
 		}
-		_ = defaultGitOps.WorktreePrune(".")
+		_ = o.git.WorktreePrune(".")
 	}
 
 	if err := o.mergeGeneration(branch, baseBranch); err != nil {
@@ -1130,20 +1124,20 @@ func (o *Orchestrator) GeneratorStop() error {
 	}
 
 	// Close any open cobbler-gen issues for this generation.
-	if ghRepo, err := ghTrackerWithCfg(o.cfg).DetectGitHubRepo("."); err == nil && ghRepo != "" {
-		if err := defaultGhTracker.CloseGenerationIssues(ghRepo, branch); err != nil {
-			logf("generator:stop: close issues warning: %v", err)
+	if ghRepo, err := o.tracker.DetectGitHubRepo("."); err == nil && ghRepo != "" {
+		if err := o.tracker.CloseGenerationIssues(ghRepo, branch); err != nil {
+			o.logf("generator:stop: close issues warning: %v", err)
 		}
 	}
 
 	// Reset all implemented releases back to spec_complete (GH-1021).
 	if err := o.resetImplementedReleases(); err != nil {
-		logf("generator:stop: reset releases warning: %v", err)
+		o.logf("generator:stop: reset releases warning: %v", err)
 	}
 
 	o.cleanupDirs()
 
-	logf("generator:stop: done, work is on %s", baseBranch)
+	o.logf("generator:stop: done, work is on %s", baseBranch)
 	return nil
 }
 
@@ -1152,8 +1146,8 @@ func (o *Orchestrator) GeneratorStop() error {
 // expected to already be in specs-only state (cleanup committed before merge
 // by GeneratorStop, GH-1876) unless PreserveSources is true.
 func (o *Orchestrator) mergeGeneration(branch, baseBranch string) error {
-	logf("generator:stop: merging %s into %s", branch, baseBranch)
-	cmd := defaultGitOps.MergeCmd(branch, ".")
+	o.logf("generator:stop: merging %s into %s", branch, baseBranch)
+	cmd := o.git.MergeCmd(branch, ".")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
@@ -1164,24 +1158,24 @@ func (o *Orchestrator) mergeGeneration(branch, baseBranch string) error {
 	// generation branch (safety net for edge cases).
 	startTag := branch + "-start"
 	if err := o.restoreFromStartTag(startTag); err != nil {
-		logf("generator:stop: restore warning: %v", err)
+		o.logf("generator:stop: restore warning: %v", err)
 	}
 
 	mergedTag := branch + "-merged"
-	logf("generator:stop: tagging %s as %s", baseBranch, mergedTag)
-	if err := defaultGitOps.Tag(mergedTag, "."); err != nil {
+	o.logf("generator:stop: tagging %s as %s", baseBranch, mergedTag)
+	if err := o.git.Tag(mergedTag, "."); err != nil {
 		return fmt.Errorf("tagging merge: %w", err)
 	}
 
 	// Clean history files that may have leaked onto the base branch.
 	if err := o.HistoryClean(); err != nil {
-		logf("generator:stop: warning cleaning history: %v", err)
+		o.logf("generator:stop: warning cleaning history: %v", err)
 	}
-	_ = defaultGitOps.StageAll(".")
-	_ = defaultGitOps.Commit("Clean history after generation merge", ".") // best-effort
+	_ = o.git.StageAll(".")
+	_ = o.git.Commit("Clean history after generation merge", ".") // best-effort
 
-	logf("generator:stop: deleting branch %s", branch)
-	_ = defaultGitOps.ForceDeleteBranch(branch, ".") // force-delete: safe -d fails after specs-only reset
+	o.logf("generator:stop: deleting branch %s", branch)
+	_ = o.git.ForceDeleteBranch(branch, ".") // force-delete: safe -d fails after specs-only reset
 	return nil
 }
 
@@ -1201,7 +1195,7 @@ func (o *Orchestrator) resetImplementedReleases() error {
 	for _, rel := range rm.Releases {
 		if strings.EqualFold(rel.Status, "implemented") {
 			if err := o.ReleaseClear(rel.Version); err != nil {
-				logf("resetImplementedReleases: ReleaseClear(%s) failed: %v", rel.Version, err)
+				o.logf("resetImplementedReleases: ReleaseClear(%s) failed: %v", rel.Version, err)
 				continue
 			}
 			cleared = append(cleared, rel.Version)
@@ -1213,7 +1207,7 @@ func (o *Orchestrator) resetImplementedReleases() error {
 		for _, uc := range rel.UseCases {
 			if ictx.UCStatusDone(uc.Status) {
 				if err := updateRoadmapSingleUCStatus(rel.Version, uc.ID, "spec_complete"); err != nil {
-					logf("resetImplementedReleases: revert UC %s in %s failed: %v", uc.ID, rel.Version, err)
+					o.logf("resetImplementedReleases: revert UC %s in %s failed: %v", uc.ID, rel.Version, err)
 					continue
 				}
 				revertedUCs = append(revertedUCs, uc.ID)
@@ -1223,7 +1217,7 @@ func (o *Orchestrator) resetImplementedReleases() error {
 	if len(cleared) == 0 && len(revertedUCs) == 0 {
 		return nil
 	}
-	_ = defaultGitOps.StageAll(".")
+	_ = o.git.StageAll(".")
 	var parts []string
 	if len(cleared) > 0 {
 		parts = append(parts, fmt.Sprintf("Releases: %s", strings.Join(cleared, ", ")))
@@ -1232,17 +1226,17 @@ func (o *Orchestrator) resetImplementedReleases() error {
 		parts = append(parts, fmt.Sprintf("UCs: %s", strings.Join(revertedUCs, ", ")))
 	}
 	msg := fmt.Sprintf("Reset statuses to spec_complete after generator:stop\n\n%s", strings.Join(parts, "\n"))
-	if err := defaultGitOps.Commit(msg, "."); err != nil {
+	if err := o.git.Commit(msg, "."); err != nil {
 		return fmt.Errorf("commit release reset: %w", err)
 	}
-	logf("resetImplementedReleases: cleared %d release(s), reverted %d UC(s)", len(cleared), len(revertedUCs))
+	o.logf("resetImplementedReleases: cleared %d release(s), reverted %d UC(s)", len(cleared), len(revertedUCs))
 	return nil
 }
 
 // restoreFromStartTag restores Go source files that existed on main at the
 // given start tag but are missing after the merge.
 func (o *Orchestrator) restoreFromStartTag(startTag string) error {
-	startFiles, err := defaultGitOps.LsTreeFiles(startTag, ".")
+	startFiles, err := o.git.LsTreeFiles(startTag, ".")
 	if err != nil {
 		return fmt.Errorf("listing files at %s: %w", startTag, err)
 	}
@@ -1259,20 +1253,20 @@ func (o *Orchestrator) restoreFromStartTag(startTag string) error {
 			continue
 		}
 
-		content, err := defaultGitOps.ShowFileContent(startTag, path, ".")
+		content, err := o.git.ShowFileContent(startTag, path, ".")
 		if err != nil {
-			logf("generator:stop: could not read %s from %s: %v", path, startTag, err)
+			o.logf("generator:stop: could not read %s from %s: %v", path, startTag, err)
 			continue
 		}
 
 		dir := filepath.Dir(path)
 		if err := os.MkdirAll(dir, 0o755); err != nil {
-			logf("generator:stop: could not create directory %s: %v", dir, err)
+			o.logf("generator:stop: could not create directory %s: %v", dir, err)
 			continue
 		}
 
 		if err := os.WriteFile(path, content, 0o644); err != nil {
-			logf("generator:stop: could not write %s: %v", path, err)
+			o.logf("generator:stop: could not write %s: %v", path, err)
 			continue
 		}
 		restored = append(restored, path)
@@ -1282,11 +1276,11 @@ func (o *Orchestrator) restoreFromStartTag(startTag string) error {
 		return nil
 	}
 
-	logf("generator:stop: restored %d file(s) from earlier generations", len(restored))
-	_ = defaultGitOps.StageAll(".")
+	o.logf("generator:stop: restored %d file(s) from earlier generations", len(restored))
+	_ = o.git.StageAll(".")
 	msg := fmt.Sprintf("Restore %d file(s) from earlier generations\n\nFiles restored from %s:\n%s",
 		len(restored), startTag, strings.Join(restored, "\n"))
-	if err := defaultGitOps.Commit(msg, "."); err != nil {
+	if err := o.git.Commit(msg, "."); err != nil {
 		return fmt.Errorf("committing restored files: %w", err)
 	}
 	return nil
@@ -1294,13 +1288,13 @@ func (o *Orchestrator) restoreFromStartTag(startTag string) error {
 
 // listGenerationBranches returns all generation-* branch names.
 func (o *Orchestrator) listGenerationBranches() []string {
-	return defaultGitOps.ListBranches(o.cfg.Generation.Prefix+"*", ".")
+	return o.git.ListBranches(o.cfg.Generation.Prefix+"*", ".")
 }
 
 // cleanupUnmergedTags renames tags for generations that were never
 // merged into a single -abandoned tag.
 func (o *Orchestrator) cleanupUnmergedTags() {
-	tags := defaultGitOps.ListTags(o.cfg.Generation.Prefix+"*", ".")
+	tags := o.git.ListTags(o.cfg.Generation.Prefix+"*", ".")
 	if len(tags) == 0 {
 		return
 	}
@@ -1322,12 +1316,12 @@ func (o *Orchestrator) cleanupUnmergedTags() {
 			marked[name] = true
 			abTag := name + "-abandoned"
 			if t != abTag {
-				logf("generator:reset: marking abandoned: %s -> %s", t, abTag)
-				_ = defaultGitOps.RenameTag(t, abTag, ".") // best-effort; tag may not exist
+				o.logf("generator:reset: marking abandoned: %s -> %s", t, abTag)
+				_ = o.git.RenameTag(t, abTag, ".") // best-effort; tag may not exist
 			}
 		} else {
-			logf("generator:reset: removing tag %s", t)
-			_ = defaultGitOps.DeleteTag(t, ".") // best-effort cleanup
+			o.logf("generator:reset: removing tag %s", t)
+			_ = o.git.DeleteTag(t, ".") // best-effort cleanup
 		}
 	}
 }
@@ -1335,7 +1329,7 @@ func (o *Orchestrator) cleanupUnmergedTags() {
 // resolveBranch determines which branch to work on.
 func (o *Orchestrator) resolveBranch(explicit string) (string, error) {
 	if explicit != "" {
-		if !defaultGitOps.BranchExists(explicit, ".") {
+		if !o.git.BranchExists(explicit, ".") {
 			return "", fmt.Errorf("branch does not exist: %s", explicit)
 		}
 		return explicit, nil
@@ -1344,7 +1338,7 @@ func (o *Orchestrator) resolveBranch(explicit string) (string, error) {
 	branches := o.listGenerationBranches()
 	switch len(branches) {
 	case 0:
-		return defaultGitOps.CurrentBranch(".")
+		return o.git.CurrentBranch(".")
 	case 1:
 		return branches[0], nil
 	default:
@@ -1356,8 +1350,8 @@ func (o *Orchestrator) resolveBranch(explicit string) (string, error) {
 // GeneratorList shows active branches and past generations.
 func (o *Orchestrator) GeneratorList() error {
 	branches := o.listGenerationBranches()
-	tags := defaultGitOps.ListTags(o.cfg.Generation.Prefix+"*", ".")
-	current, _ := defaultGitOps.CurrentBranch(".")
+	tags := o.git.ListTags(o.cfg.Generation.Prefix+"*", ".")
+	current, _ := o.git.CurrentBranch(".")
 
 	nameSet := make(map[string]bool)
 	branchSet := make(map[string]bool)
@@ -1426,87 +1420,87 @@ func (o *Orchestrator) GeneratorSwitch() error {
 	if target != baseBranch && !strings.HasPrefix(target, o.cfg.Generation.Prefix) {
 		return fmt.Errorf("not a generation branch or %s: %s", baseBranch, target)
 	}
-	if !defaultGitOps.BranchExists(target, ".") {
+	if !o.git.BranchExists(target, ".") {
 		return fmt.Errorf("branch does not exist: %s", target)
 	}
 
-	current, err := defaultGitOps.CurrentBranch(".")
+	current, err := o.git.CurrentBranch(".")
 	if err != nil {
 		return fmt.Errorf("getting current branch: %w", err)
 	}
 	if current == target {
-		logf("generator:switch: already on %s", target)
+		o.logf("generator:switch: already on %s", target)
 		return nil
 	}
 
-	if err := saveAndSwitchBranch(target); err != nil {
+	if err := o.saveAndSwitchBranch(target); err != nil {
 		return fmt.Errorf("switching to %s: %w", target, err)
 	}
 
-	logf("generator:switch: now on %s", target)
+	o.logf("generator:switch: now on %s", target)
 	return nil
 }
 
 // GeneratorReset destroys generation branches, worktrees, and Go source directories.
 func (o *Orchestrator) GeneratorReset() error {
-	logf("generator:reset: beginning")
+	o.logf("generator:reset: beginning")
 
 	// If a generation worktree exists, remove it first and switch to
 	// the main repo (GH-1608).
 	repoRoot := o.readRepoRoot()
 	if repoRoot != "" {
 		worktreeDir, _ := filepath.Abs(".")
-		logf("generator:reset: removing generation worktree %s", worktreeDir)
+		o.logf("generator:reset: removing generation worktree %s", worktreeDir)
 		if err := os.Chdir(repoRoot); err != nil {
 			return fmt.Errorf("switching to main repo: %w", err)
 		}
-		_ = defaultGitOps.WorktreeRemove(worktreeDir, ".")
-		_ = defaultGitOps.WorktreePrune(".")
+		_ = o.git.WorktreeRemove(worktreeDir, ".")
+		_ = o.git.WorktreePrune(".")
 		// worktree path cleaned up via worktree remove (GH-1608)
 	} else {
 		// Check if there's a generation worktree to remove.
 		if wtPath := findGenerationWorktree(o.cfg.Generation.Prefix); wtPath != "" {
-			logf("generator:reset: removing generation worktree %s", wtPath)
-			_ = defaultGitOps.WorktreeRemove(wtPath, ".")
-			_ = defaultGitOps.WorktreePrune(".")
+			o.logf("generator:reset: removing generation worktree %s", wtPath)
+			_ = o.git.WorktreeRemove(wtPath, ".")
+			_ = o.git.WorktreePrune(".")
 		}
 	}
 
 	baseBranch := o.cfg.Cobbler.BaseBranch
-	if err := ensureOnBranch(baseBranch); err != nil {
+	if err := o.ensureOnBranch(baseBranch); err != nil {
 		return fmt.Errorf("switching to %s: %w", baseBranch, err)
 	}
 
 	wtBase := claude.WorktreeBasePath()
-	ghRepo, _ := ghTrackerWithCfg(o.cfg).DetectGitHubRepo(".")
+	ghRepo, _ := o.tracker.DetectGitHubRepo(".")
 	genBranches := o.listGenerationBranches()
 	if len(genBranches) > 0 {
-		logf("generator:reset: removing task branches and worktrees")
+		o.logf("generator:reset: removing task branches and worktrees")
 		for _, gb := range genBranches {
-			recoverStaleBranches(gb, wtBase, ghRepo)
+			o.recoverStaleBranches(gb, wtBase, ghRepo)
 		}
 	}
 
 	if ghRepo != "" {
-		logf("generator:reset: closing GitHub issues")
+		o.logf("generator:reset: closing GitHub issues")
 		for _, gb := range genBranches {
-			if err := defaultGhTracker.CloseGenerationIssues(ghRepo, gb); err != nil {
-				logf("generator:reset: close issues warning for %s: %v", gb, err)
+			if err := o.tracker.CloseGenerationIssues(ghRepo, gb); err != nil {
+				o.logf("generator:reset: close issues warning for %s: %v", gb, err)
 			}
 		}
-		if err := defaultGhTracker.CloseGenerationIssues(ghRepo, baseBranch); err != nil {
-			logf("generator:reset: close issues warning for %s: %v", baseBranch, err)
+		if err := o.tracker.CloseGenerationIssues(ghRepo, baseBranch); err != nil {
+			o.logf("generator:reset: close issues warning for %s: %v", baseBranch, err)
 		}
 	}
 
-	if err := defaultGitOps.WorktreePrune("."); err != nil {
-		logf("generator:reset: warning: worktree prune: %v", err)
+	if err := o.git.WorktreePrune("."); err != nil {
+		o.logf("generator:reset: warning: worktree prune: %v", err)
 	}
 
 	if _, err := os.Stat(wtBase); err == nil {
-		logf("generator:reset: removing worktree directory %s", wtBase)
+		o.logf("generator:reset: removing worktree directory %s", wtBase)
 		if err := os.RemoveAll(wtBase); err != nil {
-			logf("generator:reset: warning: removing worktree dir: %v", err)
+			o.logf("generator:reset: warning: removing worktree dir: %v", err)
 		}
 	}
 
@@ -1514,25 +1508,25 @@ func (o *Orchestrator) GeneratorReset() error {
 		// Prune again to ensure worktree registrations are fully cleaned up
 		// before deleting branches (GH-1608). Without this, git may refuse
 		// to delete a branch it still thinks is checked out in a worktree.
-		_ = defaultGitOps.WorktreePrune(".")
-		logf("generator:reset: removing %d generation branch(es)", len(genBranches))
+		_ = o.git.WorktreePrune(".")
+		o.logf("generator:reset: removing %d generation branch(es)", len(genBranches))
 		for _, gb := range genBranches {
-			logf("generator:reset: deleting branch %s", gb)
-			_ = defaultGitOps.ForceDeleteBranch(gb, ".")
+			o.logf("generator:reset: deleting branch %s", gb)
+			_ = o.git.ForceDeleteBranch(gb, ".")
 		}
 	}
 
 	o.cleanupUnmergedTags()
 
-	logf("generator:reset: removing Go source directories")
+	o.logf("generator:reset: removing Go source directories")
 	for _, dir := range o.cfg.Project.GoSourceDirs {
-		logf("generator:reset: removing %s", dir)
+		o.logf("generator:reset: removing %s", dir)
 		os.RemoveAll(dir) // nolint: best-effort directory cleanup
 	}
 	os.RemoveAll(o.cfg.Project.BinaryDir + "/") // nolint: best-effort directory cleanup
 	o.cleanupDirs()
 
-	logf("generator:reset: seeding Go sources and reinitializing go.mod")
+	o.logf("generator:reset: seeding Go sources and reinitializing go.mod")
 	if err := o.seedFiles(baseBranch); err != nil {
 		return fmt.Errorf("seeding files: %w", err)
 	}
@@ -1540,11 +1534,11 @@ func (o *Orchestrator) GeneratorReset() error {
 		return fmt.Errorf("reinitializing go module: %w", err)
 	}
 
-	logf("generator:reset: committing clean state")
-	_ = defaultGitOps.StageAll(".")                                                  // best-effort; commit below handles empty index
-	_ = defaultGitOps.CommitAllowEmpty("Generator reset: return to clean state", ".") // best-effort; reset is complete regardless
+	o.logf("generator:reset: committing clean state")
+	_ = o.git.StageAll(".")                                                  // best-effort; commit below handles empty index
+	_ = o.git.CommitAllowEmpty("Generator reset: return to clean state", ".") // best-effort; reset is complete regardless
 
-	logf("generator:reset: done, only %s branch remains", baseBranch)
+	o.logf("generator:reset: done, only %s branch remains", baseBranch)
 	return nil
 }
 
@@ -1672,7 +1666,7 @@ func (o *Orchestrator) deleteGoFiles(root string) {
 		}
 		if !d.IsDir() && strings.HasSuffix(path, ".go") {
 			if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-				logf("deleteGoFiles: warning removing %s: %v", path, err)
+				o.logf("deleteGoFiles: warning removing %s: %v", path, err)
 			}
 		}
 		return nil
@@ -1682,18 +1676,18 @@ func (o *Orchestrator) deleteGoFiles(root string) {
 // cleanupDirs removes all directories listed in Config.CleanupDirs.
 func (o *Orchestrator) cleanupDirs() {
 	for _, dir := range o.cfg.Generation.CleanupDirs {
-		logf("cleanupDirs: removing %s", dir)
+		o.logf("cleanupDirs: removing %s", dir)
 		os.RemoveAll(dir)
 	}
 }
 
 // GeneratorInit writes a default configuration.yaml if one does not exist.
 func GeneratorInit() error {
-	logf("generator:init: writing %s", DefaultConfigFile)
+	fmt.Fprintf(os.Stderr, "generator:init: writing %s\n", DefaultConfigFile)
 	if err := WriteDefaultConfig(DefaultConfigFile); err != nil {
 		return err
 	}
-	logf("generator:init: created %s — edit project-specific fields before running", DefaultConfigFile)
+	fmt.Fprintf(os.Stderr, "generator:init: created %s — edit project-specific fields before running\n", DefaultConfigFile)
 	return nil
 }
 

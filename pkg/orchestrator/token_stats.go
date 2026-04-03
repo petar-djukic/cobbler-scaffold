@@ -18,7 +18,7 @@ type FileTokenStat = st.FileTokenStat
 // the Anthropic Token Counting API for exact prompt token counts.
 func (o *Orchestrator) TokenStats() error {
 	return st.TokenStats(st.TokenStatsDeps{
-		Log:            logf,
+		Log:            o.logf,
 		EnumerateFiles: o.enumerateContextFiles,
 		BuildMeasurePrompt: func(analysis, issues string, iteration int) (string, error) {
 			return o.buildMeasurePrompt(analysis, issues, iteration)

@@ -20,10 +20,10 @@ type VscodeManager interface {
 // VscodePush compiles the VS Code extension from source, packages it as a
 // .vsix archive, and installs it into VS Code.
 func (o *Orchestrator) VscodePush(profile string) error {
-	return vscode.Push(profile, logf)
+	return vscode.Push(profile, o.logf)
 }
 
 // VscodePop uninstalls the VS Code extension.
 func (o *Orchestrator) VscodePop(profile string) error {
-	return vscode.Pop(profile, logf)
+	return vscode.Pop(profile, o.logf)
 }

@@ -275,7 +275,7 @@ func TestCleanupWorktree_NonExistentDir_NoOp(t *testing.T) {
 		WorktreeDir: "/nonexistent/worktree/path",
 		BranchName:  "stitch-test-cleanup",
 	}
-	ok := cleanupWorktree(task) // must not panic
+	ok := testOrch().cleanupWorktree(task) // must not panic
 	if ok {
 		t.Error("cleanupWorktree should return false for non-existent worktree")
 	}
@@ -612,22 +612,22 @@ func TestCreateWorktree_CreatesWorktreeAndBranch(t *testing.T) {
 		WorktreeDir: filepath.Join(dir+"-worktrees", "789"),
 	}
 
-	if err := createWorktree(task); err != nil {
-		t.Fatalf("createWorktree() error = %v", err)
+	if err := testOrch().createWorktree(task); err != nil {
+		t.Fatalf("testOrch().createWorktree() error = %v", err)
 	}
 	t.Cleanup(func() {
-		defaultGitOps.WorktreeRemove(task.WorktreeDir, "")
-		defaultGitOps.DeleteBranch(task.BranchName, "")
+		testGitOps().WorktreeRemove(task.WorktreeDir, "")
+		testGitOps().DeleteBranch(task.BranchName, "")
 	})
 
 	// Verify the worktree directory exists.
 	if _, err := os.Stat(task.WorktreeDir); os.IsNotExist(err) {
-		t.Error("worktree directory should exist after createWorktree()")
+		t.Error("worktree directory should exist after testOrch().createWorktree()")
 	}
 
 	// Verify the branch was created.
-	if !defaultGitOps.BranchExists(task.BranchName, "") {
-		t.Errorf("branch %q should exist after createWorktree()", task.BranchName)
+	if !testGitOps().BranchExists(task.BranchName, "") {
+		t.Errorf("branch %q should exist after testOrch().createWorktree()", task.BranchName)
 	}
 }
 
@@ -689,8 +689,8 @@ func TestMergeBranch_Success(t *testing.T) {
 	// Switch back to main before merge.
 	gitRun(t, "checkout", "main")
 
-	if err := mergeBranch("feature/test-merge", "main", dir); err != nil {
-		t.Fatalf("mergeBranch() error = %v", err)
+	if err := testOrch().mergeBranch("feature/test-merge", "main", dir); err != nil {
+		t.Fatalf("testOrch().mergeBranch() error = %v", err)
 	}
 
 	// Verify the feature file is present on main after merge.
@@ -702,7 +702,7 @@ func TestMergeBranch_Success(t *testing.T) {
 func TestMergeBranch_NonExistentBranch(t *testing.T) {
 	_ = initTestGitRepo(t)
 
-	err := mergeBranch("nonexistent-branch-xyz", "main", t.TempDir())
+	err := testOrch().mergeBranch("nonexistent-branch-xyz", "main", t.TempDir())
 	if err == nil {
 		t.Error("expected error merging non-existent branch")
 	}
@@ -734,7 +734,7 @@ func TestMergeBranch_MergeConflict(t *testing.T) {
 	gitRun(t, "add", "-A")
 	gitRun(t, "commit", "--no-verify", "-m", "modify shared on main")
 
-	err := mergeBranch("feature/conflict", "main", dir)
+	err := testOrch().mergeBranch("feature/conflict", "main", dir)
 	if err == nil {
 		t.Error("expected error for merge conflict")
 	}
@@ -748,7 +748,7 @@ func TestMergeBranch_MergeConflict(t *testing.T) {
 func TestRecoverStaleBranches_NoBranches(t *testing.T) {
 	_ = initTestGitRepo(t)
 
-	got := recoverStaleBranches("main", t.TempDir(), "fake/repo")
+	got := testOrch().recoverStaleBranches("main", t.TempDir(), "fake/repo")
 	if got {
 		t.Error("expected false when no stale branches exist")
 	}
@@ -761,18 +761,18 @@ func TestRecoverStaleBranches_WithStaleBranch(t *testing.T) {
 	branchName := "task/main-99999"
 	gitRun(t, "branch", branchName)
 
-	if !defaultGitOps.BranchExists(branchName, "") {
+	if !testGitOps().BranchExists(branchName, "") {
 		t.Fatal("setup: branch should exist")
 	}
 
 	// Use a fake repo so removeInProgressLabel fails harmlessly.
-	got := recoverStaleBranches("main", t.TempDir(), "fake/repo")
+	got := testOrch().recoverStaleBranches("main", t.TempDir(), "fake/repo")
 	if !got {
 		t.Error("expected true when stale branches were recovered")
 	}
 
 	// The stale branch should have been force-deleted.
-	if defaultGitOps.BranchExists(branchName, "") {
+	if testGitOps().BranchExists(branchName, "") {
 		t.Error("stale branch should have been deleted after recovery")
 	}
 }
@@ -789,13 +789,13 @@ func TestRecoverStaleBranches_WithWorktree(t *testing.T) {
 	os.MkdirAll(filepath.Dir(worktreeDir), 0o755)
 	gitRun(t, "worktree", "add", worktreeDir, branchName)
 
-	got := recoverStaleBranches("main", worktreeBase, "fake/repo")
+	got := testOrch().recoverStaleBranches("main", worktreeBase, "fake/repo")
 	if !got {
 		t.Error("expected true when stale branches with worktrees were recovered")
 	}
 
 	// Worktree and branch should be cleaned up.
-	if defaultGitOps.BranchExists(branchName, "") {
+	if testGitOps().BranchExists(branchName, "") {
 		t.Error("stale branch should have been deleted")
 	}
 	if _, err := os.Stat(worktreeDir); !os.IsNotExist(err) {
@@ -809,7 +809,7 @@ func TestResetOrphanedIssues_ListFails(t *testing.T) {
 	t.Parallel()
 	// With a fake repo, listOpenCobblerIssues fails and the function
 	// returns false without modifying anything.
-	got := resetOrphanedIssues("main", "fake/repo", "test-gen")
+	got := testOrch().resetOrphanedIssues("main", "fake/repo", "test-gen")
 	if got {
 		t.Error("expected false when listing issues fails")
 	}
@@ -840,7 +840,7 @@ func TestRecoverStaleTasks_WithStaleBranch(t *testing.T) {
 	}
 
 	// Branch should have been cleaned up.
-	if defaultGitOps.BranchExists(branchName, "") {
+	if testGitOps().BranchExists(branchName, "") {
 		t.Error("stale branch should have been recovered")
 	}
 }
@@ -886,7 +886,7 @@ func TestResetTask_WithRealWorktree(t *testing.T) {
 	if _, err := os.Stat(worktreeDir); !os.IsNotExist(err) {
 		t.Error("worktree directory should have been removed")
 	}
-	if defaultGitOps.BranchExists(branchName, "") {
+	if testGitOps().BranchExists(branchName, "") {
 		t.Error("branch should have been force-deleted")
 	}
 }
@@ -924,12 +924,12 @@ func TestCreateWorktree_ExistingBranch(t *testing.T) {
 		WorktreeDir: filepath.Join(dir+"-worktrees", "existing"),
 	}
 
-	if err := createWorktree(task); err != nil {
-		t.Fatalf("createWorktree() with existing branch error = %v", err)
+	if err := testOrch().createWorktree(task); err != nil {
+		t.Fatalf("testOrch().createWorktree() with existing branch error = %v", err)
 	}
 	t.Cleanup(func() {
-		defaultGitOps.WorktreeRemove(task.WorktreeDir, "")
-		defaultGitOps.DeleteBranch(task.BranchName, "")
+		testGitOps().WorktreeRemove(task.WorktreeDir, "")
+		testGitOps().DeleteBranch(task.BranchName, "")
 	})
 
 	if _, err := os.Stat(task.WorktreeDir); os.IsNotExist(err) {
@@ -955,7 +955,7 @@ func TestCleanupWorktree_RealWorktree(t *testing.T) {
 		WorktreeDir: worktreeDir,
 	}
 
-	ok := cleanupWorktree(task)
+	ok := testOrch().cleanupWorktree(task)
 	if !ok {
 		t.Error("cleanupWorktree should return true for successful removal")
 	}
@@ -965,7 +965,7 @@ func TestCleanupWorktree_RealWorktree(t *testing.T) {
 		t.Error("worktree directory should have been removed")
 	}
 	// Branch should be deleted.
-	if defaultGitOps.BranchExists(branchName, "") {
+	if testGitOps().BranchExists(branchName, "") {
 		t.Errorf("branch %q should have been deleted", branchName)
 	}
 }
@@ -982,7 +982,7 @@ func TestCreateWorktree_Success(t *testing.T) {
 		WorktreeDir: worktreeDir,
 	}
 
-	err := createWorktree(task)
+	err := testOrch().createWorktree(task)
 	if err != nil {
 		t.Fatalf("createWorktree failed: %v", err)
 	}
@@ -993,12 +993,12 @@ func TestCreateWorktree_Success(t *testing.T) {
 	}
 
 	// Branch should exist.
-	if !defaultGitOps.BranchExists(task.BranchName, ".") {
+	if !testGitOps().BranchExists(task.BranchName, ".") {
 		t.Error("branch should exist after createWorktree")
 	}
 
 	// Cleanup.
-	cleanupWorktree(task)
+	testOrch().cleanupWorktree(task)
 }
 
 func TestCreateWorktree_InvalidParentDir(t *testing.T) {
@@ -1009,7 +1009,7 @@ func TestCreateWorktree_InvalidParentDir(t *testing.T) {
 		WorktreeDir: "/dev/null/impossible/path",
 	}
 
-	err := createWorktree(task)
+	err := testOrch().createWorktree(task)
 	if err == nil {
 		t.Error("expected error for impossible parent directory")
 	}
@@ -1025,13 +1025,13 @@ func TestGitBranchExists_ChecksLocalBranches(t *testing.T) {
 	_ = initTestGitRepo(t)
 
 	// Branch does not exist → gitBranchExists returns false.
-	if defaultGitOps.BranchExists("task/main-nonexistent", ".") {
+	if testGitOps().BranchExists("task/main-nonexistent", ".") {
 		t.Error("non-existent branch should not exist")
 	}
 
 	// Create a branch → exists.
 	gitRun(t, "branch", "task/main-99999")
-	if !defaultGitOps.BranchExists("task/main-99999", ".") {
+	if !testGitOps().BranchExists("task/main-99999", ".") {
 		t.Error("created branch should exist")
 	}
 }

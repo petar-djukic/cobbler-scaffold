@@ -21,7 +21,7 @@ type AnalyzeResult = an.AnalyzeResult
 // returns the structured result without printing.
 func (o *Orchestrator) collectAnalyzeResult() (AnalyzeResult, an.AnalyzeCounts, error) {
 	return an.CollectAnalyzeResult(an.AnalyzeDeps{
-		Log:                    logf,
+		Log:                    o.logf,
 		Releases:               o.cfg.Project.Releases,
 		ValidateDocSchemas:     o.validateDocSchemas,
 		ValidatePromptTemplate: ictx.ValidatePromptTemplate,
@@ -31,7 +31,7 @@ func (o *Orchestrator) collectAnalyzeResult() (AnalyzeResult, an.AnalyzeCounts, 
 // Analyze performs cross-artifact consistency checks.
 func (o *Orchestrator) Analyze() error {
 	return an.Analyze(an.AnalyzeDeps{
-		Log:                    logf,
+		Log:                    o.logf,
 		Releases:               o.cfg.Project.Releases,
 		ValidateDocSchemas:     o.validateDocSchemas,
 		ValidatePromptTemplate: ictx.ValidatePromptTemplate,

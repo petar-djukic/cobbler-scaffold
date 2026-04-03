@@ -29,11 +29,6 @@ const (
 	dirCobbler   = ".cobbler"
 )
 
-// defaultGitOps is the package-level Repository instance used by all git
-// helper functions. It shells out to the "git" binary and implements all
-// role-based interfaces (GH-1439).
-var defaultGitOps = gitops.NewRepository("")
-
 // orDefault returns val if non-empty, otherwise fallback.
 func orDefault(val, fallback string) string {
 	if val == "" {
@@ -71,10 +66,9 @@ func init() {
 type diffStat = gitops.DiffStat
 
 // diffNameStatus runs git diff --name-status and returns per-file entries,
-// converting from gitops.FileChange to claude.FileChange (aliased as
-// FileChange in cobbler.go).
-func diffNameStatus(ref, dir string) ([]claude.FileChange, error) {
-	gfc, err := defaultGitOps.DiffNameStatus(ref, dir)
+// converting from gitops.FileChange to claude.FileChange.
+func (o *Orchestrator) diffNameStatus(ref, dir string) ([]claude.FileChange, error) {
+	gfc, err := o.git.DiffNameStatus(ref, dir)
 	if err != nil {
 		return nil, err
 	}

@@ -14,12 +14,8 @@ import (
 // functions into the internal/release package at init time.
 // ---------------------------------------------------------------------------
 
-func init() {
-	rel.Log = logf
-	rel.GitReader = defaultGitOps
-	rel.GitTags = defaultGitOps
-	rel.GitCommitter = defaultGitOps
-}
+// NOTE: rel.Log and rel.Git* are wired in the Orchestrator constructor
+// (New) instead of an init function.
 
 // ReleaseUpdate marks a release as complete in the project files. It sets all
 // use-case statuses to "implemented" for the named release in

@@ -140,7 +140,7 @@ func TestTag_CreatesGitTag(t *testing.T) {
 	cfg := Config{}
 	cfg.applyDefaults()
 	// Set BaseBranch to whatever our test repo branch is.
-	current, err := defaultGitOps.CurrentBranch(".")
+	current, err := testGitOps().CurrentBranch(".")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,7 +154,7 @@ func TestTag_CreatesGitTag(t *testing.T) {
 	}
 
 	// Verify the git tag was created.
-	tags := defaultGitOps.ListTags("v0.*", ".")
+	tags := testGitOps().ListTags("v0.*", ".")
 	if len(tags) == 0 {
 		t.Error("expected at least one v0.* tag after Tag()")
 	}
@@ -164,7 +164,7 @@ func TestTag_VersionFileWriteError(t *testing.T) {
 	// Not parallel: uses os.Chdir via setupTagRepo.
 	setupTagRepo(t, nil)
 
-	current, err := defaultGitOps.CurrentBranch(".")
+	current, err := testGitOps().CurrentBranch(".")
 	if err != nil {
 		t.Fatal(err)
 	}

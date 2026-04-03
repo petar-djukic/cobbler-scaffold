@@ -260,11 +260,11 @@ func TestExtractPRDRefs(t *testing.T) {
 	}
 }
 
-// --- defaultGhTracker.ListAllCobblerIssues (delegation sanity check) ---
+// --- testOrch().tracker.ListAllCobblerIssues (delegation sanity check) ---
 
 func TestListAllCobblerIssues_FakeRepo_Error(t *testing.T) {
 	t.Parallel()
-	_, err := defaultGhTracker.ListAllCobblerIssues("fake/repo-that-does-not-exist", "gen-test")
+	_, err := testOrch().tracker.ListAllCobblerIssues("fake/repo-that-does-not-exist", "gen-test")
 	if err == nil {
 		t.Error("ListAllCobblerIssues with fake repo must return an error")
 	}

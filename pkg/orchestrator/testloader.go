@@ -24,12 +24,12 @@ type TestResult = compare.TestResult
 type BinaryResolver = compare.BinaryResolver
 
 // ResolverFromArg delegates to the internal compare package.
-func ResolverFromArg(arg string) BinaryResolver {
+func (o *Orchestrator) ResolverFromArg(arg string) BinaryResolver {
 	deps := compare.Deps{
-		Log:            logf,
+		Log:            o.logf,
 		GitBin:         binGit,
 		GoBin:          binGo,
-		RemoveWorktree: defaultGitOps.WorktreeRemove,
+		RemoveWorktree: o.git.WorktreeRemove,
 	}
 	return compare.ResolverFromArg(arg, deps)
 }

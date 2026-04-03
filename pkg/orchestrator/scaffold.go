@@ -31,7 +31,7 @@ const orchestratorModule = build.OrchestratorModule
 // project structure, generates configuration.yaml, and wires the
 // Go module dependencies.
 func (o *Orchestrator) Scaffold(targetDir, orchestratorRoot string) error {
-	logf("scaffold: targetDir=%s orchestratorRoot=%s", targetDir, orchestratorRoot)
+	o.logf("scaffold: targetDir=%s orchestratorRoot=%s", targetDir, orchestratorRoot)
 
 	mageDir := filepath.Join(targetDir, dirMagefiles)
 
@@ -42,7 +42,7 @@ func (o *Orchestrator) Scaffold(targetDir, orchestratorRoot string) error {
 	}
 	src := filepath.Join(orchestratorRoot, "orchestrator.go.tmpl")
 	dst := filepath.Join(mageDir, "orchestrator.go")
-	logf("scaffold: copying %s -> %s", src, dst)
+	o.logf("scaffold: copying %s -> %s", src, dst)
 	if err := build.CopyFile(src, dst); err != nil {
 		return fmt.Errorf("copying orchestrator.go: %w", err)
 	}
@@ -63,7 +63,7 @@ func (o *Orchestrator) Scaffold(targetDir, orchestratorRoot string) error {
 	}
 	for _, name := range slices.Sorted(maps.Keys(constitutionFiles)) {
 		p := filepath.Join(constitutionsDir, name)
-		logf("scaffold: writing constitution to %s", p)
+		o.logf("scaffold: writing constitution to %s", p)
 		if err := os.WriteFile(p, []byte(constitutionFiles[name]), 0o644); err != nil {
 			return fmt.Errorf("writing %s: %w", name, err)
 		}
@@ -81,7 +81,7 @@ func (o *Orchestrator) Scaffold(targetDir, orchestratorRoot string) error {
 	}
 	for _, name := range slices.Sorted(maps.Keys(promptFiles)) {
 		p := filepath.Join(promptsDir, name)
-		logf("scaffold: writing prompt to %s", p)
+		o.logf("scaffold: writing prompt to %s", p)
 		if err := os.WriteFile(p, []byte(promptFiles[name]), 0o644); err != nil {
 			return fmt.Errorf("writing %s: %w", name, err)
 		}
@@ -99,7 +99,7 @@ func (o *Orchestrator) Scaffold(targetDir, orchestratorRoot string) error {
 	}
 	for _, name := range slices.Sorted(maps.Keys(contextFiles)) {
 		p := filepath.Join(cobblerDir, name)
-		logf("scaffold: writing context file to %s", p)
+		o.logf("scaffold: writing context file to %s", p)
 		if err := os.WriteFile(p, []byte(contextFiles[name]), 0o644); err != nil {
 			return fmt.Errorf("writing %s: %w", name, err)
 		}
@@ -110,16 +110,16 @@ func (o *Orchestrator) Scaffold(targetDir, orchestratorRoot string) error {
 	if err != nil {
 		return fmt.Errorf("detecting module path: %w", err)
 	}
-	logf("scaffold: detected module_path=%s", modulePath)
+	o.logf("scaffold: detected module_path=%s", modulePath)
 
 	mainPkg := build.DetectMainPackage(targetDir, modulePath)
-	logf("scaffold: detected main_package=%s", mainPkg)
+	o.logf("scaffold: detected main_package=%s", mainPkg)
 
 	srcDirs := build.DetectSourceDirs(targetDir)
-	logf("scaffold: detected go_source_dirs=%v", srcDirs)
+	o.logf("scaffold: detected go_source_dirs=%v", srcDirs)
 
 	binName := build.DetectBinaryName(modulePath)
-	logf("scaffold: detected binary_name=%s", binName)
+	o.logf("scaffold: detected binary_name=%s", binName)
 
 	// 3. Generate seed files and configuration.yaml in the target root.
 	cfg := DefaultConfig()
@@ -145,7 +145,7 @@ func (o *Orchestrator) Scaffold(targetDir, orchestratorRoot string) error {
 		}
 		cfg.Project.SeedFiles = map[string]string{seedPath: tmplPath}
 		cfg.Project.VersionFile = seedPath
-		logf("scaffold: created seed template %s -> %s", seedPath, tmplPath)
+		o.logf("scaffold: created seed template %s -> %s", seedPath, tmplPath)
 	}
 
 	// Clear secrets fields so they are not written to the scaffolded
@@ -158,12 +158,12 @@ func (o *Orchestrator) Scaffold(targetDir, orchestratorRoot string) error {
 
 	cfgPath := filepath.Join(targetDir, DefaultConfigFile)
 	if _, err := os.Stat(cfgPath); os.IsNotExist(err) {
-		logf("scaffold: writing %s", cfgPath)
+		o.logf("scaffold: writing %s", cfgPath)
 		if err := writeScaffoldConfig(cfgPath, cfg); err != nil {
 			return fmt.Errorf("writing configuration.yaml: %w", err)
 		}
 	} else {
-		logf("scaffold: %s already exists, skipping", DefaultConfigFile)
+		o.logf("scaffold: %s already exists, skipping", DefaultConfigFile)
 
 		// When configuration.yaml already exists but was written by a
 		// previous scaffold (or generation), the seed_files entry may
@@ -179,7 +179,7 @@ func (o *Orchestrator) Scaffold(targetDir, orchestratorRoot string) error {
 					for _, src := range existCfg.Project.SeedFiles {
 						absFile := filepath.Join(targetDir, src)
 						if _, err := os.Stat(absFile); os.IsNotExist(err) {
-							logf("scaffold: re-creating missing seed template %s", src)
+							o.logf("scaffold: re-creating missing seed template %s", src)
 							if _, _, err := build.ScaffoldSeedTemplate(targetDir, modulePath, existCfg.Project.MainPackage, dirMagefiles); err != nil {
 								return fmt.Errorf("re-creating seed template: %w", err)
 							}
@@ -191,7 +191,7 @@ func (o *Orchestrator) Scaffold(targetDir, orchestratorRoot string) error {
 	}
 
 	// 4. Wire magefiles/go.mod.
-	logf("scaffold: wiring magefiles/go.mod")
+	o.logf("scaffold: wiring magefiles/go.mod")
 	absOrch, err := filepath.Abs(orchestratorRoot)
 	if err != nil {
 		return fmt.Errorf("resolving orchestrator path: %w", err)
@@ -203,9 +203,9 @@ func (o *Orchestrator) Scaffold(targetDir, orchestratorRoot string) error {
 	// 5. Verify. If verification fails and we used a published version,
 	// retry with a local replace — the published module may be missing
 	// methods that the scaffolded orchestrator.go references.
-	logf("scaffold: verifying with mage -l")
+	o.logf("scaffold: verifying with mage -l")
 	if err := build.VerifyMage(targetDir); err != nil {
-		logf("scaffold: verification failed; retrying with local replace -> %s", absOrch)
+		o.logf("scaffold: verification failed; retrying with local replace -> %s", absOrch)
 		retryReplace := exec.Command(binGo, "mod", "edit",
 			"-replace", orchestratorModule+"="+absOrch)
 		retryReplace.Dir = mageDir
@@ -222,7 +222,7 @@ func (o *Orchestrator) Scaffold(targetDir, orchestratorRoot string) error {
 		}
 	}
 
-	logf("scaffold: done")
+	o.logf("scaffold: done")
 	return nil
 }
 
@@ -232,7 +232,7 @@ func (o *Orchestrator) Scaffold(targetDir, orchestratorRoot string) error {
 // directive from magefiles/go.mod and runs go mod tidy to clean up unused
 // dependencies.
 func (o *Orchestrator) Uninstall(targetDir string) error {
-	logf("uninstall: removing orchestrator files from %s", targetDir)
+	o.logf("uninstall: removing orchestrator files from %s", targetDir)
 
 	// Remove magefiles/orchestrator.go.
 	orchGo := filepath.Join(targetDir, dirMagefiles, "orchestrator.go")
@@ -245,20 +245,20 @@ func (o *Orchestrator) Uninstall(targetDir string) error {
 	if err := os.RemoveAll(constitutionsDir); err != nil {
 		return fmt.Errorf("removing docs/constitutions: %w", err)
 	}
-	logf("uninstall: removed %s", constitutionsDir)
+	o.logf("uninstall: removed %s", constitutionsDir)
 
 	promptsDir := filepath.Join(targetDir, "docs", "prompts")
 	if err := os.RemoveAll(promptsDir); err != nil {
 		return fmt.Errorf("removing docs/prompts: %w", err)
 	}
-	logf("uninstall: removed %s", promptsDir)
+	o.logf("uninstall: removed %s", promptsDir)
 
 	// Remove .cobbler/ directory written by Scaffold.
 	cobblerDir := filepath.Join(targetDir, dirCobbler)
 	if err := os.RemoveAll(cobblerDir); err != nil {
 		return fmt.Errorf("removing .cobbler: %w", err)
 	}
-	logf("uninstall: removed %s", cobblerDir)
+	o.logf("uninstall: removed %s", cobblerDir)
 
 	// Remove configuration.yaml.
 	cfgPath := filepath.Join(targetDir, DefaultConfigFile)
@@ -274,19 +274,19 @@ func (o *Orchestrator) Uninstall(targetDir string) error {
 			"-dropreplace", orchestratorModule)
 		dropCmd.Dir = mageDir
 		if err := dropCmd.Run(); err != nil {
-			logf("uninstall: warning: could not drop replace directive: %v", err)
+			o.logf("uninstall: warning: could not drop replace directive: %v", err)
 		} else {
 			tidyCmd := exec.Command(binGo, "mod", "tidy")
 			tidyCmd.Dir = mageDir
 			tidyCmd.Stdout = os.Stdout
 			tidyCmd.Stderr = os.Stderr
 			if err := tidyCmd.Run(); err != nil {
-				logf("uninstall: warning: go mod tidy failed: %v", err)
+				o.logf("uninstall: warning: go mod tidy failed: %v", err)
 			}
 		}
 	}
 
-	logf("uninstall: done")
+	o.logf("uninstall: done")
 	return nil
 }
 
@@ -358,7 +358,7 @@ func clearGenerationBranch(repoDir string) error {
 	if cfg.Generation.Branch == "" {
 		return nil
 	}
-	logf("prepareTestRepo: clearing stale generation.branch=%s", cfg.Generation.Branch)
+	fmt.Fprintf(os.Stderr, "prepareTestRepo: clearing stale generation.branch=%s\n", cfg.Generation.Branch)
 	cfg.Generation.Branch = ""
 	out, err := yaml.Marshal(&cfg)
 	if err != nil {
@@ -407,13 +407,13 @@ func copyDir(src, dst string) error {
 // and runs Scaffold. Returns the path to the ready-to-use repo directory.
 // The caller is responsible for removing the parent temp directory when done.
 func (o *Orchestrator) PrepareTestRepo(module, version, orchestratorRoot string) (string, error) {
-	logf("prepareTestRepo: downloading %s@%s", module, version)
+	o.logf("prepareTestRepo: downloading %s@%s", module, version)
 
 	cacheDir, err := build.GoModDownload(module, version)
 	if err != nil {
 		return "", fmt.Errorf("downloading module: %w", err)
 	}
-	logf("prepareTestRepo: cached at %s", cacheDir)
+	o.logf("prepareTestRepo: cached at %s", cacheDir)
 
 	workDir, err := os.MkdirTemp("", "test-clone-*")
 	if err != nil {
@@ -421,7 +421,7 @@ func (o *Orchestrator) PrepareTestRepo(module, version, orchestratorRoot string)
 	}
 	repoDir := filepath.Join(workDir, "repo")
 
-	logf("prepareTestRepo: copying to %s", repoDir)
+	o.logf("prepareTestRepo: copying to %s", repoDir)
 	if err := build.CopyDir(cacheDir, repoDir); err != nil {
 		os.RemoveAll(workDir)
 		return "", fmt.Errorf("copying module source: %w", err)
@@ -433,7 +433,7 @@ func (o *Orchestrator) PrepareTestRepo(module, version, orchestratorRoot string)
 	for _, artifact := range []string{dirCobbler} {
 		p := filepath.Join(repoDir, artifact)
 		if _, err := os.Stat(p); err == nil {
-			logf("prepareTestRepo: removing artifact %s", artifact)
+			o.logf("prepareTestRepo: removing artifact %s", artifact)
 			os.RemoveAll(p)
 		}
 	}
@@ -443,11 +443,11 @@ func (o *Orchestrator) PrepareTestRepo(module, version, orchestratorRoot string)
 	// from its own generation cycle; that branch does not exist in
 	// the fresh test repo and causes generator:stop to fail.
 	if err := clearGenerationBranch(repoDir); err != nil {
-		logf("prepareTestRepo: warning: could not clear generation branch: %v", err)
+		o.logf("prepareTestRepo: warning: could not clear generation branch: %v", err)
 	}
 
 	// Initialize a fresh git repository.
-	logf("prepareTestRepo: initializing git")
+	o.logf("prepareTestRepo: initializing git")
 	initCmd := exec.Command(binGit, "init")
 	initCmd.Dir = repoDir
 	if err := initCmd.Run(); err != nil {
@@ -455,18 +455,18 @@ func (o *Orchestrator) PrepareTestRepo(module, version, orchestratorRoot string)
 		return "", fmt.Errorf("git init: %w", err)
 	}
 
-	if err := defaultGitOps.StageAll(repoDir); err != nil {
+	if err := o.git.StageAll(repoDir); err != nil {
 		os.RemoveAll(workDir)
 		return "", fmt.Errorf("git add: %w", err)
 	}
 
-	if err := defaultGitOps.Commit("Initial commit from test-clone", repoDir); err != nil {
+	if err := o.git.Commit("Initial commit from test-clone", repoDir); err != nil {
 		os.RemoveAll(workDir)
 		return "", fmt.Errorf("git commit: %w", err)
 	}
 
 	// Scaffold the orchestrator into the repo.
-	logf("prepareTestRepo: scaffolding")
+	o.logf("prepareTestRepo: scaffolding")
 	if err := o.Scaffold(repoDir, orchestratorRoot); err != nil {
 		os.RemoveAll(workDir)
 		return "", fmt.Errorf("scaffold: %w", err)
@@ -475,7 +475,7 @@ func (o *Orchestrator) PrepareTestRepo(module, version, orchestratorRoot string)
 	// Override with a local replace so the test repo compiles against
 	// the current orchestrator source, not a published release.
 	mageDir := filepath.Join(repoDir, dirMagefiles)
-	logf("prepareTestRepo: overriding with local replace -> %s", orchestratorRoot)
+	o.logf("prepareTestRepo: overriding with local replace -> %s", orchestratorRoot)
 	replaceCmd := exec.Command(binGo, "mod", "edit",
 		"-replace", orchestratorModule+"="+orchestratorRoot)
 	replaceCmd.Dir = mageDir
@@ -491,16 +491,16 @@ func (o *Orchestrator) PrepareTestRepo(module, version, orchestratorRoot string)
 	}
 
 	// Commit scaffold artifacts so the working tree is clean.
-	if err := defaultGitOps.StageAll(repoDir); err != nil {
+	if err := o.git.StageAll(repoDir); err != nil {
 		os.RemoveAll(workDir)
 		return "", fmt.Errorf("git add scaffold: %w", err)
 	}
 
-	if err := defaultGitOps.Commit("Add orchestrator scaffold", repoDir); err != nil {
+	if err := o.git.Commit("Add orchestrator scaffold", repoDir); err != nil {
 		os.RemoveAll(workDir)
 		return "", fmt.Errorf("git commit scaffold: %w", err)
 	}
 
-	logf("prepareTestRepo: ready at %s", repoDir)
+	o.logf("prepareTestRepo: ready at %s", repoDir)
 	return repoDir, nil
 }

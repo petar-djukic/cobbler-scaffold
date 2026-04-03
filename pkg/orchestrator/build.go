@@ -15,14 +15,8 @@ import (
 // and helper functions into the internal/build package at init time.
 // ---------------------------------------------------------------------------
 
-func init() {
-	build.Log = logf
-	build.BinGo = binGo
-	build.BinLint = binLint
-	build.BinSecurity = binSecurity
-	build.BinMage = binMage
-	build.BinGit = binGit
-}
+// NOTE: build.Log and build.Bin* are wired in the Orchestrator
+// constructor (New) instead of an init function.
 
 // Build compiles the project binary. If MainPackage is empty, the
 // target is skipped.

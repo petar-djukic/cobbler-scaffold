@@ -13,9 +13,14 @@ import (
 
 	claudesdk "github.com/schlunsen/claude-agent-sdk-go"
 
+	an "github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/analysis"
+	"github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/build"
 	"github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/claude"
+	ictx "github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/context"
+	"github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/generate"
 	gh "github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/github"
 	"github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/gitops"
+	rel "github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/release"
 )
 
 // Orchestrator provides Claude Code orchestration operations.
@@ -25,34 +30,62 @@ type Orchestrator struct {
 	sdkQueryFn claude.SdkQueryFunc
 	tracker    gh.WorkTracker
 	git        gitops.GitOps
+
+	// Logging state — previously package-level globals.
+	phaseMu           sync.RWMutex
+	currentGeneration string
+	currentPhase      string
+	phaseStart        time.Time
+	logSink           io.WriteCloser
+	logSinkMu         sync.Mutex
 }
 
 // New creates an Orchestrator with the given configuration.
 // It applies defaults to any zero-value Config fields.
 func New(cfg Config) *Orchestrator {
-	// Wire parent-package dependencies into internal/claude.
-	claude.Log = logf
-	claude.BinGit = binGit
-	claude.BinClaude = binClaude
-
 	cfg.applyDefaults()
-	return &Orchestrator{
+
+	o := &Orchestrator{
 		cfg:        cfg,
 		sdkQueryFn: claudesdk.Query,
-		tracker: gh.NewGitHubTracker(
-			gh.Deps{
-				Log:          logf,
-				GhBin:        binGh,
-				BranchExists: defaultGitOps.BranchExists,
-			},
-			gh.RepoConfig{
-				IssuesRepo: cfg.Cobbler.IssuesRepo,
-				ModulePath: cfg.Project.ModulePath,
-				TargetRepo: cfg.Project.TargetRepo,
-			},
-		),
-		git: &gitops.ShellGitOps{},
+		git:        &gitops.ShellGitOps{},
 	}
+
+	o.tracker = gh.NewGitHubTracker(
+		gh.Deps{
+			Log:          o.logf,
+			GhBin:        binGh,
+			BranchExists: o.git.BranchExists,
+		},
+		gh.RepoConfig{
+			IssuesRepo: cfg.Cobbler.IssuesRepo,
+			ModulePath: cfg.Project.ModulePath,
+			TargetRepo: cfg.Project.TargetRepo,
+		},
+	)
+
+	// Wire instance dependencies into internal packages.
+	claude.Log = o.logf
+	claude.BinGit = binGit
+	claude.BinClaude = binClaude
+	generate.Log = o.logf
+	generate.BinGit = binGit
+	build.Log = o.logf
+	build.BinGo = binGo
+	build.BinLint = binLint
+	build.BinSecurity = binSecurity
+	build.BinMage = binMage
+	build.BinGit = binGit
+	ictx.Log = o.logf
+	ictx.LoadAnalysisDocFn = func(dir string) any {
+		return an.LoadAnalysisDoc(dir)
+	}
+	rel.Log = o.logf
+	rel.GitReader = o.git
+	rel.GitTags = o.git
+	rel.GitCommitter = o.git
+
+	return o
 }
 
 // Tracker returns the work tracker interface for issue operations.
@@ -74,61 +107,40 @@ func NewFromFile(path string) (*Orchestrator, error) {
 	return New(cfg), nil
 }
 
-// phaseMu protects the currentGeneration, currentPhase, and phaseStart
-// variables from concurrent access. Writers use Lock, logf uses RLock.
-var phaseMu sync.RWMutex
-
-// currentGeneration holds the active generation name. When set, logf
-// includes it right after the timestamp so every log line within a
-// generation is tagged automatically.
-var currentGeneration string
-
 // setGeneration sets the active generation name for log tagging.
-func setGeneration(name string) {
-	phaseMu.Lock()
-	currentGeneration = name
-	phaseMu.Unlock()
+func (o *Orchestrator) setGeneration(name string) {
+	o.phaseMu.Lock()
+	o.currentGeneration = name
+	o.phaseMu.Unlock()
 }
 
 // clearGeneration removes the generation tag from subsequent log lines.
-func clearGeneration() {
-	phaseMu.Lock()
-	currentGeneration = ""
-	phaseMu.Unlock()
+func (o *Orchestrator) clearGeneration() {
+	o.phaseMu.Lock()
+	o.currentGeneration = ""
+	o.phaseMu.Unlock()
 }
 
-// currentPhase holds the active workflow phase (e.g. "measure", "stitch").
-// When set, logf includes it and the elapsed time since the phase started.
-var currentPhase string
-var phaseStart time.Time
-
 // setPhase sets the active workflow phase for log tagging.
-func setPhase(name string) {
-	phaseMu.Lock()
-	currentPhase = name
-	phaseStart = time.Now()
-	phaseMu.Unlock()
+func (o *Orchestrator) setPhase(name string) {
+	o.phaseMu.Lock()
+	o.currentPhase = name
+	o.phaseStart = time.Now()
+	o.phaseMu.Unlock()
 }
 
 // clearPhase removes the phase tag from subsequent log lines.
-func clearPhase() {
-	phaseMu.Lock()
-	currentPhase = ""
-	phaseStart = time.Time{}
-	phaseMu.Unlock()
+func (o *Orchestrator) clearPhase() {
+	o.phaseMu.Lock()
+	o.currentPhase = ""
+	o.phaseStart = time.Time{}
+	o.phaseMu.Unlock()
 }
-
-// logSink is an optional secondary destination for logf output.
-// When non-nil, every logf line is written to both stderr and logSink.
-var (
-	logSink   io.WriteCloser
-	logSinkMu sync.Mutex
-)
 
 // openLogSink opens a file at path and sets it as the logf tee destination.
 // Subsequent logf calls write to both stderr and this file until closeLogSink
 // is called.
-func openLogSink(path string) error {
+func (o *Orchestrator) openLogSink(path string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("openLogSink: mkdir: %w", err)
 	}
@@ -136,22 +148,22 @@ func openLogSink(path string) error {
 	if err != nil {
 		return fmt.Errorf("openLogSink: %w", err)
 	}
-	logSinkMu.Lock()
-	defer logSinkMu.Unlock()
-	if logSink != nil {
-		logSink.Close()
+	o.logSinkMu.Lock()
+	defer o.logSinkMu.Unlock()
+	if o.logSink != nil {
+		o.logSink.Close()
 	}
-	logSink = f
+	o.logSink = f
 	return nil
 }
 
 // closeLogSink closes the current log sink and stops tee-ing logf output.
-func closeLogSink() {
-	logSinkMu.Lock()
-	defer logSinkMu.Unlock()
-	if logSink != nil {
-		logSink.Close()
-		logSink = nil
+func (o *Orchestrator) closeLogSink() {
+	o.logSinkMu.Lock()
+	defer o.logSinkMu.Unlock()
+	if o.logSink != nil {
+		o.logSink.Close()
+		o.logSink = nil
 	}
 }
 
@@ -159,15 +171,15 @@ func closeLogSink() {
 // is set, the generation name appears right after the timestamp. When
 // currentPhase is set, the phase name and elapsed time since phase start
 // are included.
-func logf(format string, args ...any) {
+func (o *Orchestrator) logf(format string, args ...any) {
 	msg := fmt.Sprintf(format, args...)
 	ts := time.Now().Format(time.RFC3339)
 
-	phaseMu.RLock()
-	gen := currentGeneration
-	phase := currentPhase
-	start := phaseStart
-	phaseMu.RUnlock()
+	o.phaseMu.RLock()
+	gen := o.currentGeneration
+	phase := o.currentPhase
+	start := o.phaseStart
+	o.phaseMu.RUnlock()
 
 	var prefix string
 	if gen != "" && phase != "" {
@@ -183,9 +195,9 @@ func logf(format string, args ...any) {
 	}
 	line := fmt.Sprintf("%s %s\n", prefix, msg)
 	fmt.Fprint(os.Stderr, line)
-	logSinkMu.Lock()
-	if logSink != nil {
-		logSink.Write([]byte(line))
+	o.logSinkMu.Lock()
+	if o.logSink != nil {
+		o.logSink.Write([]byte(line))
 	}
-	logSinkMu.Unlock()
+	o.logSinkMu.Unlock()
 }
