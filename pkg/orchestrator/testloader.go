@@ -3,7 +3,7 @@
 
 // testloader.go re-exports comparison types from the internal/compare
 // sub-package for backward compatibility within the orchestrator package.
-// prd: prd004-differential-comparison R4, R5, R6
+// srd: srd004-differential-comparison R4, R5, R6
 
 package orchestrator
 

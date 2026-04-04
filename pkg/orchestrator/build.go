@@ -29,7 +29,7 @@ func (b *Builder) Build() error {
 // BuildAll compiles all cmd/ sub-packages to BinaryDir when MainPackage is
 // empty. It discovers every cmd/*/main.go package and builds each to
 // bin/<name> using go build -o bin/<name> ./cmd/<name>/. If no cmd/
-// directory exists the target is skipped. prd003 B1.1.
+// directory exists the target is skipped. srd003 B1.1.
 func (b *Builder) BuildAll() error {
 	return build.BuildAll(b.buildConfig())
 }

@@ -683,7 +683,7 @@ func TestGeneratorStart_DirtyWorkingTree(t *testing.T) {
 }
 
 // TestGeneratorStart_PreserveSources verifies that with PreserveSources=true,
-// GeneratorStart does not delete existing .go files (prd002 R10.1).
+// GeneratorStart does not delete existing .go files (srd002 R10.1).
 // This test MUST NOT call t.Parallel() because it uses initTestGitRepo / os.Chdir.
 func TestGeneratorStart_PreserveSources(t *testing.T) {
 	dir := initTestGitRepo(t)
@@ -1662,28 +1662,28 @@ releases:
 	uc001 := `id: rel00.0-uc001-format
 title: Format output
 touchpoints:
-  - T1: "Format per prd001-core R1"
+  - T1: "Format per srd001-core R1"
 `
 	uc002 := `id: rel00.0-uc002-build
 title: Build pipeline
 touchpoints:
-  - T1: "Build per prd002-build R1"
+  - T1: "Build per srd002-build R1"
 `
 	os.WriteFile(filepath.Join(ucDir, "rel00.0-uc001-format.yaml"), []byte(uc001), 0o644)
 	os.WriteFile(filepath.Join(ucDir, "rel00.0-uc002-build.yaml"), []byte(uc002), 0o644)
 
-	// Create requirements.yaml: uc001's PRD is complete, uc002's is not.
+	// Create requirements.yaml: uc001's SRD is complete, uc002's is not.
 	cobblerDir := filepath.Join(dir, ".cobbler")
 	os.MkdirAll(cobblerDir, 0o755)
 	reqContent := `requirements:
-  prd001-core:
+  srd001-core:
     R1.1:
       status: complete
       issue: 10
     R1.2:
       status: complete
       issue: 11
-  prd002-build:
+  srd002-build:
     R1.1:
       status: ready
     R1.2:
@@ -1882,7 +1882,7 @@ releases:
 func TestCheckAutoAdvanceRelease_ReadyRequirementsBlockAdvance(t *testing.T) {
 	dir := initTestGitRepo(t)
 
-	// Release 00.0: all UCs done, but a PRD requirement is still ready.
+	// Release 00.0: all UCs done, but a SRD requirement is still ready.
 	roadmapContent := `id: rm1
 title: Test Roadmap
 releases:
@@ -1898,21 +1898,21 @@ releases:
 	cfgPath := filepath.Join(dir, DefaultConfigFile)
 	writeConfigFile(t, cfgPath, []string{"00.0"})
 
-	// Create a UC file with touchpoints referencing prd025.
+	// Create a UC file with touchpoints referencing srd025.
 	ucDir := filepath.Join(dir, "docs", "specs", "use-cases")
 	os.MkdirAll(ucDir, 0o755)
 	ucContent := `id: rel00.0-uc001-format
 touchpoints:
-  - T1: "Format output prd025 R1, R2"
+  - T1: "Format output srd025 R1, R2"
 `
 	os.WriteFile(filepath.Join(ucDir, "rel00.0-uc001-format.yaml"), []byte(ucContent), 0o644)
 
-	// Create requirements.yaml with a ready R-item in prd025 (R4 group,
+	// Create requirements.yaml with a ready R-item in srd025 (R4 group,
 	// not cited by the UC touchpoint which only cites R1 and R2).
 	cobblerDir := filepath.Join(dir, ".cobbler")
 	os.MkdirAll(cobblerDir, 0o755)
 	reqContent := `requirements:
-  prd025-unexpand:
+  srd025-unexpand:
     R1.1:
       status: complete
       issue: 100
@@ -1929,14 +1929,14 @@ touchpoints:
 	o := testOrchWithCfg( Config{Cobbler: CobblerConfig{Dir: ".cobbler/"}})
 	advanced, _ := o.Generator.checkAutoAdvanceRelease()
 	if advanced {
-		t.Error("should not advance when PRD requirements are still ready")
+		t.Error("should not advance when SRD requirements are still ready")
 	}
 }
 
-func TestCheckAutoAdvanceRelease_BarePRDRefBlocksAdvance(t *testing.T) {
+func TestCheckAutoAdvanceRelease_BareSRDRefBlocksAdvance(t *testing.T) {
 	dir := initTestGitRepo(t)
 
-	// Release 00.0: all UCs done, touchpoint cites PRD without R-groups.
+	// Release 00.0: all UCs done, touchpoint cites SRD without R-groups.
 	roadmapContent := `id: rm1
 title: Test Roadmap
 releases:
@@ -1952,20 +1952,20 @@ releases:
 	cfgPath := filepath.Join(dir, DefaultConfigFile)
 	writeConfigFile(t, cfgPath, []string{"00.0"})
 
-	// UC touchpoint references prd096-users WITHOUT R-group citations.
+	// UC touchpoint references srd096-users WITHOUT R-group citations.
 	ucDir := filepath.Join(dir, "docs", "specs", "use-cases")
 	os.MkdirAll(ucDir, 0o755)
 	ucContent := `id: rel00.0-uc001-users
 touchpoints:
-  - T1: "cmd/users — users prints logged-in usernames (prd096-users)"
+  - T1: "cmd/users — users prints logged-in usernames (srd096-users)"
 `
 	os.WriteFile(filepath.Join(ucDir, "rel00.0-uc001-users.yaml"), []byte(ucContent), 0o644)
 
-	// requirements.yaml has ready R-items in prd096-users.
+	// requirements.yaml has ready R-items in srd096-users.
 	cobblerDir := filepath.Join(dir, ".cobbler")
 	os.MkdirAll(cobblerDir, 0o755)
 	reqContent := `requirements:
-  prd096-users:
+  srd096-users:
     R1.1:
       status: ready
     R2.1:
@@ -1976,7 +1976,7 @@ touchpoints:
 	o := testOrchWithCfg( Config{Cobbler: CobblerConfig{Dir: ".cobbler/"}})
 	advanced, _ := o.Generator.checkAutoAdvanceRelease()
 	if advanced {
-		t.Error("should not advance when bare PRD touchpoint has ready requirements (GH-1960)")
+		t.Error("should not advance when bare SRD touchpoint has ready requirements (GH-1960)")
 	}
 }
 
@@ -2285,7 +2285,7 @@ func TestHasUnresolvedRequirements_ReadyItems(t *testing.T) {
 	dir := t.TempDir()
 	os.MkdirAll(filepath.Join(dir, ".cobbler"), 0o755)
 	reqYAML := `requirements:
-  prd001-core:
+  srd001-core:
     R1.1:
       status: complete
       issue: 10
@@ -2305,7 +2305,7 @@ func TestHasUnresolvedRequirements_AllComplete(t *testing.T) {
 	dir := t.TempDir()
 	os.MkdirAll(filepath.Join(dir, ".cobbler"), 0o755)
 	reqYAML := `requirements:
-  prd001-core:
+  srd001-core:
     R1.1:
       status: complete
       issue: 10

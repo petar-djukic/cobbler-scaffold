@@ -57,7 +57,7 @@ type SpecificationsDoc = ctx.SpecificationsDoc
 type SpecRelease = ctx.SpecRelease
 type SpecIndex = ctx.SpecIndex
 type TestSuiteRef = ctx.TestSuiteRef
-type PRDUseCaseMap = ctx.PRDUseCaseMap
+type SRDUseCaseMap = ctx.SRDUseCaseMap
 
 // Roadmap types.
 type RoadmapDoc = ctx.RoadmapDoc
@@ -67,14 +67,14 @@ type RoadmapUseCase = ctx.RoadmapUseCase
 // Specs collection types.
 type SpecsCollection = ctx.SpecsCollection
 
-// PRD types.
-type PRDDoc = ctx.PRDDoc
-type PRDRequirementGroup = ctx.PRDRequirementGroup
-type PRDRequirementItem = ctx.PRDRequirementItem
-type PRDPackageContract = ctx.PRDPackageContract
-type PRDExport = ctx.PRDExport
-type PRDDependsOn = ctx.PRDDependsOn
-type PRDStructRef = ctx.PRDStructRef
+// SRD types.
+type SRDDoc = ctx.SRDDoc
+type SRDRequirementGroup = ctx.SRDRequirementGroup
+type SRDRequirementItem = ctx.SRDRequirementItem
+type SRDPackageContract = ctx.SRDPackageContract
+type SRDExport = ctx.SRDExport
+type SRDDependsOn = ctx.SRDDependsOn
+type SRDStructRef = ctx.SRDStructRef
 
 // Use case types.
 type UseCaseDoc = ctx.UseCaseDoc

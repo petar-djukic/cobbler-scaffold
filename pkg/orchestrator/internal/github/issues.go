@@ -1003,8 +1003,8 @@ func (t *GitHubTracker) CommentCobblerIssue(repo string, number int, body string
 
 // FileTargetRepoDefects files each defect as a GitHub bug issue in repo.
 // Errors are logged but do not fail the caller — filing is best-effort
-// (prd003 R11.5, R11.6). If repo is empty the call is a no-op with a
-// warning log (prd003 R11.7).
+// (srd003 R11.5, R11.6). If repo is empty the call is a no-op with a
+// warning log (srd003 R11.7).
 func (t *GitHubTracker) FileTargetRepoDefects(repo string, defects []string) {
 	if repo == "" {
 		t.Log("fileTargetRepoDefects: no target repo configured; skipping %d defect(s)", len(defects))
@@ -1034,7 +1034,7 @@ func (t *GitHubTracker) FileTargetRepoDefects(repo string, defects []string) {
 // developed. It checks t.Cfg.TargetRepo first; if empty it strips
 // "github.com/" from t.Cfg.ModulePath. Returns "" if neither yields a
 // non-empty value. Intentionally separate from DetectGitHubRepo to avoid
-// cobbler.issues_repo contaminating target resolution (prd003 R11.4, D2).
+// cobbler.issues_repo contaminating target resolution (srd003 R11.4, D2).
 func (t *GitHubTracker) ResolveTargetRepo() string {
 	if t.Cfg.TargetRepo != "" {
 		return t.Cfg.TargetRepo

@@ -92,17 +92,17 @@ func MeasureReleasesConstraint(releases []string, release string) string {
 }
 
 // ---------------------------------------------------------------------------
-// PRD reference pattern
+// SRD reference pattern
 // ---------------------------------------------------------------------------
 
-// PRDRefPattern matches PRD requirement references in task requirement text.
-// Examples: "prd003 R2", "prd004-ts R1.3", "prd002-sys requirement R2.5".
-// Allows up to 2 intervening words between the PRD stem and R-number to handle
-// Claude inserting words like "requirement" (e.g., "prd002-sys requirement R2.5").
-// Group 1 = PRD stem (e.g., "prd003" or "prd004-ts").
+// SRDRefPattern matches SRD requirement references in task requirement text.
+// Examples: "srd003 R2", "srd004-ts R1.3", "srd002-sys requirement R2.5".
+// Allows up to 2 intervening words between the SRD stem and R-number to handle
+// Claude inserting words like "requirement" (e.g., "srd002-sys requirement R2.5").
+// Group 1 = SRD stem (e.g., "srd003" or "srd004-ts").
 // Group 2 = requirement group number (e.g., "2" from "R2").
 // Group 3 = optional sub-item number (e.g., "3" from "R1.3"); empty for groups.
-var PRDRefPattern = regexp.MustCompile(`(prd\d+[-\w]*)\s+(?:\w+\s+){0,2}R(\d+)(?:\.(\d+))?`)
+var SRDRefPattern = regexp.MustCompile(`(srd\d+[-\w]*)\s+(?:\w+\s+){0,2}R(\d+)(?:\.(\d+))?`)
 
 // ---------------------------------------------------------------------------
 // Validation
@@ -112,8 +112,8 @@ var PRDRefPattern = regexp.MustCompile(`(prd\d+[-\w]*)\s+(?:\w+\s+){0,2}R(\d+)(?
 // and P7 file naming conventions. Returns structured warnings and errors.
 // All issues are logged regardless of enforcing mode. maxReqs is the
 // operator-configured requirement cap (0 = unlimited). subItemCounts maps
-// PRD stems to group IDs to sub-item counts; when a task requirement
-// references a PRD group, the expanded sub-item count is used instead of 1.
+// SRD stems to group IDs to sub-item counts; when a task requirement
+// references a SRD group, the expanded sub-item count is used instead of 1.
 // Expanded-count violations are logged as warnings (best-effort), not errors.
 // reqStates, when non-nil, cross-references proposed R-items against
 // requirements.yaml and rejects proposals targeting completed R-items (GH-1386).
@@ -132,7 +132,7 @@ func ValidateMeasureOutput(issues []ProposedIssue, maxReqs, maxWeight int, subIt
 		acCount := len(desc.AcceptanceCriteria)
 		dCount := len(desc.DesignDecisions)
 
-		// Compute expanded requirement count by resolving PRD group
+		// Compute expanded requirement count by resolving SRD group
 		// references to their sub-item counts (GH-122).
 		expandedCount := ExpandedRequirementCount(desc.Requirements, subItemCounts)
 
@@ -199,18 +199,18 @@ func ValidateMeasureOutput(issues []ProposedIssue, maxReqs, maxWeight int, subIt
 		// already marked complete in requirements.yaml (GH-1386).
 		if len(reqStates) > 0 {
 			for _, req := range desc.Requirements {
-				matches := PRDRefPattern.FindAllStringSubmatch(req.Text, -1)
+				matches := SRDRefPattern.FindAllStringSubmatch(req.Text, -1)
 				for _, m := range matches {
 					prdStem := m[1]
 					groupNum := m[2]
 					subItem := m[3]
-					prdReqs := findPRDReqStates(reqStates, prdStem)
-					if prdReqs == nil {
+					srdReqs := findSRDReqStates(reqStates, prdStem)
+					if srdReqs == nil {
 						continue
 					}
 					if subItem != "" {
 						key := fmt.Sprintf("R%s.%s", groupNum, subItem)
-						if st, ok := prdReqs[key]; ok && isRequirementComplete(st.Status) {
+						if st, ok := srdReqs[key]; ok && isRequirementComplete(st.Status) {
 							msg := fmt.Sprintf("[%d] %q: requirement %s %s is already complete (issue #%d)",
 								issue.Index, issue.Title, prdStem, key, st.Issue)
 							Log("validateMeasureOutput: %s", msg)
@@ -220,7 +220,7 @@ func ValidateMeasureOutput(issues []ProposedIssue, maxReqs, maxWeight int, subIt
 						// Group reference — check if ALL sub-items are complete.
 						prefix := fmt.Sprintf("R%s.", groupNum)
 						allComplete := true
-						for k, st := range prdReqs {
+						for k, st := range srdReqs {
 							if strings.HasPrefix(k, prefix) && !isRequirementComplete(st.Status) {
 								allComplete = false
 								break
@@ -229,7 +229,7 @@ func ValidateMeasureOutput(issues []ProposedIssue, maxReqs, maxWeight int, subIt
 						if allComplete {
 							// Check there are actually sub-items.
 							hasItems := false
-							for k := range prdReqs {
+							for k := range srdReqs {
 								if strings.HasPrefix(k, prefix) {
 									hasItems = true
 									break
@@ -250,9 +250,9 @@ func ValidateMeasureOutput(issues []ProposedIssue, maxReqs, maxWeight int, subIt
 	return result
 }
 
-// findPRDReqStates looks up requirement states for a PRD stem, trying exact
-// match and prefix match (e.g. "prd001" matches "prd001-core").
-func findPRDReqStates(states map[string]map[string]RequirementState, stem string) map[string]RequirementState {
+// findSRDReqStates looks up requirement states for a SRD stem, trying exact
+// match and prefix match (e.g. "srd001" matches "srd001-core").
+func findSRDReqStates(states map[string]map[string]RequirementState, stem string) map[string]RequirementState {
 	if r, ok := states[stem]; ok {
 		return r
 	}
@@ -266,8 +266,8 @@ func findPRDReqStates(states map[string]map[string]RequirementState, stem string
 
 // ExpandedRequirementWeight computes the total weight of a task's
 // requirements by summing weights from requirements.yaml. A requirement
-// referencing "prd003 R1.2" looks up the weight for that R-item. A group
-// reference "prd003 R2" sums weights of all sub-items in that group.
+// referencing "srd003 R1.2" looks up the weight for that R-item. A group
+// reference "srd003 R2" sums weights of all sub-items in that group.
 // Requirements without a recognized reference default to weight 1. When
 // reqStates is nil, falls back to ExpandedRequirementCount (GH-1832).
 func ExpandedRequirementWeight(reqs []IssueDescItem, subItemCounts map[string]map[string]int, reqStates map[string]map[string]RequirementState) int {
@@ -276,7 +276,7 @@ func ExpandedRequirementWeight(reqs []IssueDescItem, subItemCounts map[string]ma
 	}
 	total := 0
 	for _, req := range reqs {
-		matches := PRDRefPattern.FindStringSubmatch(req.Text)
+		matches := SRDRefPattern.FindStringSubmatch(req.Text)
 		if matches == nil {
 			total++
 			continue
@@ -285,17 +285,17 @@ func ExpandedRequirementWeight(reqs []IssueDescItem, subItemCounts map[string]ma
 		groupNum := matches[2]
 		subItem := matches[3]
 
-		prdReqs := reqStates[prdStem]
-		if prdReqs == nil {
-			// Try short prefix (e.g., "prd003" for "prd003-core").
+		srdReqs := reqStates[prdStem]
+		if srdReqs == nil {
+			// Try short prefix (e.g., "srd003" for "srd003-core").
 			for k, v := range reqStates {
 				if idx := indexByte(k, '-'); idx > 0 && k[:idx] == prdStem {
-					prdReqs = v
+					srdReqs = v
 					break
 				}
 			}
 		}
-		if prdReqs == nil {
+		if srdReqs == nil {
 			total++
 			continue
 		}
@@ -303,7 +303,7 @@ func ExpandedRequirementWeight(reqs []IssueDescItem, subItemCounts map[string]ma
 		if subItem != "" {
 			// Specific sub-item reference (e.g., R1.3).
 			key := "R" + groupNum + "." + subItem
-			if st, ok := prdReqs[key]; ok && st.Weight > 0 {
+			if st, ok := srdReqs[key]; ok && st.Weight > 0 {
 				total += st.Weight
 			} else {
 				total++
@@ -315,7 +315,7 @@ func ExpandedRequirementWeight(reqs []IssueDescItem, subItemCounts map[string]ma
 		prefix := "R" + groupNum + "."
 		groupWeight := 0
 		found := false
-		for id, st := range prdReqs {
+		for id, st := range srdReqs {
 			if len(id) > len(prefix) && id[:len(prefix)] == prefix {
 				w := st.Weight
 				if w <= 0 {
@@ -344,10 +344,10 @@ func indexByte(s string, b byte) int {
 }
 
 // ExpandedRequirementCount computes the effective requirement count by
-// parsing PRD group references from each requirement's text and expanding
-// groups to their sub-item counts. A requirement referencing "prd003 R2"
+// parsing SRD group references from each requirement's text and expanding
+// groups to their sub-item counts. A requirement referencing "srd003 R2"
 // where R2 has 4 sub-items counts as 4, not 1. Requirements without a
-// recognized PRD reference or referencing a specific sub-item (R1.3)
+// recognized SRD reference or referencing a specific sub-item (R1.3)
 // count as 1.
 func ExpandedRequirementCount(reqs []IssueDescItem, subItemCounts map[string]map[string]int) int {
 	if len(subItemCounts) == 0 {
@@ -355,7 +355,7 @@ func ExpandedRequirementCount(reqs []IssueDescItem, subItemCounts map[string]map
 	}
 	total := 0
 	for _, req := range reqs {
-		matches := PRDRefPattern.FindStringSubmatch(req.Text)
+		matches := SRDRefPattern.FindStringSubmatch(req.Text)
 		if matches == nil {
 			total++
 			continue
@@ -378,46 +378,46 @@ func ExpandedRequirementCount(reqs []IssueDescItem, subItemCounts map[string]map
 				continue
 			}
 		}
-		// PRD or group not found — count as 1.
+		// SRD or group not found — count as 1.
 		total++
 	}
 	return total
 }
 
 // ---------------------------------------------------------------------------
-// PRD loading and warnings
+// SRD loading and warnings
 // ---------------------------------------------------------------------------
 
-// PRDDoc is the minimal PRD structure needed for sub-item counting.
-type PRDDoc struct {
-	Requirements map[string]PRDRequirementGroup `yaml:"requirements"`
+// SRDDoc is the minimal SRD structure needed for sub-item counting.
+type SRDDoc struct {
+	Requirements map[string]SRDRequirementGroup `yaml:"requirements"`
 }
 
-// PRDRequirementGroup represents a single requirement group with sub-items.
-type PRDRequirementGroup struct {
+// SRDRequirementGroup represents a single requirement group with sub-items.
+type SRDRequirementGroup struct {
 	Items []any `yaml:"items"`
 }
 
-// LoadPRDSubItemCounts loads all PRDs from the standard path and returns a
-// map of PRD stem -> group key -> sub-item count. A group with no sub-items
+// LoadSRDSubItemCounts loads all SRDs from the standard path and returns a
+// map of SRD stem -> group key -> sub-item count. A group with no sub-items
 // maps to 1. The stem is the filename without path and extension (e.g.,
-// "prd003-cobbler-workflows"); an additional entry keyed by the short prefix
-// (e.g., "prd003") is added for fuzzy matching.
-func LoadPRDSubItemCounts() map[string]map[string]int {
-	paths, _ := filepath.Glob("docs/specs/product-requirements/prd*.yaml")
+// "srd003-cobbler-workflows"); an additional entry keyed by the short prefix
+// (e.g., "srd003") is added for fuzzy matching.
+func LoadSRDSubItemCounts() map[string]map[string]int {
+	paths, _ := filepath.Glob("docs/specs/software-requirements/srd*.yaml")
 	counts := make(map[string]map[string]int, len(paths)*2)
 	for _, path := range paths {
 		data, err := os.ReadFile(path)
 		if err != nil {
 			continue
 		}
-		var prd PRDDoc
-		if err := yaml.Unmarshal(data, &prd); err != nil {
+		var srd SRDDoc
+		if err := yaml.Unmarshal(data, &srd); err != nil {
 			continue
 		}
 		stem := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
-		groupCounts := make(map[string]int, len(prd.Requirements))
-		for key, group := range prd.Requirements {
+		groupCounts := make(map[string]int, len(srd.Requirements))
+		for key, group := range srd.Requirements {
 			if len(group.Items) > 0 {
 				groupCounts[key] = len(group.Items)
 			} else {
@@ -425,7 +425,7 @@ func LoadPRDSubItemCounts() map[string]map[string]int {
 			}
 		}
 		counts[stem] = groupCounts
-		// Add short prefix entry (e.g., "prd003") for fuzzy matching.
+		// Add short prefix entry (e.g., "srd003") for fuzzy matching.
 		if idx := strings.IndexByte(stem, '-'); idx > 0 {
 			short := stem[:idx]
 			if _, exists := counts[short]; !exists {
@@ -436,28 +436,28 @@ func LoadPRDSubItemCounts() map[string]map[string]int {
 	return counts
 }
 
-// WarnOversizedGroups loads PRDs and logs a warning for each requirement
+// WarnOversizedGroups loads SRDs and logs a warning for each requirement
 // group whose sub-item count exceeds maxReqs. This is advisory and runs
-// before the measure prompt is built so operators can restructure PRDs.
+// before the measure prompt is built so operators can restructure SRDs.
 func WarnOversizedGroups(maxReqs int) {
-	paths, _ := filepath.Glob("docs/specs/product-requirements/prd*.yaml")
+	paths, _ := filepath.Glob("docs/specs/software-requirements/srd*.yaml")
 	for _, path := range paths {
 		data, err := os.ReadFile(path)
 		if err != nil {
 			continue
 		}
-		var prd PRDDoc
-		if err := yaml.Unmarshal(data, &prd); err != nil {
+		var srd SRDDoc
+		if err := yaml.Unmarshal(data, &srd); err != nil {
 			continue
 		}
 		stem := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
-		keys := make([]string, 0, len(prd.Requirements))
-		for k := range prd.Requirements {
+		keys := make([]string, 0, len(srd.Requirements))
+		for k := range srd.Requirements {
 			keys = append(keys, k)
 		}
 		sort.Strings(keys)
 		for _, key := range keys {
-			group := prd.Requirements[key]
+			group := srd.Requirements[key]
 			if len(group.Items) > maxReqs {
 				Log("warning: %s %s has %d sub-items (max_requirements_per_task=%d); consider splitting this requirement group",
 					stem, key, len(group.Items), maxReqs)

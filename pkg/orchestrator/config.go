@@ -39,7 +39,7 @@ type ProjectConfig struct {
 	// ContextSources is a newline-delimited list of extra file paths and
 	// glob patterns that supplement the standard document structure in the
 	// measure prompt's project context. Standard files (vision, architecture,
-	// specs, roadmap, PRDs, use cases, test suites, dependency-map, sources,
+	// specs, roadmap, SRDs, use cases, test suites, dependency-map, sources,
 	// engineering) are loaded automatically by an internal algorithm.
 	// ContextSources adds project-specific extras beyond that standard set.
 	// Globs are expanded at runtime; duplicates are logged and removed.
@@ -61,7 +61,7 @@ type ProjectConfig struct {
 
 	// Release is the target release version (e.g., "01.0"). When set,
 	// use cases and test suites are filtered to only include files whose
-	// release version is <= this value. PRDs are filtered to only those
+	// release version is <= this value. SRDs are filtered to only those
 	// referenced by the included use cases. An empty value disables
 	// release-based filtering and includes all files.
 	// Deprecated: use Releases instead for explicit release set filtering.
@@ -70,7 +70,7 @@ type ProjectConfig struct {
 	// Releases lists the release versions in scope for code generation
 	// (e.g., ["01.0", "02.0"]). When set, use cases and test suites are
 	// filtered to only include files whose release version is in this set.
-	// PRDs are filtered to only those referenced by the included use cases.
+	// SRDs are filtered to only those referenced by the included use cases.
 	// Takes precedence over Release when both are set.
 	// An empty list disables release-based filtering and includes all files.
 	Releases []string `yaml:"releases"`
@@ -78,7 +78,7 @@ type ProjectConfig struct {
 	// TargetRepo is the GitHub repository (owner/repo) of the project being
 	// analyzed and developed. It is used to file defect issues (schema errors,
 	// constitution drift) discovered by RunPreCycleAnalysis in the target repo
-	// rather than the orchestrator's own issues repo (see prd003 R11).
+	// rather than the orchestrator's own issues repo (see srd003 R11).
 	// If empty, resolveTargetRepo derives it from ModulePath.
 	TargetRepo string `yaml:"target_repo"`
 
@@ -115,7 +115,7 @@ type GenerationConfig struct {
 	// during generator:start and generator:stop. Set to true for library repos
 	// where the Go source is the product rather than the generated output.
 	// Default false; all existing behaviour is unchanged when false.
-	// See prd002 R10.
+	// See srd002 R10.
 	PreserveSources bool `yaml:"preserve_sources"`
 }
 
@@ -232,7 +232,7 @@ type CobblerConfig struct {
 
 	// MaxWeightPerTask is the maximum total weight a single proposed task
 	// may carry. When set, the measure agent batches requirements by total
-	// weight (from PRD weight annotations) instead of count. Requirements
+	// weight (from SRD weight annotations) instead of count. Requirements
 	// without explicit weights default to weight 1. When 0 and
 	// MaxRequirementsPerTask > 0, applyDefaults derives MaxWeightPerTask
 	// from MaxRequirementsPerTask so that weight-based validation is always
@@ -289,7 +289,7 @@ type CobblerConfig struct {
 	MeasureIdleTimeoutSeconds int `yaml:"measure_idle_timeout_seconds"`
 
 	// MeasureExcludeSource excludes all Go source files from the measure
-	// prompt context when true. Specs (PRDs, use cases, constitutions,
+	// prompt context when true. Specs (SRDs, use cases, constitutions,
 	// road-map) are always included. Default false; existing behaviour
 	// is preserved.
 	MeasureExcludeSource bool `yaml:"measure_exclude_source"`
@@ -306,7 +306,7 @@ type CobblerConfig struct {
 	// reads road-map.yaml, identifies the first use case whose status is not
 	// "done", parses its touchpoints to extract package directory paths, and
 	// restricts the measure prompt to source files under those directories.
-	// This bounds prompt size by the PRD's dependency graph rather than the
+	// This bounds prompt size by the SRD's dependency graph rather than the
 	// full codebase. Ignored when MeasureExcludeSource is true or when
 	// MeasureSourcePatterns is already set (manual patterns take priority).
 	// Default false; existing behaviour is preserved when false.
@@ -330,7 +330,7 @@ type CobblerConfig struct {
 	// prompt. Valid values: "full" (default, verbatim inclusion), "headers"
 	// (exported declarations only, no function bodies), and "custom" (run
 	// MeasureSummarizeCommand per file and use its stdout). Empty string and
-	// "full" are equivalent. Stitch always uses full source. See prd003 R12.
+	// "full" are equivalent. Stitch always uses full source. See srd003 R12.
 	MeasureSourceMode string `yaml:"measure_source_mode"`
 
 	// MeasureSummarizeCommand is the command run per source file when
@@ -342,7 +342,7 @@ type CobblerConfig struct {
 	// Mode selects the Claude execution backend. Valid values are
 	// ExecutionModeCLI (default, run the claude binary directly on the host)
 	// and ExecutionModeSDK (use the Go Agent SDK for structured streaming).
-	// See prd001 R11.
+	// See srd001 R11.
 	Mode string `yaml:"mode"`
 }
 

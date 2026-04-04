@@ -32,12 +32,12 @@ type GeneratorIssueStats struct {
 	LocDeltaProd   int
 	LocDeltaTest   int
 	NumReqs        int     // number of requirements in the task description
-	TotalWeight    int     // sum of PRD weights for the task's R-items (GH-1832)
+	TotalWeight    int     // sum of SRD weights for the task's R-items (GH-1832)
 	InputTokens    int     // total input tokens from history stats
 	OutputTokens   int     // total output tokens from history stats
 	Attempts       int     // number of stitch invocations for this task (GH-1967)
 	FailedCostUSD  float64 // cost from failed attempts (GH-1967)
-	PRDs           []string
+	SRDs           []string
 	Release        string  // roadmap release version, e.g. "01.0"
 }
 
@@ -242,8 +242,8 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 	var totalAttempts int
 	var totalFailedCost float64
 	var nDone, nFailed, nSkipped, nInProgress, nPending int
-	prdStatus := make(map[string]string) // prd name → highest-priority status
-	prdReleaseMap := BuildPRDReleaseMap()
+	srdStatus := make(map[string]string) // srd name → highest-priority status
+	srdReleaseMap := BuildSRDReleaseMap()
 	weightReqStates := loadRequirementStatesForStats(deps, genBranch) // for weight lookup (GH-1832)
 	seen := make(map[string]bool) // track task IDs already added
 
@@ -329,26 +329,26 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 		s.TotalWeight = CountDescriptionWeight(s.Description, weightReqStates)
 		totalWeight += s.TotalWeight
 
-		// Extract release directly from title; fall back to PRD mapping.
+		// Extract release directly from title; fall back to SRD mapping.
 		s.Release = ExtractRelease(s.Title)
-		s.PRDs = ExtractPRDRefs(s.Title + " " + s.Description)
-		for _, prd := range s.PRDs {
+		s.SRDs = ExtractSRDRefs(s.Title + " " + s.Description)
+		for _, srd := range s.SRDs {
 			if s.Release == "" {
-				if rel, ok := prdReleaseMap[prd]; ok {
+				if rel, ok := srdReleaseMap[srd]; ok {
 					s.Release = rel
 				}
 			}
-			existing := prdStatus[prd]
+			existing := srdStatus[srd]
 			switch s.Status {
 			case "in-progress":
-				prdStatus[prd] = "in-progress"
+				srdStatus[srd] = "in-progress"
 			case "pending":
 				if existing == "" {
-					prdStatus[prd] = "pending"
+					srdStatus[srd] = "pending"
 				}
 			case "done", "failed":
 				if existing == "" {
-					prdStatus[prd] = s.Status
+					srdStatus[srd] = s.Status
 				}
 			}
 		}
@@ -386,24 +386,24 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 		s.TotalWeight = CountDescriptionWeight(ghIss.Description, weightReqStates)
 		totalWeight += s.TotalWeight
 		s.Release = ExtractRelease(ghIss.Title)
-		s.PRDs = ExtractPRDRefs(ghIss.Title + " " + ghIss.Description)
-		for _, prd := range s.PRDs {
+		s.SRDs = ExtractSRDRefs(ghIss.Title + " " + ghIss.Description)
+		for _, srd := range s.SRDs {
 			if s.Release == "" {
-				if rel, ok := prdReleaseMap[prd]; ok {
+				if rel, ok := srdReleaseMap[srd]; ok {
 					s.Release = rel
 				}
 			}
-			existing := prdStatus[prd]
+			existing := srdStatus[srd]
 			switch s.Status {
 			case "in-progress":
-				prdStatus[prd] = "in-progress"
+				srdStatus[srd] = "in-progress"
 			case "pending":
 				if existing == "" {
-					prdStatus[prd] = "pending"
+					srdStatus[srd] = "pending"
 				}
 			case "done", "failed":
 				if existing == "" {
-					prdStatus[prd] = s.Status
+					srdStatus[srd] = s.Status
 				}
 			}
 		}
@@ -522,7 +522,7 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 		Att       string // attempt count (GH-1967)
 		Rel       string
 		Reqs      string
-		Weight    string // total weight from PRD annotations (GH-1832)
+		Weight    string // total weight from SRD annotations (GH-1832)
 		Cost      string
 		Dur       string
 		RateLimit string // rate limit wait time (GH-1805)
@@ -704,13 +704,13 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 
 	// Enrich rows after chronological sorting (GH-1651, GH-1653):
 	// - Assign each stitch row's Parent to the most recent measure row's ID
-	// - Count stitch tasks following each measure and collect their PRDs
+	// - Count stitch tasks following each measure and collect their SRDs
 	{
 		lastMeasureIdx := -1
 		lastMeasureID := ""
 		measureChildCounts := make(map[int]int)      // tableRows index → child count
-		measureChildPRDs := make(map[int][]string)    // tableRows index → deduplicated PRD list
-		measurePRDSeen := make(map[int]map[string]bool)
+		measureChildSRDs := make(map[int][]string)    // tableRows index → deduplicated SRD list
+		measureSRDSeen := make(map[int]map[string]bool)
 		for i := range tableRows {
 			if tableRows[i].IsMeasure {
 				lastMeasureIdx = i
@@ -718,19 +718,19 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 			} else if lastMeasureID != "" {
 				tableRows[i].Parent = "#" + lastMeasureID
 				measureChildCounts[lastMeasureIdx]++
-				for _, prd := range ExtractPRDRefs(tableRows[i].Title) {
-					if measurePRDSeen[lastMeasureIdx] == nil {
-						measurePRDSeen[lastMeasureIdx] = make(map[string]bool)
+				for _, srd := range ExtractSRDRefs(tableRows[i].Title) {
+					if measureSRDSeen[lastMeasureIdx] == nil {
+						measureSRDSeen[lastMeasureIdx] = make(map[string]bool)
 					}
-					if !measurePRDSeen[lastMeasureIdx][prd] {
-						measurePRDSeen[lastMeasureIdx][prd] = true
-						measureChildPRDs[lastMeasureIdx] = append(measureChildPRDs[lastMeasureIdx], prd)
+					if !measureSRDSeen[lastMeasureIdx][srd] {
+						measureSRDSeen[lastMeasureIdx][srd] = true
+						measureChildSRDs[lastMeasureIdx] = append(measureChildSRDs[lastMeasureIdx], srd)
 					}
 				}
 			}
 		}
 		for idx, count := range measureChildCounts {
-			prds := measureChildPRDs[idx]
+			prds := measureChildSRDs[idx]
 			if len(prds) > 0 {
 				sort.Strings(prds)
 				tableRows[idx].Title = fmt.Sprintf("measure (%d tasks: %s)", count, strings.Join(prds, ", "))
@@ -757,19 +757,19 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 			FormatDuration(totalMeasureDurS))
 	}
 
-	// PRD coverage table.
-	if len(prdStatus) > 0 {
-		prds := make([]string, 0, len(prdStatus))
-		for prd := range prdStatus {
-			prds = append(prds, prd)
+	// SRD coverage table.
+	if len(srdStatus) > 0 {
+		prds := make([]string, 0, len(srdStatus))
+		for srd := range srdStatus {
+			prds = append(prds, srd)
 		}
 		sort.Strings(prds)
 
 		fmt.Println()
 		pw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(pw, "PRD\tStatus")
-		for _, prd := range prds {
-			fmt.Fprintf(pw, "%s\t%s\n", prd, prdStatus[prd])
+		fmt.Fprintln(pw, "SRD\tStatus")
+		for _, srd := range prds {
+			fmt.Fprintf(pw, "%s\t%s\n", srd, srdStatus[srd])
 		}
 		if err := pw.Flush(); err != nil {
 			return err
@@ -777,15 +777,15 @@ func PrintGeneratorStats(deps GeneratorStatsDeps) error {
 	}
 
 	// Requirements progress: count actual non-ready R-items from
-	// requirements.yaml rather than all R-items in any touched PRD (GH-1437).
+	// requirements.yaml rather than all R-items in any touched SRD (GH-1437).
 	// When on the wrong branch, read requirements.yaml from the generation
 	// branch via git to avoid stale CWD data (GH-1445).
-	total, _ := CountTotalPRDRequirements()
+	total, _ := CountTotalSRDRequirements()
 	if total > 0 {
 		addressed := 0
 		reqStates := loadRequirementStatesForStats(deps, genBranch)
-		for _, prdReqs := range reqStates {
-			for _, st := range prdReqs {
+		for _, srdReqs := range reqStates {
+			for _, st := range srdReqs {
 				if st.Status != "ready" {
 					addressed++
 				}
@@ -989,17 +989,17 @@ func CountDescriptionReqs(description string) int {
 	return total
 }
 
-// rePRDRef matches PRD requirement references like "prd001 R1.1" in text.
-var rePRDRef = regexp.MustCompile(`(prd\d+[-\w]*)\s+R(\d+)\.(\d+)`)
+// reSRDRef matches SRD requirement references like "srd001 R1.1" in text.
+var reSRDRef = regexp.MustCompile(`(srd\d+[-\w]*)\s+R(\d+)\.(\d+)`)
 
-// CountDescriptionWeight sums the PRD weights for all R-item references
+// CountDescriptionWeight sums the SRD weights for all R-item references
 // found in a task description. When reqStates is nil or an R-item has no
 // weight, each reference counts as 1 (equivalent to CountDescriptionReqs).
 func CountDescriptionWeight(description string, reqStates map[string]map[string]generate.RequirementState) int {
 	if len(reqStates) == 0 {
 		return CountDescriptionReqs(description)
 	}
-	refs := rePRDRef.FindAllStringSubmatch(description, -1)
+	refs := reSRDRef.FindAllStringSubmatch(description, -1)
 	if len(refs) == 0 {
 		return CountDescriptionReqs(description)
 	}
@@ -1008,8 +1008,8 @@ func CountDescriptionWeight(description string, reqStates map[string]map[string]
 		prdStem, group, item := m[1], m[2], m[3]
 		key := "R" + group + "." + item
 		w := 1
-		if prdReqs, ok := reqStates[prdStem]; ok {
-			if st, ok := prdReqs[key]; ok && st.Weight > 0 {
+		if srdReqs, ok := reqStates[prdStem]; ok {
+			if st, ok := srdReqs[key]; ok && st.Weight > 0 {
 				w = st.Weight
 			}
 		}
@@ -1055,30 +1055,30 @@ func FormatBytes(b int) string {
 	}
 }
 
-// ExtractPRDRefs returns deduplicated prd-* and prdNNN-* tokens found in text.
-// Both "prd-auth-flow" and "prd006-cat" formats are recognized.
-func ExtractPRDRefs(text string) []string {
+// ExtractSRDRefs returns deduplicated srd-* and srdNNN-* tokens found in text.
+// Both "srd-auth-flow" and "srd006-cat" formats are recognized.
+func ExtractSRDRefs(text string) []string {
 	seen := make(map[string]bool)
 	var prds []string
 	for _, word := range strings.Fields(text) {
 		w := strings.ToLower(strings.Trim(word, ".,;:()[]`\"'"))
-		// Strip .yaml/.yml suffix so "prd001-foo.yaml" deduplicates with
-		// "prd001-foo" (GH-1448).
+		// Strip .yaml/.yml suffix so "srd001-foo.yaml" deduplicates with
+		// "srd001-foo" (GH-1448).
 		w = strings.TrimSuffix(w, ".yaml")
 		w = strings.TrimSuffix(w, ".yml")
-		if !strings.HasPrefix(w, "prd") || len(w) < 5 {
+		if !strings.HasPrefix(w, "srd") || len(w) < 5 {
 			continue
 		}
-		// Match "prd-<something>" (original format).
-		isPRD := strings.HasPrefix(w, "prd-") && len(w) > 4
-		// Match "prd<digit>..." e.g. "prd006-cat".
-		if !isPRD && len(w) >= 4 && w[3] >= '0' && w[3] <= '9' {
+		// Match "srd-<something>" (original format).
+		isSRD := strings.HasPrefix(w, "srd-") && len(w) > 4
+		// Match "srd<digit>..." e.g. "srd006-cat".
+		if !isSRD && len(w) >= 4 && w[3] >= '0' && w[3] <= '9' {
 			// Must have a hyphen after the digits to be a valid ref.
 			if strings.ContainsRune(w[3:], '-') {
-				isPRD = true
+				isSRD = true
 			}
 		}
-		if isPRD && !seen[w] {
+		if isSRD && !seen[w] {
 			seen[w] = true
 			prds = append(prds, w)
 		}

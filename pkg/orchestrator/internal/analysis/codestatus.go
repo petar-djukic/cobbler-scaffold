@@ -105,10 +105,10 @@ func isRequirementComplete(status string) bool {
 	return status == "complete" || status == "complete_with_failures" || status == "skip"
 }
 
-// findPRDRequirements looks up the requirement map for a PRD stem, trying
-// exact match first, then dash-delimited prefix match (e.g. "prd001" matches
-// "prd001-core" but not "prd0011-other").
-func findPRDRequirements(reqs map[string]map[string]RequirementState, stem string) map[string]RequirementState {
+// findSRDRequirements looks up the requirement map for a SRD stem, trying
+// exact match first, then dash-delimited prefix match (e.g. "srd001" matches
+// "srd001-core" but not "srd0011-other").
+func findSRDRequirements(reqs map[string]map[string]RequirementState, stem string) map[string]RequirementState {
 	if r, ok := reqs[stem]; ok {
 		return r
 	}
@@ -158,15 +158,15 @@ func ComputeReqCompletion(cobblerDir string) map[string]bool {
 
 		allComplete := true
 		for _, cite := range citations {
-			prdReqs := findPRDRequirements(reqFile.Requirements, cite.PRDID)
-			if prdReqs == nil {
+			srdReqs := findSRDRequirements(reqFile.Requirements, cite.SRDID)
+			if srdReqs == nil {
 				allComplete = false
 				break
 			}
 			for _, group := range cite.Groups {
 				groupPrefix := group + "."
 				found := false
-				for key, st := range prdReqs {
+				for key, st := range srdReqs {
 					if strings.HasPrefix(key, groupPrefix) {
 						found = true
 						if !isRequirementComplete(st.Status) {

@@ -10,7 +10,7 @@ import (
 	st "github.com/mesh-intelligence/cobbler-scaffold/pkg/orchestrator/internal/stats"
 )
 
-// ReleaseStats prints a table of roadmap releases with per-release PRD and
+// ReleaseStats prints a table of roadmap releases with per-release SRD and
 // requirement counts.
 func (s *Stats) ReleaseStats() error {
 	return st.PrintReleaseStats()

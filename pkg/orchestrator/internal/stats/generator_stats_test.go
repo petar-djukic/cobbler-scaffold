@@ -203,8 +203,8 @@ func TestExtractRelease(t *testing.T) {
 		want string
 	}{
 		{"title with rel", "cmd/tee implementation (rel02.1-uc001-tee)", "02.1"},
-		{"rel01.0", "[stitch] prd001: Implement Foo (rel01.0-uc003)", "01.0"},
-		{"no release", "prd001: Implement Foo", ""},
+		{"rel01.0", "[stitch] srd001: Implement Foo (rel01.0-uc003)", "01.0"},
+		{"no release", "srd001: Implement Foo", ""},
 		{"plain text", "no release info here", ""},
 		{"multiple releases", "rel01.0 and rel02.1", "01.0"},
 		{"embedded in word", "xrel03.0y", "03.0"},
@@ -220,92 +220,92 @@ func TestExtractRelease(t *testing.T) {
 	}
 }
 
-// --- ExtractPRDRefs ---
+// --- ExtractSRDRefs ---
 
-func TestExtractPRDRefs(t *testing.T) {
+func TestExtractSRDRefs(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		text string
 		want []string
 	}{
 		{
-			text: "Implement prd-auth-flow for login",
-			want: []string{"prd-auth-flow"},
+			text: "Implement srd-auth-flow for login",
+			want: []string{"srd-auth-flow"},
 		},
 		{
-			text: "Covers prd-user-model, prd-auth-flow.",
-			want: []string{"prd-user-model", "prd-auth-flow"},
+			text: "Covers srd-user-model, srd-auth-flow.",
+			want: []string{"srd-user-model", "srd-auth-flow"},
 		},
 		{
-			text: "no prd references here",
+			text: "no srd references here",
 			want: nil,
 		},
 		{
-			text: "prd- alone is not a ref",
+			text: "srd- alone is not a ref",
 			want: nil,
 		},
 		{
-			text: "prd-foo prd-bar prd-foo",
-			want: []string{"prd-foo", "prd-bar"},
+			text: "srd-foo srd-bar srd-foo",
+			want: []string{"srd-foo", "srd-bar"},
 		},
 		{
-			text: "Implement prd006-cat utility",
-			want: []string{"prd006-cat"},
+			text: "Implement srd006-cat utility",
+			want: []string{"srd006-cat"},
 		},
 		{
-			text: "Covers prd001-orchestrator-core and prd003-cobbler-workflows R1",
-			want: []string{"prd001-orchestrator-core", "prd003-cobbler-workflows"},
+			text: "Covers srd001-orchestrator-core and srd003-cobbler-workflows R1",
+			want: []string{"srd001-orchestrator-core", "srd003-cobbler-workflows"},
 		},
 		{
-			text: "Mixed prd-auth-flow and prd006-cat refs",
-			want: []string{"prd-auth-flow", "prd006-cat"},
+			text: "Mixed srd-auth-flow and srd006-cat refs",
+			want: []string{"srd-auth-flow", "srd006-cat"},
 		},
 		{
-			text: "prd006-cat prd006-cat duplicate",
-			want: []string{"prd006-cat"},
+			text: "srd006-cat srd006-cat duplicate",
+			want: []string{"srd006-cat"},
 		},
 		{
-			text: "bare prd003 without hyphen-name is not a ref",
+			text: "bare srd003 without hyphen-name is not a ref",
 			want: nil,
 		},
 		{
-			text: "prd001-testutils.yaml should strip yaml suffix",
-			want: []string{"prd001-testutils"},
+			text: "srd001-testutils.yaml should strip yaml suffix",
+			want: []string{"srd001-testutils"},
 		},
 		{
-			text: "prd001-testutils and prd001-testutils.yaml deduplicate",
-			want: []string{"prd001-testutils"},
+			text: "srd001-testutils and srd001-testutils.yaml deduplicate",
+			want: []string{"srd001-testutils"},
 		},
 		{
-			text: "prd-auth-flow.yml strips yml suffix too",
-			want: []string{"prd-auth-flow"},
+			text: "srd-auth-flow.yml strips yml suffix too",
+			want: []string{"srd-auth-flow"},
 		},
 	}
 	for _, tc := range tests {
-		got := ExtractPRDRefs(tc.text)
+		got := ExtractSRDRefs(tc.text)
 		if len(got) != len(tc.want) {
-			t.Errorf("ExtractPRDRefs(%q): got %v, want %v", tc.text, got, tc.want)
+			t.Errorf("ExtractSRDRefs(%q): got %v, want %v", tc.text, got, tc.want)
 			continue
 		}
 		for i := range got {
 			if got[i] != tc.want[i] {
-				t.Errorf("ExtractPRDRefs(%q)[%d]: got %q, want %q", tc.text, i, got[i], tc.want[i])
+				t.Errorf("ExtractSRDRefs(%q)[%d]: got %q, want %q", tc.text, i, got[i], tc.want[i])
 			}
 		}
 	}
 }
 
-// --- CountTotalPRDRequirements ---
+// --- CountTotalSRDRequirements ---
 
-func TestCountTotalPRDRequirements(t *testing.T) {
+func TestCountTotalSRDRequirements(t *testing.T) {
 	// Uses os.Chdir — do NOT use t.Parallel()
 	dir := t.TempDir()
 
-	prdDir := filepath.Join(dir, "docs", "specs", "product-requirements")
-	if err := os.MkdirAll(prdDir, 0o755); err != nil {
+	srdDir := filepath.Join(dir, "docs", "specs", "software-requirements")
+	if err := os.MkdirAll(srdDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	prdContent := `name: test-prd
+	srdContent := `name: test-srd
 requirements:
   group-a:
     description: Group A
@@ -320,7 +320,7 @@ requirements:
       - id: REQ-003
         text: Third requirement
 `
-	if err := os.WriteFile(filepath.Join(prdDir, "prd001-test.yaml"), []byte(prdContent), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(srdDir, "srd001-test.yaml"), []byte(srdContent), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -328,28 +328,28 @@ requirements:
 	t.Cleanup(func() { os.Chdir(orig) })
 	os.Chdir(dir)
 
-	total, byPRD := CountTotalPRDRequirements()
+	total, bySRD := CountTotalSRDRequirements()
 	if total != 3 {
 		t.Errorf("total = %d, want 3", total)
 	}
-	if byPRD["prd001-test"] != 3 {
-		t.Errorf("byPRD[prd001-test] = %d, want 3", byPRD["prd001-test"])
+	if bySRD["srd001-test"] != 3 {
+		t.Errorf("bySRD[srd001-test] = %d, want 3", bySRD["srd001-test"])
 	}
 }
 
-func TestCountTotalPRDRequirements_NoPRDs(t *testing.T) {
+func TestCountTotalSRDRequirements_NoSRDs(t *testing.T) {
 	// Uses os.Chdir — do NOT use t.Parallel()
 	dir := t.TempDir()
 	orig, _ := os.Getwd()
 	t.Cleanup(func() { os.Chdir(orig) })
 	os.Chdir(dir)
 
-	total, byPRD := CountTotalPRDRequirements()
+	total, bySRD := CountTotalSRDRequirements()
 	if total != 0 {
 		t.Errorf("total = %d, want 0", total)
 	}
-	if len(byPRD) != 0 {
-		t.Errorf("byPRD = %v, want empty", byPRD)
+	if len(bySRD) != 0 {
+		t.Errorf("bySRD = %v, want empty", bySRD)
 	}
 }
 
@@ -369,17 +369,17 @@ func TestCountDescriptionReqs(t *testing.T) {
 		},
 		{
 			name: "sub-requirement references counted",
-			desc: "requirements:\n  - \"R1: Implement per prd003 R2.1, R2.2, R2.3\"\n  - \"R2: Add tests per prd003 R3.1\"\n",
+			desc: "requirements:\n  - \"R1: Implement per srd003 R2.1, R2.2, R2.3\"\n  - \"R2: Add tests per srd003 R3.1\"\n",
 			want: 4,
 		},
 		{
 			name: "mixed lines with and without subreq refs",
-			desc: "requirements:\n  - \"R1: Implement per prd003 R1.1\"\n  - \"R2: General cleanup\"\n",
+			desc: "requirements:\n  - \"R1: Implement per srd003 R1.1\"\n  - \"R2: General cleanup\"\n",
 			want: 2,
 		},
 		{
 			name: "structured format with subreq refs",
-			desc: "requirements:\n  - id: R1\n    text: \"Implement per prd003 R2.1, R2.2\"\n  - id: R2\n    text: \"Add per prd003 R3.1, R3.2, R3.3\"\n",
+			desc: "requirements:\n  - id: R1\n    text: \"Implement per srd003 R2.1, R2.2\"\n  - id: R2\n    text: \"Add per srd003 R3.1, R3.2, R3.3\"\n",
 			want: 5,
 		},
 		{
@@ -414,9 +414,9 @@ func TestCountDescriptionReqs(t *testing.T) {
 	}
 }
 
-// --- BuildPRDReleaseMap ---
+// --- BuildSRDReleaseMap ---
 
-func TestBuildPRDReleaseMap(t *testing.T) {
+func TestBuildSRDReleaseMap(t *testing.T) {
 	// Uses os.Chdir — do NOT use t.Parallel()
 	dir := t.TempDir()
 	ucDir := filepath.Join(dir, "docs", "specs", "use-cases")
@@ -432,8 +432,8 @@ trigger: mage cobbler:measure
 flow:
   - F1: "step one"
 touchpoints:
-  - T1: "Config: prd001-orchestrator-core R1, prd003-cobbler-workflows R1"
-  - T2: "Prompt: prd003-cobbler-workflows R5"
+  - T1: "Config: srd001-orchestrator-core R1, srd003-cobbler-workflows R1"
+  - T2: "Prompt: srd003-cobbler-workflows R5"
 success_criteria:
   - SC1: "it works"
 out_of_scope: []
@@ -450,7 +450,7 @@ trigger: command palette
 flow:
   - F1: "step one"
 touchpoints:
-  - T1: "Extension: prd006-vscode-extension R1"
+  - T1: "Extension: srd006-vscode-extension R1"
 success_criteria:
   - SC1: "it works"
 out_of_scope: []
@@ -463,32 +463,32 @@ out_of_scope: []
 	t.Cleanup(func() { os.Chdir(orig) })
 	os.Chdir(dir)
 
-	m := BuildPRDReleaseMap()
-	if m["prd001-orchestrator-core"] != "01.0" {
-		t.Errorf("prd001-orchestrator-core release = %q, want %q", m["prd001-orchestrator-core"], "01.0")
+	m := BuildSRDReleaseMap()
+	if m["srd001-orchestrator-core"] != "01.0" {
+		t.Errorf("srd001-orchestrator-core release = %q, want %q", m["srd001-orchestrator-core"], "01.0")
 	}
-	if m["prd003-cobbler-workflows"] != "01.0" {
-		t.Errorf("prd003-cobbler-workflows release = %q, want %q", m["prd003-cobbler-workflows"], "01.0")
+	if m["srd003-cobbler-workflows"] != "01.0" {
+		t.Errorf("srd003-cobbler-workflows release = %q, want %q", m["srd003-cobbler-workflows"], "01.0")
 	}
-	if m["prd006-vscode-extension"] != "02.0" {
-		t.Errorf("prd006-vscode-extension release = %q, want %q", m["prd006-vscode-extension"], "02.0")
+	if m["srd006-vscode-extension"] != "02.0" {
+		t.Errorf("srd006-vscode-extension release = %q, want %q", m["srd006-vscode-extension"], "02.0")
 	}
 }
 
-func TestBuildPRDReleaseMap_NoUseCases(t *testing.T) {
+func TestBuildSRDReleaseMap_NoUseCases(t *testing.T) {
 	// Uses os.Chdir — do NOT use t.Parallel()
 	dir := t.TempDir()
 	orig, _ := os.Getwd()
 	t.Cleanup(func() { os.Chdir(orig) })
 	os.Chdir(dir)
 
-	m := BuildPRDReleaseMap()
+	m := BuildSRDReleaseMap()
 	if len(m) != 0 {
 		t.Errorf("expected empty map, got %v", m)
 	}
 }
 
-func TestBuildPRDReleaseMap_MalformedFilename(t *testing.T) {
+func TestBuildSRDReleaseMap_MalformedFilename(t *testing.T) {
 	// Uses os.Chdir — do NOT use t.Parallel()
 	dir := t.TempDir()
 	ucDir := filepath.Join(dir, "docs", "specs", "use-cases")
@@ -502,7 +502,7 @@ trigger: T
 flow:
   - F1: "step"
 touchpoints:
-  - T1: "prd001-core R1"
+  - T1: "srd001-core R1"
 success_criteria:
   - SC1: "ok"
 out_of_scope: []
@@ -513,13 +513,13 @@ out_of_scope: []
 	t.Cleanup(func() { os.Chdir(orig) })
 	os.Chdir(dir)
 
-	m := BuildPRDReleaseMap()
+	m := BuildSRDReleaseMap()
 	if len(m) != 0 {
 		t.Errorf("expected empty map for malformed filename, got %v", m)
 	}
 }
 
-func TestBuildPRDReleaseMap_InvalidYAML(t *testing.T) {
+func TestBuildSRDReleaseMap_InvalidYAML(t *testing.T) {
 	// Uses os.Chdir — do NOT use t.Parallel()
 	dir := t.TempDir()
 	ucDir := filepath.Join(dir, "docs", "specs", "use-cases")
@@ -531,13 +531,13 @@ func TestBuildPRDReleaseMap_InvalidYAML(t *testing.T) {
 	t.Cleanup(func() { os.Chdir(orig) })
 	os.Chdir(dir)
 
-	m := BuildPRDReleaseMap()
+	m := BuildSRDReleaseMap()
 	if len(m) != 0 {
 		t.Errorf("expected empty map for invalid YAML, got %v", m)
 	}
 }
 
-func TestBuildPRDReleaseMap_NonNumericPRD(t *testing.T) {
+func TestBuildSRDReleaseMap_NonNumericSRD(t *testing.T) {
 	// Uses os.Chdir — do NOT use t.Parallel()
 	dir := t.TempDir()
 	ucDir := filepath.Join(dir, "docs", "specs", "use-cases")
@@ -545,14 +545,14 @@ func TestBuildPRDReleaseMap_NonNumericPRD(t *testing.T) {
 
 	content := `id: rel01.0-uc001-test
 title: Test
-summary: Non-numeric PRD refs
+summary: Non-numeric SRD refs
 actor: A
 trigger: T
 flow:
   - F1: "step"
 touchpoints:
-  - T1: "Config: prd-alpha R1"
-  - T2: "Short: prd R2"
+  - T1: "Config: srd-alpha R1"
+  - T2: "Short: srd R2"
 success_criteria:
   - SC1: "ok"
 out_of_scope: []
@@ -563,9 +563,9 @@ out_of_scope: []
 	t.Cleanup(func() { os.Chdir(orig) })
 	os.Chdir(dir)
 
-	m := BuildPRDReleaseMap()
+	m := BuildSRDReleaseMap()
 	if len(m) != 0 {
-		t.Errorf("expected empty map for non-numeric PRD refs, got %v", m)
+		t.Errorf("expected empty map for non-numeric SRD refs, got %v", m)
 	}
 }
 
@@ -715,7 +715,7 @@ func TestPrintGeneratorStats_HistoryOnly(t *testing.T) {
 	// Two stitch tasks: one succeeded, one failed.
 	stitch1 := `caller: stitch
 task_id: "100"
-task_title: "[stitch] prd001 R1 implement feature"
+task_title: "[stitch] srd001 R1 implement feature"
 status: success
 started_at: "2026-03-08T12:00:00Z"
 duration: "5m 32s"
@@ -736,7 +736,7 @@ loc_after:
 `
 	stitch2 := `caller: stitch
 task_id: "101"
-task_title: "[stitch] prd002 R1 another feature"
+task_title: "[stitch] srd002 R1 another feature"
 status: failed
 started_at: "2026-03-08T13:00:00Z"
 duration: "2m 10s"
@@ -817,7 +817,7 @@ func TestPrintGeneratorStats_WeightColumn(t *testing.T) {
 	cobblerDir := filepath.Join(dir, ".cobbler")
 	os.MkdirAll(cobblerDir, 0o755)
 	reqYAML := `requirements:
-  prd001:
+  srd001:
     R1.1:
       status: complete
       weight: 1
@@ -829,10 +829,10 @@ func TestPrintGeneratorStats_WeightColumn(t *testing.T) {
 `
 	os.WriteFile(filepath.Join(cobblerDir, "requirements.yaml"), []byte(reqYAML), 0o644)
 
-	// Task that references prd001 R1.1 and R1.2 (total weight = 1+4 = 5).
+	// Task that references srd001 R1.1 and R1.2 (total weight = 1+4 = 5).
 	stitch1 := `caller: stitch
 task_id: "400"
-task_title: "[stitch] prd001 R1.1-R1.2 weighted task"
+task_title: "[stitch] srd001 R1.1-R1.2 weighted task"
 status: success
 started_at: "2026-03-22T14:00:00Z"
 duration: "5m 0s"
@@ -883,7 +883,7 @@ loc_after:
 		t.Errorf("expected 'Weight' column header in output:\n%s", output)
 	}
 
-	// Task 400 references prd001 R1.1 (w=1) + R1.2 (w=4) = 5.
+	// Task 400 references srd001 R1.1 (w=1) + R1.2 (w=4) = 5.
 	if !strings.Contains(output, "5") {
 		t.Errorf("expected weight '5' for task 400 in output:\n%s", output)
 	}
@@ -898,7 +898,7 @@ func TestPrintGeneratorStats_StartedColumn(t *testing.T) {
 
 	stitch1 := `caller: stitch
 task_id: "300"
-task_title: "[stitch] prd001 R1 with timestamp"
+task_title: "[stitch] srd001 R1 with timestamp"
 status: success
 started_at: "2026-03-22T14:30:00Z"
 duration: "5m 0s"
@@ -966,7 +966,7 @@ func TestPrintGeneratorStats_RateLimitColumn(t *testing.T) {
 	// Task with rate limit wait time.
 	stitch1 := `caller: stitch
 task_id: "200"
-task_title: "[stitch] prd001 R1 rate limited task"
+task_title: "[stitch] srd001 R1 rate limited task"
 status: success
 started_at: "2026-03-20T12:00:00Z"
 duration: "15m 0s"
@@ -989,7 +989,7 @@ loc_after:
 	// Task without rate limit.
 	stitch2 := `caller: stitch
 task_id: "201"
-task_title: "[stitch] prd001 R2 normal task"
+task_title: "[stitch] srd001 R2 normal task"
 status: success
 started_at: "2026-03-20T13:00:00Z"
 duration: "3m 0s"
@@ -1077,7 +1077,7 @@ num_turns: 15
 `
 	os.WriteFile(filepath.Join(histDir, "2026-03-08-12-00-00-stitch-stats.yaml"), []byte(stitchYAML), 0o644)
 
-	// Set up minimal PRD/use-case dirs so BuildPRDReleaseMap doesn't fail.
+	// Set up minimal SRD/use-case dirs so BuildSRDReleaseMap doesn't fail.
 	orig, _ := os.Getwd()
 	t.Cleanup(func() { os.Chdir(orig) })
 	os.Chdir(dir)
@@ -1245,15 +1245,15 @@ loc_after:
 
 // TestRequirementsCountUsesPerItemState verifies that the "Requirements: X/Y"
 // line counts actual non-ready R-items from requirements.yaml, not all R-items
-// in any touched PRD (GH-1437).
+// in any touched SRD (GH-1437).
 func TestRequirementsCountUsesPerItemState(t *testing.T) {
 	// Uses os.Chdir — do NOT use t.Parallel()
 	dir := t.TempDir()
 
-	// Create a PRD with 6 R-items across 2 groups.
-	prdDir := filepath.Join(dir, "docs", "specs", "product-requirements")
-	os.MkdirAll(prdDir, 0o755)
-	prdYAML := `id: prd001-testutils
+	// Create a SRD with 6 R-items across 2 groups.
+	srdDir := filepath.Join(dir, "docs", "specs", "software-requirements")
+	os.MkdirAll(srdDir, 0o755)
+	prdYAML := `id: srd001-testutils
 requirements:
   R1:
     title: "Group 1"
@@ -1268,13 +1268,13 @@ requirements:
       - R2.2: "fifth"
       - R2.3: "sixth"
 `
-	os.WriteFile(filepath.Join(prdDir, "prd001-testutils.yaml"), []byte(prdYAML), 0o644)
+	os.WriteFile(filepath.Join(srdDir, "srd001-testutils.yaml"), []byte(prdYAML), 0o644)
 
 	// Create requirements.yaml with only 2 of 6 R-items completed.
 	cobblerDir := filepath.Join(dir, ".cobbler")
 	os.MkdirAll(cobblerDir, 0o755)
 	reqYAML := `requirements:
-  prd001-testutils:
+  srd001-testutils:
     R1.1:
       status: complete
       issue: 100
@@ -1310,10 +1310,10 @@ requirements:
 			return []gh.CobblerIssue{
 				{
 					Number:      100,
-					Title:       "implement R1.1-R1.2 (prd001-testutils)",
+					Title:       "implement R1.1-R1.2 (srd001-testutils)",
 					State:       "closed",
 					Labels:      []string{"cobbler-task"},
-					Description: "requirements:\n  - text: \"prd001-testutils R1.1\"\n    source: test\n",
+					Description: "requirements:\n  - text: \"srd001-testutils R1.1\"\n    source: test\n",
 				},
 			}, nil
 		},
@@ -1336,7 +1336,7 @@ requirements:
 		t.Errorf("expected 'Requirements: 2/6' in output, got:\n%s", output)
 	}
 	if strings.Contains(output, "Requirements: 6/6") {
-		t.Errorf("bug not fixed: output still shows 6/6 (all R-items in touched PRD):\n%s", output)
+		t.Errorf("bug not fixed: output still shows 6/6 (all R-items in touched SRD):\n%s", output)
 	}
 }
 
@@ -1438,10 +1438,10 @@ func TestPrintGeneratorStats_ReqsFromBranch(t *testing.T) {
 	// Uses os.Chdir — do NOT use t.Parallel()
 	dir := t.TempDir()
 
-	// Create a PRD with 4 R-items.
-	prdDir := filepath.Join(dir, "docs", "specs", "product-requirements")
-	os.MkdirAll(prdDir, 0o755)
-	prdYAML := `id: prd001-test
+	// Create a SRD with 4 R-items.
+	srdDir := filepath.Join(dir, "docs", "specs", "software-requirements")
+	os.MkdirAll(srdDir, 0o755)
+	prdYAML := `id: srd001-test
 requirements:
   R1:
     title: "Group"
@@ -1451,13 +1451,13 @@ requirements:
       - R1.3: "third"
       - R1.4: "fourth"
 `
-	os.WriteFile(filepath.Join(prdDir, "prd001-test.yaml"), []byte(prdYAML), 0o644)
+	os.WriteFile(filepath.Join(srdDir, "srd001-test.yaml"), []byte(prdYAML), 0o644)
 
 	// Stale CWD requirements.yaml: shows 3 of 4 addressed (wrong).
 	cobblerDir := filepath.Join(dir, ".cobbler")
 	os.MkdirAll(cobblerDir, 0o755)
 	staleReqYAML := `requirements:
-  prd001-test:
+  srd001-test:
     R1.1:
       status: complete
     R1.2:
@@ -1471,7 +1471,7 @@ requirements:
 
 	// Fresh requirements from generation branch: only 1 addressed.
 	freshReqYAML := `requirements:
-  prd001-test:
+  srd001-test:
     R1.1:
       status: complete
     R1.2:
@@ -1542,9 +1542,9 @@ func TestPrintGeneratorStats_ReqsFallbackToCWD(t *testing.T) {
 	// Uses os.Chdir — do NOT use t.Parallel()
 	dir := t.TempDir()
 
-	prdDir := filepath.Join(dir, "docs", "specs", "product-requirements")
-	os.MkdirAll(prdDir, 0o755)
-	prdYAML := `id: prd001-test
+	srdDir := filepath.Join(dir, "docs", "specs", "software-requirements")
+	os.MkdirAll(srdDir, 0o755)
+	prdYAML := `id: srd001-test
 requirements:
   R1:
     title: "Group"
@@ -1552,12 +1552,12 @@ requirements:
       - R1.1: "first"
       - R1.2: "second"
 `
-	os.WriteFile(filepath.Join(prdDir, "prd001-test.yaml"), []byte(prdYAML), 0o644)
+	os.WriteFile(filepath.Join(srdDir, "srd001-test.yaml"), []byte(prdYAML), 0o644)
 
 	cobblerDir := filepath.Join(dir, ".cobbler")
 	os.MkdirAll(cobblerDir, 0o755)
 	reqYAML := `requirements:
-  prd001-test:
+  srd001-test:
     R1.1:
       status: complete
     R1.2:
@@ -1710,10 +1710,10 @@ func TestPrintGeneratorStats_ETAAndCost(t *testing.T) {
 	// Uses os.Chdir — do NOT use t.Parallel()
 	dir := t.TempDir()
 
-	// Create a PRD with 10 R-items.
-	prdDir := filepath.Join(dir, "docs", "specs", "product-requirements")
-	os.MkdirAll(prdDir, 0o755)
-	prdYAML := `id: prd001-test
+	// Create a SRD with 10 R-items.
+	srdDir := filepath.Join(dir, "docs", "specs", "software-requirements")
+	os.MkdirAll(srdDir, 0o755)
+	prdYAML := `id: srd001-test
 requirements:
   R1:
     title: "Group"
@@ -1729,13 +1729,13 @@ requirements:
       - R1.9: "i"
       - R1.10: "j"
 `
-	os.WriteFile(filepath.Join(prdDir, "prd001-test.yaml"), []byte(prdYAML), 0o644)
+	os.WriteFile(filepath.Join(srdDir, "srd001-test.yaml"), []byte(prdYAML), 0o644)
 
 	// requirements.yaml: 2 of 10 addressed.
 	cobblerDir := filepath.Join(dir, ".cobbler")
 	os.MkdirAll(cobblerDir, 0o755)
 	reqYAML := `requirements:
-  prd001-test:
+  srd001-test:
     R1.1:
       status: complete
       issue: 100
@@ -1873,9 +1873,9 @@ func TestPrintGeneratorStats_ETACalculating(t *testing.T) {
 	// Uses os.Chdir — do NOT use t.Parallel()
 	dir := t.TempDir()
 
-	prdDir := filepath.Join(dir, "docs", "specs", "product-requirements")
-	os.MkdirAll(prdDir, 0o755)
-	prdYAML := `id: prd001-test
+	srdDir := filepath.Join(dir, "docs", "specs", "software-requirements")
+	os.MkdirAll(srdDir, 0o755)
+	prdYAML := `id: srd001-test
 requirements:
   R1:
     title: "Group"
@@ -1883,12 +1883,12 @@ requirements:
       - R1.1: "a"
       - R1.2: "b"
 `
-	os.WriteFile(filepath.Join(prdDir, "prd001-test.yaml"), []byte(prdYAML), 0o644)
+	os.WriteFile(filepath.Join(srdDir, "srd001-test.yaml"), []byte(prdYAML), 0o644)
 
 	cobblerDir := filepath.Join(dir, ".cobbler")
 	os.MkdirAll(cobblerDir, 0o755)
 	reqYAML := `requirements:
-  prd001-test:
+  srd001-test:
     R1.1:
       status: ready
     R1.2:
@@ -1951,7 +1951,7 @@ func TestPrintGeneratorStats_AttemptsColumn(t *testing.T) {
 	// Task 200: two failed attempts, then one success = 3 attempts.
 	fail1 := `caller: stitch
 task_id: "200"
-task_title: "[stitch] prd001 R1 flaky task"
+task_title: "[stitch] srd001 R1 flaky task"
 status: failed
 started_at: "2026-03-10T10:00:00Z"
 duration_s: 120
@@ -1969,7 +1969,7 @@ loc_after:
 `
 	fail2 := `caller: stitch
 task_id: "200"
-task_title: "[stitch] prd001 R1 flaky task"
+task_title: "[stitch] srd001 R1 flaky task"
 status: failed
 started_at: "2026-03-10T10:05:00Z"
 duration_s: 90
@@ -1987,7 +1987,7 @@ loc_after:
 `
 	success := `caller: stitch
 task_id: "200"
-task_title: "[stitch] prd001 R1 flaky task"
+task_title: "[stitch] srd001 R1 flaky task"
 status: success
 started_at: "2026-03-10T10:10:00Z"
 duration_s: 200
@@ -2006,7 +2006,7 @@ loc_after:
 	// Task 201: single success = 1 attempt.
 	single := `caller: stitch
 task_id: "201"
-task_title: "[stitch] prd002 R1 clean task"
+task_title: "[stitch] srd002 R1 clean task"
 status: success
 started_at: "2026-03-10T11:00:00Z"
 duration_s: 150
@@ -2081,7 +2081,7 @@ func TestPrintGeneratorStats_NoRetrySummaryWhenNoRetries(t *testing.T) {
 
 	single := `caller: stitch
 task_id: "300"
-task_title: "[stitch] prd001 R1 clean"
+task_title: "[stitch] srd001 R1 clean"
 status: success
 started_at: "2026-03-10T12:00:00Z"
 duration_s: 100

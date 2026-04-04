@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 // Package vscode handles VS Code extension packaging and installation.
-// prd: prd006-vscode-extension R10
+// srd: srd006-vscode-extension R10
 package vscode
 
 import (
@@ -36,7 +36,7 @@ const ExtensionID = "mesh-intelligence.mage-orchestrator"
 // .vsix archive, and installs it into VS Code. When profile is non-empty the
 // extension is installed into that VS Code profile via --profile. It verifies
 // that npm and the code CLI are available before proceeding.
-// prd: prd006-vscode-extension R10.6, R10.7
+// srd: srd006-vscode-extension R10.6, R10.7
 func Push(profile string, log Logger) error {
 	root, err := os.Getwd()
 	if err != nil {
@@ -150,7 +150,7 @@ func CodeListArgs(profile string) []string {
 // Pop uninstalls the VS Code extension. When profile is non-empty the
 // extension is removed from that VS Code profile. The operation is idempotent:
 // it succeeds even if the extension is not currently installed.
-// prd: prd006-vscode-extension R10.6
+// srd: srd006-vscode-extension R10.6
 func Pop(profile string, log Logger) error {
 	if _, err := exec.LookPath(BinCode); err != nil {
 		return fmt.Errorf("vscode:pop: VS Code CLI (code) is not installed or not on PATH; open VS Code and run 'Shell Command: Install code command in PATH'")

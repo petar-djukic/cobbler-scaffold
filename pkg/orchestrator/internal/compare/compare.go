@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 // Package compare implements cross-generation differential comparison.
-// prd: prd004-differential-comparison R1, R2, R3
+// srd: srd004-differential-comparison R1, R2, R3
 package compare
 
 import (

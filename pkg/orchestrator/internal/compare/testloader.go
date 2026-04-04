@@ -3,7 +3,7 @@
 
 // testloader.go loads test cases from YAML spec test suites and runs
 // differential comparisons between two binaries.
-// prd: prd004-differential-comparison R4, R5, R6
+// srd: srd004-differential-comparison R4, R5, R6
 package compare
 
 import (

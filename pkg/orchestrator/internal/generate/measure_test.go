@@ -247,7 +247,7 @@ func TestValidateMeasureOutput_MaxReqsExceeded(t *testing.T) {
 	desc := `deliverable_type: code
 requirements:
   - id: R1
-    text: prd003 R2
+    text: srd003 R2
 acceptance_criteria:
   - id: AC1
     text: ac1
@@ -268,7 +268,7 @@ design_decisions:
     text: dd3`
 
 	subItems := map[string]map[string]int{
-		"prd003": {"R2": 10},
+		"srd003": {"R2": 10},
 	}
 	issues := []ProposedIssue{{Index: 1, Title: "test", Description: desc}}
 	result := ValidateMeasureOutput(issues, 5, 0, subItems, nil)
@@ -323,11 +323,11 @@ func TestValidateMeasureOutput_CompletedRItemRejected(t *testing.T) {
 	desc := `deliverable_type: code
 requirements:
   - id: R1
-    text: "Implement config per prd001 R1.2"
+    text: "Implement config per srd001 R1.2"
   - id: R2
-    text: "Add validation per prd001 R2.1"
+    text: "Add validation per srd001 R2.1"
   - id: R3
-    text: "Add logging per prd001 R3.1"
+    text: "Add logging per srd001 R3.1"
   - id: R4
     text: "Format output"
   - id: R5
@@ -354,7 +354,7 @@ files:
   - path: pkg/foo/bar.go`
 
 	reqStates := map[string]map[string]RequirementState{
-		"prd001-core": {
+		"srd001-core": {
 			"R1.1": {Status: "ready"},
 			"R1.2": {Status: "complete", Issue: 42},
 			"R2.1": {Status: "ready"},
@@ -382,7 +382,7 @@ func TestValidateMeasureOutput_CompletedGroupRejected(t *testing.T) {
 	desc := `deliverable_type: code
 requirements:
   - id: R1
-    text: "Implement group per prd002 R1"
+    text: "Implement group per srd002 R1"
   - id: R2
     text: "Other work"
   - id: R3
@@ -413,7 +413,7 @@ files:
   - path: pkg/foo/bar.go`
 
 	reqStates := map[string]map[string]RequirementState{
-		"prd002-lifecycle": {
+		"srd002-lifecycle": {
 			"R1.1": {Status: "complete", Issue: 10},
 			"R1.2": {Status: "complete", Issue: 11},
 		},
@@ -439,7 +439,7 @@ func TestValidateMeasureOutput_NilReqStatesNoCheck(t *testing.T) {
 	desc := `deliverable_type: code
 requirements:
   - id: R1
-    text: "Implement per prd001 R1.2"
+    text: "Implement per srd001 R1.2"
   - id: R2
     text: r2
   - id: R3
@@ -492,10 +492,10 @@ func TestExpandedRequirementCount_NoSubItems(t *testing.T) {
 
 func TestExpandedRequirementCount_WithExpansion(t *testing.T) {
 	reqs := []IssueDescItem{
-		{ID: "R1", Text: "implement prd003 R2 stuff"},
+		{ID: "R1", Text: "implement srd003 R2 stuff"},
 	}
 	subItems := map[string]map[string]int{
-		"prd003": {"R2": 4},
+		"srd003": {"R2": 4},
 	}
 	if got := ExpandedRequirementCount(reqs, subItems); got != 4 {
 		t.Errorf("expected 4, got %d", got)
@@ -504,10 +504,10 @@ func TestExpandedRequirementCount_WithExpansion(t *testing.T) {
 
 func TestExpandedRequirementCount_SpecificSubItem(t *testing.T) {
 	reqs := []IssueDescItem{
-		{ID: "R1", Text: "implement prd003 R2.3"},
+		{ID: "R1", Text: "implement srd003 R2.3"},
 	}
 	subItems := map[string]map[string]int{
-		"prd003": {"R2": 4},
+		"srd003": {"R2": 4},
 	}
 	// Specific sub-item reference counts as 1.
 	if got := ExpandedRequirementCount(reqs, subItems); got != 1 {
@@ -515,15 +515,15 @@ func TestExpandedRequirementCount_SpecificSubItem(t *testing.T) {
 	}
 }
 
-func TestExpandedRequirementCount_UnknownPRD(t *testing.T) {
+func TestExpandedRequirementCount_UnknownSRD(t *testing.T) {
 	reqs := []IssueDescItem{
-		{ID: "R1", Text: "implement prd999 R1"},
+		{ID: "R1", Text: "implement srd999 R1"},
 	}
 	subItems := map[string]map[string]int{
-		"prd003": {"R2": 4},
+		"srd003": {"R2": 4},
 	}
 	if got := ExpandedRequirementCount(reqs, subItems); got != 1 {
-		t.Errorf("expected 1 (unknown PRD), got %d", got)
+		t.Errorf("expected 1 (unknown SRD), got %d", got)
 	}
 }
 
@@ -571,52 +571,52 @@ func indexOf(s, substr string) int {
 }
 
 // ---------------------------------------------------------------------------
-// PRDRefPattern
+// SRDRefPattern
 // ---------------------------------------------------------------------------
 
-func TestPRDRefPattern_MatchesGroup(t *testing.T) {
-	matches := PRDRefPattern.FindStringSubmatch("implement prd003 R2 requirements")
+func TestSRDRefPattern_MatchesGroup(t *testing.T) {
+	matches := SRDRefPattern.FindStringSubmatch("implement srd003 R2 requirements")
 	if matches == nil {
 		t.Fatal("expected match")
 	}
-	if matches[1] != "prd003" || matches[2] != "2" || matches[3] != "" {
+	if matches[1] != "srd003" || matches[2] != "2" || matches[3] != "" {
 		t.Errorf("unexpected match: stem=%q group=%q sub=%q", matches[1], matches[2], matches[3])
 	}
 }
 
-func TestPRDRefPattern_MatchesSubItem(t *testing.T) {
-	matches := PRDRefPattern.FindStringSubmatch("implement prd004-ts R1.3")
+func TestSRDRefPattern_MatchesSubItem(t *testing.T) {
+	matches := SRDRefPattern.FindStringSubmatch("implement srd004-ts R1.3")
 	if matches == nil {
 		t.Fatal("expected match")
 	}
-	if matches[1] != "prd004-ts" || matches[2] != "1" || matches[3] != "3" {
+	if matches[1] != "srd004-ts" || matches[2] != "1" || matches[3] != "3" {
 		t.Errorf("unexpected match: stem=%q group=%q sub=%q", matches[1], matches[2], matches[3])
 	}
 }
 
-func TestPRDRefPattern_MatchesWithInterveningWord(t *testing.T) {
-	// Claude sometimes writes "prd002-sys requirement R2.5" instead of "prd002-sys R2.5".
-	matches := PRDRefPattern.FindStringSubmatch("Implement prd002-sys requirement R2.5 as specified")
+func TestSRDRefPattern_MatchesWithInterveningWord(t *testing.T) {
+	// Claude sometimes writes "srd002-sys requirement R2.5" instead of "srd002-sys R2.5".
+	matches := SRDRefPattern.FindStringSubmatch("Implement srd002-sys requirement R2.5 as specified")
 	if matches == nil {
 		t.Fatal("expected match")
 	}
-	if matches[1] != "prd002-sys" || matches[2] != "2" || matches[3] != "5" {
+	if matches[1] != "srd002-sys" || matches[2] != "2" || matches[3] != "5" {
 		t.Errorf("unexpected match: stem=%q group=%q sub=%q", matches[1], matches[2], matches[3])
 	}
 }
 
-func TestPRDRefPattern_MatchesWithTwoInterveningWords(t *testing.T) {
-	matches := PRDRefPattern.FindStringSubmatch("prd003-format requirement group R1")
+func TestSRDRefPattern_MatchesWithTwoInterveningWords(t *testing.T) {
+	matches := SRDRefPattern.FindStringSubmatch("srd003-format requirement group R1")
 	if matches == nil {
 		t.Fatal("expected match")
 	}
-	if matches[1] != "prd003-format" || matches[2] != "1" || matches[3] != "" {
+	if matches[1] != "srd003-format" || matches[2] != "1" || matches[3] != "" {
 		t.Errorf("unexpected match: stem=%q group=%q sub=%q", matches[1], matches[2], matches[3])
 	}
 }
 
-func TestPRDRefPattern_NoMatch(t *testing.T) {
-	if PRDRefPattern.FindStringSubmatch("no prd reference here") != nil {
+func TestSRDRefPattern_NoMatch(t *testing.T) {
+	if SRDRefPattern.FindStringSubmatch("no srd reference here") != nil {
 		t.Error("expected no match")
 	}
 }
@@ -628,7 +628,7 @@ func TestPRDRefPattern_NoMatch(t *testing.T) {
 func TestValidateMeasureOutput_WeightBudget(t *testing.T) {
 	t.Parallel()
 	reqStates := map[string]map[string]RequirementState{
-		"prd001": {
+		"srd001": {
 			"R1.1": {Status: "ready", Weight: 1},
 			"R1.2": {Status: "ready", Weight: 4},
 			"R1.3": {Status: "ready", Weight: 3},
@@ -636,20 +636,20 @@ func TestValidateMeasureOutput_WeightBudget(t *testing.T) {
 	}
 	issues := []ProposedIssue{{
 		Index: 0,
-		Title: "[stitch] prd001 R1.1-R1.3",
+		Title: "[stitch] srd001 R1.1-R1.3",
 		Description: `deliverable_type: code
 required_reading:
-  - docs/specs/product-requirements/prd001.yaml
+  - docs/specs/software-requirements/srd001.yaml
 files:
   - path: pkg/foo/bar.go
     action: create
 requirements:
   - id: R1
-    text: "prd001 R1.1 simple"
+    text: "srd001 R1.1 simple"
   - id: R2
-    text: "prd001 R1.2 complex parser"
+    text: "srd001 R1.2 complex parser"
   - id: R3
-    text: "prd001 R1.3 moderate"
+    text: "srd001 R1.3 moderate"
 design_decisions:
   - id: D1
     text: Use standard library
@@ -688,14 +688,14 @@ acceptance_criteria:
 func TestExpandedRequirementWeight_SpecificItems(t *testing.T) {
 	t.Parallel()
 	reqStates := map[string]map[string]RequirementState{
-		"prd001": {
+		"srd001": {
 			"R1.1": {Status: "ready", Weight: 2},
 			"R1.2": {Status: "ready", Weight: 5},
 		},
 	}
 	reqs := []IssueDescItem{
-		{Text: "prd001 R1.1 simple"},
-		{Text: "prd001 R1.2 complex"},
+		{Text: "srd001 R1.1 simple"},
+		{Text: "srd001 R1.2 complex"},
 	}
 	w := ExpandedRequirementWeight(reqs, nil, reqStates)
 	if w != 7 {
@@ -706,14 +706,14 @@ func TestExpandedRequirementWeight_SpecificItems(t *testing.T) {
 func TestExpandedRequirementWeight_GroupReference(t *testing.T) {
 	t.Parallel()
 	reqStates := map[string]map[string]RequirementState{
-		"prd002": {
+		"srd002": {
 			"R1.1": {Status: "ready", Weight: 1},
 			"R1.2": {Status: "ready", Weight: 3},
 			"R1.3": {Status: "ready", Weight: 2},
 		},
 	}
 	reqs := []IssueDescItem{
-		{Text: "prd002 R1 entire group"},
+		{Text: "srd002 R1 entire group"},
 	}
 	w := ExpandedRequirementWeight(reqs, nil, reqStates)
 	if w != 6 {
@@ -724,7 +724,7 @@ func TestExpandedRequirementWeight_GroupReference(t *testing.T) {
 func TestExpandedRequirementWeight_FallsBackToCount(t *testing.T) {
 	t.Parallel()
 	reqs := []IssueDescItem{
-		{Text: "something without prd ref"},
+		{Text: "something without srd ref"},
 		{Text: "another item"},
 	}
 	w := ExpandedRequirementWeight(reqs, nil, nil)

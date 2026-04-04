@@ -169,13 +169,13 @@ func (m *Measure) RunMeasure() error {
 	// Run pre-cycle analysis so the measure prompt sees current project state.
 	m.analyzer.RunPreCycleAnalysis()
 
-	// Warn about PRD requirement groups whose sub-item count exceeds
+	// Warn about SRD requirement groups whose sub-item count exceeds
 	// max_requirements_per_task.
 	if m.cfg.Cobbler.MaxRequirementsPerTask > 0 {
 		warnOversizedGroups(m.cfg.Cobbler.MaxRequirementsPerTask)
 	}
 
-	// Route target-repo defects to the target repo (prd003 R11).
+	// Route target-repo defects to the target repo (srd003 R11).
 	if analysis := an.LoadAnalysisDoc(m.cfg.Cobbler.Dir); analysis != nil && len(analysis.Defects) > 0 {
 		if targetRepo := m.tracker.ResolveTargetRepo(); targetRepo != "" {
 			m.logf("measure: filing %d defect(s) as bug issues in %s", len(analysis.Defects), targetRepo)
@@ -475,7 +475,7 @@ func (m *Measure) buildMeasurePrompt(userInput, existingIssues string, limit int
 
 	planningConst := orDefault(m.cfg.Cobbler.PlanningConstitution, planningConstitution)
 
-	// Load per-phase context file (prd003 R9.8).
+	// Load per-phase context file (srd003 R9.8).
 	measureCtxPath := filepath.Join(m.cfg.Cobbler.Dir, "measure_context.yaml")
 	phaseCtx, phaseErr := ictx.LoadPhaseContext(measureCtxPath)
 	if phaseErr != nil {
@@ -644,7 +644,7 @@ func (m *Measure) importIssuesImpl(yamlFile, repo, generation string, skipEnforc
 	}
 
 	// Validate proposed issues against P9/P7 rules and completed R-items (GH-1386).
-	subItemCounts := loadPRDSubItemCounts()
+	subItemCounts := loadSRDSubItemCounts()
 	reqStates := loadRequirementStates(m.cfg.Cobbler.Dir)
 	vr := validateMeasureOutput(issues, m.cfg.Cobbler.MaxRequirementsPerTask, m.cfg.Cobbler.MaxWeightPerTask, subItemCounts, reqStates)
 	if len(vr.Warnings) > 0 {

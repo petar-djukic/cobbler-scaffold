@@ -14,7 +14,7 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// PhaseContext tests (prd003 R9)
+// PhaseContext tests (srd003 R9)
 // ---------------------------------------------------------------------------
 
 func TestLoadPhaseContext_MissingFile(t *testing.T) {
@@ -240,7 +240,7 @@ func TestExtractFileRelease(t *testing.T) {
 		{"test-rel03.0.yaml", "03.0"},
 		{"docs/specs/use-cases/rel01.0-uc001-feature.yaml", "01.0"},
 		{"something-else.yaml", ""},
-		{"prd001-core.yaml", ""},
+		{"srd001-core.yaml", ""},
 	}
 	for _, tt := range tests {
 		got := ExtractFileRelease(tt.path)
@@ -267,7 +267,7 @@ func TestResolveStandardFiles(t *testing.T) {
 
 	dirs := []string{
 		"docs",
-		"docs/specs/product-requirements",
+		"docs/specs/software-requirements",
 		"docs/specs/use-cases",
 		"docs/specs/test-suites",
 		"docs/engineering",
@@ -280,7 +280,7 @@ func TestResolveStandardFiles(t *testing.T) {
 	standardFiles := []string{
 		"docs/VISION.yaml",
 		"docs/ARCHITECTURE.yaml",
-		"docs/specs/product-requirements/prd001-core.yaml",
+		"docs/specs/software-requirements/srd001-core.yaml",
 		"docs/specs/use-cases/rel01.0-uc001-feature.yaml",
 		"docs/specs/test-suites/test-rel01.0.yaml",
 	}
@@ -448,7 +448,7 @@ func TestClassifyContextFile_AllTypes(t *testing.T) {
 		{"docs/ARCHITECTURE.yaml", "architecture"},
 		{"docs/SPECIFICATIONS.yaml", "specifications"},
 		{"docs/road-map.yaml", "roadmap"},
-		{filepath.Join("docs", "specs", "product-requirements", "prd001-feature.yaml"), "prd"},
+		{filepath.Join("docs", "specs", "software-requirements", "srd001-feature.yaml"), "srd"},
 		{filepath.Join("docs", "specs", "use-cases", "rel01.0-uc001-init.yaml"), "use_case"},
 		{filepath.Join("docs", "specs", "test-suites", "test-rel-01.0.yaml"), "test_suite"},
 		{filepath.Join("docs", "specs", "dependency-map.yaml"), "spec_aux"},
@@ -714,8 +714,8 @@ func TestSummarizeCustom_EmptyCommand(t *testing.T) {
 
 func TestParseTouchpointPackages_EmDash(t *testing.T) {
 	touchpoints := []map[string]string{
-		{"T1": "pkg/orchestrator \u2014 prd003 R1, R2"},
-		{"T2": "cmd/cobbler \u2014 prd001 R1"},
+		{"T1": "pkg/orchestrator \u2014 srd003 R1, R2"},
+		{"T2": "cmd/cobbler \u2014 srd001 R1"},
 	}
 	got := ParseTouchpointPackages(touchpoints)
 	if len(got) != 2 {
@@ -761,29 +761,29 @@ func TestUCStatusDone(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// PRDIDsFromUseCases tests
+// SRDIDsFromUseCases tests
 // ---------------------------------------------------------------------------
 
 func TestPrdIDsFromUseCases(t *testing.T) {
 	useCases := []*UseCaseDoc{
 		{
 			Touchpoints: []map[string]string{
-				{"T1": "pkg/orchestrator \u2014 prd003 R1"},
-				{"T2": "cmd/cobbler \u2014 prd001 R1"},
+				{"T1": "pkg/orchestrator \u2014 srd003 R1"},
+				{"T2": "cmd/cobbler \u2014 srd001 R1"},
 			},
 		},
 		{
 			Touchpoints: []map[string]string{
-				{"T1": "pkg/types \u2014 prd003 R2"},
+				{"T1": "pkg/types \u2014 srd003 R2"},
 			},
 		},
 	}
-	got := PRDIDsFromUseCases(useCases)
-	if !got["prd003"] {
-		t.Error("expected prd003 in set")
+	got := SRDIDsFromUseCases(useCases)
+	if !got["srd003"] {
+		t.Error("expected srd003 in set")
 	}
-	if !got["prd001"] {
-		t.Error("expected prd001 in set")
+	if !got["srd001"] {
+		t.Error("expected srd001 in set")
 	}
 }
 
@@ -804,7 +804,7 @@ func setupContextTestDir(t *testing.T) (string, func()) {
 
 	for _, d := range []string{
 		"docs",
-		"docs/specs/product-requirements",
+		"docs/specs/software-requirements",
 		"docs/specs/use-cases",
 		"docs/specs/test-suites",
 		"docs/engineering",
@@ -1001,51 +1001,51 @@ func TestApplyContextBudget_DefaultBudget(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// LoadPRDSemanticModel tests
+// LoadSRDSemanticModel tests
 // ---------------------------------------------------------------------------
 
-func TestLoadPRDSemanticModel_Present(t *testing.T) {
+func TestLoadSRDSemanticModel_Present(t *testing.T) {
 	tmp := t.TempDir()
 	orig, _ := os.Getwd()
 	os.Chdir(tmp)
 	defer os.Chdir(orig)
 
-	os.MkdirAll("docs/specs/product-requirements", 0o755)
-	os.WriteFile(filepath.Join("docs/specs/product-requirements", "prd001-core.yaml"), []byte(`id: prd001-core
+	os.MkdirAll("docs/specs/software-requirements", 0o755)
+	os.WriteFile(filepath.Join("docs/specs/software-requirements", "srd001-core.yaml"), []byte(`id: srd001-core
 title: Core
 semantic_model:
   entities:
     - name: Widget
 `), 0o644)
 
-	node := LoadPRDSemanticModel()
+	node := LoadSRDSemanticModel()
 	if node == nil {
 		t.Fatal("expected non-nil semantic model node")
 	}
 }
 
-func TestLoadPRDSemanticModel_Absent(t *testing.T) {
+func TestLoadSRDSemanticModel_Absent(t *testing.T) {
 	tmp := t.TempDir()
 	orig, _ := os.Getwd()
 	os.Chdir(tmp)
 	defer os.Chdir(orig)
 
-	os.MkdirAll("docs/specs/product-requirements", 0o755)
-	os.WriteFile(filepath.Join("docs/specs/product-requirements", "prd001-plain.yaml"), []byte(`id: prd001-plain
+	os.MkdirAll("docs/specs/software-requirements", 0o755)
+	os.WriteFile(filepath.Join("docs/specs/software-requirements", "srd001-plain.yaml"), []byte(`id: srd001-plain
 title: Plain
 `), 0o644)
 
-	node := LoadPRDSemanticModel()
+	node := LoadSRDSemanticModel()
 	if node != nil {
-		t.Errorf("expected nil for PRD without semantic_model, got non-nil")
+		t.Errorf("expected nil for SRD without semantic_model, got non-nil")
 	}
 }
 
 // ---------------------------------------------------------------------------
-// PRDRequirementItem weight parsing (GH-1832)
+// SRDRequirementItem weight parsing (GH-1832)
 // ---------------------------------------------------------------------------
 
-func TestPRDRequirementItem_SimpleFormat(t *testing.T) {
+func TestSRDRequirementItem_SimpleFormat(t *testing.T) {
 	t.Parallel()
 	input := `
 title: Core behavior
@@ -1053,7 +1053,7 @@ items:
   - R1.1: Must accept -f flag
   - R1.2: Must accept -v flag
 `
-	var group PRDRequirementGroup
+	var group SRDRequirementGroup
 	if err := yaml.Unmarshal([]byte(input), &group); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
@@ -1071,7 +1071,7 @@ items:
 	}
 }
 
-func TestPRDRequirementItem_WeightedFormat(t *testing.T) {
+func TestSRDRequirementItem_WeightedFormat(t *testing.T) {
 	t.Parallel()
 	input := `
 title: Complex parsing
@@ -1083,7 +1083,7 @@ items:
       text: Must recognize 4 timestamp formats
       weight: 10
 `
-	var group PRDRequirementGroup
+	var group SRDRequirementGroup
 	if err := yaml.Unmarshal([]byte(input), &group); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
@@ -1101,7 +1101,7 @@ items:
 	}
 }
 
-func TestPRDRequirementItem_MixedFormats(t *testing.T) {
+func TestSRDRequirementItem_MixedFormats(t *testing.T) {
 	t.Parallel()
 	input := `
 title: Mixed
@@ -1111,7 +1111,7 @@ items:
       text: Complex requirement
       weight: 5
 `
-	var group PRDRequirementGroup
+	var group SRDRequirementGroup
 	if err := yaml.Unmarshal([]byte(input), &group); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
@@ -1123,7 +1123,7 @@ items:
 	}
 }
 
-func TestPRDRequirementItem_ZeroWeightDefaultsToOne(t *testing.T) {
+func TestSRDRequirementItem_ZeroWeightDefaultsToOne(t *testing.T) {
 	t.Parallel()
 	input := `
 title: Zero weight
@@ -1132,7 +1132,7 @@ items:
       text: Should default
       weight: 0
 `
-	var group PRDRequirementGroup
+	var group SRDRequirementGroup
 	if err := yaml.Unmarshal([]byte(input), &group); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
@@ -1141,11 +1141,11 @@ items:
 	}
 }
 
-func TestPRDRequirementItem_FullPRDDoc(t *testing.T) {
+func TestSRDRequirementItem_FullSRDDoc(t *testing.T) {
 	t.Parallel()
 	input := `
-id: prd-test
-title: Test PRD
+id: srd-test
+title: Test SRD
 problem: test
 goals:
   - G1: goal
@@ -1160,11 +1160,11 @@ requirements:
 non_goals: []
 acceptance_criteria: []
 `
-	var prd PRDDoc
-	if err := yaml.Unmarshal([]byte(input), &prd); err != nil {
-		t.Fatalf("unmarshal PRDDoc: %v", err)
+	var srd SRDDoc
+	if err := yaml.Unmarshal(data, &srd); err != nil {
+		t.Fatalf("unmarshal SRDDoc: %v", err)
 	}
-	r1 := prd.Requirements["R1"]
+	r1 := srd.Requirements["R1"]
 	if len(r1.Items) != 2 {
 		t.Fatalf("expected 2 items in R1, got %d", len(r1.Items))
 	}
@@ -1176,16 +1176,16 @@ acceptance_criteria: []
 	}
 }
 
-func TestLoadPRDSemanticModel_NoPRDs(t *testing.T) {
+func TestLoadSRDSemanticModel_NoSRDs(t *testing.T) {
 	tmp := t.TempDir()
 	orig, _ := os.Getwd()
 	os.Chdir(tmp)
 	defer os.Chdir(orig)
 
-	os.MkdirAll("docs/specs/product-requirements", 0o755)
+	os.MkdirAll("docs/specs/software-requirements", 0o755)
 
-	node := LoadPRDSemanticModel()
+	node := LoadSRDSemanticModel()
 	if node != nil {
-		t.Errorf("expected nil when no PRD files exist, got non-nil")
+		t.Errorf("expected nil when no SRD files exist, got non-nil")
 	}
 }

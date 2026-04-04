@@ -17,35 +17,35 @@ import (
 
 // AnalyzeResult holds the results of the Analyze operation.
 type AnalyzeResult struct {
-	OrphanedPRDs              []string // PRDs with no use cases referencing them
+	OrphanedSRDs              []string // SRDs with no use cases referencing them
 	ReleasesWithoutTestSuites []string // Releases in road-map.yaml with no test-rel*.yaml file
 	OrphanedTestSuites        []string // Test suites whose traces don't match any known use case
-	BrokenTouchpoints         []string // Use case touchpoints referencing non-existent PRDs
+	BrokenTouchpoints         []string // Use case touchpoints referencing non-existent SRDs
 	UseCasesNotInRoadmap      []string // Use cases not listed in road-map.yaml
 	SchemaErrors              []string // YAML files with fields not matching typed structs
 	ConstitutionDrift         []string // Files in docs/constitutions/ that differ from embedded copies
-	BrokenCitations                []string // Touchpoints citing non-existent requirement groups in PRDs
+	BrokenCitations                []string // Touchpoints citing non-existent requirement groups in SRDs
 	InvalidReleases                []string // Configured releases not found in road-map.yaml
-	PRDsSpanningMultipleReleases   []string // PRDs referenced by use cases from more than one release
+	SRDsSpanningMultipleReleases   []string // SRDs referenced by use cases from more than one release
 	DependsOnViolations            []string // depends_on symbols not in referenced package_contract, or prd_id missing
 	DependencyRuleViolations       []string // component_dependencies violating an allowed=false dependency_rule
-	BrokenStructRefs               []string // struct_refs pointing to non-existent PRD or requirement group
+	BrokenStructRefs               []string // struct_refs pointing to non-existent SRD or requirement group
 	ComponentDepViolations         []string // depends_on entries not reflected in component_dependencies
 	SemanticModelErrors            []string // semantic model validation errors (SM1, SM3, SM7)
 	UncoveredRItems                []string // R-items not covered by any acceptance criterion
 	UncoveredACs                   []string // ACs not covered by any test case (warning)
 	UntracedSuccessCriteria        []string // S-items with no AC traces (warning)
-	UnreachableUCs                 []string // UCs whose touchpoint PRDs have no R-items (warning)
+	UnreachableUCs                 []string // UCs whose touchpoint SRDs have no R-items (warning)
 	FailedRequirements             []string // R-items marked complete_with_failures (warning)
 	MissingWeights                 []string // R-items without explicit weight annotation (warning, GH-1946)
-	BareTouchpoints                []string // Touchpoints citing PRDs without R-group references (warning, GH-1961)
+	BareTouchpoints                []string // Touchpoints citing SRDs without R-group references (warning, GH-1961)
 	UCIDPrefixMismatch             []string // Use case ID prefix doesn't match assigned release in roadmap (GH-1964)
 	BrokenInterfaceRefs            []string // implemented_by/used_by references non-existent architecture interface (GH-1968)
 }
 
 // AnalyzeCounts holds the artifact counts discovered during analysis.
 type AnalyzeCounts struct {
-	PRDs           int
+	SRDs           int
 	UseCases       int
 	TestSuites     int
 	SemanticModels int
@@ -66,27 +66,27 @@ func CollectAnalyzeResult(deps AnalyzeDeps) (AnalyzeResult, AnalyzeCounts, error
 
 	result := AnalyzeResult{}
 
-	// 1. Load all PRDs
-	prdFiles, err := filepath.Glob("docs/specs/product-requirements/prd*.yaml")
+	// 1. Load all SRDs
+	prdFiles, err := filepath.Glob("docs/specs/software-requirements/srd*.yaml")
 	if err != nil {
-		return result, AnalyzeCounts{}, fmt.Errorf("globbing PRDs: %w", err)
+		return result, AnalyzeCounts{}, fmt.Errorf("globbing SRDs: %w", err)
 	}
-	prdIDs := make(map[string]bool)
-	prdReqGroups := make(map[string]map[string]bool)    // PRD ID -> set of requirement group keys
-	prdExports := make(map[string]map[string]bool)       // PRD ID -> set of exported symbol names
-	prdDependsOn := make(map[string][]PRDDependsOn)      // PRD ID -> depends_on entries
-	prdStructRefs := make(map[string][]PRDStructRef)     // PRD ID -> struct_refs entries
-	prdACs := make(map[string][]AcceptanceCriterion)     // PRD ID -> acceptance criteria
-	prdRItems := make(map[string][]string)               // PRD ID -> all R-item IDs (R1.1, R1.2, etc.)
-	prdInterfaceRefs := make(map[string][]string)        // PRD ID -> all interface names from implemented_by + used_by
+	srdIDs := make(map[string]bool)
+	prdReqGroups := make(map[string]map[string]bool)    // SRD ID -> set of requirement group keys
+	prdExports := make(map[string]map[string]bool)       // SRD ID -> set of exported symbol names
+	prdDependsOn := make(map[string][]SRDDependsOn)      // SRD ID -> depends_on entries
+	prdStructRefs := make(map[string][]SRDStructRef)     // SRD ID -> struct_refs entries
+	prdACs := make(map[string][]AcceptanceCriterion)     // SRD ID -> acceptance criteria
+	prdRItems := make(map[string][]string)               // SRD ID -> all R-item IDs (R1.1, R1.2, etc.)
+	prdInterfaceRefs := make(map[string][]string)        // SRD ID -> all interface names from implemented_by + used_by
 	for _, path := range prdFiles {
 		id := ExtractID(path)
 		if id != "" {
-			prdIDs[id] = true
+			srdIDs[id] = true
 		}
-		if prd := loadYAML[PRDDoc](path); prd != nil {
+		if srd := loadYAML[SRDDoc](path); srd != nil {
 			groups := make(map[string]bool)
-			for groupKey, group := range prd.Requirements {
+			for groupKey, group := range srd.Requirements {
 				groups[groupKey] = true
 				for _, item := range group.Items {
 					if m, ok := item.(map[string]interface{}); ok {
@@ -110,31 +110,31 @@ func CollectAnalyzeResult(deps AnalyzeDeps) (AnalyzeResult, AnalyzeCounts, error
 				}
 			}
 			prdReqGroups[id] = groups
-			if len(prd.AcceptanceCriteria) > 0 {
-				prdACs[id] = prd.AcceptanceCriteria
+			if len(srd.AcceptanceCriteria) > 0 {
+				prdACs[id] = srd.AcceptanceCriteria
 			}
-			if prd.PackageContract != nil {
+			if srd.PackageContract != nil {
 				exports := make(map[string]bool)
-				for _, e := range prd.PackageContract.Exports {
+				for _, e := range srd.PackageContract.Exports {
 					exports[e.Name] = true
 				}
 				prdExports[id] = exports
 			}
-			if len(prd.DependsOn) > 0 {
-				prdDependsOn[id] = prd.DependsOn
+			if len(srd.DependsOn) > 0 {
+				prdDependsOn[id] = srd.DependsOn
 			}
-			if len(prd.StructRefs) > 0 {
-				prdStructRefs[id] = prd.StructRefs
+			if len(srd.StructRefs) > 0 {
+				prdStructRefs[id] = srd.StructRefs
 			}
 			var ifaceRefs []string
-			ifaceRefs = append(ifaceRefs, prd.ImplementedBy...)
-			ifaceRefs = append(ifaceRefs, prd.UsedBy...)
+			ifaceRefs = append(ifaceRefs, srd.ImplementedBy...)
+			ifaceRefs = append(ifaceRefs, srd.UsedBy...)
 			if len(ifaceRefs) > 0 {
 				prdInterfaceRefs[id] = ifaceRefs
 			}
 		}
 	}
-	deps.Log("analyze: found %d PRDs", len(prdIDs))
+	deps.Log("analyze: found %d SRDs", len(srdIDs))
 
 	// 1b. Load ARCHITECTURE.yaml for OOD fields.
 	var archDoc *ArchitectureDoc
@@ -151,10 +151,10 @@ func CollectAnalyzeResult(deps AnalyzeDeps) (AnalyzeResult, AnalyzeCounts, error
 		return result, AnalyzeCounts{}, fmt.Errorf("globbing use cases: %w", err)
 	}
 	ucIDs := make(map[string]bool)
-	ucToPRDs := make(map[string][]string)      // use case ID -> PRD IDs from touchpoints
+	ucToSRDs := make(map[string][]string)      // use case ID -> SRD IDs from touchpoints
 	ucTouchpoints := make(map[string][]string) // use case ID -> raw touchpoint strings
 	ucSuccessCriteria := make(map[string][]SuccessCriterion) // use case ID -> success criteria
-	prdToReleases := make(map[string]map[string]bool) // PRD ID -> set of releases that reference it
+	prdToReleases := make(map[string]map[string]bool) // SRD ID -> set of releases that reference it
 	for _, path := range ucFiles {
 		uc, err := LoadUseCase(path)
 		if err != nil {
@@ -162,18 +162,18 @@ func CollectAnalyzeResult(deps AnalyzeDeps) (AnalyzeResult, AnalyzeCounts, error
 			continue
 		}
 		ucIDs[uc.ID] = true
-		ucToPRDs[uc.ID] = ExtractPRDsFromTouchpoints(uc.Touchpoints)
+		ucToSRDs[uc.ID] = ExtractSRDsFromTouchpoints(uc.Touchpoints)
 		ucTouchpoints[uc.ID] = uc.Touchpoints
 		if len(uc.SuccessCriteria) > 0 {
 			ucSuccessCriteria[uc.ID] = uc.SuccessCriteria
 		}
 		release := ExtractFileRelease(path)
 		if release != "" {
-			for _, prdID := range ucToPRDs[uc.ID] {
-				if prdToReleases[prdID] == nil {
-					prdToReleases[prdID] = make(map[string]bool)
+			for _, srdID := range ucToSRDs[uc.ID] {
+				if prdToReleases[srdID] == nil {
+					prdToReleases[srdID] = make(map[string]bool)
 				}
-				prdToReleases[prdID][release] = true
+				prdToReleases[srdID][release] = true
 			}
 		}
 	}
@@ -186,7 +186,7 @@ func CollectAnalyzeResult(deps AnalyzeDeps) (AnalyzeResult, AnalyzeCounts, error
 	}
 	testSuiteIDs := make(map[string]bool)
 	testSuiteToUCs := make(map[string][]string) // test suite ID -> use case IDs from traces
-	allTestCaseTraces := make(map[string]bool)  // set of all test case trace strings (e.g. "prd001-core AC1")
+	allTestCaseTraces := make(map[string]bool)  // set of all test case trace strings (e.g. "srd001-core AC1")
 	for _, path := range testFiles {
 		ts, err := LoadTestSuite(path)
 		if err != nil {
@@ -255,16 +255,16 @@ func CollectAnalyzeResult(deps AnalyzeDeps) (AnalyzeResult, AnalyzeCounts, error
 		}
 	}
 
-	// Check 1: Orphaned PRDs (no use case references them)
+	// Check 1: Orphaned SRDs (no use case references them)
 	prdReferencedByUC := make(map[string]bool)
-	for _, prds := range ucToPRDs {
-		for _, prd := range prds {
-			prdReferencedByUC[prd] = true
+	for _, prds := range ucToSRDs {
+		for _, srd := range prds {
+			prdReferencedByUC[srd] = true
 		}
 	}
-	for prdID := range prdIDs {
-		if !prdReferencedByUC[prdID] {
-			result.OrphanedPRDs = append(result.OrphanedPRDs, prdID)
+	for srdID := range srdIDs {
+		if !prdReferencedByUC[srdID] {
+			result.OrphanedSRDs = append(result.OrphanedSRDs, srdID)
 		}
 	}
 
@@ -289,11 +289,11 @@ func CollectAnalyzeResult(deps AnalyzeDeps) (AnalyzeResult, AnalyzeCounts, error
 		}
 	}
 
-	// Check 4: Broken touchpoints (use case references non-existent PRD)
-	for ucID, prds := range ucToPRDs {
-		for _, prd := range prds {
-			if !prdIDs[prd] {
-				result.BrokenTouchpoints = append(result.BrokenTouchpoints, fmt.Sprintf("%s -> %s (missing)", ucID, prd))
+	// Check 4: Broken touchpoints (use case references non-existent SRD)
+	for ucID, prds := range ucToSRDs {
+		for _, srd := range prds {
+			if !srdIDs[srd] {
+				result.BrokenTouchpoints = append(result.BrokenTouchpoints, fmt.Sprintf("%s -> %s (missing)", ucID, srd))
 			}
 		}
 	}
@@ -314,66 +314,66 @@ func CollectAnalyzeResult(deps AnalyzeDeps) (AnalyzeResult, AnalyzeCounts, error
 		}
 	}
 
-	// Check 6: Broken citations (touchpoint cites requirement group not in PRD)
+	// Check 6: Broken citations (touchpoint cites requirement group not in SRD)
 	for ucID, tps := range ucTouchpoints {
 		for _, cite := range ExtractCitationsFromTouchpoints(tps) {
-			groups, ok := prdReqGroups[cite.PRDID]
+			groups, ok := prdReqGroups[cite.SRDID]
 			if !ok {
-				continue // PRD missing or unparsable — handled by BrokenTouchpoints
+				continue // SRD missing or unparsable — handled by BrokenTouchpoints
 			}
 			for _, group := range cite.Groups {
 				if !groups[group] {
 					result.BrokenCitations = append(result.BrokenCitations,
-						fmt.Sprintf("%s: cites %s %s (requirement group not found)", ucID, cite.PRDID, group))
+						fmt.Sprintf("%s: cites %s %s (requirement group not found)", ucID, cite.SRDID, group))
 				}
 			}
 		}
 	}
 	deps.Log("analyze: broken citations found %d", len(result.BrokenCitations))
 
-	// Check 6b: Bare touchpoints (PRD cited without R-group references, GH-1961).
+	// Check 6b: Bare touchpoints (SRD cited without R-group references, GH-1961).
 	// This breaks codereadiness computation and requirement traceability.
 	for ucID, tps := range ucTouchpoints {
 		for _, cite := range ExtractCitationsFromTouchpoints(tps) {
 			if len(cite.Groups) == 0 {
 				result.BareTouchpoints = append(result.BareTouchpoints,
-					fmt.Sprintf("%s: cites %s without R-group references", ucID, cite.PRDID))
+					fmt.Sprintf("%s: cites %s without R-group references", ucID, cite.SRDID))
 			}
 		}
 	}
 
-	// Check 9: PRDs spanning multiple releases
-	for prdID, releases := range prdToReleases {
+	// Check 9: SRDs spanning multiple releases
+	for srdID, releases := range prdToReleases {
 		if len(releases) > 1 {
 			sorted := make([]string, 0, len(releases))
 			for r := range releases {
 				sorted = append(sorted, r)
 			}
 			sort.Strings(sorted)
-			result.PRDsSpanningMultipleReleases = append(result.PRDsSpanningMultipleReleases,
-				fmt.Sprintf("%s: referenced by releases %s", prdID, strings.Join(sorted, ", ")))
+			result.SRDsSpanningMultipleReleases = append(result.SRDsSpanningMultipleReleases,
+				fmt.Sprintf("%s: referenced by releases %s", srdID, strings.Join(sorted, ", ")))
 		}
 	}
-	sort.Strings(result.PRDsSpanningMultipleReleases)
-	deps.Log("analyze: PRDs spanning multiple releases found %d", len(result.PRDsSpanningMultipleReleases))
+	sort.Strings(result.SRDsSpanningMultipleReleases)
+	deps.Log("analyze: SRDs spanning multiple releases found %d", len(result.SRDsSpanningMultipleReleases))
 
 	// Check 10: depends_on — referenced prd_id must exist; symbols_used must be
-	// in the referenced PRD's package_contract.exports (if a contract is declared).
-	for prdID, ddeps := range prdDependsOn {
+	// in the referenced SRD's package_contract.exports (if a contract is declared).
+	for srdID, ddeps := range prdDependsOn {
 		for _, dep := range ddeps {
-			if !prdIDs[dep.PRDID] {
+			if !srdIDs[dep.SRDID] {
 				result.DependsOnViolations = append(result.DependsOnViolations,
-					fmt.Sprintf("%s: depends_on references non-existent PRD %s", prdID, dep.PRDID))
+					fmt.Sprintf("%s: depends_on references non-existent SRD %s", srdID, dep.SRDID))
 				continue
 			}
-			exports, hasContract := prdExports[dep.PRDID]
+			exports, hasContract := prdExports[dep.SRDID]
 			if !hasContract {
 				continue
 			}
 			for _, sym := range dep.SymbolsUsed {
 				if !exports[sym] {
 					result.DependsOnViolations = append(result.DependsOnViolations,
-						fmt.Sprintf("%s: depends_on %s symbol %q not in package_contract", prdID, dep.PRDID, sym))
+						fmt.Sprintf("%s: depends_on %s symbol %q not in package_contract", srdID, dep.SRDID, sym))
 				}
 			}
 		}
@@ -400,18 +400,18 @@ func CollectAnalyzeResult(deps AnalyzeDeps) (AnalyzeResult, AnalyzeCounts, error
 	deps.Log("analyze: dependency rule violations found %d", len(result.DependencyRuleViolations))
 
 	// Check 12: struct_refs — prd_id must exist and requirement must be a key
-	// in that PRD's requirement groups.
-	for prdID, refs := range prdStructRefs {
+	// in that SRD's requirement groups.
+	for srdID, refs := range prdStructRefs {
 		for _, ref := range refs {
-			if !prdIDs[ref.PRDID] {
+			if !srdIDs[ref.SRDID] {
 				result.BrokenStructRefs = append(result.BrokenStructRefs,
-					fmt.Sprintf("%s: struct_ref prd_id %s not found", prdID, ref.PRDID))
+					fmt.Sprintf("%s: struct_ref prd_id %s not found", srdID, ref.SRDID))
 				continue
 			}
-			groups := prdReqGroups[ref.PRDID]
+			groups := prdReqGroups[ref.SRDID]
 			if ref.Requirement != "" && !groups[ref.Requirement] {
 				result.BrokenStructRefs = append(result.BrokenStructRefs,
-					fmt.Sprintf("%s: struct_ref %s#%s requirement group not found", prdID, ref.PRDID, ref.Requirement))
+					fmt.Sprintf("%s: struct_ref %s#%s requirement group not found", srdID, ref.SRDID, ref.Requirement))
 			}
 		}
 	}
@@ -425,18 +425,18 @@ func CollectAnalyzeResult(deps AnalyzeDeps) (AnalyzeResult, AnalyzeCounts, error
 			compDepEndpoints[cd.From] = true
 			compDepEndpoints[cd.To] = true
 		}
-		for prdID, ddeps := range prdDependsOn {
+		for srdID, ddeps := range prdDependsOn {
 			for _, dep := range ddeps {
 				found := false
 				for endpoint := range compDepEndpoints {
-					if strings.Contains(endpoint, dep.PRDID) || strings.Contains(dep.PRDID, endpoint) {
+					if strings.Contains(endpoint, dep.SRDID) || strings.Contains(dep.SRDID, endpoint) {
 						found = true
 						break
 					}
 				}
 				if !found {
 					result.ComponentDepViolations = append(result.ComponentDepViolations,
-						fmt.Sprintf("%s: depends_on %s not reflected in component_dependencies", prdID, dep.PRDID))
+						fmt.Sprintf("%s: depends_on %s not reflected in component_dependencies", srdID, dep.SRDID))
 				}
 			}
 		}
@@ -451,11 +451,11 @@ func CollectAnalyzeResult(deps AnalyzeDeps) (AnalyzeResult, AnalyzeCounts, error
 		for _, iface := range archDoc.Interfaces {
 			archIfaceNames[iface.Name] = true
 		}
-		for prdID, refs := range prdInterfaceRefs {
+		for srdID, refs := range prdInterfaceRefs {
 			for _, ref := range refs {
 				if !archIfaceNames[ref] {
 					result.BrokenInterfaceRefs = append(result.BrokenInterfaceRefs,
-						fmt.Sprintf("%s: interface %q not found in ARCHITECTURE.yaml", prdID, ref))
+						fmt.Sprintf("%s: interface %q not found in ARCHITECTURE.yaml", srdID, ref))
 				}
 			}
 		}
@@ -464,9 +464,9 @@ func CollectAnalyzeResult(deps AnalyzeDeps) (AnalyzeResult, AnalyzeCounts, error
 	deps.Log("analyze: broken interface refs found %d", len(result.BrokenInterfaceRefs))
 
 	// Check 15: R-item coverage by acceptance criteria.
-	// Every R-item in a PRD should appear in at least one AC's traces list.
-	for prdID, rItems := range prdRItems {
-		acs := prdACs[prdID]
+	// Every R-item in a SRD should appear in at least one AC's traces list.
+	for srdID, rItems := range prdRItems {
+		acs := prdACs[srdID]
 		acTraced := make(map[string]bool)
 		for _, ac := range acs {
 			for _, tr := range ac.Traces {
@@ -476,7 +476,7 @@ func CollectAnalyzeResult(deps AnalyzeDeps) (AnalyzeResult, AnalyzeCounts, error
 		for _, rItem := range rItems {
 			if !acTraced[rItem] {
 				result.UncoveredRItems = append(result.UncoveredRItems,
-					fmt.Sprintf("%s: R-item %s not covered by any acceptance criterion", prdID, rItem))
+					fmt.Sprintf("%s: R-item %s not covered by any acceptance criterion", srdID, rItem))
 			}
 		}
 	}
@@ -484,13 +484,13 @@ func CollectAnalyzeResult(deps AnalyzeDeps) (AnalyzeResult, AnalyzeCounts, error
 	deps.Log("analyze: uncovered R-items found %d", len(result.UncoveredRItems))
 
 	// Check 16: AC coverage by test cases (warning).
-	// Every PRD AC should be traced by at least one test case.
-	for prdID, acs := range prdACs {
+	// Every SRD AC should be traced by at least one test case.
+	for srdID, acs := range prdACs {
 		for _, ac := range acs {
-			traceKey := fmt.Sprintf("%s %s", prdID, ac.ID)
+			traceKey := fmt.Sprintf("%s %s", srdID, ac.ID)
 			if !allTestCaseTraces[traceKey] {
 				result.UncoveredACs = append(result.UncoveredACs,
-					fmt.Sprintf("%s %s: not covered by any test case", prdID, ac.ID))
+					fmt.Sprintf("%s %s: not covered by any test case", srdID, ac.ID))
 			}
 		}
 	}
@@ -498,14 +498,14 @@ func CollectAnalyzeResult(deps AnalyzeDeps) (AnalyzeResult, AnalyzeCounts, error
 	deps.Log("analyze: uncovered ACs found %d (warning)", len(result.UncoveredACs))
 
 	// Check 17: S-item traces to AC (warning).
-	// Every UC success criterion should trace to at least one valid PRD AC.
+	// Every UC success criterion should trace to at least one valid SRD AC.
 	for ucID, scs := range ucSuccessCriteria {
 		for _, sc := range scs {
 			hasACTrace := false
 			for _, tr := range sc.Traces {
-				// Trace format: "prdNNN-name ACN"
+				// Trace format: "srdNNN-name ACN"
 				parts := strings.Fields(tr)
-				if len(parts) >= 2 && strings.HasPrefix(parts[0], "prd") && strings.HasPrefix(parts[1], "AC") {
+				if len(parts) >= 2 && strings.HasPrefix(parts[0], "srd") && strings.HasPrefix(parts[1], "AC") {
 					hasACTrace = true
 					break
 				}
@@ -519,24 +519,24 @@ func CollectAnalyzeResult(deps AnalyzeDeps) (AnalyzeResult, AnalyzeCounts, error
 	sort.Strings(result.UntracedSuccessCriteria)
 	deps.Log("analyze: untraced success criteria found %d (warning)", len(result.UntracedSuccessCriteria))
 
-	// Check 18: UC reachability — each UC's touchpoint PRDs must have R-items
+	// Check 18: UC reachability — each UC's touchpoint SRDs must have R-items
 	// so that measure can propose work for them (GH-1378).
-	for ucID, prds := range ucToPRDs {
+	for ucID, prds := range ucToSRDs {
 		if len(prds) == 0 {
 			result.UnreachableUCs = append(result.UnreachableUCs,
-				fmt.Sprintf("%s: no PRD touchpoints", ucID))
+				fmt.Sprintf("%s: no SRD touchpoints", ucID))
 			continue
 		}
 		hasRItems := false
-		for _, prdID := range prds {
-			if items, ok := prdRItems[prdID]; ok && len(items) > 0 {
+		for _, srdID := range prds {
+			if items, ok := prdRItems[srdID]; ok && len(items) > 0 {
 				hasRItems = true
 				break
 			}
 		}
 		if !hasRItems {
 			result.UnreachableUCs = append(result.UnreachableUCs,
-				fmt.Sprintf("%s: touchpoint PRDs have no R-items", ucID))
+				fmt.Sprintf("%s: touchpoint SRDs have no R-items", ucID))
 		}
 	}
 	sort.Strings(result.UnreachableUCs)
@@ -552,11 +552,11 @@ func CollectAnalyzeResult(deps AnalyzeDeps) (AnalyzeResult, AnalyzeCounts, error
 			} `yaml:"requirements"`
 		}
 		if err := yaml.Unmarshal(reqData, &reqFile); err == nil {
-			for prd, items := range reqFile.Requirements {
+			for srd, items := range reqFile.Requirements {
 				for rItem, st := range items {
 					if st.Status == "complete_with_failures" {
 						result.FailedRequirements = append(result.FailedRequirements,
-							fmt.Sprintf("%s %s: complete with test failures (issue #%d)", prd, rItem, st.Issue))
+							fmt.Sprintf("%s %s: complete with test failures (issue #%d)", srd, rItem, st.Issue))
 					}
 				}
 			}
@@ -582,7 +582,7 @@ func CollectAnalyzeResult(deps AnalyzeDeps) (AnalyzeResult, AnalyzeCounts, error
 	deps.Log("analyze: semantic model validation found %d error(s), %d standalone file(s)", len(smErrs), smCount)
 
 	counts := AnalyzeCounts{
-		PRDs:           len(prdIDs),
+		SRDs:           len(srdIDs),
 		UseCases:       len(ucIDs),
 		TestSuites:     len(testSuiteIDs),
 		SemanticModels: smCount,
@@ -596,7 +596,7 @@ func Analyze(deps AnalyzeDeps) error {
 	if err != nil {
 		return err
 	}
-	return result.PrintReport(counts.PRDs, counts.UseCases, counts.TestSuites, counts.SemanticModels)
+	return result.PrintReport(counts.SRDs, counts.UseCases, counts.TestSuites, counts.SemanticModels)
 }
 
 // PrintSection prints a labeled list if items is non-empty, returning true.
@@ -614,16 +614,16 @@ func PrintSection(label string, items []string) bool {
 // PrintReport formats the analysis results to stdout.
 func (r AnalyzeResult) PrintReport(prdCount, ucCount, tsCount, smCount int) error {
 	hasIssues := false
-	hasIssues = PrintSection("Orphaned PRDs (no use case references them)", r.OrphanedPRDs) || hasIssues
+	hasIssues = PrintSection("Orphaned SRDs (no use case references them)", r.OrphanedSRDs) || hasIssues
 	hasIssues = PrintSection("Releases without test suites (no docs/specs/test-suites/test-<release>.yaml)", r.ReleasesWithoutTestSuites) || hasIssues
 	hasIssues = PrintSection("Orphaned test suites (traces don't reference any known use case)", r.OrphanedTestSuites) || hasIssues
-	hasIssues = PrintSection("Broken touchpoints (use case references non-existent PRD)", r.BrokenTouchpoints) || hasIssues
+	hasIssues = PrintSection("Broken touchpoints (use case references non-existent SRD)", r.BrokenTouchpoints) || hasIssues
 	hasIssues = PrintSection("Use cases not in roadmap", r.UseCasesNotInRoadmap) || hasIssues
 	hasIssues = PrintSection("YAML schema errors (fields not matching typed structs — data will be lost in measure prompt)", r.SchemaErrors) || hasIssues
 	hasIssues = PrintSection("Constitution drift (docs/constitutions/ differs from embedded pkg/orchestrator/constitutions/)", r.ConstitutionDrift) || hasIssues
 	hasIssues = PrintSection("Broken citations (touchpoint cites non-existent requirement group)", r.BrokenCitations) || hasIssues
 	hasIssues = PrintSection("Invalid configured releases (not found in road-map.yaml)", r.InvalidReleases) || hasIssues
-	hasIssues = PrintSection("PRDs spanning multiple releases (each PRD must belong to exactly one release)", r.PRDsSpanningMultipleReleases) || hasIssues
+	hasIssues = PrintSection("SRDs spanning multiple releases (each SRD must belong to exactly one release)", r.SRDsSpanningMultipleReleases) || hasIssues
 	hasIssues = PrintSection("depends_on violations (symbol not in package_contract or prd_id missing)", r.DependsOnViolations) || hasIssues
 	hasIssues = PrintSection("Dependency rule violations (component_dependency violates allowed=false rule)", r.DependencyRuleViolations) || hasIssues
 	hasIssues = PrintSection("Broken struct_refs (prd_id or requirement group not found)", r.BrokenStructRefs) || hasIssues
@@ -634,14 +634,14 @@ func (r AnalyzeResult) PrintReport(prdCount, ucCount, tsCount, smCount int) erro
 	hasIssues = PrintSection("Uncovered R-items (R-item not traced by any acceptance criterion)", r.UncoveredRItems) || hasIssues
 	PrintSection("Uncovered ACs (AC not covered by any test case — warning)", r.UncoveredACs)
 	PrintSection("Untraced success criteria (S-item with no AC trace — warning)", r.UntracedSuccessCriteria)
-	PrintSection("Unreachable UCs (touchpoint PRDs have no R-items — warning)", r.UnreachableUCs)
+	PrintSection("Unreachable UCs (touchpoint SRDs have no R-items — warning)", r.UnreachableUCs)
 	PrintSection("Failed requirements (R-items complete with test failures — warning)", r.FailedRequirements)
 	PrintSection("Missing weights (R-items without explicit weight annotation — warning)", r.MissingWeights)
-	PrintSection("Bare touchpoints (PRD cited without R-group references — warning)", r.BareTouchpoints)
+	PrintSection("Bare touchpoints (SRD cited without R-group references — warning)", r.BareTouchpoints)
 
 	if !hasIssues {
 		fmt.Printf("\n✅ All consistency checks passed\n")
-		fmt.Printf("   - %d PRDs\n", prdCount)
+		fmt.Printf("   - %d SRDs\n", prdCount)
 		fmt.Printf("   - %d use cases\n", ucCount)
 		fmt.Printf("   - %d test suites\n", tsCount)
 		fmt.Printf("   - %d semantic models\n", smCount)
@@ -675,7 +675,7 @@ type AnalyzeTestCase struct {
 }
 
 // ExtractID extracts the ID from a file path like
-// "docs/specs/product-requirements/prd001-feature.yaml" -> "prd001-feature".
+// "docs/specs/software-requirements/srd001-feature.yaml" -> "srd001-feature".
 func ExtractID(path string) string {
 	base := filepath.Base(path)
 	ext := filepath.Ext(base)
@@ -725,14 +725,14 @@ func LoadTestSuite(path string) (*AnalyzeTestSuite, error) {
 	return &ts, nil
 }
 
-// ExtractPRDsFromTouchpoints parses touchpoint strings to extract PRD IDs.
-func ExtractPRDsFromTouchpoints(touchpoints []string) []string {
+// ExtractSRDsFromTouchpoints parses touchpoint strings to extract SRD IDs.
+func ExtractSRDsFromTouchpoints(touchpoints []string) []string {
 	var prds []string
 	for _, tp := range touchpoints {
 		parts := strings.Fields(tp)
 		for _, part := range parts {
 			part = strings.TrimSuffix(strings.TrimPrefix(part, "("), ")")
-			if strings.HasPrefix(part, "prd") && !strings.Contains(part, " ") {
+			if strings.HasPrefix(part, "srd") && !strings.Contains(part, " ") {
 				prds = append(prds, part)
 			}
 		}
@@ -754,10 +754,10 @@ func ExtractUseCaseIDsFromTraces(traces []string) []string {
 	return ucs
 }
 
-// PRDCitation represents a reference to a PRD with specific requirement
+// SRDCitation represents a reference to a SRD with specific requirement
 // groups extracted from a use case touchpoint.
-type PRDCitation struct {
-	PRDID  string
+type SRDCitation struct {
+	SRDID  string
 	Groups []string
 }
 
@@ -770,20 +770,20 @@ func ExtractReqGroup(s string) string {
 }
 
 // ExtractCitationsFromTouchpoints parses touchpoint strings to extract
-// PRD IDs and their associated requirement group references.
-func ExtractCitationsFromTouchpoints(touchpoints []string) []PRDCitation {
-	var citations []PRDCitation
+// SRD IDs and their associated requirement group references.
+func ExtractCitationsFromTouchpoints(touchpoints []string) []SRDCitation {
+	var citations []SRDCitation
 	for _, tp := range touchpoints {
-		var current *PRDCitation
+		var current *SRDCitation
 		for _, part := range strings.Fields(tp) {
 			cleaned := strings.TrimLeft(part, "(")
 			cleaned = strings.TrimRight(cleaned, "),.")
 
-			if strings.HasPrefix(cleaned, "prd") {
+			if strings.HasPrefix(cleaned, "srd") {
 				if current != nil {
 					citations = append(citations, *current)
 				}
-				current = &PRDCitation{PRDID: cleaned}
+				current = &SRDCitation{SRDID: cleaned}
 				continue
 			}
 			if current == nil {
@@ -898,7 +898,7 @@ func ValidateSemanticModels(prdFiles []string) ([]string, int) {
 	}
 
 	for _, path := range prdFiles {
-		errs = append(errs, ValidatePRDSemanticModel(path)...)
+		errs = append(errs, ValidateSRDSemanticModel(path)...)
 	}
 
 	promptFiles, _ := filepath.Glob("docs/prompts/*.yaml")
@@ -935,7 +935,7 @@ func ValidateStandaloneSemanticModel(path string) []string {
 	return errs
 }
 
-func ValidatePRDSemanticModel(path string) []string {
+func ValidateSRDSemanticModel(path string) []string {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil

@@ -76,7 +76,7 @@ func CollectStats(deps StatsDeps) (StatsRecord, error) {
 	if deps.ResolveStandardFiles != nil && deps.ClassifyContextFile != nil {
 		for _, path := range deps.ResolveStandardFiles() {
 			cat := deps.ClassifyContextFile(path)
-			if cat == "prd" || cat == "use_case" || cat == "test_suite" {
+			if cat == "srd" || cat == "use_case" || cat == "test_suite" {
 				words, wordErr := CountWordsInFile(path)
 				if wordErr != nil {
 					continue

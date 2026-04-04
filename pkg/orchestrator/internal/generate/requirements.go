@@ -18,7 +18,7 @@ import (
 type RequirementState struct {
 	Status string `yaml:"status"`
 	Issue  int    `yaml:"issue,omitempty"`
-	Weight int    `yaml:"weight,omitempty"` // from PRD; default 1 (GH-1832)
+	Weight int    `yaml:"weight,omitempty"` // from SRD; default 1 (GH-1832)
 }
 
 // RequirementsFile is the top-level structure of .cobbler/requirements.yaml.
@@ -50,15 +50,15 @@ func ParseRequirementStates(data []byte) map[string]map[string]RequirementState 
 	return rf.Requirements
 }
 
-// GenerateRequirementsFile scans all PRD YAML files in the given directory
+// GenerateRequirementsFile scans all SRD YAML files in the given directory
 // for R-items and writes a requirements state file. When preserveExisting is
 // false, all items start with status "ready" (full regeneration). When true,
-// existing requirement states are preserved for items still present in PRDs,
+// existing requirement states are preserved for items still present in SRDs,
 // and only new items default to "ready" (incremental generation).
-func GenerateRequirementsFile(prdDir, cobblerDir string, preserveExisting bool) (string, error) {
-	paths, err := filepath.Glob(filepath.Join(prdDir, "prd*.yaml"))
+func GenerateRequirementsFile(srdDir, cobblerDir string, preserveExisting bool) (string, error) {
+	paths, err := filepath.Glob(filepath.Join(srdDir, "srd*.yaml"))
 	if err != nil {
-		return "", fmt.Errorf("globbing PRDs in %s: %w", prdDir, err)
+		return "", fmt.Errorf("globbing SRDs in %s: %w", srdDir, err)
 	}
 
 	// Load existing states when preserving.
@@ -80,7 +80,7 @@ func GenerateRequirementsFile(prdDir, cobblerDir string, preserveExisting bool) 
 			if existing != nil {
 				if prev, ok := existing[slug]; ok {
 					if st, ok := prev[item.ID]; ok {
-						// Preserve existing state but update weight from PRD.
+						// Preserve existing state but update weight from SRD.
 						st.Weight = item.Weight
 						group[item.ID] = st
 						continue
@@ -93,7 +93,7 @@ func GenerateRequirementsFile(prdDir, cobblerDir string, preserveExisting bool) 
 	}
 
 	if len(allReqs) == 0 {
-		Log("generateRequirementsFile: no R-items found in %s", prdDir)
+		Log("generateRequirementsFile: no R-items found in %s", srdDir)
 	}
 
 	rf := RequirementsFile{Requirements: allReqs}
@@ -126,14 +126,14 @@ func GenerateRequirementsFile(prdDir, cobblerDir string, preserveExisting bool) 
 		}
 	}
 	if preserveExisting && preserved > 0 {
-		Log("generateRequirementsFile: wrote %d R-items (%d preserved) from %d PRDs to %s", total, preserved, len(allReqs), outPath)
+		Log("generateRequirementsFile: wrote %d R-items (%d preserved) from %d SRDs to %s", total, preserved, len(allReqs), outPath)
 	} else {
-		Log("generateRequirementsFile: wrote %d R-items from %d PRDs to %s", total, len(allReqs), outPath)
+		Log("generateRequirementsFile: wrote %d R-items from %d SRDs to %s", total, len(allReqs), outPath)
 	}
 	return outPath, nil
 }
 
-// UpdateRequirementsFile reads the requirements state file, extracts PRD
+// UpdateRequirementsFile reads the requirements state file, extracts SRD
 // requirement references from the task description YAML, and transitions
 // matching entries from "ready" to "complete" (or "complete_with_failures"
 // when testsPassed is false) with the given issue number.
@@ -156,7 +156,7 @@ func UpdateRequirementsFile(cobblerDir, description string, issueNumber int, tes
 		return nil
 	}
 
-	refs := extractPRDRefsFromDescription(description)
+	refs := extractSRDRefsFromDescription(description)
 	if len(refs) == 0 {
 		return nil
 	}
@@ -168,23 +168,23 @@ func UpdateRequirementsFile(cobblerDir, description string, issueNumber int, tes
 
 	updated := 0
 	for _, ref := range refs {
-		prdReqs := findPRDRequirements(rf.Requirements, ref.PRDStem)
-		if prdReqs == nil {
+		srdReqs := findSRDRequirements(rf.Requirements, ref.SRDStem)
+		if srdReqs == nil {
 			continue
 		}
 		if ref.SubItem != "" {
 			// Specific sub-item reference (e.g. R1.2).
 			key := fmt.Sprintf("R%s.%s", ref.Group, ref.SubItem)
-			if st, ok := prdReqs[key]; ok && st.Status == "ready" {
-				prdReqs[key] = RequirementState{Status: status, Issue: issueNumber}
+			if st, ok := srdReqs[key]; ok && st.Status == "ready" {
+				srdReqs[key] = RequirementState{Status: status, Issue: issueNumber}
 				updated++
 			}
 		} else {
 			// Group reference (e.g. R1) — mark all sub-items.
 			prefix := fmt.Sprintf("R%s.", ref.Group)
-			for key, st := range prdReqs {
+			for key, st := range srdReqs {
 				if strings.HasPrefix(key, prefix) && st.Status == "ready" {
-					prdReqs[key] = RequirementState{Status: status, Issue: issueNumber}
+					srdReqs[key] = RequirementState{Status: status, Issue: issueNumber}
 					updated++
 				}
 			}
@@ -214,24 +214,24 @@ func isRequirementComplete(status string) bool {
 	return status == "complete" || status == "complete_with_failures" || status == "skip"
 }
 
-// AllRefsAlreadyComplete checks whether every PRD requirement reference in
+// AllRefsAlreadyComplete checks whether every SRD requirement reference in
 // a task description is already marked complete in the given requirement
 // states. Returns true only when at least one reference is found and all
 // are complete. Used by stitch to skip tasks whose R-items were completed
 // by an earlier task in the same measure batch (GH-1434).
 func AllRefsAlreadyComplete(description string, reqStates map[string]map[string]RequirementState) bool {
-	refs := extractPRDRefsFromDescription(description)
+	refs := extractSRDRefsFromDescription(description)
 	if len(refs) == 0 || len(reqStates) == 0 {
 		return false
 	}
 	for _, ref := range refs {
-		prdReqs := findPRDRequirements(reqStates, ref.PRDStem)
-		if prdReqs == nil {
-			return false // unknown PRD — cannot verify
+		srdReqs := findSRDRequirements(reqStates, ref.SRDStem)
+		if srdReqs == nil {
+			return false // unknown SRD — cannot verify
 		}
 		if ref.SubItem != "" {
 			key := fmt.Sprintf("R%s.%s", ref.Group, ref.SubItem)
-			st, ok := prdReqs[key]
+			st, ok := srdReqs[key]
 			if !ok || !isRequirementComplete(st.Status) {
 				return false
 			}
@@ -239,7 +239,7 @@ func AllRefsAlreadyComplete(description string, reqStates map[string]map[string]
 			// Group reference — all sub-items must be complete.
 			prefix := fmt.Sprintf("R%s.", ref.Group)
 			found := false
-			for k, st := range prdReqs {
+			for k, st := range srdReqs {
 				if strings.HasPrefix(k, prefix) {
 					found = true
 					if !isRequirementComplete(st.Status) {
@@ -255,26 +255,26 @@ func AllRefsAlreadyComplete(description string, reqStates map[string]map[string]
 	return true
 }
 
-// prdRef holds a parsed PRD requirement reference.
+// prdRef holds a parsed SRD requirement reference.
 type prdRef struct {
-	PRDStem string // e.g. "prd001" or "prd001-orchestrator-core"
+	SRDStem string // e.g. "srd001" or "srd001-orchestrator-core"
 	Group   string // e.g. "1" from R1
 	SubItem string // e.g. "2" from R1.2; empty for group refs
 }
 
-// extractPRDRefsFromDescription parses the YAML description's requirements
-// section and returns all PRD refs found in requirement text fields.
-func extractPRDRefsFromDescription(description string) []prdRef {
+// extractSRDRefsFromDescription parses the YAML description's requirements
+// section and returns all SRD refs found in requirement text fields.
+func extractSRDRefsFromDescription(description string) []prdRef {
 	var desc IssueDescription
 	if err := yaml.Unmarshal([]byte(description), &desc); err != nil {
 		return nil
 	}
 	var refs []prdRef
 	for _, req := range desc.Requirements {
-		matches := PRDRefPattern.FindAllStringSubmatch(req.Text, -1)
+		matches := SRDRefPattern.FindAllStringSubmatch(req.Text, -1)
 		for _, m := range matches {
 			refs = append(refs, prdRef{
-				PRDStem: m[1],
+				SRDStem: m[1],
 				Group:   m[2],
 				SubItem: m[3],
 			})
@@ -283,11 +283,11 @@ func extractPRDRefsFromDescription(description string) []prdRef {
 	return refs
 }
 
-// findPRDRequirements looks up the requirement map for a PRD stem, trying
-// exact match first, then dash-delimited prefix match (e.g. "prd001" matches
-// "prd001-core" but not "prd0011-other"). When multiple candidates match,
+// findSRDRequirements looks up the requirement map for a SRD stem, trying
+// exact match first, then dash-delimited prefix match (e.g. "srd001" matches
+// "srd001-core" but not "srd0011-other"). When multiple candidates match,
 // the longest (most specific) key wins.
-func findPRDRequirements(reqs map[string]map[string]RequirementState, stem string) map[string]RequirementState {
+func findSRDRequirements(reqs map[string]map[string]RequirementState, stem string) map[string]RequirementState {
 	if r, ok := reqs[stem]; ok {
 		return r
 	}
@@ -320,7 +320,7 @@ func UCRequirementsComplete(cobblerDir string, touchpoints []string) (bool, []st
 		return false, nil
 	}
 
-	// Extract PRD citations from touchpoints (e.g. "prd001-core R1, R2").
+	// Extract SRD citations from touchpoints (e.g. "srd001-core R1, R2").
 	citations := extractTouchpointCitations(touchpoints)
 	if len(citations) == 0 {
 		return false, nil
@@ -328,17 +328,17 @@ func UCRequirementsComplete(cobblerDir string, touchpoints []string) (bool, []st
 
 	var remaining []string
 	for _, cite := range citations {
-		prdReqs := findPRDRequirements(rf.Requirements, cite.prdID)
-		if prdReqs == nil {
-			// PRD not in requirements file — cannot verify.
-			remaining = append(remaining, fmt.Sprintf("%s (missing)", cite.prdID))
+		srdReqs := findSRDRequirements(rf.Requirements, cite.srdID)
+		if srdReqs == nil {
+			// SRD not in requirements file — cannot verify.
+			remaining = append(remaining, fmt.Sprintf("%s (missing)", cite.srdID))
 			continue
 		}
 		for _, group := range cite.groups {
 			prefix := group + "."
-			for key, st := range prdReqs {
+			for key, st := range srdReqs {
 				if strings.HasPrefix(key, prefix) && !isRequirementComplete(st.Status) {
-					remaining = append(remaining, fmt.Sprintf("%s %s", cite.prdID, key))
+					remaining = append(remaining, fmt.Sprintf("%s %s", cite.srdID, key))
 				}
 			}
 		}
@@ -348,74 +348,74 @@ func UCRequirementsComplete(cobblerDir string, touchpoints []string) (bool, []st
 	return len(remaining) == 0, remaining
 }
 
-// touchpointCitation holds a PRD reference and its cited R-groups from a
+// touchpointCitation holds a SRD reference and its cited R-groups from a
 // use case touchpoint.
 type touchpointCitation struct {
-	prdID  string   // e.g. "prd001-orchestrator-core"
+	srdID  string   // e.g. "srd001-orchestrator-core"
 	groups []string // e.g. ["R1", "R2"]
 }
 
-// TouchpointPRDRefRe matches PRD + R-group references in touchpoint text.
-var TouchpointPRDRefRe = regexp.MustCompile(`(prd\d+[-\w]*)\s+(R\d+(?:\s*,\s*R\d+)*)`)
+// TouchpointSRDRefRe matches SRD + R-group references in touchpoint text.
+var TouchpointSRDRefRe = regexp.MustCompile(`(srd\d+[-\w]*)\s+(R\d+(?:\s*,\s*R\d+)*)`)
 
-// BarePRDRefRe matches bare PRD stems in touchpoint text, including those
-// without R-group references (e.g., "prd096-users" in parentheses). This
+// BareSRDRefRe matches bare SRD stems in touchpoint text, including those
+// without R-group references (e.g., "srd096-users" in parentheses). This
 // catches touchpoints that omit R-group citations (GH-1960).
-var BarePRDRefRe = regexp.MustCompile(`prd\d+[-\w]*`)
+var BareSRDRefRe = regexp.MustCompile(`srd\d+[-\w]*`)
 
-// extractTouchpointCitations parses touchpoint strings to extract PRD
+// extractTouchpointCitations parses touchpoint strings to extract SRD
 // citations with their requirement groups.
 func extractTouchpointCitations(touchpoints []string) []touchpointCitation {
 	var citations []touchpointCitation
-	seen := make(map[string]map[string]bool) // prdID → set of groups
+	seen := make(map[string]map[string]bool) // srdID → set of groups
 	for _, tp := range touchpoints {
-		matches := TouchpointPRDRefRe.FindAllStringSubmatch(tp, -1)
+		matches := TouchpointSRDRefRe.FindAllStringSubmatch(tp, -1)
 		for _, m := range matches {
-			prdID := m[1]
+			srdID := m[1]
 			groupStr := m[2]
-			if seen[prdID] == nil {
-				seen[prdID] = make(map[string]bool)
+			if seen[srdID] == nil {
+				seen[srdID] = make(map[string]bool)
 			}
 			for _, g := range strings.Split(groupStr, ",") {
 				g = strings.TrimSpace(g)
 				if g != "" {
-					seen[prdID][g] = true
+					seen[srdID][g] = true
 				}
 			}
 		}
 	}
-	for prdID, groups := range seen {
+	for srdID, groups := range seen {
 		var gs []string
 		for g := range groups {
 			gs = append(gs, g)
 		}
 		sort.Strings(gs)
-		citations = append(citations, touchpointCitation{prdID: prdID, groups: gs})
+		citations = append(citations, touchpointCitation{srdID: srdID, groups: gs})
 	}
-	sort.Slice(citations, func(i, j int) bool { return citations[i].prdID < citations[j].prdID })
+	sort.Slice(citations, func(i, j int) bool { return citations[i].srdID < citations[j].srdID })
 	return citations
 }
 
-// rItemInfo holds an R-item ID and its weight from the PRD.
+// rItemInfo holds an R-item ID and its weight from the SRD.
 type rItemInfo struct {
 	ID     string
 	Weight int
 }
 
-// extractRItems reads a PRD YAML file and returns all R-item IDs (e.g.
+// extractRItems reads a SRD YAML file and returns all R-item IDs (e.g.
 // R1.1, R1.2, R2.1) with their weights, sorted by ID.
 func extractRItemsWeighted(path string) []rItemInfo {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil
 	}
-	var prd PRDDoc
-	if err := yaml.Unmarshal(data, &prd); err != nil {
+	var srd SRDDoc
+	if err := yaml.Unmarshal(data, &srd); err != nil {
 		return nil
 	}
 
 	var items []rItemInfo
-	for _, group := range prd.Requirements {
+	for _, group := range srd.Requirements {
 		for _, item := range group.Items {
 			switch v := item.(type) {
 			case map[string]interface{}:
@@ -438,7 +438,7 @@ func extractRItemsWeighted(path string) []rItemInfo {
 	return items
 }
 
-// extractRItems reads a PRD YAML file and returns all R-item IDs in sorted order.
+// extractRItems reads a SRD YAML file and returns all R-item IDs in sorted order.
 func extractRItems(path string) []string {
 	weighted := extractRItemsWeighted(path)
 	ids := make([]string, len(weighted))

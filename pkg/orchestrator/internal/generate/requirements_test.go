@@ -13,13 +13,13 @@ import (
 )
 
 func TestGenerateRequirementsFile(t *testing.T) {
-	t.Run("scans PRDs and produces requirements.yaml", func(t *testing.T) {
+	t.Run("scans SRDs and produces requirements.yaml", func(t *testing.T) {
 		tmp := t.TempDir()
-		prdDir := filepath.Join(tmp, "prds")
+		srdDir := filepath.Join(tmp, "prds")
 		cobblerDir := filepath.Join(tmp, ".cobbler")
-		os.MkdirAll(prdDir, 0o755)
+		os.MkdirAll(srdDir, 0o755)
 
-		prd := `requirements:
+		srd := `requirements:
   R1:
     title: "Config"
     items:
@@ -30,9 +30,9 @@ func TestGenerateRequirementsFile(t *testing.T) {
     items:
       - R2.1: "third item"
 `
-		os.WriteFile(filepath.Join(prdDir, "prd001-core.yaml"), []byte(prd), 0o644)
+		os.WriteFile(filepath.Join(srdDir, "srd001-core.yaml"), []byte(srd), 0o644)
 
-		path, err := GenerateRequirementsFile(prdDir, cobblerDir, false)
+		path, err := GenerateRequirementsFile(srdDir, cobblerDir, false)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -47,15 +47,15 @@ func TestGenerateRequirementsFile(t *testing.T) {
 			t.Fatalf("cannot parse output: %v", err)
 		}
 
-		prdReqs, ok := rf.Requirements["prd001-core"]
+		srdReqs, ok := rf.Requirements["srd001-core"]
 		if !ok {
-			t.Fatal("expected prd001-core in requirements")
+			t.Fatal("expected srd001-core in requirements")
 		}
-		if len(prdReqs) != 3 {
-			t.Fatalf("expected 3 R-items, got %d", len(prdReqs))
+		if len(srdReqs) != 3 {
+			t.Fatalf("expected 3 R-items, got %d", len(srdReqs))
 		}
 		for _, id := range []string{"R1.1", "R1.2", "R2.1"} {
-			state, ok := prdReqs[id]
+			state, ok := srdReqs[id]
 			if !ok {
 				t.Errorf("missing R-item %s", id)
 				continue
@@ -69,13 +69,13 @@ func TestGenerateRequirementsFile(t *testing.T) {
 		}
 	})
 
-	t.Run("empty PRD directory", func(t *testing.T) {
+	t.Run("empty SRD directory", func(t *testing.T) {
 		tmp := t.TempDir()
-		prdDir := filepath.Join(tmp, "prds")
+		srdDir := filepath.Join(tmp, "prds")
 		cobblerDir := filepath.Join(tmp, ".cobbler")
-		os.MkdirAll(prdDir, 0o755)
+		os.MkdirAll(srdDir, 0o755)
 
-		path, err := GenerateRequirementsFile(prdDir, cobblerDir, false)
+		path, err := GenerateRequirementsFile(srdDir, cobblerDir, false)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -91,24 +91,24 @@ func TestGenerateRequirementsFile(t *testing.T) {
 		}
 
 		if len(rf.Requirements) != 0 {
-			t.Errorf("expected 0 PRDs, got %d", len(rf.Requirements))
+			t.Errorf("expected 0 SRDs, got %d", len(rf.Requirements))
 		}
 	})
 
-	t.Run("PRD with no items", func(t *testing.T) {
+	t.Run("SRD with no items", func(t *testing.T) {
 		tmp := t.TempDir()
-		prdDir := filepath.Join(tmp, "prds")
+		srdDir := filepath.Join(tmp, "prds")
 		cobblerDir := filepath.Join(tmp, ".cobbler")
-		os.MkdirAll(prdDir, 0o755)
+		os.MkdirAll(srdDir, 0o755)
 
-		prd := `requirements:
+		srd := `requirements:
   R1:
     title: "Empty group"
     items: []
 `
-		os.WriteFile(filepath.Join(prdDir, "prd002-empty.yaml"), []byte(prd), 0o644)
+		os.WriteFile(filepath.Join(srdDir, "srd002-empty.yaml"), []byte(srd), 0o644)
 
-		path, err := GenerateRequirementsFile(prdDir, cobblerDir, false)
+		path, err := GenerateRequirementsFile(srdDir, cobblerDir, false)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -123,17 +123,17 @@ func TestGenerateRequirementsFile(t *testing.T) {
 			t.Fatalf("cannot parse output: %v", err)
 		}
 
-		// PRD with empty items should not appear.
+		// SRD with empty items should not appear.
 		if len(rf.Requirements) != 0 {
-			t.Errorf("expected 0 PRDs, got %d", len(rf.Requirements))
+			t.Errorf("expected 0 SRDs, got %d", len(rf.Requirements))
 		}
 	})
 
-	t.Run("multiple PRDs", func(t *testing.T) {
+	t.Run("multiple SRDs", func(t *testing.T) {
 		tmp := t.TempDir()
-		prdDir := filepath.Join(tmp, "prds")
+		srdDir := filepath.Join(tmp, "prds")
 		cobblerDir := filepath.Join(tmp, ".cobbler")
-		os.MkdirAll(prdDir, 0o755)
+		os.MkdirAll(srdDir, 0o755)
 
 		prd1 := `requirements:
   R1:
@@ -148,10 +148,10 @@ func TestGenerateRequirementsFile(t *testing.T) {
       - R1.1: "item B"
       - R1.2: "item C"
 `
-		os.WriteFile(filepath.Join(prdDir, "prd001-alpha.yaml"), []byte(prd1), 0o644)
-		os.WriteFile(filepath.Join(prdDir, "prd002-beta.yaml"), []byte(prd2), 0o644)
+		os.WriteFile(filepath.Join(srdDir, "srd001-alpha.yaml"), []byte(prd1), 0o644)
+		os.WriteFile(filepath.Join(srdDir, "srd002-beta.yaml"), []byte(prd2), 0o644)
 
-		path, err := GenerateRequirementsFile(prdDir, cobblerDir, false)
+		path, err := GenerateRequirementsFile(srdDir, cobblerDir, false)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -167,13 +167,13 @@ func TestGenerateRequirementsFile(t *testing.T) {
 		}
 
 		if len(rf.Requirements) != 2 {
-			t.Fatalf("expected 2 PRDs, got %d", len(rf.Requirements))
+			t.Fatalf("expected 2 SRDs, got %d", len(rf.Requirements))
 		}
-		if len(rf.Requirements["prd001-alpha"]) != 1 {
-			t.Errorf("prd001-alpha: expected 1 item, got %d", len(rf.Requirements["prd001-alpha"]))
+		if len(rf.Requirements["srd001-alpha"]) != 1 {
+			t.Errorf("srd001-alpha: expected 1 item, got %d", len(rf.Requirements["srd001-alpha"]))
 		}
-		if len(rf.Requirements["prd002-beta"]) != 2 {
-			t.Errorf("prd002-beta: expected 2 items, got %d", len(rf.Requirements["prd002-beta"]))
+		if len(rf.Requirements["srd002-beta"]) != 2 {
+			t.Errorf("srd002-beta: expected 2 items, got %d", len(rf.Requirements["srd002-beta"]))
 		}
 	})
 }
@@ -181,12 +181,12 @@ func TestGenerateRequirementsFile(t *testing.T) {
 func TestGenerateRequirementsFile_PreserveExisting(t *testing.T) {
 	t.Run("preserves completed states from previous run", func(t *testing.T) {
 		tmp := t.TempDir()
-		prdDir := filepath.Join(tmp, "prds")
+		srdDir := filepath.Join(tmp, "prds")
 		cobblerDir := filepath.Join(tmp, ".cobbler")
-		os.MkdirAll(prdDir, 0o755)
+		os.MkdirAll(srdDir, 0o755)
 		os.MkdirAll(cobblerDir, 0o755)
 
-		prd := `requirements:
+		srd := `requirements:
   R1:
     title: "Config"
     items:
@@ -197,12 +197,12 @@ func TestGenerateRequirementsFile_PreserveExisting(t *testing.T) {
     items:
       - R2.1: "third item"
 `
-		os.WriteFile(filepath.Join(prdDir, "prd001-core.yaml"), []byte(prd), 0o644)
+		os.WriteFile(filepath.Join(srdDir, "srd001-core.yaml"), []byte(srd), 0o644)
 
 		// Seed existing requirements with R1.1 complete.
 		existing := RequirementsFile{
 			Requirements: map[string]map[string]RequirementState{
-				"prd001-core": {
+				"srd001-core": {
 					"R1.1": {Status: "complete", Issue: 42},
 					"R1.2": {Status: "ready"},
 					"R2.1": {Status: "ready"},
@@ -212,39 +212,39 @@ func TestGenerateRequirementsFile_PreserveExisting(t *testing.T) {
 		data, _ := yaml.Marshal(existing)
 		os.WriteFile(filepath.Join(cobblerDir, RequirementsFileName), data, 0o644)
 
-		path, err := GenerateRequirementsFile(prdDir, cobblerDir, true)
+		path, err := GenerateRequirementsFile(srdDir, cobblerDir, true)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
 		result := readReqFile(t, path)
 		// R1.1 should retain its complete state.
-		assertReqState(t, result, "prd001-core", "R1.1", "complete", 42)
+		assertReqState(t, result, "srd001-core", "R1.1", "complete", 42)
 		// R1.2 and R2.1 should remain ready.
-		assertReqState(t, result, "prd001-core", "R1.2", "ready", 0)
-		assertReqState(t, result, "prd001-core", "R2.1", "ready", 0)
+		assertReqState(t, result, "srd001-core", "R1.2", "ready", 0)
+		assertReqState(t, result, "srd001-core", "R2.1", "ready", 0)
 	})
 
 	t.Run("new R-items default to ready", func(t *testing.T) {
 		tmp := t.TempDir()
-		prdDir := filepath.Join(tmp, "prds")
+		srdDir := filepath.Join(tmp, "prds")
 		cobblerDir := filepath.Join(tmp, ".cobbler")
-		os.MkdirAll(prdDir, 0o755)
+		os.MkdirAll(srdDir, 0o755)
 		os.MkdirAll(cobblerDir, 0o755)
 
-		prd := `requirements:
+		srd := `requirements:
   R1:
     title: "Config"
     items:
       - R1.1: "existing"
       - R1.2: "new item"
 `
-		os.WriteFile(filepath.Join(prdDir, "prd001-core.yaml"), []byte(prd), 0o644)
+		os.WriteFile(filepath.Join(srdDir, "srd001-core.yaml"), []byte(srd), 0o644)
 
 		// Existing file only has R1.1.
 		existing := RequirementsFile{
 			Requirements: map[string]map[string]RequirementState{
-				"prd001-core": {
+				"srd001-core": {
 					"R1.1": {Status: "complete", Issue: 10},
 				},
 			},
@@ -252,36 +252,36 @@ func TestGenerateRequirementsFile_PreserveExisting(t *testing.T) {
 		data, _ := yaml.Marshal(existing)
 		os.WriteFile(filepath.Join(cobblerDir, RequirementsFileName), data, 0o644)
 
-		path, err := GenerateRequirementsFile(prdDir, cobblerDir, true)
+		path, err := GenerateRequirementsFile(srdDir, cobblerDir, true)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
 		result := readReqFile(t, path)
-		assertReqState(t, result, "prd001-core", "R1.1", "complete", 10)
-		assertReqState(t, result, "prd001-core", "R1.2", "ready", 0)
+		assertReqState(t, result, "srd001-core", "R1.1", "complete", 10)
+		assertReqState(t, result, "srd001-core", "R1.2", "ready", 0)
 	})
 
 	t.Run("removed R-items are dropped", func(t *testing.T) {
 		tmp := t.TempDir()
-		prdDir := filepath.Join(tmp, "prds")
+		srdDir := filepath.Join(tmp, "prds")
 		cobblerDir := filepath.Join(tmp, ".cobbler")
-		os.MkdirAll(prdDir, 0o755)
+		os.MkdirAll(srdDir, 0o755)
 		os.MkdirAll(cobblerDir, 0o755)
 
-		// PRD now only has R1.1.
-		prd := `requirements:
+		// SRD now only has R1.1.
+		srd := `requirements:
   R1:
     title: "Config"
     items:
       - R1.1: "kept"
 `
-		os.WriteFile(filepath.Join(prdDir, "prd001-core.yaml"), []byte(prd), 0o644)
+		os.WriteFile(filepath.Join(srdDir, "srd001-core.yaml"), []byte(srd), 0o644)
 
-		// Existing file has R1.1 and R1.2 (R1.2 was removed from PRD).
+		// Existing file has R1.1 and R1.2 (R1.2 was removed from SRD).
 		existing := RequirementsFile{
 			Requirements: map[string]map[string]RequirementState{
-				"prd001-core": {
+				"srd001-core": {
 					"R1.1": {Status: "complete", Issue: 5},
 					"R1.2": {Status: "complete", Issue: 6},
 				},
@@ -290,39 +290,39 @@ func TestGenerateRequirementsFile_PreserveExisting(t *testing.T) {
 		data, _ := yaml.Marshal(existing)
 		os.WriteFile(filepath.Join(cobblerDir, RequirementsFileName), data, 0o644)
 
-		path, err := GenerateRequirementsFile(prdDir, cobblerDir, true)
+		path, err := GenerateRequirementsFile(srdDir, cobblerDir, true)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
 		result := readReqFile(t, path)
-		assertReqState(t, result, "prd001-core", "R1.1", "complete", 5)
-		if _, ok := result.Requirements["prd001-core"]["R1.2"]; ok {
-			t.Error("R1.2 should have been dropped (removed from PRD)")
+		assertReqState(t, result, "srd001-core", "R1.1", "complete", 5)
+		if _, ok := result.Requirements["srd001-core"]["R1.2"]; ok {
+			t.Error("R1.2 should have been dropped (removed from SRD)")
 		}
 	})
 
 	t.Run("no existing file behaves like fresh generation", func(t *testing.T) {
 		tmp := t.TempDir()
-		prdDir := filepath.Join(tmp, "prds")
+		srdDir := filepath.Join(tmp, "prds")
 		cobblerDir := filepath.Join(tmp, ".cobbler")
-		os.MkdirAll(prdDir, 0o755)
+		os.MkdirAll(srdDir, 0o755)
 
-		prd := `requirements:
+		srd := `requirements:
   R1:
     title: "Config"
     items:
       - R1.1: "item"
 `
-		os.WriteFile(filepath.Join(prdDir, "prd001-core.yaml"), []byte(prd), 0o644)
+		os.WriteFile(filepath.Join(srdDir, "srd001-core.yaml"), []byte(srd), 0o644)
 
-		path, err := GenerateRequirementsFile(prdDir, cobblerDir, true)
+		path, err := GenerateRequirementsFile(srdDir, cobblerDir, true)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
 		result := readReqFile(t, path)
-		assertReqState(t, result, "prd001-core", "R1.1", "ready", 0)
+		assertReqState(t, result, "srd001-core", "R1.1", "ready", 0)
 	})
 }
 
@@ -334,7 +334,7 @@ func TestUpdateRequirementsFile(t *testing.T) {
 
 		initial := RequirementsFile{
 			Requirements: map[string]map[string]RequirementState{
-				"prd001-core": {
+				"srd001-core": {
 					"R1.1": {Status: "ready"},
 					"R1.2": {Status: "ready"},
 					"R2.1": {Status: "ready"},
@@ -346,9 +346,9 @@ func TestUpdateRequirementsFile(t *testing.T) {
 
 		desc := `requirements:
   - id: R1
-    text: "prd001 R1.2 — implement config loading"
+    text: "srd001 R1.2 — implement config loading"
   - id: R2
-    text: "prd001 R2.1 — implement other thing"
+    text: "srd001 R2.1 — implement other thing"
 `
 		err := UpdateRequirementsFile(cobblerDir, desc, 42, true)
 		if err != nil {
@@ -358,10 +358,10 @@ func TestUpdateRequirementsFile(t *testing.T) {
 		result := readReqFile(t, filepath.Join(cobblerDir, RequirementsFileName))
 
 		// R1.2 and R2.1 should be complete with issue 42.
-		assertReqState(t, result, "prd001-core", "R1.2", "complete", 42)
-		assertReqState(t, result, "prd001-core", "R2.1", "complete", 42)
+		assertReqState(t, result, "srd001-core", "R1.2", "complete", 42)
+		assertReqState(t, result, "srd001-core", "R2.1", "complete", 42)
 		// R1.1 should remain ready.
-		assertReqState(t, result, "prd001-core", "R1.1", "ready", 0)
+		assertReqState(t, result, "srd001-core", "R1.1", "ready", 0)
 	})
 
 	t.Run("group reference marks all sub-items", func(t *testing.T) {
@@ -371,7 +371,7 @@ func TestUpdateRequirementsFile(t *testing.T) {
 
 		initial := RequirementsFile{
 			Requirements: map[string]map[string]RequirementState{
-				"prd002-lifecycle": {
+				"srd002-lifecycle": {
 					"R1.1": {Status: "ready"},
 					"R1.2": {Status: "ready"},
 					"R2.1": {Status: "ready"},
@@ -383,7 +383,7 @@ func TestUpdateRequirementsFile(t *testing.T) {
 
 		desc := `requirements:
   - id: R1
-    text: "prd002 R1 — implement entire group"
+    text: "srd002 R1 — implement entire group"
 `
 		err := UpdateRequirementsFile(cobblerDir, desc, 99, true)
 		if err != nil {
@@ -391,14 +391,14 @@ func TestUpdateRequirementsFile(t *testing.T) {
 		}
 
 		result := readReqFile(t, filepath.Join(cobblerDir, RequirementsFileName))
-		assertReqState(t, result, "prd002-lifecycle", "R1.1", "complete", 99)
-		assertReqState(t, result, "prd002-lifecycle", "R1.2", "complete", 99)
-		assertReqState(t, result, "prd002-lifecycle", "R2.1", "ready", 0)
+		assertReqState(t, result, "srd002-lifecycle", "R1.1", "complete", 99)
+		assertReqState(t, result, "srd002-lifecycle", "R1.2", "complete", 99)
+		assertReqState(t, result, "srd002-lifecycle", "R2.1", "ready", 0)
 	})
 
 	t.Run("missing file returns nil", func(t *testing.T) {
 		tmp := t.TempDir()
-		err := UpdateRequirementsFile(tmp, "requirements:\n  - id: R1\n    text: prd001 R1.1", 1, true)
+		err := UpdateRequirementsFile(tmp, "requirements:\n  - id: R1\n    text: srd001 R1.1", 1, true)
 		if err != nil {
 			t.Fatalf("expected nil error, got: %v", err)
 		}
@@ -411,7 +411,7 @@ func TestUpdateRequirementsFile(t *testing.T) {
 
 		initial := RequirementsFile{
 			Requirements: map[string]map[string]RequirementState{
-				"prd001-core": {
+				"srd001-core": {
 					"R1.1": {Status: "ready"},
 				},
 			},
@@ -421,7 +421,7 @@ func TestUpdateRequirementsFile(t *testing.T) {
 
 		desc := `requirements:
   - id: R1
-    text: "prd999 R5.3 — nonexistent PRD"
+    text: "srd999 R5.3 — nonexistent SRD"
 `
 		err := UpdateRequirementsFile(cobblerDir, desc, 10, true)
 		if err != nil {
@@ -429,7 +429,7 @@ func TestUpdateRequirementsFile(t *testing.T) {
 		}
 
 		result := readReqFile(t, filepath.Join(cobblerDir, RequirementsFileName))
-		assertReqState(t, result, "prd001-core", "R1.1", "ready", 0)
+		assertReqState(t, result, "srd001-core", "R1.1", "ready", 0)
 	})
 
 	t.Run("never regresses complete to ready", func(t *testing.T) {
@@ -439,7 +439,7 @@ func TestUpdateRequirementsFile(t *testing.T) {
 
 		initial := RequirementsFile{
 			Requirements: map[string]map[string]RequirementState{
-				"prd001-core": {
+				"srd001-core": {
 					"R1.1": {Status: "complete", Issue: 10},
 					"R1.2": {Status: "ready"},
 				},
@@ -450,7 +450,7 @@ func TestUpdateRequirementsFile(t *testing.T) {
 
 		desc := `requirements:
   - id: R1
-    text: "prd001 R1 — redo whole group"
+    text: "srd001 R1 — redo whole group"
 `
 		err := UpdateRequirementsFile(cobblerDir, desc, 20, true)
 		if err != nil {
@@ -459,9 +459,9 @@ func TestUpdateRequirementsFile(t *testing.T) {
 
 		result := readReqFile(t, filepath.Join(cobblerDir, RequirementsFileName))
 		// R1.1 should still be complete with original issue 10.
-		assertReqState(t, result, "prd001-core", "R1.1", "complete", 10)
+		assertReqState(t, result, "srd001-core", "R1.1", "complete", 10)
 		// R1.2 should now be complete with issue 20.
-		assertReqState(t, result, "prd001-core", "R1.2", "complete", 20)
+		assertReqState(t, result, "srd001-core", "R1.2", "complete", 20)
 	})
 }
 
@@ -473,7 +473,7 @@ func TestUpdateRequirementsFile_TestsFailed(t *testing.T) {
 
 		initial := RequirementsFile{
 			Requirements: map[string]map[string]RequirementState{
-				"prd001-core": {
+				"srd001-core": {
 					"R1.1": {Status: "ready"},
 					"R1.2": {Status: "ready"},
 				},
@@ -484,7 +484,7 @@ func TestUpdateRequirementsFile_TestsFailed(t *testing.T) {
 
 		desc := `requirements:
   - id: R1
-    text: "prd001 R1.1 — implement config"
+    text: "srd001 R1.1 — implement config"
 `
 		err := UpdateRequirementsFile(cobblerDir, desc, 50, false)
 		if err != nil {
@@ -492,9 +492,9 @@ func TestUpdateRequirementsFile_TestsFailed(t *testing.T) {
 		}
 
 		result := readReqFile(t, filepath.Join(cobblerDir, RequirementsFileName))
-		assertReqState(t, result, "prd001-core", "R1.1", "complete_with_failures", 50)
+		assertReqState(t, result, "srd001-core", "R1.1", "complete_with_failures", 50)
 		// R1.2 should remain ready.
-		assertReqState(t, result, "prd001-core", "R1.2", "ready", 0)
+		assertReqState(t, result, "srd001-core", "R1.2", "ready", 0)
 	})
 }
 
@@ -506,7 +506,7 @@ func TestUCRequirementsComplete_CompleteWithFailures(t *testing.T) {
 
 		initial := RequirementsFile{
 			Requirements: map[string]map[string]RequirementState{
-				"prd001-core": {
+				"srd001-core": {
 					"R1.1": {Status: "complete_with_failures", Issue: 50},
 					"R1.2": {Status: "complete", Issue: 51},
 				},
@@ -516,7 +516,7 @@ func TestUCRequirementsComplete_CompleteWithFailures(t *testing.T) {
 		os.WriteFile(filepath.Join(cobblerDir, RequirementsFileName), data, 0o644)
 
 		touchpoints := []string{
-			"T1: Config struct per prd001-core R1",
+			"T1: Config struct per srd001-core R1",
 		}
 
 		complete, remaining := UCRequirementsComplete(cobblerDir, touchpoints)
@@ -534,7 +534,7 @@ func TestUCRequirementsComplete(t *testing.T) {
 
 		initial := RequirementsFile{
 			Requirements: map[string]map[string]RequirementState{
-				"prd001-core": {
+				"srd001-core": {
 					"R1.1": {Status: "complete", Issue: 10},
 					"R1.2": {Status: "complete", Issue: 11},
 				},
@@ -544,7 +544,7 @@ func TestUCRequirementsComplete(t *testing.T) {
 		os.WriteFile(filepath.Join(cobblerDir, RequirementsFileName), data, 0o644)
 
 		touchpoints := []string{
-			"T1: Config struct per prd001-core R1",
+			"T1: Config struct per srd001-core R1",
 		}
 
 		complete, remaining := UCRequirementsComplete(cobblerDir, touchpoints)
@@ -560,7 +560,7 @@ func TestUCRequirementsComplete(t *testing.T) {
 
 		initial := RequirementsFile{
 			Requirements: map[string]map[string]RequirementState{
-				"prd001-core": {
+				"srd001-core": {
 					"R1.1": {Status: "complete", Issue: 10},
 					"R1.2": {Status: "ready"},
 				},
@@ -570,7 +570,7 @@ func TestUCRequirementsComplete(t *testing.T) {
 		os.WriteFile(filepath.Join(cobblerDir, RequirementsFileName), data, 0o644)
 
 		touchpoints := []string{
-			"T1: Config struct per prd001-core R1",
+			"T1: Config struct per srd001-core R1",
 		}
 
 		complete, remaining := UCRequirementsComplete(cobblerDir, touchpoints)
@@ -583,7 +583,7 @@ func TestUCRequirementsComplete(t *testing.T) {
 	})
 
 	t.Run("missing requirements file", func(t *testing.T) {
-		complete, remaining := UCRequirementsComplete("/nonexistent", []string{"T1: prd001 R1"})
+		complete, remaining := UCRequirementsComplete("/nonexistent", []string{"T1: srd001 R1"})
 		if complete {
 			t.Error("expected incomplete for missing file")
 		}
@@ -602,14 +602,14 @@ func TestUCRequirementsComplete(t *testing.T) {
 }
 
 func TestExtractTouchpointCitations(t *testing.T) {
-	t.Run("single PRD single group", func(t *testing.T) {
-		tps := []string{"T1: Config struct per prd001-core R1"}
+	t.Run("single SRD single group", func(t *testing.T) {
+		tps := []string{"T1: Config struct per srd001-core R1"}
 		citations := extractTouchpointCitations(tps)
 		if len(citations) != 1 {
 			t.Fatalf("expected 1 citation, got %d", len(citations))
 		}
-		if citations[0].prdID != "prd001-core" {
-			t.Errorf("prdID = %q, want prd001-core", citations[0].prdID)
+		if citations[0].srdID != "srd001-core" {
+			t.Errorf("srdID = %q, want srd001-core", citations[0].srdID)
 		}
 		if len(citations[0].groups) != 1 || citations[0].groups[0] != "R1" {
 			t.Errorf("groups = %v, want [R1]", citations[0].groups)
@@ -617,7 +617,7 @@ func TestExtractTouchpointCitations(t *testing.T) {
 	})
 
 	t.Run("multiple groups", func(t *testing.T) {
-		tps := []string{"T1: per prd002-lifecycle R1, R3"}
+		tps := []string{"T1: per srd002-lifecycle R1, R3"}
 		citations := extractTouchpointCitations(tps)
 		if len(citations) != 1 {
 			t.Fatalf("expected 1 citation, got %d", len(citations))
@@ -627,10 +627,10 @@ func TestExtractTouchpointCitations(t *testing.T) {
 		}
 	})
 
-	t.Run("multiple PRDs across touchpoints", func(t *testing.T) {
+	t.Run("multiple SRDs across touchpoints", func(t *testing.T) {
 		tps := []string{
-			"T1: per prd001-core R1",
-			"T2: per prd002-lifecycle R2",
+			"T1: per srd001-core R1",
+			"T2: per srd002-lifecycle R2",
 		}
 		citations := extractTouchpointCitations(tps)
 		if len(citations) != 2 {
@@ -638,7 +638,7 @@ func TestExtractTouchpointCitations(t *testing.T) {
 		}
 	})
 
-	t.Run("no PRD references", func(t *testing.T) {
+	t.Run("no SRD references", func(t *testing.T) {
 		tps := []string{"T1: some generic touchpoint"}
 		citations := extractTouchpointCitations(tps)
 		if len(citations) != 0 {
@@ -647,38 +647,38 @@ func TestExtractTouchpointCitations(t *testing.T) {
 	})
 }
 
-func TestFindPRDRequirements(t *testing.T) {
+func TestFindSRDRequirements(t *testing.T) {
 	reqs := map[string]map[string]RequirementState{
-		"prd001-core":      {"R1.1": {Status: "ready"}},
+		"srd001-core":      {"R1.1": {Status: "ready"}},
 		"prd010-ext":       {"R2.1": {Status: "ready"}},
 		"prd053-logname":   {"R3.1": {Status: "ready"}},
 		"prd053-sort":      {"R3.2": {Status: "ready"}},
 	}
 
 	t.Run("exact match", func(t *testing.T) {
-		r := findPRDRequirements(reqs, "prd001-core")
+		r := findSRDRequirements(reqs, "srd001-core")
 		if r == nil || r["R1.1"].Status != "ready" {
-			t.Errorf("expected exact match for prd001-core, got %v", r)
+			t.Errorf("expected exact match for srd001-core, got %v", r)
 		}
 	})
 
 	t.Run("dash-prefix match", func(t *testing.T) {
-		r := findPRDRequirements(reqs, "prd001")
+		r := findSRDRequirements(reqs, "srd001")
 		if r == nil || r["R1.1"].Status != "ready" {
-			t.Errorf("expected prd001 to match prd001-core, got %v", r)
+			t.Errorf("expected srd001 to match srd001-core, got %v", r)
 		}
 	})
 
 	t.Run("greedy prefix rejected", func(t *testing.T) {
 		// "prd01" must NOT match "prd010-ext" — the numeric portions differ.
-		r := findPRDRequirements(reqs, "prd01")
+		r := findSRDRequirements(reqs, "prd01")
 		if r != nil {
 			t.Errorf("prd01 should not match prd010-ext, got %v", r)
 		}
 	})
 
 	t.Run("no match returns nil", func(t *testing.T) {
-		r := findPRDRequirements(reqs, "prd999")
+		r := findSRDRequirements(reqs, "srd999")
 		if r != nil {
 			t.Errorf("expected nil for nonexistent stem, got %v", r)
 		}
@@ -687,7 +687,7 @@ func TestFindPRDRequirements(t *testing.T) {
 	t.Run("ambiguous prefix picks longest key", func(t *testing.T) {
 		// Both "prd053-logname" and "prd053-sort" match "prd053".
 		// Longest key is "prd053-logname" (14 chars vs 10).
-		r := findPRDRequirements(reqs, "prd053")
+		r := findSRDRequirements(reqs, "prd053")
 		if r == nil {
 			t.Fatal("expected a match for prd053")
 		}
@@ -699,11 +699,11 @@ func TestFindPRDRequirements(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// sdd-hello-world fixture: prd003-config with 12 R-items across 4 R-groups.
+// sdd-hello-world fixture: srd003-config with 12 R-items across 4 R-groups.
 // Mirrors the structure of sdd-hello-world's rel04.0 release (GH-1394).
 // ---------------------------------------------------------------------------
 
-const prd003ConfigFixture = `requirements:
+const srd003ConfigFixture = `requirements:
   R1:
     title: "Config file loading"
     items:
@@ -730,8 +730,8 @@ const prd003ConfigFixture = `requirements:
       - R4.3: "Notify subscribers of config updates"
 `
 
-// prd001 fixture: 6 R-items across 2 R-groups (mirrors sdd-hello-world prd001).
-const prd001CoreFixture = `requirements:
+// srd001 fixture: 6 R-items across 2 R-groups (mirrors sdd-hello-world srd001).
+const srd001CoreFixture = `requirements:
   R1:
     title: "Core operations"
     items:
@@ -746,8 +746,8 @@ const prd001CoreFixture = `requirements:
       - R2.3: "Exit codes"
 `
 
-// prd002 fixture: 11 R-items across 3 R-groups (mirrors sdd-hello-world prd002).
-const prd002LifecycleFixture = `requirements:
+// srd002 fixture: 11 R-items across 3 R-groups (mirrors sdd-hello-world srd002).
+const srd002LifecycleFixture = `requirements:
   R1:
     title: "Lifecycle init"
     items:
@@ -772,37 +772,37 @@ const prd002LifecycleFixture = `requirements:
 
 func TestGenerateRequirementsFile_SDDHelloWorldFixture(t *testing.T) {
 	tmp := t.TempDir()
-	prdDir := filepath.Join(tmp, "prds")
+	srdDir := filepath.Join(tmp, "prds")
 	cobblerDir := filepath.Join(tmp, ".cobbler")
-	os.MkdirAll(prdDir, 0o755)
+	os.MkdirAll(srdDir, 0o755)
 
-	os.WriteFile(filepath.Join(prdDir, "prd001-core.yaml"), []byte(prd001CoreFixture), 0o644)
-	os.WriteFile(filepath.Join(prdDir, "prd002-lifecycle.yaml"), []byte(prd002LifecycleFixture), 0o644)
-	os.WriteFile(filepath.Join(prdDir, "prd003-config.yaml"), []byte(prd003ConfigFixture), 0o644)
+	os.WriteFile(filepath.Join(srdDir, "srd001-core.yaml"), []byte(srd001CoreFixture), 0o644)
+	os.WriteFile(filepath.Join(srdDir, "srd002-lifecycle.yaml"), []byte(srd002LifecycleFixture), 0o644)
+	os.WriteFile(filepath.Join(srdDir, "srd003-config.yaml"), []byte(srd003ConfigFixture), 0o644)
 
-	path, err := GenerateRequirementsFile(prdDir, cobblerDir, false)
+	path, err := GenerateRequirementsFile(srdDir, cobblerDir, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
 	rf := readReqFile(t, path)
 
-	// Verify all 3 PRDs are present.
+	// Verify all 3 SRDs are present.
 	if len(rf.Requirements) != 3 {
-		t.Fatalf("expected 3 PRDs, got %d", len(rf.Requirements))
+		t.Fatalf("expected 3 SRDs, got %d", len(rf.Requirements))
 	}
 
-	// Verify item counts: prd001=6, prd002=11, prd003=12, total=29.
+	// Verify item counts: srd001=6, srd002=11, srd003=12, total=29.
 	wantCounts := map[string]int{
-		"prd001-core":      6,
-		"prd002-lifecycle": 11,
-		"prd003-config":    12,
+		"srd001-core":      6,
+		"srd002-lifecycle": 11,
+		"srd003-config":    12,
 	}
 	totalItems := 0
-	for prd, wantCount := range wantCounts {
-		got := len(rf.Requirements[prd])
+	for srd, wantCount := range wantCounts {
+		got := len(rf.Requirements[srd])
 		if got != wantCount {
-			t.Errorf("%s: expected %d R-items, got %d", prd, wantCount, got)
+			t.Errorf("%s: expected %d R-items, got %d", srd, wantCount, got)
 		}
 		totalItems += got
 	}
@@ -811,79 +811,79 @@ func TestGenerateRequirementsFile_SDDHelloWorldFixture(t *testing.T) {
 	}
 
 	// Verify all items start as "ready" with no issue.
-	for prd, items := range rf.Requirements {
+	for srd, items := range rf.Requirements {
 		for rItem, st := range items {
 			if st.Status != "ready" {
-				t.Errorf("%s %s: expected status ready, got %s", prd, rItem, st.Status)
+				t.Errorf("%s %s: expected status ready, got %s", srd, rItem, st.Status)
 			}
 			if st.Issue != 0 {
-				t.Errorf("%s %s: expected issue 0, got %d", prd, rItem, st.Issue)
+				t.Errorf("%s %s: expected issue 0, got %d", srd, rItem, st.Issue)
 			}
 		}
 	}
 
-	// Verify specific prd003-config sub-requirements are extracted.
+	// Verify specific srd003-config sub-requirements are extracted.
 	for _, id := range []string{"R1.1", "R1.2", "R1.3", "R2.1", "R2.2", "R2.3",
 		"R3.1", "R3.2", "R3.3", "R4.1", "R4.2", "R4.3"} {
-		if _, ok := rf.Requirements["prd003-config"][id]; !ok {
-			t.Errorf("prd003-config missing expected R-item %s", id)
+		if _, ok := rf.Requirements["srd003-config"][id]; !ok {
+			t.Errorf("srd003-config missing expected R-item %s", id)
 		}
 	}
 }
 
 func TestPartialCompletionSequence(t *testing.T) {
-	// Simulates the prd003-config 3-task sequence from GH-1394:
-	// Task 1: prd003-config R1 (3 items) → 3 complete, 9 ready
-	// Task 2: prd003-config R2, R3 (6 items) → 9 complete, 3 ready
-	// Task 3: prd003-config R4 (3 items) → 12 complete, 0 ready
+	// Simulates the srd003-config 3-task sequence from GH-1394:
+	// Task 1: srd003-config R1 (3 items) → 3 complete, 9 ready
+	// Task 2: srd003-config R2, R3 (6 items) → 9 complete, 3 ready
+	// Task 3: srd003-config R4 (3 items) → 12 complete, 0 ready
 	tmp := t.TempDir()
-	prdDir := filepath.Join(tmp, "prds")
+	srdDir := filepath.Join(tmp, "prds")
 	cobblerDir := filepath.Join(tmp, ".cobbler")
-	os.MkdirAll(prdDir, 0o755)
+	os.MkdirAll(srdDir, 0o755)
 
-	os.WriteFile(filepath.Join(prdDir, "prd003-config.yaml"), []byte(prd003ConfigFixture), 0o644)
+	os.WriteFile(filepath.Join(srdDir, "srd003-config.yaml"), []byte(srd003ConfigFixture), 0o644)
 
 	// Generate initial requirements.yaml.
-	reqPath, err := GenerateRequirementsFile(prdDir, cobblerDir, false)
+	reqPath, err := GenerateRequirementsFile(srdDir, cobblerDir, false)
 	if err != nil {
 		t.Fatalf("GenerateRequirementsFile: %v", err)
 	}
 
 	// Verify initial state: 12 items, all ready.
 	rf := readReqFile(t, reqPath)
-	if len(rf.Requirements["prd003-config"]) != 12 {
-		t.Fatalf("expected 12 R-items, got %d", len(rf.Requirements["prd003-config"]))
+	if len(rf.Requirements["srd003-config"]) != 12 {
+		t.Fatalf("expected 12 R-items, got %d", len(rf.Requirements["srd003-config"]))
 	}
 
 	// UC touchpoints: uc004 cites R1,R2,R3; uc005 cites R4.
 	uc004Touchpoints := []string{
-		"T1: Config loading per prd003-config R1, R2, R3",
+		"T1: Config loading per srd003-config R1, R2, R3",
 	}
 	uc005Touchpoints := []string{
-		"T1: Config hot-reload per prd003-config R4",
+		"T1: Config hot-reload per srd003-config R4",
 	}
 
 	// --- Task 1: Mark R1 complete (3 items) ---
 	desc1 := `requirements:
   - id: R1
-    text: "prd003-config R1 — implement config file loading"
+    text: "srd003-config R1 — implement config file loading"
 `
 	if err := UpdateRequirementsFile(cobblerDir, desc1, 100, true); err != nil {
 		t.Fatalf("Task 1 UpdateRequirementsFile: %v", err)
 	}
 
 	rf = readReqFile(t, reqPath)
-	readyCount, completeCount := countStates(rf.Requirements["prd003-config"])
+	readyCount, completeCount := countStates(rf.Requirements["srd003-config"])
 	if completeCount != 3 {
 		t.Errorf("after Task 1: expected 3 complete, got %d", completeCount)
 	}
 	if readyCount != 9 {
 		t.Errorf("after Task 1: expected 9 ready, got %d", readyCount)
 	}
-	assertReqState(t, rf, "prd003-config", "R1.1", "complete", 100)
-	assertReqState(t, rf, "prd003-config", "R1.2", "complete", 100)
-	assertReqState(t, rf, "prd003-config", "R1.3", "complete", 100)
-	assertReqState(t, rf, "prd003-config", "R2.1", "ready", 0)
+	assertReqState(t, rf, "srd003-config", "R1.1", "complete", 100)
+	assertReqState(t, rf, "srd003-config", "R1.2", "complete", 100)
+	assertReqState(t, rf, "srd003-config", "R1.3", "complete", 100)
+	assertReqState(t, rf, "srd003-config", "R2.1", "ready", 0)
 
 	// UC checks after Task 1: neither complete.
 	complete, remaining := UCRequirementsComplete(cobblerDir, uc004Touchpoints)
@@ -901,16 +901,16 @@ func TestPartialCompletionSequence(t *testing.T) {
 	// --- Task 2: Mark R2, R3 complete (6 items) ---
 	desc2 := `requirements:
   - id: R1
-    text: "prd003-config R2 — implement config validation"
+    text: "srd003-config R2 — implement config validation"
   - id: R2
-    text: "prd003-config R3 — implement config defaults"
+    text: "srd003-config R3 — implement config defaults"
 `
 	if err := UpdateRequirementsFile(cobblerDir, desc2, 101, true); err != nil {
 		t.Fatalf("Task 2 UpdateRequirementsFile: %v", err)
 	}
 
 	rf = readReqFile(t, reqPath)
-	readyCount, completeCount = countStates(rf.Requirements["prd003-config"])
+	readyCount, completeCount = countStates(rf.Requirements["srd003-config"])
 	if completeCount != 9 {
 		t.Errorf("after Task 2: expected 9 complete, got %d", completeCount)
 	}
@@ -935,14 +935,14 @@ func TestPartialCompletionSequence(t *testing.T) {
 	// --- Task 3: Mark R4 complete (3 items) ---
 	desc3 := `requirements:
   - id: R1
-    text: "prd003-config R4 — implement config hot-reload"
+    text: "srd003-config R4 — implement config hot-reload"
 `
 	if err := UpdateRequirementsFile(cobblerDir, desc3, 102, true); err != nil {
 		t.Fatalf("Task 3 UpdateRequirementsFile: %v", err)
 	}
 
 	rf = readReqFile(t, reqPath)
-	readyCount, completeCount = countStates(rf.Requirements["prd003-config"])
+	readyCount, completeCount = countStates(rf.Requirements["srd003-config"])
 	if completeCount != 12 {
 		t.Errorf("after Task 3: expected 12 complete, got %d", completeCount)
 	}
@@ -965,9 +965,9 @@ func TestPartialCompletionSequence(t *testing.T) {
 		t.Fatalf("re-update should not error: %v", err)
 	}
 	rf = readReqFile(t, reqPath)
-	assertReqState(t, rf, "prd003-config", "R1.1", "complete", 100) // original issue preserved
-	assertReqState(t, rf, "prd003-config", "R1.2", "complete", 100)
-	assertReqState(t, rf, "prd003-config", "R1.3", "complete", 100)
+	assertReqState(t, rf, "srd003-config", "R1.1", "complete", 100) // original issue preserved
+	assertReqState(t, rf, "srd003-config", "R1.2", "complete", 100)
+	assertReqState(t, rf, "srd003-config", "R1.3", "complete", 100)
 }
 
 func TestCrossBatchDuplicatePrevention(t *testing.T) {
@@ -975,7 +975,7 @@ func TestCrossBatchDuplicatePrevention(t *testing.T) {
 	// rejects proposals targeting completed R-groups and accepts
 	// proposals targeting ready R-groups (R4).
 	reqStates := map[string]map[string]RequirementState{
-		"prd003-config": {
+		"srd003-config": {
 			"R1.1": {Status: "complete", Issue: 100},
 			"R1.2": {Status: "complete", Issue: 100},
 			"R1.3": {Status: "complete", Issue: 100},
@@ -993,7 +993,7 @@ func TestCrossBatchDuplicatePrevention(t *testing.T) {
 
 	// Verify fixture counts: 9 complete, 3 ready.
 	ready, complete := 0, 0
-	for _, st := range reqStates["prd003-config"] {
+	for _, st := range reqStates["srd003-config"] {
 		if st.Status == "ready" {
 			ready++
 		} else if isRequirementComplete(st.Status) {
@@ -1040,7 +1040,7 @@ files:
 	}
 
 	t.Run("rejects proposal targeting completed group R1", func(t *testing.T) {
-		desc := makeDesc("prd003-config R1 — re-implement loading")
+		desc := makeDesc("srd003-config R1 — re-implement loading")
 		issues := []ProposedIssue{{Index: 0, Title: "test", Description: desc}}
 		result := ValidateMeasureOutput(issues, 0, 0, nil, reqStates)
 		found := false
@@ -1055,7 +1055,7 @@ files:
 	})
 
 	t.Run("rejects proposal targeting completed sub-item R2.1", func(t *testing.T) {
-		desc := makeDesc("prd003-config R2.1 — re-validate fields")
+		desc := makeDesc("srd003-config R2.1 — re-validate fields")
 		issues := []ProposedIssue{{Index: 0, Title: "test", Description: desc}}
 		result := ValidateMeasureOutput(issues, 0, 0, nil, reqStates)
 		found := false
@@ -1070,7 +1070,7 @@ files:
 	})
 
 	t.Run("accepts proposal targeting ready group R4", func(t *testing.T) {
-		desc := makeDesc("prd003-config R4 — implement hot-reload")
+		desc := makeDesc("srd003-config R4 — implement hot-reload")
 		issues := []ProposedIssue{{Index: 0, Title: "test", Description: desc}}
 		result := ValidateMeasureOutput(issues, 0, 0, nil, reqStates)
 		for _, e := range result.Errors {
@@ -1081,7 +1081,7 @@ files:
 	})
 
 	t.Run("accepts proposal targeting ready sub-item R4.2", func(t *testing.T) {
-		desc := makeDesc("prd003-config R4.2 — re-validate on change")
+		desc := makeDesc("srd003-config R4.2 — re-validate on change")
 		issues := []ProposedIssue{{Index: 0, Title: "test", Description: desc}}
 		result := ValidateMeasureOutput(issues, 0, 0, nil, reqStates)
 		for _, e := range result.Errors {
@@ -1106,15 +1106,15 @@ func countStates(items map[string]RequirementState) (ready, complete int) {
 }
 
 func TestAllRefsAlreadyComplete(t *testing.T) {
-	// Build requirement states: prd003-config has R1.1, R1.2 complete and R2.1 ready.
+	// Build requirement states: srd003-config has R1.1, R1.2 complete and R2.1 ready.
 	states := map[string]map[string]RequirementState{
-		"prd003-config": {
+		"srd003-config": {
 			"R1.1": {Status: "complete", Issue: 100},
 			"R1.2": {Status: "complete", Issue: 100},
 			"R2.1": {Status: "ready"},
 			"R2.2": {Status: "ready"},
 		},
-		"prd001-core": {
+		"srd001-core": {
 			"R1.1": {Status: "complete", Issue: 101},
 			"R1.2": {Status: "complete_with_failures", Issue: 102},
 		},
@@ -1125,70 +1125,70 @@ func TestAllRefsAlreadyComplete(t *testing.T) {
 	}
 
 	t.Run("all refs complete returns true", func(t *testing.T) {
-		desc := makeDesc("prd003-config R1.1")
+		desc := makeDesc("srd003-config R1.1")
 		if !AllRefsAlreadyComplete(desc, states) {
 			t.Error("expected true: R1.1 is complete")
 		}
 	})
 
 	t.Run("partial complete returns false", func(t *testing.T) {
-		desc := makeDesc("prd003-config R2.1")
+		desc := makeDesc("srd003-config R2.1")
 		if AllRefsAlreadyComplete(desc, states) {
 			t.Error("expected false: R2.1 is ready")
 		}
 	})
 
 	t.Run("no refs returns false", func(t *testing.T) {
-		desc := "requirements:\n  - text: \"no prd refs here\"\n    source: test\n"
+		desc := "requirements:\n  - text: \"no srd refs here\"\n    source: test\n"
 		if AllRefsAlreadyComplete(desc, states) {
-			t.Error("expected false: no PRD refs")
+			t.Error("expected false: no SRD refs")
 		}
 	})
 
 	t.Run("nil states returns false", func(t *testing.T) {
-		desc := makeDesc("prd003-config R1.1")
+		desc := makeDesc("srd003-config R1.1")
 		if AllRefsAlreadyComplete(desc, nil) {
 			t.Error("expected false: nil states")
 		}
 	})
 
 	t.Run("group reference all complete", func(t *testing.T) {
-		desc := makeDesc("prd001-core R1")
+		desc := makeDesc("srd001-core R1")
 		if !AllRefsAlreadyComplete(desc, states) {
-			t.Error("expected true: all R1.x in prd001-core are complete")
+			t.Error("expected true: all R1.x in srd001-core are complete")
 		}
 	})
 
 	t.Run("group reference partial complete", func(t *testing.T) {
-		desc := makeDesc("prd003-config R2")
+		desc := makeDesc("srd003-config R2")
 		if AllRefsAlreadyComplete(desc, states) {
 			t.Error("expected false: R2 group has ready items")
 		}
 	})
 
 	t.Run("complete_with_failures counts as complete", func(t *testing.T) {
-		desc := makeDesc("prd001-core R1.2")
+		desc := makeDesc("srd001-core R1.2")
 		if !AllRefsAlreadyComplete(desc, states) {
 			t.Error("expected true: complete_with_failures is still complete")
 		}
 	})
 
-	t.Run("unknown PRD returns false", func(t *testing.T) {
-		desc := makeDesc("prd999-unknown R1.1")
+	t.Run("unknown SRD returns false", func(t *testing.T) {
+		desc := makeDesc("srd999-unknown R1.1")
 		if AllRefsAlreadyComplete(desc, states) {
-			t.Error("expected false: PRD not in states")
+			t.Error("expected false: SRD not in states")
 		}
 	})
 
 	t.Run("multiple refs all complete", func(t *testing.T) {
-		desc := "requirements:\n  - text: \"prd003-config R1.1\"\n    source: test\n  - text: \"prd001-core R1.2\"\n    source: test\n"
+		desc := "requirements:\n  - text: \"srd003-config R1.1\"\n    source: test\n  - text: \"srd001-core R1.2\"\n    source: test\n"
 		if !AllRefsAlreadyComplete(desc, states) {
 			t.Error("expected true: both refs are complete")
 		}
 	})
 
 	t.Run("multiple refs one incomplete", func(t *testing.T) {
-		desc := "requirements:\n  - text: \"prd003-config R1.1\"\n    source: test\n  - text: \"prd003-config R2.1\"\n    source: test\n"
+		desc := "requirements:\n  - text: \"srd003-config R1.1\"\n    source: test\n  - text: \"srd003-config R2.1\"\n    source: test\n"
 		if AllRefsAlreadyComplete(desc, states) {
 			t.Error("expected false: R2.1 is ready")
 		}
@@ -1197,13 +1197,13 @@ func TestAllRefsAlreadyComplete(t *testing.T) {
 
 func TestUpdateRequirementsFile_InterveningWord(t *testing.T) {
 	// Reproduces the bug from go-unix-utils run 27 (GH-1434): Claude writes
-	// "prd002-sys requirement R2.5" instead of "prd002-sys R2.5". The regex
-	// must handle intervening words between the PRD stem and R-number.
+	// "srd002-sys requirement R2.5" instead of "srd002-sys R2.5". The regex
+	// must handle intervening words between the SRD stem and R-number.
 	dir := t.TempDir()
 	reqPath := filepath.Join(dir, RequirementsFileName)
 	rf := RequirementsFile{
 		Requirements: map[string]map[string]RequirementState{
-			"prd002-sys": {
+			"srd002-sys": {
 				"R2.5": {Status: "ready"},
 				"R2.6": {Status: "ready"},
 			},
@@ -1220,24 +1220,24 @@ func TestUpdateRequirementsFile_InterveningWord(t *testing.T) {
 	description := `deliverable_type: code
 requirements:
   - id: R1
-    text: "Implement prd002-sys requirement R2.5 as specified in the PRD"
+    text: "Implement srd002-sys requirement R2.5 as specified in the SRD"
   - id: R2
-    text: "Implement prd002-sys requirement R2.6 as specified in the PRD"`
+    text: "Implement srd002-sys requirement R2.6 as specified in the SRD"`
 
 	if err := UpdateRequirementsFile(dir, description, 660, true); err != nil {
 		t.Fatalf("UpdateRequirementsFile: %v", err)
 	}
 
 	updated := readReqFile(t, reqPath)
-	assertReqState(t, updated, "prd002-sys", "R2.5", "complete", 660)
-	assertReqState(t, updated, "prd002-sys", "R2.6", "complete", 660)
+	assertReqState(t, updated, "srd002-sys", "R2.5", "complete", 660)
+	assertReqState(t, updated, "srd002-sys", "R2.6", "complete", 660)
 }
 
 func TestCrossBatchDuplicatePrevention_InterveningWord(t *testing.T) {
 	// Verifies that ValidateMeasureOutput rejects proposals using the
-	// "prd002-sys requirement R2.5" format when R2.5 is already complete.
+	// "srd002-sys requirement R2.5" format when R2.5 is already complete.
 	reqStates := map[string]map[string]RequirementState{
-		"prd002-sys": {
+		"srd002-sys": {
 			"R2.5": {Status: "complete", Issue: 660},
 			"R2.6": {Status: "complete", Issue: 660},
 		},
@@ -1246,9 +1246,9 @@ func TestCrossBatchDuplicatePrevention_InterveningWord(t *testing.T) {
 	desc := `deliverable_type: code
 requirements:
   - id: R1
-    text: "Implement prd002-sys requirement R2.5 exactly as specified in the PRD"
+    text: "Implement srd002-sys requirement R2.5 exactly as specified in the SRD"
   - id: R2
-    text: "Implement prd002-sys requirement R2.6 exactly as specified in the PRD"
+    text: "Implement srd002-sys requirement R2.6 exactly as specified in the SRD"
   - id: R3
     text: "More work"
   - id: R4
@@ -1444,19 +1444,19 @@ files:
 
 func TestGenerateRequirementsFile_PreservesSkipStatus(t *testing.T) {
 	tmp := t.TempDir()
-	prdDir := filepath.Join(tmp, "prds")
+	srdDir := filepath.Join(tmp, "prds")
 	cobblerDir := filepath.Join(tmp, ".cobbler")
-	os.MkdirAll(prdDir, 0o755)
+	os.MkdirAll(srdDir, 0o755)
 	os.MkdirAll(cobblerDir, 0o755)
 
-	prd := `requirements:
+	srd := `requirements:
   R1:
     title: "Mage targets"
     items:
       - R1.1: "build target"
       - R1.2: "test target"
 `
-	os.WriteFile(filepath.Join(prdDir, "prd011-magefiles.yaml"), []byte(prd), 0o644)
+	os.WriteFile(filepath.Join(srdDir, "prd011-magefiles.yaml"), []byte(srd), 0o644)
 
 	existing := RequirementsFile{
 		Requirements: map[string]map[string]RequirementState{
@@ -1469,7 +1469,7 @@ func TestGenerateRequirementsFile_PreservesSkipStatus(t *testing.T) {
 	data, _ := yaml.Marshal(existing)
 	os.WriteFile(filepath.Join(cobblerDir, RequirementsFileName), data, 0o644)
 
-	path, err := GenerateRequirementsFile(prdDir, cobblerDir, true)
+	path, err := GenerateRequirementsFile(srdDir, cobblerDir, true)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1492,23 +1492,23 @@ func readReqFile(t *testing.T, path string) RequirementsFile {
 	return rf
 }
 
-func assertReqState(t *testing.T, rf RequirementsFile, prd, rItem, wantStatus string, wantIssue int) {
+func assertReqState(t *testing.T, rf RequirementsFile, srd, rItem, wantStatus string, wantIssue int) {
 	t.Helper()
-	prdReqs, ok := rf.Requirements[prd]
+	srdReqs, ok := rf.Requirements[srd]
 	if !ok {
-		t.Errorf("PRD %s not found", prd)
+		t.Errorf("SRD %s not found", srd)
 		return
 	}
-	st, ok := prdReqs[rItem]
+	st, ok := srdReqs[rItem]
 	if !ok {
-		t.Errorf("%s %s not found", prd, rItem)
+		t.Errorf("%s %s not found", srd, rItem)
 		return
 	}
 	if st.Status != wantStatus {
-		t.Errorf("%s %s: status = %q, want %q", prd, rItem, st.Status, wantStatus)
+		t.Errorf("%s %s: status = %q, want %q", srd, rItem, st.Status, wantStatus)
 	}
 	if st.Issue != wantIssue {
-		t.Errorf("%s %s: issue = %d, want %d", prd, rItem, st.Issue, wantIssue)
+		t.Errorf("%s %s: issue = %d, want %d", srd, rItem, st.Issue, wantIssue)
 	}
 }
 
@@ -1519,8 +1519,8 @@ func assertReqState(t *testing.T, rf RequirementsFile, prd, rItem, wantStatus st
 func TestExtractRItemsWeighted_SimpleFormat(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	prdPath := filepath.Join(dir, "prd001-test.yaml")
-	prd := `id: prd001
+	prdPath := filepath.Join(dir, "srd001-test.yaml")
+	srd := `id: srd001
 title: Test
 problem: test
 goals:
@@ -1534,7 +1534,7 @@ requirements:
 non_goals: []
 acceptance_criteria: []
 `
-	os.WriteFile(prdPath, []byte(prd), 0o644)
+	os.WriteFile(prdPath, []byte(srd), 0o644)
 
 	items := extractRItemsWeighted(prdPath)
 	if len(items) != 2 {
@@ -1550,8 +1550,8 @@ acceptance_criteria: []
 func TestExtractRItemsWeighted_WithWeights(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	prdPath := filepath.Join(dir, "prd002-test.yaml")
-	prd := `id: prd002
+	prdPath := filepath.Join(dir, "srd002-test.yaml")
+	srd := `id: srd002
 title: Test
 problem: test
 goals:
@@ -1570,7 +1570,7 @@ requirements:
 non_goals: []
 acceptance_criteria: []
 `
-	os.WriteFile(prdPath, []byte(prd), 0o644)
+	os.WriteFile(prdPath, []byte(srd), 0o644)
 
 	items := extractRItemsWeighted(prdPath)
 	if len(items) != 3 {
@@ -1593,11 +1593,11 @@ acceptance_criteria: []
 
 func TestGenerateRequirementsFile_CarriesWeight(t *testing.T) {
 	dir := t.TempDir()
-	prdDir := filepath.Join(dir, "docs", "specs", "product-requirements")
-	os.MkdirAll(prdDir, 0o755)
+	srdDir := filepath.Join(dir, "docs", "specs", "software-requirements")
+	os.MkdirAll(srdDir, 0o755)
 	cobblerDir := filepath.Join(dir, ".cobbler")
 
-	prd := `id: prd001
+	srd := `id: srd001
 title: Test
 problem: test
 goals:
@@ -1613,9 +1613,9 @@ requirements:
 non_goals: []
 acceptance_criteria: []
 `
-	os.WriteFile(filepath.Join(prdDir, "prd001-test.yaml"), []byte(prd), 0o644)
+	os.WriteFile(filepath.Join(srdDir, "srd001-test.yaml"), []byte(srd), 0o644)
 
-	_, err := GenerateRequirementsFile(prdDir, cobblerDir, false)
+	_, err := GenerateRequirementsFile(srdDir, cobblerDir, false)
 	if err != nil {
 		t.Fatalf("GenerateRequirementsFile: %v", err)
 	}
@@ -1625,9 +1625,9 @@ acceptance_criteria: []
 		t.Fatal("LoadRequirementStates returned nil")
 	}
 
-	prdStates := states["prd001-test"]
+	prdStates := states["srd001-test"]
 	if prdStates == nil {
-		t.Fatal("no states for prd001-test")
+		t.Fatal("no states for srd001-test")
 	}
 
 	if w := prdStates["R1.1"].Weight; w != 1 {

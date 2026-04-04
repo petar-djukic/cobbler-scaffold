@@ -15,7 +15,7 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// PhaseContext tests (prd003 R9)
+// PhaseContext tests (srd003 R9)
 // ---------------------------------------------------------------------------
 
 func TestLoadPhaseContext_MissingFile(t *testing.T) {
@@ -338,7 +338,7 @@ func TestExtractFileRelease(t *testing.T) {
 		{"test-rel03.0.yaml", "03.0"},
 		{"docs/specs/use-cases/rel01.0-uc001-feature.yaml", "01.0"},
 		{"something-else.yaml", ""},
-		{"prd001-core.yaml", ""},
+		{"srd001-core.yaml", ""},
 	}
 	for _, tt := range tests {
 		got := ictx.ExtractFileRelease(tt.path)
@@ -363,7 +363,7 @@ func TestResolveStandardFiles(t *testing.T) {
 	// Create standard files.
 	dirs := []string{
 		"docs",
-		"docs/specs/product-requirements",
+		"docs/specs/software-requirements",
 		"docs/specs/use-cases",
 		"docs/specs/test-suites",
 		"docs/engineering",
@@ -376,7 +376,7 @@ func TestResolveStandardFiles(t *testing.T) {
 	standardFiles := []string{
 		"docs/VISION.yaml",
 		"docs/ARCHITECTURE.yaml",
-		"docs/specs/product-requirements/prd001-core.yaml",
+		"docs/specs/software-requirements/srd001-core.yaml",
 		"docs/specs/use-cases/rel01.0-uc001-feature.yaml",
 		"docs/specs/test-suites/test-rel01.0.yaml",
 	}
@@ -609,31 +609,31 @@ func TestPrdIDsFromUseCases(t *testing.T) {
 		{
 			ID: "rel01.0-uc001-feature",
 			Touchpoints: []map[string]string{
-				{"T1": "Component (prd001-core R1, R2)"},
-				{"T2": "Other (prd002-extra R3)"},
+				{"T1": "Component (srd001-core R1, R2)"},
+				{"T2": "Other (srd002-extra R3)"},
 			},
 		},
 		{
 			ID: "rel01.0-uc002-other",
 			Touchpoints: []map[string]string{
-				{"T1": "Same (prd001-core R4)"},
+				{"T1": "Same (srd001-core R4)"},
 			},
 		},
 	}
 
-	ids := ictx.PRDIDsFromUseCases(useCases)
-	if !ids["prd001-core"] {
-		t.Error("expected prd001-core in referenced PRDs")
+	ids := ictx.SRDIDsFromUseCases(useCases)
+	if !ids["srd001-core"] {
+		t.Error("expected srd001-core in referenced SRDs")
 	}
-	if !ids["prd002-extra"] {
-		t.Error("expected prd002-extra in referenced PRDs")
+	if !ids["srd002-extra"] {
+		t.Error("expected srd002-extra in referenced SRDs")
 	}
 	if len(ids) != 2 {
-		t.Errorf("expected 2 PRD IDs, got %d", len(ids))
+		t.Errorf("expected 2 SRD IDs, got %d", len(ids))
 	}
 
 	// Nil use cases should return nil.
-	if got := ictx.PRDIDsFromUseCases(nil); got != nil {
+	if got := ictx.SRDIDsFromUseCases(nil); got != nil {
 		t.Errorf("expected nil for nil use cases, got %v", got)
 	}
 }
@@ -654,7 +654,7 @@ func setupContextTestDir(t *testing.T) (string, func()) {
 	// Create standard doc structure.
 	for _, d := range []string{
 		"docs",
-		"docs/specs/product-requirements",
+		"docs/specs/software-requirements",
 		"docs/specs/use-cases",
 		"docs/specs/test-suites",
 		"docs/engineering",
@@ -1128,7 +1128,7 @@ func TestClassifyContextFile_AllTypes(t *testing.T) {
 		{"docs/ARCHITECTURE.yaml", "architecture"},
 		{"docs/SPECIFICATIONS.yaml", "specifications"},
 		{"docs/road-map.yaml", "roadmap"},
-		{filepath.Join("docs", "specs", "product-requirements", "prd001-feature.yaml"), "prd"},
+		{filepath.Join("docs", "specs", "software-requirements", "srd001-feature.yaml"), "srd"},
 		{filepath.Join("docs", "specs", "use-cases", "rel01.0-uc001-init.yaml"), "use_case"},
 		{filepath.Join("docs", "specs", "test-suites", "test-rel-01.0.yaml"), "test_suite"},
 		{filepath.Join("docs", "specs", "dependency-map.yaml"), "spec_aux"},
@@ -1599,7 +1599,7 @@ func TestBuildProjectContext_ExcludeTests_False(t *testing.T) {
 
 // TestSummarizeGoHeaders_ExportsOnly verifies that unexported functions are
 // removed, exported function bodies are stripped, and the import block and
-// exported types are kept (prd003 R12.3).
+// exported types are kept (srd003 R12.3).
 func TestSummarizeGoHeaders_ExportsOnly(t *testing.T) {
 	t.Parallel()
 	src := `package myapp
@@ -1684,7 +1684,7 @@ var secretKey = "shh"
 }
 
 // TestSummarizeGoHeaders_InvalidInput verifies that invalid Go content is
-// returned unchanged (fallback, prd003 R12.3).
+// returned unchanged (fallback, srd003 R12.3).
 func TestSummarizeGoHeaders_InvalidInput(t *testing.T) {
 	t.Parallel()
 	src := "this is not valid Go source!!!"
@@ -1695,7 +1695,7 @@ func TestSummarizeGoHeaders_InvalidInput(t *testing.T) {
 }
 
 // TestSummarizeCustom_Output verifies that the command output replaces the
-// file content (prd003 R12.4).
+// file content (srd003 R12.4).
 func TestSummarizeCustom_Output(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
@@ -1710,7 +1710,7 @@ func TestSummarizeCustom_Output(t *testing.T) {
 }
 
 // TestSummarizeCustom_FallbackOnFailure verifies that a failing command
-// causes fallback to full content (prd003 R12.4).
+// causes fallback to full content (srd003 R12.4).
 func TestSummarizeCustom_FallbackOnFailure(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
@@ -1736,7 +1736,7 @@ func TestSummarizeCustom_EmptyCommand(t *testing.T) {
 }
 
 // TestBuildProjectContext_SourceMode_Headers verifies that headers mode
-// strips function bodies via buildProjectContext (GH-617, prd003 R12).
+// strips function bodies via buildProjectContext (GH-617, srd003 R12).
 func TestBuildProjectContext_SourceMode_Headers(t *testing.T) {
 	_, cleanup := setupContextTestDir(t)
 	defer cleanup()
@@ -1766,7 +1766,7 @@ func TestBuildProjectContext_SourceMode_Headers(t *testing.T) {
 }
 
 // TestBuildProjectContext_SourceMode_Full verifies that full mode passes
-// content through unchanged (prd003 R12.7).
+// content through unchanged (srd003 R12.7).
 func TestBuildProjectContext_SourceMode_Full(t *testing.T) {
 	_, cleanup := setupContextTestDir(t)
 	defer cleanup()
@@ -1800,7 +1800,7 @@ func TestParseTouchpointPackages_EmDash(t *testing.T) {
 	t.Parallel()
 	touchpoints := []map[string]string{
 		{"T1": "cmd/du \u2014 prd009-du R1, R2, R3"},
-		{"T2": "pkg/sys \u2014 prd003-sys"},
+		{"T2": "pkg/sys \u2014 srd003-sys"},
 	}
 	got := ictx.ParseTouchpointPackages(touchpoints)
 	if len(got) != 2 {
@@ -1825,7 +1825,7 @@ func TestParseTouchpointPackages_EnDash(t *testing.T) {
 func TestParseTouchpointPackages_MultiplePathsCommaSeparated(t *testing.T) {
 	t.Parallel()
 	touchpoints := []map[string]string{
-		{"T1": "cmd/cp, cmd/mv \u2014 prd001-cp R1"},
+		{"T1": "cmd/cp, cmd/mv \u2014 srd001-cp R1"},
 	}
 	got := ictx.ParseTouchpointPackages(touchpoints)
 	if len(got) != 2 {
@@ -1840,8 +1840,8 @@ func TestParseTouchpointPackages_NoDash_Ignored(t *testing.T) {
 	t.Parallel()
 	// Cobbler-style touchpoints without em/en-dash should yield no packages.
 	touchpoints := []map[string]string{
-		{"T1": "Config (workflow fields): prd001-orchestrator-core R1"},
-		{"T2": "Prompt templates: prd003-cobbler-workflows R5"},
+		{"T1": "Config (workflow fields): srd001-orchestrator-core R1"},
+		{"T2": "Prompt templates: srd003-cobbler-workflows R5"},
 	}
 	got := ictx.ParseTouchpointPackages(touchpoints)
 	if len(got) != 0 {
@@ -1852,7 +1852,7 @@ func TestParseTouchpointPackages_NoDash_Ignored(t *testing.T) {
 func TestParseTouchpointPackages_TrailingSlashNormalized(t *testing.T) {
 	t.Parallel()
 	touchpoints := []map[string]string{
-		{"T1": "pkg/util/ \u2014 prd002-util R1"},
+		{"T1": "pkg/util/ \u2014 srd002-util R1"},
 	}
 	got := ictx.ParseTouchpointPackages(touchpoints)
 	if len(got) != 1 || got[0] != "pkg/util" {
@@ -1920,7 +1920,7 @@ releases:
 	ucContent := `id: rel01.0-uc002-workflow
 title: Workflow
 touchpoints:
-  - T1: "pkg/workflow \u2014 prd003-wf R1"
+  - T1: "pkg/workflow \u2014 srd003-wf R1"
 `
 	if err := os.WriteFile("docs/road-map.yaml", []byte(roadmap), 0o644); err != nil {
 		t.Fatal(err)
@@ -1964,7 +1964,7 @@ releases:
 	ucContent := `id: rel02.0-uc001-ext
 title: Extension
 touchpoints:
-  - T1: "pkg/ext \u2014 prd004-ext R1"
+  - T1: "pkg/ext \u2014 srd004-ext R1"
 `
 	if err := os.WriteFile("docs/road-map.yaml", []byte(roadmap), 0o644); err != nil {
 		t.Fatal(err)
@@ -2039,7 +2039,7 @@ releases:
 	ucContent := `id: rel01.0-uc002-next
 title: Next
 touchpoints:
-  - T1: "pkg/next — prd002-next R1"
+  - T1: "pkg/next — srd002-next R1"
 `
 	if err := os.WriteFile("docs/road-map.yaml", []byte(roadmap), 0o644); err != nil {
 		t.Fatal(err)

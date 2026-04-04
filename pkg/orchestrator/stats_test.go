@@ -245,10 +245,10 @@ func TestCollectStats_CountsSpecWords(t *testing.T) {
 	// Go file.
 	os.WriteFile("main.go", []byte("package main\n"), 0o644)
 	// Spec files with known content.
-	os.MkdirAll("docs/specs/product-requirements", 0o755)
+	os.MkdirAll("docs/specs/software-requirements", 0o755)
 	os.MkdirAll("docs/specs/use-cases", 0o755)
-	os.WriteFile("docs/specs/product-requirements/prd001-test.yaml",
-		[]byte("id: prd001-test\ntitle: three words here\n"), 0o644)
+	os.WriteFile("docs/specs/software-requirements/srd001-test.yaml",
+		[]byte("id: srd001-test\ntitle: three words here\n"), 0o644)
 	os.WriteFile("docs/specs/use-cases/rel01.0-uc001-init.yaml",
 		[]byte("id: uc001\ntitle: two words\n"), 0o644)
 
@@ -263,8 +263,8 @@ func TestCollectStats_CountsSpecWords(t *testing.T) {
 	if rec.GoProdLOC != 1 {
 		t.Errorf("GoProdLOC = %d, want 1", rec.GoProdLOC)
 	}
-	if rec.SpecWords["prd"] == 0 {
-		t.Error("expected non-zero PRD word count")
+	if rec.SpecWords["srd"] == 0 {
+		t.Error("expected non-zero SRD word count")
 	}
 	if rec.SpecWords["use_case"] == 0 {
 		t.Error("expected non-zero use_case word count")

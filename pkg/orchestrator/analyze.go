@@ -68,8 +68,8 @@ func (a *Analyzer) validateDocSchemas() []string {
 			errs = append(errs, validateYAMLStrict[SpecificationsDoc](path)...)
 		case "roadmap":
 			errs = append(errs, validateYAMLStrict[RoadmapDoc](path)...)
-		case "prd":
-			errs = append(errs, validateYAMLStrict[PRDDoc](path)...)
+		case "srd":
+			errs = append(errs, validateYAMLStrict[SRDDoc](path)...)
 		case "use_case":
 			errs = append(errs, validateYAMLStrict[UseCaseDoc](path)...)
 		case "test_suite":

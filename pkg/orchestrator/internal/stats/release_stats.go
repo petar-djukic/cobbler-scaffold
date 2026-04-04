@@ -19,16 +19,16 @@ type ReleaseRow struct {
 	Version      string
 	Name         string
 	Status       string
-	PRDs         int
-	PRDsComplete int
-	PRDsStarted  int
-	PRDsNoReqs   int // PRDs with zero requirements (not counted as untouched)
+	SRDs         int
+	SRDsComplete int
+	SRDsStarted  int
+	SRDsNoReqs   int // SRDs with zero requirements (not counted as untouched)
 	Reqs         int
 	ReqsDone     int
 }
 
 // ---------------------------------------------------------------------------
-// Minimal YAML document types for loading roadmap, PRD, and use case files.
+// Minimal YAML document types for loading roadmap, SRD, and use case files.
 // These duplicate only the fields needed by stats; the canonical types live
 // in the parent orchestrator package (context.go).
 // ---------------------------------------------------------------------------
@@ -52,15 +52,15 @@ type RoadmapUseCase struct {
 	Status string `yaml:"status"`
 }
 
-// PRDDoc corresponds to docs/specs/product-requirements/prd*.yaml
+// SRDDoc corresponds to docs/specs/software-requirements/srd*.yaml
 // (stats-relevant fields only).
-type PRDDoc struct {
-	Requirements map[string]PRDRequirementGroup `yaml:"requirements"`
+type SRDDoc struct {
+	Requirements map[string]SRDRequirementGroup `yaml:"requirements"`
 }
 
-// PRDRequirementGroup is a requirement section within a PRD.
+// SRDRequirementGroup is a requirement section within a SRD.
 // Items uses []any to accept both plain string values and weighted values (GH-1832).
-type PRDRequirementGroup struct {
+type SRDRequirementGroup struct {
 	Title string `yaml:"title"`
 	Items []any  `yaml:"items"`
 }
@@ -85,7 +85,7 @@ func loadYAML[T any](path string) *T {
 	return &v
 }
 
-// PrintReleaseStats prints a table of roadmap releases with per-release PRD
+// PrintReleaseStats prints a table of roadmap releases with per-release SRD
 // and requirement counts.
 func PrintReleaseStats() error {
 	rows, err := BuildReleaseRows()
@@ -98,43 +98,43 @@ func PrintReleaseStats() error {
 	}
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "Release\tName\tStatus\tPRDs\tComplete\tStarted\tUntouched\tReqs\tDone")
+	fmt.Fprintln(w, "Release\tName\tStatus\tSRDs\tComplete\tStarted\tUntouched\tReqs\tDone")
 	for _, r := range rows {
-		untouched := r.PRDs - r.PRDsComplete - r.PRDsStarted - r.PRDsNoReqs
+		untouched := r.SRDs - r.SRDsComplete - r.SRDsStarted - r.SRDsNoReqs
 		fmt.Fprintf(w, "%s\t%s\t%s\t%d\t%d\t%d\t%d\t%d\t%d\n",
 			r.Version, r.Name, r.Status,
-			r.PRDs, r.PRDsComplete, r.PRDsStarted, untouched,
+			r.SRDs, r.SRDsComplete, r.SRDsStarted, untouched,
 			r.Reqs, r.ReqsDone)
 	}
 	return w.Flush()
 }
 
-// BuildReleaseRows loads the roadmap, PRD files, and use case touchpoints to
-// produce one row per release with PRD and requirement metrics.
+// BuildReleaseRows loads the roadmap, SRD files, and use case touchpoints to
+// produce one row per release with SRD and requirement metrics.
 func BuildReleaseRows() ([]ReleaseRow, error) {
 	roadmap := loadYAML[RoadmapDoc]("docs/road-map.yaml")
 	if roadmap == nil {
 		return nil, nil
 	}
 
-	// Map PRD short names to release versions via use case touchpoints.
-	prdRel := BuildPRDReleaseMap()
+	// Map SRD short names to release versions via use case touchpoints.
+	prdRel := BuildSRDReleaseMap()
 
-	// Load requirement counts per PRD.
-	_, reqsByPRD := CountTotalPRDRequirements()
+	// Load requirement counts per SRD.
+	_, reqsBySRD := CountTotalSRDRequirements()
 
-	// Group PRDs by release.
+	// Group SRDs by release.
 	type prdInfo struct {
 		short string
 		reqs  int
 	}
-	relPRDs := make(map[string][]prdInfo)
+	relSRDs := make(map[string][]prdInfo)
 	for stem, rel := range prdRel {
-		relPRDs[rel] = append(relPRDs[rel], prdInfo{short: stem, reqs: reqsByPRD[stem]})
+		relSRDs[rel] = append(relSRDs[rel], prdInfo{short: stem, reqs: reqsBySRD[stem]})
 	}
 
-	// Determine which PRDs are "complete" by checking if all use cases in that
-	// release referencing the PRD are done.
+	// Determine which SRDs are "complete" by checking if all use cases in that
+	// release referencing the SRD are done.
 	ucStatuses := make(map[string][]string) // release → list of use case statuses
 	for _, rel := range roadmap.Releases {
 		for _, uc := range rel.UseCases {
@@ -150,25 +150,25 @@ func BuildReleaseRows() ([]ReleaseRow, error) {
 			Status:  rel.Status,
 		}
 
-		prds := relPRDs[rel.Version]
+		prds := relSRDs[rel.Version]
 		sort.Slice(prds, func(i, j int) bool { return prds[i].short < prds[j].short })
-		r.PRDs = len(prds)
+		r.SRDs = len(prds)
 
-		// Count total requirements and determine PRD completion.
+		// Count total requirements and determine SRD completion.
 		allDone := ReleaseAllUCsDone(ucStatuses[rel.Version])
 		anyDone := ReleaseAnyUCDone(ucStatuses[rel.Version])
 
 		for _, p := range prds {
 			r.Reqs += p.reqs
 			if p.reqs == 0 {
-				r.PRDsNoReqs++
+				r.SRDsNoReqs++
 				continue
 			}
 			if allDone {
-				r.PRDsComplete++
+				r.SRDsComplete++
 				r.ReqsDone += p.reqs
 			} else if anyDone {
-				r.PRDsStarted++
+				r.SRDsStarted++
 			}
 		}
 
@@ -203,34 +203,34 @@ func ReleaseAnyUCDone(statuses []string) bool {
 	return false
 }
 
-// CountTotalPRDRequirements loads all PRD files and counts the total number of
+// CountTotalSRDRequirements loads all SRD files and counts the total number of
 // requirement items across all groups. Returns the total count and a map from
-// PRD short name (e.g. "prd-003") to its item count.
-func CountTotalPRDRequirements() (int, map[string]int) {
-	paths, _ := filepath.Glob("docs/specs/product-requirements/prd*.yaml")
-	byPRD := make(map[string]int, len(paths))
+// SRD short name (e.g. "srd-003") to its item count.
+func CountTotalSRDRequirements() (int, map[string]int) {
+	paths, _ := filepath.Glob("docs/specs/software-requirements/srd*.yaml")
+	bySRD := make(map[string]int, len(paths))
 	total := 0
 	for _, path := range paths {
-		prd := loadYAML[PRDDoc](path)
-		if prd == nil {
+		srd := loadYAML[SRDDoc](path)
+		if srd == nil {
 			continue
 		}
 		count := 0
-		for _, group := range prd.Requirements {
+		for _, group := range srd.Requirements {
 			count += len(group.Items)
 		}
 		total += count
-		// Store under the full stem (e.g. "prd006-cat") which is what
-		// ExtractPRDRefs now produces for prdNNN-name format references.
+		// Store under the full stem (e.g. "srd006-cat") which is what
+		// ExtractSRDRefs now produces for srdNNN-name format references.
 		stem := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
-		byPRD[stem] = count
+		bySRD[stem] = count
 	}
-	return total, byPRD
+	return total, bySRD
 }
 
-// BuildPRDReleaseMap loads use case files and maps PRD short names (e.g.
-// "prd-003") to their roadmap release version by parsing touchpoint references.
-func BuildPRDReleaseMap() map[string]string {
+// BuildSRDReleaseMap loads use case files and maps SRD short names (e.g.
+// "srd-003") to their roadmap release version by parsing touchpoint references.
+func BuildSRDReleaseMap() map[string]string {
 	paths, _ := filepath.Glob("docs/specs/use-cases/rel*.yaml")
 	prdRelease := make(map[string]string)
 	for _, path := range paths {
@@ -250,21 +250,21 @@ func BuildPRDReleaseMap() map[string]string {
 		if uc == nil {
 			continue
 		}
-		// Touchpoints reference PRDs like "prd003-cobbler-workflows R1, R2".
+		// Touchpoints reference SRDs like "srd003-cobbler-workflows R1, R2".
 		for _, tp := range uc.Touchpoints {
 			for _, v := range tp {
 				for _, word := range strings.Fields(v) {
 					w := strings.ToLower(strings.Trim(word, ".,;:()[]`\"'"))
-					if !strings.HasPrefix(w, "prd") || len(w) < 6 {
+					if !strings.HasPrefix(w, "srd") || len(w) < 6 {
 						continue
 					}
 					if w[3] >= '0' && w[3] <= '9' {
 						// Strip trailing requirement refs (e.g. "R1," suffix
 						// is already trimmed by Trim above). Keep full stem
-						// like "prd003-cobbler-workflows".
-						// Also strip anything that is just the "prdNNN" prefix
+						// like "srd003-cobbler-workflows".
+						// Also strip anything that is just the "srdNNN" prefix
 						// without a hyphen-separated name (e.g. if the
-						// touchpoint uses a bare "prd003 R1" token, skip it).
+						// touchpoint uses a bare "srd003 R1" token, skip it).
 						if !strings.ContainsRune(w[3:], '-') {
 							continue
 						}

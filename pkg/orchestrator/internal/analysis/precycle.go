@@ -43,8 +43,8 @@ type PreCycleDeps struct {
 // of human-readable issue strings.
 func CollectConsistencyDetails(r *AnalyzeResult) []string {
 	var details []string
-	for _, v := range r.OrphanedPRDs {
-		details = append(details, "orphaned PRD: "+v)
+	for _, v := range r.OrphanedSRDs {
+		details = append(details, "orphaned SRD: "+v)
 	}
 	for _, v := range r.ReleasesWithoutTestSuites {
 		details = append(details, "release without test suite: "+v)

@@ -815,14 +815,14 @@ func TestNormalizeIssueTitle(t *testing.T) {
 		input string
 		want  string
 	}{
-		{"measure prefix", "[measure] prd001: Implement Foo", "prd001: Implement Foo"},
-		{"stitch prefix", "[stitch] prd001: Implement Foo", "prd001: Implement Foo"},
-		{"no prefix", "prd001: Implement Foo", "prd001: Implement Foo"},
-		{"extra whitespace", "  [measure]  prd001: Implement Foo  ", "prd001: Implement Foo"},
+		{"measure prefix", "[measure] srd001: Implement Foo", "srd001: Implement Foo"},
+		{"stitch prefix", "[stitch] srd001: Implement Foo", "srd001: Implement Foo"},
+		{"no prefix", "srd001: Implement Foo", "srd001: Implement Foo"},
+		{"extra whitespace", "  [measure]  srd001: Implement Foo  ", "srd001: Implement Foo"},
 		{"empty string", "", ""},
 		{"prefix only", "[measure] ", "[measure]"},
-		{"double stitch", "[stitch] [stitch] prd001: Implement Foo", "[stitch] prd001: Implement Foo"},
-		{"stitch in proposed title", "[stitch] prd001: Implement Foo", "prd001: Implement Foo"},
+		{"double stitch", "[stitch] [stitch] srd001: Implement Foo", "[stitch] srd001: Implement Foo"},
+		{"stitch in proposed title", "[stitch] srd001: Implement Foo", "srd001: Implement Foo"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

@@ -3,7 +3,7 @@
 
 // compare.go delegates cross-generation differential comparison to the
 // internal/compare sub-package.
-// prd: prd004-differential-comparison R1, R2, R3
+// srd: srd004-differential-comparison R1, R2, R3
 
 package orchestrator
 

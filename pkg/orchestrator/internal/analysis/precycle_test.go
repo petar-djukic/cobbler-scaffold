@@ -61,14 +61,14 @@ func TestCollectConsistencyDetails_Empty(t *testing.T) {
 
 func TestCollectConsistencyDetails_AllFields(t *testing.T) {
 	r := &AnalyzeResult{
-		OrphanedPRDs:              []string{"prd-orphan"},
+		OrphanedSRDs:              []string{"srd-orphan"},
 		ReleasesWithoutTestSuites: []string{"rel01.0"},
 		OrphanedTestSuites:        []string{"test-rel99.0"},
-		BrokenTouchpoints:         []string{"uc001->prd-missing"},
+		BrokenTouchpoints:         []string{"uc001->srd-missing"},
 		UseCasesNotInRoadmap:      []string{"rel01.0-uc099"},
 		SchemaErrors:              []string{"bad-field.yaml"},   // excluded from details
 		ConstitutionDrift:         []string{"design.yaml"},      // excluded from details
-		BrokenCitations:           []string{"uc001->prd001:R99"},
+		BrokenCitations:           []string{"uc001->srd001:R99"},
 	}
 	details := CollectConsistencyDetails(r)
 
@@ -77,7 +77,7 @@ func TestCollectConsistencyDetails_AllFields(t *testing.T) {
 	}
 
 	prefixes := []string{
-		"orphaned PRD:",
+		"orphaned SRD:",
 		"release without test suite:",
 		"orphaned test suite:",
 		"broken touchpoint:",
@@ -93,7 +93,7 @@ func TestCollectConsistencyDetails_AllFields(t *testing.T) {
 
 func TestCollectConsistencyDetails_MultiplePerField(t *testing.T) {
 	r := &AnalyzeResult{
-		OrphanedPRDs:    []string{"prd-a", "prd-b"},
+		OrphanedSRDs:    []string{"srd-a", "srd-b"},
 		SchemaErrors:    []string{"err1", "err2", "err3"}, // excluded from details
 		BrokenCitations: []string{"cite1"},
 	}
@@ -117,7 +117,7 @@ func TestCollectDefects_SchemaAndDrift(t *testing.T) {
 	r := &AnalyzeResult{
 		SchemaErrors:      []string{"docs/VISION.yaml: type mismatch at line 31"},
 		ConstitutionDrift: []string{"design.yaml"},
-		OrphanedPRDs:      []string{"prd-x"}, // must NOT appear in defects
+		OrphanedSRDs:      []string{"srd-x"}, // must NOT appear in defects
 	}
 	defects := CollectDefects(r)
 
@@ -154,7 +154,7 @@ func TestAnalysisDocDefectsRoundTrip(t *testing.T) {
 
 	doc := &AnalysisDoc{
 		ConsistencyErrors:  1,
-		ConsistencyDetails: []string{"orphaned PRD: prd-x"},
+		ConsistencyDetails: []string{"orphaned SRD: srd-x"},
 		Defects:            []string{"schema error: docs/VISION.yaml: bad field"},
 	}
 
@@ -185,7 +185,7 @@ func TestWriteAndLoadAnalysisDoc(t *testing.T) {
 
 	doc := &AnalysisDoc{
 		ConsistencyErrors:  2,
-		ConsistencyDetails: []string{"orphaned PRD: prd-x", "schema error: bad.yaml"},
+		ConsistencyDetails: []string{"orphaned SRD: srd-x", "schema error: bad.yaml"},
 		CodeStatus: &CodeStatusReport{
 			Releases: []ReleaseCodeStatus{{
 				Version:       "01.0",
@@ -284,14 +284,14 @@ func TestRunPreCycleAnalysis_WritesFile(t *testing.T) {
 	os.Chdir(dir)
 	t.Cleanup(func() { os.Chdir(orig) })
 
-	os.MkdirAll("docs/specs/product-requirements", 0o755)
+	os.MkdirAll("docs/specs/software-requirements", 0o755)
 	os.MkdirAll("docs/specs/use-cases", 0o755)
 	os.MkdirAll("docs/specs/test-suites", 0o755)
 	os.WriteFile("docs/road-map.yaml", []byte("releases:\n  - id: rel01.0\n    use_cases:\n      - id: rel01.0-uc001-init\n        summary: Init\n        status: done\n"), 0o644)
 	os.WriteFile("docs/specs/use-cases/rel01.0-uc001-init.yaml",
-		[]byte("id: rel01.0-uc001-init\ntitle: Init\ntouchpoints:\n  - T1: prd001-core R1\n"), 0o644)
-	os.WriteFile("docs/specs/product-requirements/prd001-core.yaml",
-		[]byte("id: prd001-core\ntitle: Core\nrequirements:\n  - id: R1\n    title: Req 1\n"), 0o644)
+		[]byte("id: rel01.0-uc001-init\ntitle: Init\ntouchpoints:\n  - T1: srd001-core R1\n"), 0o644)
+	os.WriteFile("docs/specs/software-requirements/srd001-core.yaml",
+		[]byte("id: srd001-core\ntitle: Core\nrequirements:\n  - id: R1\n    title: Req 1\n"), 0o644)
 	os.WriteFile("docs/specs/test-suites/test-rel01.0.yaml",
 		[]byte("id: test-rel01.0\ntitle: Tests\nrelease: rel01.0\ntraces:\n  - rel01.0-uc001-init\n"), 0o644)
 

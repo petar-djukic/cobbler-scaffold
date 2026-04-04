@@ -48,7 +48,7 @@ func TestListGenerations_FindsStartTags(t *testing.T) {
 func TestCollectRunSummary_StitchAggregation(t *testing.T) {
 	stitch1 := `caller: stitch
 task_id: "100"
-task_title: "[stitch] prd001 R1 feature A"
+task_title: "[stitch] srd001 R1 feature A"
 status: success
 started_at: "2026-03-10T10:00:00Z"
 duration_s: 200
@@ -60,7 +60,7 @@ num_turns: 10
 `
 	stitch2 := `caller: stitch
 task_id: "101"
-task_title: "[stitch] prd002 R1 feature B"
+task_title: "[stitch] srd002 R1 feature B"
 status: success
 started_at: "2026-03-10T11:00:00Z"
 duration_s: 300
@@ -82,7 +82,7 @@ num_turns: 5
 		"gen1-merged:.cobbler/history/01-stitch-stats.yaml":     stitch1,
 		"gen1-merged:.cobbler/history/02-stitch-stats.yaml":     stitch2,
 		"gen1-merged:.cobbler/history/03-measure-stats.yaml":    measure1,
-		"gen1-merged:.cobbler/requirements.yaml":                "requirements:\n  prd001:\n    R1.1:\n      status: complete\n    R1.2:\n      status: ready\n  prd002:\n    R1.1:\n      status: complete\n",
+		"gen1-merged:.cobbler/requirements.yaml":                "requirements:\n  srd001:\n    R1.1:\n      status: complete\n    R1.2:\n      status: ready\n  srd002:\n    R1.1:\n      status: complete\n",
 	}
 	deps := noopRunDeps()
 	deps.ShowFile = func(ref, path string) ([]byte, error) {

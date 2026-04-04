@@ -3,7 +3,7 @@
 
 // vscode.go delegates VS Code extension operations to the internal/vscode
 // sub-package.
-// prd: prd006-vscode-extension R10
+// srd: srd006-vscode-extension R10
 
 package orchestrator
 

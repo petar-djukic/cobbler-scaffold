@@ -13,7 +13,7 @@ import (
 type Logger func(format string, args ...any)
 
 // ---------------------------------------------------------------------------
-// Minimal YAML document types for loading roadmap, PRD, and architecture
+// Minimal YAML document types for loading roadmap, SRD, and architecture
 // files. These duplicate only the fields needed by analysis; the canonical
 // types live in the parent orchestrator package (context.go).
 // ---------------------------------------------------------------------------
@@ -38,14 +38,14 @@ type RoadmapUseCase struct {
 	Status string `yaml:"status"`
 }
 
-// PRDDoc corresponds to docs/specs/product-requirements/prd*.yaml
+// SRDDoc corresponds to docs/specs/software-requirements/srd*.yaml
 // (analysis-relevant fields).
-type PRDDoc struct {
-	Requirements       map[string]PRDRequirementGroup `yaml:"requirements"`
+type SRDDoc struct {
+	Requirements       map[string]SRDRequirementGroup `yaml:"requirements"`
 	AcceptanceCriteria []AcceptanceCriterion          `yaml:"acceptance_criteria"`
-	PackageContract    *PRDPackageContract            `yaml:"package_contract,omitempty"`
-	DependsOn          []PRDDependsOn                 `yaml:"depends_on,omitempty"`
-	StructRefs         []PRDStructRef                 `yaml:"struct_refs,omitempty"`
+	PackageContract    *SRDPackageContract            `yaml:"package_contract,omitempty"`
+	DependsOn          []SRDDependsOn                 `yaml:"depends_on,omitempty"`
+	StructRefs         []SRDStructRef                 `yaml:"struct_refs,omitempty"`
 	ImplementedBy      []string                       `yaml:"implemented_by,omitempty"`
 	UsedBy             []string                       `yaml:"used_by,omitempty"`
 }
@@ -59,40 +59,40 @@ type AcceptanceCriterion struct {
 }
 
 // SuccessCriterion is a structured success criterion from a use case,
-// with an ID, description, and traceability links to PRD ACs.
+// with an ID, description, and traceability links to SRD ACs.
 type SuccessCriterion struct {
 	ID        string   `yaml:"id"`
 	Criterion string   `yaml:"criterion"`
 	Traces    []string `yaml:"traces"`
 }
 
-// PRDRequirementGroup is a requirement section within a PRD.
+// SRDRequirementGroup is a requirement section within a SRD.
 // Items uses []any to accept both plain string values ("R1.1: text") and
 // weighted values ("R1.1: {text: ..., weight: N}") (GH-1832).
-type PRDRequirementGroup struct {
+type SRDRequirementGroup struct {
 	Title string `yaml:"title"`
 	Items []any  `yaml:"items"`
 }
 
-// PRDPackageContract describes the public API surface of a pkg/ package.
-type PRDPackageContract struct {
-	Exports []PRDExport `yaml:"exports,omitempty"`
+// SRDPackageContract describes the public API surface of a pkg/ package.
+type SRDPackageContract struct {
+	Exports []SRDExport `yaml:"exports,omitempty"`
 }
 
-// PRDExport is a single exported symbol with its signature.
-type PRDExport struct {
+// SRDExport is a single exported symbol with its signature.
+type SRDExport struct {
 	Name string `yaml:"name"`
 }
 
-// PRDDependsOn declares that a cmd/ PRD depends on a pkg/ PRD.
-type PRDDependsOn struct {
-	PRDID       string   `yaml:"prd_id"`
+// SRDDependsOn declares that a cmd/ SRD depends on a pkg/ SRD.
+type SRDDependsOn struct {
+	SRDID       string   `yaml:"prd_id"`
 	SymbolsUsed []string `yaml:"symbols_used,omitempty"`
 }
 
-// PRDStructRef cross-references a type definition in another PRD.
-type PRDStructRef struct {
-	PRDID       string `yaml:"prd_id"`
+// SRDStructRef cross-references a type definition in another SRD.
+type SRDStructRef struct {
+	SRDID       string `yaml:"prd_id"`
 	Requirement string `yaml:"requirement"`
 }
 

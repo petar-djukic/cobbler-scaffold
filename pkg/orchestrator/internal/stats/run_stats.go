@@ -204,8 +204,8 @@ func CollectRunSummary(name string, deps RunStatsDeps) (*RunSummary, error) {
 	if deps.ShowFile != nil {
 		if data, err := deps.ShowFile(histRef, reqPath); err == nil {
 			reqStates := generate.ParseRequirementStates(data)
-			for _, prdReqs := range reqStates {
-				for _, st := range prdReqs {
+			for _, srdReqs := range reqStates {
+				for _, st := range srdReqs {
 					summary.TotalReqs++
 					switch st.Status {
 					case "complete":

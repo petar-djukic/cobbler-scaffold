@@ -57,7 +57,7 @@ type ContextConfig struct {
 }
 
 // ---------------------------------------------------------------------------
-// PhaseContext: per-phase context overrides (prd003 R9)
+// PhaseContext: per-phase context overrides (srd003 R9)
 // ---------------------------------------------------------------------------
 
 // PhaseContext holds per-phase context specification that overrides
@@ -81,7 +81,7 @@ type PhaseContext struct {
 	// SourceMode overrides CobblerConfig.MeasureSourceMode for this
 	// invocation. Valid values: "full", "headers", "custom". Empty means
 	// use the config value. Measure prompt only — stitch ignores this
-	// field and always uses full source (GH-617, prd003 R12.6).
+	// field and always uses full source (GH-617, srd003 R12.6).
 	SourceMode string `yaml:"source_mode"`
 	// SummarizeCommand overrides CobblerConfig.MeasureSummarizeCommand
 	// for this invocation. Used when SourceMode is "custom" (GH-617).
@@ -134,7 +134,7 @@ const DefaultStitchContext = `# Phase context for the stitch workflow.
 
 # include: |
 #   docs/ARCHITECTURE.yaml
-#   docs/specs/product-requirements/prd*.yaml
+#   docs/specs/software-requirements/srd*.yaml
 
 # exclude: |
 #   docs/engineering/*
@@ -322,10 +322,10 @@ type SpecificationsDoc struct {
 	Title                string          `yaml:"title"`
 	Overview             string          `yaml:"overview"`
 	RoadmapSummary       []SpecRelease   `yaml:"roadmap_summary"`
-	PRDIndex             []SpecIndex     `yaml:"prd_index"`
+	SRDIndex             []SpecIndex     `yaml:"srd_index"`
 	UseCaseIndex         []SpecIndex     `yaml:"use_case_index"`
 	TestSuiteIndex       []TestSuiteRef  `yaml:"test_suite_index"`
-	PRDToUseCaseMapping  []PRDUseCaseMap `yaml:"prd_to_use_case_mapping"`
+	SRDToUseCaseMapping  []SRDUseCaseMap `yaml:"srd_to_use_case_mapping"`
 	TraceabilityDiagram  string          `yaml:"traceability_diagram,omitempty"`
 	CoverageGaps         string          `yaml:"coverage_gaps"`
 	References           []string        `yaml:"references,omitempty"`
@@ -358,9 +358,9 @@ type TestSuiteRef struct {
 	Path          string   `yaml:"path"`
 }
 
-type PRDUseCaseMap struct {
+type SRDUseCaseMap struct {
 	UseCase     string `yaml:"use_case"`
-	PRD         string `yaml:"prd"`
+	SRD         string `yaml:"srd"`
 	WhyRequired string `yaml:"why_required"`
 	Coverage    string `yaml:"coverage"`
 }
@@ -400,7 +400,7 @@ type RoadmapUseCase struct {
 // SpecsCollection groups product requirements, use cases, test suites,
 // and supporting specs from docs/specs/.
 type SpecsCollection struct {
-	ProductRequirements []*PRDDoc       `yaml:"product_requirements,omitempty"`
+	SoftwareRequirements []*SRDDoc       `yaml:"product_requirements,omitempty"`
 	UseCases            []*UseCaseDoc   `yaml:"use_cases,omitempty"`
 	TestSuites          []*TestSuiteDoc `yaml:"test_suites,omitempty"`
 	DependencyMap       *NamedDoc       `yaml:"dependency_map,omitempty"`
@@ -408,60 +408,60 @@ type SpecsCollection struct {
 }
 
 // ---------------------------------------------------------------------------
-// PRD
+// SRD
 // ---------------------------------------------------------------------------
 
-// PRDDoc corresponds to docs/specs/product-requirements/prd*.yaml.
+// SRDDoc corresponds to docs/specs/software-requirements/srd*.yaml.
 // Goals use "- G1: text" format (list of single-key maps).
 // Requirements use a map keyed by group ID (R1, R2, ...).
 // AcceptanceCriteria use structured objects with id, criterion, and traces.
-type PRDDoc struct {
+type SRDDoc struct {
 	File               string                         `yaml:"file,omitempty"`
 	ID                 string                         `yaml:"id"`
 	Title              string                         `yaml:"title"`
 	Problem            string                         `yaml:"problem"`
 	Goals              []map[string]string            `yaml:"goals"`
-	Requirements       map[string]PRDRequirementGroup `yaml:"requirements"`
+	Requirements       map[string]SRDRequirementGroup `yaml:"requirements"`
 	NonGoals           []string                       `yaml:"non_goals"`
-	AcceptanceCriteria []PRDAcceptanceCriterion        `yaml:"acceptance_criteria"`
+	AcceptanceCriteria []SRDAcceptanceCriterion        `yaml:"acceptance_criteria"`
 	References         []string                       `yaml:"references,omitempty"`
-	PackageContract    *PRDPackageContract            `yaml:"package_contract,omitempty"`
-	DependsOn          []PRDDependsOn                 `yaml:"depends_on,omitempty"`
-	StructRefs         []PRDStructRef                 `yaml:"struct_refs,omitempty"`
+	PackageContract    *SRDPackageContract            `yaml:"package_contract,omitempty"`
+	DependsOn          []SRDDependsOn                 `yaml:"depends_on,omitempty"`
+	StructRefs         []SRDStructRef                 `yaml:"struct_refs,omitempty"`
 	ImplementedBy      []string                       `yaml:"implemented_by,omitempty"`
 	UsedBy             []string                       `yaml:"used_by,omitempty"`
 	SemanticModel      *yaml.Node                     `yaml:"semantic_model,omitempty"`
 }
 
-// PRDAcceptanceCriterion is a structured acceptance criterion with an ID,
+// SRDAcceptanceCriterion is a structured acceptance criterion with an ID,
 // description, and traceability links to requirement items.
-type PRDAcceptanceCriterion struct {
+type SRDAcceptanceCriterion struct {
 	ID        string   `yaml:"id"`
 	Criterion string   `yaml:"criterion"`
 	Traces    []string `yaml:"traces"`
 }
 
-// PRDRequirementGroup is a requirement section within a PRD.
-type PRDRequirementGroup struct {
+// SRDRequirementGroup is a requirement section within a SRD.
+type SRDRequirementGroup struct {
 	Title string               `yaml:"title"`
-	Items []PRDRequirementItem `yaml:"items"`
+	Items []SRDRequirementItem `yaml:"items"`
 }
 
-// PRDRequirementItem represents a single R-item in a PRD. It supports two
+// SRDRequirementItem represents a single R-item in a SRD. It supports two
 // YAML formats:
 //
 //	Simple:  - R1.1: Must accept -f flag         (weight defaults to 1)
 //	Weighted: - R1.1:
 //	              text: Must scan each input line
 //	              weight: 3
-type PRDRequirementItem struct {
+type SRDRequirementItem struct {
 	ID     string
 	Text   string
 	Weight int // positive integer, default 1, no upper bound (GH-1832)
 }
 
 // UnmarshalYAML handles both string and {text, weight} map values for R-items.
-func (item *PRDRequirementItem) UnmarshalYAML(value *yaml.Node) error {
+func (item *SRDRequirementItem) UnmarshalYAML(value *yaml.Node) error {
 	// Items are single-key maps: {"R1.1": <value>}
 	if value.Kind != yaml.MappingNode || len(value.Content) < 2 {
 		return fmt.Errorf("expected mapping node for requirement item, got kind %d", value.Kind)
@@ -494,30 +494,30 @@ func (item *PRDRequirementItem) UnmarshalYAML(value *yaml.Node) error {
 	return nil
 }
 
-// PRDPackageContract describes the public API surface of a pkg/ package.
-type PRDPackageContract struct {
-	Exports           []PRDExport `yaml:"exports,omitempty"`
+// SRDPackageContract describes the public API surface of a pkg/ package.
+type SRDPackageContract struct {
+	Exports           []SRDExport `yaml:"exports,omitempty"`
 	Imports           []string    `yaml:"imports,omitempty"`
 	ImportConstraints []string    `yaml:"import_constraints,omitempty"`
 }
 
-// PRDExport is a single exported symbol with its signature.
-type PRDExport struct {
+// SRDExport is a single exported symbol with its signature.
+type SRDExport struct {
 	Name      string `yaml:"name"`
 	Signature string `yaml:"signature,omitempty"`
 }
 
-// PRDDependsOn declares that a cmd/ PRD depends on a pkg/ PRD,
+// SRDDependsOn declares that a cmd/ SRD depends on a pkg/ SRD,
 // listing the specific symbols consumed.
-type PRDDependsOn struct {
-	PRDID       string   `yaml:"prd_id"`
+type SRDDependsOn struct {
+	SRDID       string   `yaml:"prd_id"`
 	SymbolsUsed []string `yaml:"symbols_used,omitempty"`
 }
 
-// PRDStructRef cross-references a type definition in another PRD
+// SRDStructRef cross-references a type definition in another SRD
 // to avoid inline duplication.
-type PRDStructRef struct {
-	PRDID       string `yaml:"prd_id"`
+type SRDStructRef struct {
+	SRDID       string `yaml:"prd_id"`
 	Requirement string `yaml:"requirement"`
 }
 
@@ -546,7 +546,7 @@ type UseCaseDoc struct {
 }
 
 // UCSuccessCriterion is a structured success criterion from a use case,
-// with an ID, description, and traceability links to PRD acceptance criteria.
+// with an ID, description, and traceability links to SRD acceptance criteria.
 type UCSuccessCriterion struct {
 	ID        string   `yaml:"id"`
 	Criterion string   `yaml:"criterion"`
@@ -565,16 +565,16 @@ type UCInteractionStep struct {
 // OOD prompt context helpers
 // ---------------------------------------------------------------------------
 
-// OODPackageContractRef bundles a PRD ID with its package_contract for
+// OODPackageContractRef bundles a SRD ID with its package_contract for
 // injection into measure and stitch prompts as structured API context.
 type OODPackageContractRef struct {
-	PRDID    string             `yaml:"prd_id"`
-	Contract PRDPackageContract `yaml:"contract"`
+	SRDID    string             `yaml:"prd_id"`
+	Contract SRDPackageContract `yaml:"contract"`
 }
 
-// LoadOODPromptContext reads all PRDs under docs/specs/product-requirements/
+// LoadOODPromptContext reads all SRDs under docs/specs/software-requirements/
 // and returns:
-//   - contracts: one OODPackageContractRef per PRD that has a non-empty
+//   - contracts: one OODPackageContractRef per SRD that has a non-empty
 //     package_contract (used in both measure and stitch prompts).
 //   - sharedProtocols: the shared_protocols from docs/ARCHITECTURE.yaml
 //     (used in the stitch prompt only).
@@ -585,15 +585,15 @@ func LoadOODPromptContext() (contracts []OODPackageContractRef, sharedProtocols 
 	contracts = []OODPackageContractRef{}
 	sharedProtocols = []ArchSharedProtocol{}
 
-	prdFiles, _ := filepath.Glob("docs/specs/product-requirements/prd*.yaml")
+	prdFiles, _ := filepath.Glob("docs/specs/software-requirements/srd*.yaml")
 	for _, path := range prdFiles {
-		prd := LoadYAML[PRDDoc](path)
-		if prd == nil || prd.PackageContract == nil || len(prd.PackageContract.Exports) == 0 {
+		srd := LoadYAML[SRDDoc](path)
+		if srd == nil || srd.PackageContract == nil || len(srd.PackageContract.Exports) == 0 {
 			continue
 		}
 		contracts = append(contracts, OODPackageContractRef{
-			PRDID:    prd.ID,
-			Contract: *prd.PackageContract,
+			SRDID:    srd.ID,
+			Contract: *srd.PackageContract,
 		})
 	}
 
@@ -606,15 +606,15 @@ func LoadOODPromptContext() (contracts []OODPackageContractRef, sharedProtocols 
 	return contracts, sharedProtocols
 }
 
-// LoadPRDSemanticModel reads all PRDs under docs/specs/product-requirements/
-// and returns the semantic_model yaml.Node from the first PRD that has one.
-// Returns nil when no PRD contains a semantic_model field.
+// LoadSRDSemanticModel reads all SRDs under docs/specs/software-requirements/
+// and returns the semantic_model yaml.Node from the first SRD that has one.
+// Returns nil when no SRD contains a semantic_model field.
 //
-// We parse the raw YAML node tree rather than unmarshaling into PRDDoc
+// We parse the raw YAML node tree rather than unmarshaling into SRDDoc
 // because yaml.v3 does not populate *yaml.Node fields when unmarshaling
 // into a struct (the node ends up with Kind=0).
-func LoadPRDSemanticModel() *yaml.Node {
-	prdFiles, _ := filepath.Glob("docs/specs/product-requirements/prd*.yaml")
+func LoadSRDSemanticModel() *yaml.Node {
+	prdFiles, _ := filepath.Glob("docs/specs/software-requirements/srd*.yaml")
 	for _, path := range prdFiles {
 		data, err := os.ReadFile(path)
 		if err != nil {
@@ -1216,12 +1216,12 @@ func NumberLines(content string) string {
 }
 
 // ---------------------------------------------------------------------------
-// Source summarization (GH-617, prd003 R12)
+// Source summarization (GH-617, srd003 R12)
 // ---------------------------------------------------------------------------
 
 // SummarizeGoHeaders parses a Go source file and returns a headers-only
 // version: package declaration, import block, and exported type/func/const/var
-// declarations with doc comments but without function bodies (prd003 R12.3).
+// declarations with doc comments but without function bodies (srd003 R12.3).
 // Returns full content unchanged if parsing fails.
 func SummarizeGoHeaders(content string) string {
 	fset := token.NewFileSet()
@@ -1279,7 +1279,7 @@ func SummarizeGoHeaders(content string) string {
 }
 
 // SummarizeCustom runs command with filePath appended as the last argument
-// and returns stdout as the summarized content (prd003 R12.4). Falls back to
+// and returns stdout as the summarized content (srd003 R12.4). Falls back to
 // fullContent when the command exits non-zero or produces empty output.
 func SummarizeCustom(command, filePath, fullContent string) string {
 	if command == "" {
@@ -1430,8 +1430,8 @@ func ClassifyContextFile(path string) string {
 		return "specifications"
 	case dir == "docs" && base == "road-map.yaml":
 		return "roadmap"
-	case dir == filepath.Join("docs", "specs", "product-requirements"):
-		return "prd"
+	case dir == filepath.Join("docs", "specs", "software-requirements"):
+		return "srd"
 	case dir == filepath.Join("docs", "specs", "use-cases"):
 		return "use_case"
 	case dir == filepath.Join("docs", "specs", "test-suites"):
@@ -1461,7 +1461,7 @@ var StandardContextPatterns = []string{
 	"docs/ARCHITECTURE.yaml",
 	"docs/SPECIFICATIONS.yaml",
 	"docs/road-map.yaml",
-	"docs/specs/product-requirements/prd*.yaml",
+	"docs/specs/software-requirements/srd*.yaml",
 	"docs/specs/use-cases/rel*.yaml",
 	"docs/specs/test-suites/test-rel*.yaml",
 	"docs/specs/dependency-map.yaml",
@@ -1590,9 +1590,9 @@ func FileMatchesRelease(path string, rf ReleaseFilter) bool {
 	return fileRelease <= rf.MaxRelease
 }
 
-// PRDIDsFromUseCases extracts PRD IDs referenced by touchpoints in the
-// given use cases. Returns a set of PRD filename stems (e.g., "prd001-feature").
-func PRDIDsFromUseCases(useCases []*UseCaseDoc) map[string]bool {
+// SRDIDsFromUseCases extracts SRD IDs referenced by touchpoints in the
+// given use cases. Returns a set of SRD filename stems (e.g., "srd001-feature").
+func SRDIDsFromUseCases(useCases []*UseCaseDoc) map[string]bool {
 	if len(useCases) == 0 {
 		return nil
 	}
@@ -1602,7 +1602,7 @@ func PRDIDsFromUseCases(useCases []*UseCaseDoc) map[string]bool {
 			for _, text := range tp {
 				for _, word := range strings.Fields(text) {
 					word = strings.TrimSuffix(strings.TrimPrefix(word, "("), ")")
-					if strings.HasPrefix(word, "prd") {
+					if strings.HasPrefix(word, "srd") {
 						ids[word] = true
 					}
 				}
@@ -1731,7 +1731,7 @@ func SelectNextPendingUseCase(cfg ContextConfig) (*UseCaseDoc, error) {
 // ParseTouchpointPackages extracts Go package directory paths from a use
 // case's touchpoints. Each touchpoint value is expected to use the format:
 //
-//	"<pkg-path> — <prd-id> R1, R2"   (em-dash U+2014 or en-dash U+2013)
+//	"<pkg-path> — <srd-id> R1, R2"   (em-dash U+2014 or en-dash U+2013)
 //
 // where <pkg-path> may be a single directory or a comma-separated list.
 // Only segments that contain a "/" are treated as paths; others are ignored.
@@ -1848,7 +1848,7 @@ func LoadContextFileInto(ctx *ProjectContext, path string, rf ReleaseFilter) {
 // existing issues, and assembles them into a ProjectContext struct.
 // The project config controls include/exclude filtering and release scoping.
 // When phaseCtx is non-nil, its non-empty fields override the corresponding
-// ContextConfig fields (prd003 R9.5-R9.7).
+// ContextConfig fields (srd003 R9.5-R9.7).
 // The cobblerDir parameter is the path to the .cobbler scratch directory.
 func BuildProjectContext(existingIssuesJSON string, project ContextConfig, phaseCtx *PhaseContext, cobblerDir string) (*ProjectContext, error) {
 	ctx := &ProjectContext{}
@@ -1915,30 +1915,30 @@ func BuildProjectContext(existingIssuesJSON string, project ContextConfig, phase
 
 	for _, path := range docFiles {
 		standardSet[path] = true
-		if ClassifyContextFile(path) == "prd" {
+		if ClassifyContextFile(path) == "srd" {
 			prdPaths = append(prdPaths, path)
 			continue
 		}
 		LoadContextFileInto(ctx, path, rf)
 	}
 
-	// Load PRDs filtered by release: when a release filter is active, only
-	// include PRDs referenced by the loaded (release-scoped) use cases.
+	// Load SRDs filtered by release: when a release filter is active, only
+	// include SRDs referenced by the loaded (release-scoped) use cases.
 	if !rf.Active() {
 		for _, path := range prdPaths {
-			if v := LoadYAML[PRDDoc](path); v != nil {
+			if v := LoadYAML[SRDDoc](path); v != nil {
 				v.File = path
-				ctx.Specs.ProductRequirements = append(ctx.Specs.ProductRequirements, v)
+				ctx.Specs.SoftwareRequirements = append(ctx.Specs.SoftwareRequirements, v)
 			}
 		}
 	} else {
-		referencedPRDs := PRDIDsFromUseCases(ctx.Specs.UseCases)
+		referencedSRDs := SRDIDsFromUseCases(ctx.Specs.UseCases)
 		for _, path := range prdPaths {
 			stem := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
-			if referencedPRDs[stem] {
-				if v := LoadYAML[PRDDoc](path); v != nil {
+			if referencedSRDs[stem] {
+				if v := LoadYAML[SRDDoc](path); v != nil {
 					v.File = path
-					ctx.Specs.ProductRequirements = append(ctx.Specs.ProductRequirements, v)
+					ctx.Specs.SoftwareRequirements = append(ctx.Specs.SoftwareRequirements, v)
 				}
 			}
 		}
@@ -1973,7 +1973,7 @@ func BuildProjectContext(existingIssuesJSON string, project ContextConfig, phase
 			// Claude's reasoning (GH-1513).
 			filtered := make(map[string]map[string]RequirementStateEntry, len(reqFile.Requirements))
 			totalReady := 0
-			for prd, items := range reqFile.Requirements {
+			for srd, items := range reqFile.Requirements {
 				readyItems := make(map[string]RequirementStateEntry)
 				for id, st := range items {
 					if st.Status == "ready" {
@@ -1982,16 +1982,16 @@ func BuildProjectContext(existingIssuesJSON string, project ContextConfig, phase
 					}
 				}
 				if len(readyItems) > 0 {
-					filtered[prd] = readyItems
+					filtered[srd] = readyItems
 				}
 			}
 			ctx.RequirementStates = filtered
-			Log("buildProjectContext: loaded %d PRDs from requirements.yaml (%d ready items)", len(filtered), totalReady)
+			Log("buildProjectContext: loaded %d SRDs from requirements.yaml (%d ready items)", len(filtered), totalReady)
 		}
 	}
 
 	// Omit empty collections.
-	if ctx.Specs.ProductRequirements == nil && ctx.Specs.UseCases == nil &&
+	if ctx.Specs.SoftwareRequirements == nil && ctx.Specs.UseCases == nil &&
 		ctx.Specs.TestSuites == nil && ctx.Specs.DependencyMap == nil &&
 		ctx.Specs.Sources == nil {
 		ctx.Specs = nil
@@ -2043,7 +2043,7 @@ func BuildProjectContext(existingIssuesJSON string, project ContextConfig, phase
 			ctx.SourceCode = filtered
 		}
 
-		// Apply source summarization mode (GH-617, prd003 R12). Re-read raw
+		// Apply source summarization mode (GH-617, srd003 R12). Re-read raw
 		// file content from disk to feed the summarizer; re-apply NumberLines
 		// so the SourceFile.Lines format is consistent. Stitch never sets
 		// SourceMode so this block only runs for measure prompts.
@@ -2171,13 +2171,13 @@ func (d *RoadmapDoc) Validate() []string {
 	return errs
 }
 
-// prdItemIDRe matches valid PRD requirement item IDs: R{group}.{item} (e.g., R1.1, R2.3).
+// prdItemIDRe matches valid SRD requirement item IDs: R{group}.{item} (e.g., R1.1, R2.3).
 // Letter suffixes like R2a are not valid (GH-536).
 var prdItemIDRe = regexp.MustCompile(`^R\d+\.\d+$`)
 
-// Validate checks that all required fields in PRDDoc are non-empty, including
+// Validate checks that all required fields in SRDDoc are non-empty, including
 // each requirement group's title, items, and item ID format (GH-536).
-func (d *PRDDoc) Validate() []string {
+func (d *SRDDoc) Validate() []string {
 	var errs []string
 	if d.ID == "" {
 		errs = append(errs, "id is required")

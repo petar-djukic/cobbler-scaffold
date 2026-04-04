@@ -104,8 +104,8 @@ const repoRootFile = generate.RepoRootFile
 // tagSuffixes lists the lifecycle tag suffixes in order.
 var tagSuffixes = generate.TagSuffixes
 
-// prdRefPattern matches PRD requirement references in task requirement text.
-var prdRefPattern = generate.PRDRefPattern
+// srdRefPattern matches SRD requirement references in task requirement text.
+var srdRefPattern = generate.SRDRefPattern
 
 // ---------------------------------------------------------------------------
 // gitDeps builds the GitDeps struct for the generate package.
@@ -241,8 +241,8 @@ func expandedRequirementCount(reqs []issueDescItem, subItemCounts map[string]map
 	return generate.ExpandedRequirementCount(reqs, subItemCounts)
 }
 
-func loadPRDSubItemCounts() map[string]map[string]int {
-	return generate.LoadPRDSubItemCounts()
+func loadSRDSubItemCounts() map[string]map[string]int {
+	return generate.LoadSRDSubItemCounts()
 }
 
 func loadRequirementStates(cobblerDir string) map[string]map[string]generate.RequirementState {
@@ -258,8 +258,8 @@ func (g *Generator) hasUnresolvedRequirements() bool {
 	if states == nil {
 		return false
 	}
-	for _, prdReqs := range states {
-		for _, st := range prdReqs {
+	for _, srdReqs := range states {
+		for _, st := range srdReqs {
 			if st.Status == "ready" {
 				return true
 			}
@@ -588,9 +588,9 @@ func (g *Generator) checkAutoAdvanceRelease() (bool, string) {
 		}
 	}
 
-	// All UCs are done, but check that all PRD requirements from this
+	// All UCs are done, but check that all SRD requirements from this
 	// release are also complete. UC touchpoints may not cite every R-group
-	// in a PRD, leaving orphaned ready requirements that become invisible
+	// in a SRD, leaving orphaned ready requirements that become invisible
 	// once the release is filtered from the measure prompt (GH-1952).
 	if g.releaseHasReadyRequirements(target.UseCases) {
 		g.logf("checkAutoAdvanceRelease: release %s has all UCs done but ready requirements remain, not advancing", target.Version)
@@ -619,9 +619,9 @@ func (g *Generator) checkAutoAdvanceRelease() (bool, string) {
 	return true, target.Version
 }
 
-// releaseHasReadyRequirements returns true if any requirement from PRDs
+// releaseHasReadyRequirements returns true if any requirement from SRDs
 // referenced by the release's use case touchpoints is still "ready" in
-// requirements.yaml. This checks ALL requirements in each referenced PRD,
+// requirements.yaml. This checks ALL requirements in each referenced SRD,
 // not just the R-groups cited by touchpoints, to catch orphaned R-items
 // that no UC touchpoint covers (GH-1952).
 func (g *Generator) releaseHasReadyRequirements(useCases []RoadmapUseCase) bool {
@@ -630,35 +630,35 @@ func (g *Generator) releaseHasReadyRequirements(useCases []RoadmapUseCase) bool 
 		return false
 	}
 
-	// Collect all PRD stems referenced by this release's UC touchpoints.
-	// TouchpointPRDRefRe matches "prdNNN-name R1, R2" (with R-groups).
-	// BarePRDRefRe matches "prdNNN-name" even without R-groups, catching
-	// touchpoints like "(prd096-users)" that omit R-group refs (GH-1960).
-	prdStems := make(map[string]bool)
+	// Collect all SRD stems referenced by this release's UC touchpoints.
+	// TouchpointSRDRefRe matches "srdNNN-name R1, R2" (with R-groups).
+	// BareSRDRefRe matches "srdNNN-name" even without R-groups, catching
+	// touchpoints like "(srd096-users)" that omit R-group refs (GH-1960).
+	srdStems := make(map[string]bool)
 	for _, uc := range useCases {
 		touchpoints := loadUCTouchpoints(uc.ID)
 		for _, tp := range touchpoints {
-			matches := generate.TouchpointPRDRefRe.FindAllStringSubmatch(tp, -1)
+			matches := generate.TouchpointSRDRefRe.FindAllStringSubmatch(tp, -1)
 			for _, m := range matches {
-				prdStems[m[1]] = true
+				srdStems[m[1]] = true
 			}
-			// Also match bare PRD references without R-groups.
-			bareMatches := generate.BarePRDRefRe.FindAllString(tp, -1)
+			// Also match bare SRD references without R-groups.
+			bareMatches := generate.BareSRDRefRe.FindAllString(tp, -1)
 			for _, stem := range bareMatches {
-				prdStems[stem] = true
+				srdStems[stem] = true
 			}
 		}
 	}
 
-	// Check if any requirement in those PRDs is still ready.
-	for stem := range prdStems {
-		for prdKey, prdReqs := range states {
-			if prdKey != stem && !strings.HasPrefix(prdKey, stem+"-") {
+	// Check if any requirement in those SRDs is still ready.
+	for stem := range srdStems {
+		for srdKey, srdReqs := range states {
+			if srdKey != stem && !strings.HasPrefix(srdKey, stem+"-") {
 				continue
 			}
-			for id, st := range prdReqs {
+			for id, st := range srdReqs {
 				if st.Status == "ready" {
-					g.logf("releaseHasReadyRequirements: %s %s is still ready", prdKey, id)
+					g.logf("releaseHasReadyRequirements: %s %s is still ready", srdKey, id)
 					return true
 				}
 			}
@@ -697,7 +697,7 @@ func (g *Generator) validateAndMarkUCs() {
 			continue
 		}
 
-		// Load UC touchpoints to extract PRD citations.
+		// Load UC touchpoints to extract SRD citations.
 		ucTouchpoints := loadUCTouchpoints(uc.ID)
 		if len(ucTouchpoints) == 0 {
 			g.logf("validateAndMarkUCs: UC %s — no touchpoints found, skipping", uc.ID)
@@ -737,7 +737,7 @@ func (g *Generator) validateAndMarkUCs() {
 }
 
 // loadUCTouchpoints loads a use case file and returns its touchpoints as
-// flat strings (e.g. "T1: Config struct: ... prd001-core R1"). Returns nil
+// flat strings (e.g. "T1: Config struct: ... srd001-core R1"). Returns nil
 // if the UC file is not found or cannot be parsed.
 func loadUCTouchpoints(ucID string) []string {
 	path := filepath.Join("docs/specs/use-cases", ucID+".yaml")
@@ -775,7 +775,7 @@ func (g *Generator) validateUCImplemented(ucID string) bool {
 // GeneratorStart begins a new generation trail.
 // Records the current branch as the base branch, tags it, creates a generation
 // branch, deletes Go files, reinitializes the Go module, and commits the clean
-// state. Any clean branch is a valid starting point (prd002 R2.1).
+// state. Any clean branch is a valid starting point (srd002 R2.1).
 func (g *Generator) GeneratorStart() error {
 	baseBranch, err := g.git.CurrentBranch(".")
 	if err != nil {
@@ -860,7 +860,7 @@ func (g *Generator) GeneratorStart() error {
 	}
 
 	// Record the base branch so GeneratorStop knows where to merge back
-	// (prd002 R2.8).
+	// (srd002 R2.8).
 	if err := g.writeBaseBranch(baseBranch); err != nil {
 		return fmt.Errorf("recording base branch: %w", err)
 	}
@@ -879,7 +879,7 @@ func (g *Generator) GeneratorStart() error {
 
 	// Reset Go sources and reinitialize module unless preserve_sources is set.
 	// Library repos (e.g. cobbler-scaffold itself) set preserve_sources: true so
-	// generator:start does not destroy the library code. See prd002 R10.1.
+	// generator:start does not destroy the library code. See srd002 R10.1.
 	if g.cfg.Generation.PreserveSources {
 		g.logf("generator:start: preserve_sources=true, skipping Go source reset")
 	} else {
@@ -894,9 +894,9 @@ func (g *Generator) GeneratorStart() error {
 		}
 	}
 
-	// Generate requirements state file from PRD R-items (GH-1378).
-	prdDir := "docs/specs/product-requirements"
-	if _, err := generate.GenerateRequirementsFile(prdDir, g.cfg.Cobbler.Dir, g.cfg.Generation.PreserveSources); err != nil {
+	// Generate requirements state file from SRD R-items (GH-1378).
+	srdDir := "docs/specs/software-requirements"
+	if _, err := generate.GenerateRequirementsFile(srdDir, g.cfg.Cobbler.Dir, g.cfg.Generation.PreserveSources); err != nil {
 		g.logf("generator:start: warning generating requirements file: %v", err)
 	}
 
@@ -996,7 +996,7 @@ func (g *Generator) enterGenerationWorktree() (string, error) {
 
 // readBaseBranch reads the base branch from .cobbler/base-branch on the
 // current branch. Returns "main" if the file does not exist (backward
-// compatibility with older generations, prd002 R5.3).
+// compatibility with older generations, srd002 R5.3).
 func (g *Generator) readBaseBranch() string {
 	data, err := os.ReadFile(filepath.Join(g.cfg.Cobbler.Dir, baseBranchFile))
 	if err != nil {

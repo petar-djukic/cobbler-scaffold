@@ -42,11 +42,11 @@ releases:
 	os.MkdirAll(docsDir, 0o755)
 	os.WriteFile(filepath.Join(docsDir, "road-map.yaml"), []byte(roadmap), 0o644)
 
-	// Create PRD files.
-	prdDir := filepath.Join(dir, "docs", "specs", "product-requirements")
-	os.MkdirAll(prdDir, 0o755)
+	// Create SRD files.
+	srdDir := filepath.Join(dir, "docs", "specs", "software-requirements")
+	os.MkdirAll(srdDir, 0o755)
 
-	prd001 := `name: orchestrator-core
+	srd001 := `name: orchestrator-core
 requirements:
   r1:
     title: Config
@@ -58,9 +58,9 @@ requirements:
     items:
       - R2.1: "initialization"
 `
-	os.WriteFile(filepath.Join(prdDir, "prd001-orchestrator-core.yaml"), []byte(prd001), 0o644)
+	os.WriteFile(filepath.Join(srdDir, "srd001-orchestrator-core.yaml"), []byte(srd001), 0o644)
 
-	prd006 := `name: vscode-extension
+	srd006 := `name: vscode-extension
 requirements:
   r1:
     title: Lifecycle
@@ -68,9 +68,9 @@ requirements:
       - R1.1: "start command"
       - R1.2: "stop command"
 `
-	os.WriteFile(filepath.Join(prdDir, "prd006-vscode-extension.yaml"), []byte(prd006), 0o644)
+	os.WriteFile(filepath.Join(srdDir, "srd006-vscode-extension.yaml"), []byte(srd006), 0o644)
 
-	// Create use case files with touchpoints referencing PRDs.
+	// Create use case files with touchpoints referencing SRDs.
 	ucDir := filepath.Join(dir, "docs", "specs", "use-cases")
 	os.MkdirAll(ucDir, 0o755)
 
@@ -82,7 +82,7 @@ trigger: mage init
 flow:
   - F1: "step"
 touchpoints:
-  - T1: "Config: prd001-orchestrator-core R1"
+  - T1: "Config: srd001-orchestrator-core R1"
 success_criteria:
   - SC1: "works"
 out_of_scope: []
@@ -97,7 +97,7 @@ trigger: command
 flow:
   - F1: "step"
 touchpoints:
-  - T1: "Extension: prd006-vscode-extension R1"
+  - T1: "Extension: srd006-vscode-extension R1"
 success_criteria:
   - SC1: "works"
 out_of_scope: []
@@ -116,16 +116,16 @@ out_of_scope: []
 		t.Fatalf("want 2 rows, got %d", len(rows))
 	}
 
-	// Release 01.0: all UCs done → PRD complete.
+	// Release 01.0: all UCs done → SRD complete.
 	r1 := rows[0]
 	if r1.Version != "01.0" {
 		t.Errorf("row[0].Version = %q, want %q", r1.Version, "01.0")
 	}
-	if r1.PRDs != 1 {
-		t.Errorf("row[0].PRDs = %d, want 1", r1.PRDs)
+	if r1.SRDs != 1 {
+		t.Errorf("row[0].SRDs = %d, want 1", r1.SRDs)
 	}
-	if r1.PRDsComplete != 1 {
-		t.Errorf("row[0].PRDsComplete = %d, want 1", r1.PRDsComplete)
+	if r1.SRDsComplete != 1 {
+		t.Errorf("row[0].SRDsComplete = %d, want 1", r1.SRDsComplete)
 	}
 	if r1.Reqs != 3 {
 		t.Errorf("row[0].Reqs = %d, want 3", r1.Reqs)
@@ -134,16 +134,16 @@ out_of_scope: []
 		t.Errorf("row[0].ReqsDone = %d, want 3", r1.ReqsDone)
 	}
 
-	// Release 02.0: mixed UC statuses → PRD started.
+	// Release 02.0: mixed UC statuses → SRD started.
 	r2 := rows[1]
 	if r2.Version != "02.0" {
 		t.Errorf("row[1].Version = %q, want %q", r2.Version, "02.0")
 	}
-	if r2.PRDs != 1 {
-		t.Errorf("row[1].PRDs = %d, want 1", r2.PRDs)
+	if r2.SRDs != 1 {
+		t.Errorf("row[1].SRDs = %d, want 1", r2.SRDs)
 	}
-	if r2.PRDsStarted != 1 {
-		t.Errorf("row[1].PRDsStarted = %d, want 1", r2.PRDsStarted)
+	if r2.SRDsStarted != 1 {
+		t.Errorf("row[1].SRDsStarted = %d, want 1", r2.SRDsStarted)
 	}
 	if r2.ReqsDone != 0 {
 		t.Errorf("row[1].ReqsDone = %d, want 0", r2.ReqsDone)
@@ -203,11 +203,11 @@ func TestReleaseAnyUCDone(t *testing.T) {
 	}
 }
 
-func TestBuildReleaseRows_PRDWithZeroRequirements(t *testing.T) {
+func TestBuildReleaseRows_SRDWithZeroRequirements(t *testing.T) {
 	// Uses os.Chdir — do NOT use t.Parallel()
 	dir := t.TempDir()
 	docsDir := filepath.Join(dir, "docs")
-	os.MkdirAll(filepath.Join(docsDir, "specs", "product-requirements"), 0o755)
+	os.MkdirAll(filepath.Join(docsDir, "specs", "software-requirements"), 0o755)
 	os.MkdirAll(filepath.Join(docsDir, "specs", "use-cases"), 0o755)
 
 	roadmap := `id: test
@@ -223,10 +223,10 @@ releases:
 `
 	os.WriteFile(filepath.Join(docsDir, "road-map.yaml"), []byte(roadmap), 0o644)
 
-	prd := `name: empty-prd
+	srd := `name: empty-srd
 requirements: {}
 `
-	os.WriteFile(filepath.Join(docsDir, "specs", "product-requirements", "prd001-empty.yaml"), []byte(prd), 0o644)
+	os.WriteFile(filepath.Join(docsDir, "specs", "software-requirements", "srd001-empty.yaml"), []byte(srd), 0o644)
 
 	uc := `id: rel01.0-uc001-init
 title: Init
@@ -236,7 +236,7 @@ trigger: mage init
 flow:
   - F1: "step"
 touchpoints:
-  - T1: "Config: prd001-empty R1"
+  - T1: "Config: srd001-empty R1"
 success_criteria:
   - SC1: "works"
 out_of_scope: []
@@ -254,10 +254,10 @@ out_of_scope: []
 	if len(rows) != 1 {
 		t.Fatalf("want 1 row, got %d", len(rows))
 	}
-	if rows[0].PRDsNoReqs != 1 {
-		t.Errorf("PRDsNoReqs = %d, want 1", rows[0].PRDsNoReqs)
+	if rows[0].SRDsNoReqs != 1 {
+		t.Errorf("SRDsNoReqs = %d, want 1", rows[0].SRDsNoReqs)
 	}
-	if rows[0].PRDsComplete != 0 {
-		t.Errorf("PRDsComplete = %d, want 0 (no reqs means not counted as complete)", rows[0].PRDsComplete)
+	if rows[0].SRDsComplete != 0 {
+		t.Errorf("SRDsComplete = %d, want 0 (no reqs means not counted as complete)", rows[0].SRDsComplete)
 	}
 }

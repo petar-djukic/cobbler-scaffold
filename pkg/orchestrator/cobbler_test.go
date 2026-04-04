@@ -517,7 +517,7 @@ func TestWorktreeBasePath(t *testing.T) {
 
 // TestWorktreeBasePath_FromWorktree verifies that worktreeBasePath returns the
 // same value whether called from the main repo root or from a git worktree of
-// the same repository (prd003 R3.16, rel01.0-uc010).
+// the same repository (srd003 R3.16, rel01.0-uc010).
 func TestWorktreeBasePath_FromWorktree(t *testing.T) {
 	// Requires git on PATH; skip gracefully if not available.
 	if _, err := exec.LookPath("git"); err != nil {
@@ -1039,7 +1039,7 @@ func TestInvocationRecord_JSONShape(t *testing.T) {
 		t.Fatalf("unmarshal top-level: %v", err)
 	}
 
-	// All required fields must be present (prd005 R1.1-R1.7).
+	// All required fields must be present (srd005 R1.1-R1.7).
 	for _, key := range []string{"caller", "started_at", "duration_s", "tokens", "loc_before", "loc_after", "diff"} {
 		if _, ok := got[key]; !ok {
 			t.Errorf("InvocationRecord JSON missing field %q", key)

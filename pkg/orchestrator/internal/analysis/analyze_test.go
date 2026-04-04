@@ -18,7 +18,7 @@ func TestExtractID(t *testing.T) {
 		path string
 		want string
 	}{
-		{"docs/specs/product-requirements/prd001-feature.yaml", "prd001-feature"},
+		{"docs/specs/software-requirements/srd001-feature.yaml", "srd001-feature"},
 		{"docs/specs/use-cases/rel01.0-uc001-init.yaml", "rel01.0-uc001-init"},
 		{"docs/specs/test-suites/test-rel01.0.yaml", "test-rel01.0"},
 		{"simple.yaml", "simple"},
@@ -30,36 +30,36 @@ func TestExtractID(t *testing.T) {
 	}
 }
 
-// --- ExtractPRDsFromTouchpoints ---
+// --- ExtractSRDsFromTouchpoints ---
 
-func TestExtractPRDsFromTouchpoints(t *testing.T) {
+func TestExtractSRDsFromTouchpoints(t *testing.T) {
 	tps := []string{
-		"T1: Calculator component (prd001-core R1, R2)",
-		"T2: Parser subsystem (prd002-parser)",
-		"T3: No PRD reference here",
+		"T1: Calculator component (srd001-core R1, R2)",
+		"T2: Parser subsystem (srd002-parser)",
+		"T3: No SRD reference here",
 	}
-	got := ExtractPRDsFromTouchpoints(tps)
-	want := map[string]bool{"prd001-core": true, "prd002-parser": true}
+	got := ExtractSRDsFromTouchpoints(tps)
+	want := map[string]bool{"srd001-core": true, "srd002-parser": true}
 	if len(got) != len(want) {
 		t.Fatalf("got %v, want %v", got, want)
 	}
 	for _, id := range got {
 		if !want[id] {
-			t.Errorf("unexpected PRD ID %q", id)
+			t.Errorf("unexpected SRD ID %q", id)
 		}
 	}
 }
 
-func TestExtractPRDsFromTouchpoints_Empty(t *testing.T) {
-	got := ExtractPRDsFromTouchpoints(nil)
+func TestExtractSRDsFromTouchpoints_Empty(t *testing.T) {
+	got := ExtractSRDsFromTouchpoints(nil)
 	if len(got) != 0 {
 		t.Errorf("got %v, want empty", got)
 	}
 }
 
-func TestExtractPRDsFromTouchpoints_NoPRDs(t *testing.T) {
+func TestExtractSRDsFromTouchpoints_NoSRDs(t *testing.T) {
 	tps := []string{"T1: Some component", "T2: Another component"}
-	got := ExtractPRDsFromTouchpoints(tps)
+	got := ExtractSRDsFromTouchpoints(tps)
 	if len(got) != 0 {
 		t.Errorf("got %v, want empty", got)
 	}
@@ -71,7 +71,7 @@ func TestExtractUseCaseIDsFromTraces(t *testing.T) {
 	traces := []string{
 		"rel01.0-uc001-init",
 		"rel01.0-uc002-lifecycle",
-		"prd001-core R4",
+		"srd001-core R4",
 	}
 	got := ExtractUseCaseIDsFromTraces(traces)
 	if len(got) != 2 {
@@ -98,7 +98,7 @@ func TestLoadUseCase_ParsesIDAndTouchpoints(t *testing.T) {
 	content := `id: rel01.0-uc001-init
 title: Initialization
 touchpoints:
-  - T1: Core component (prd001-core R1)
+  - T1: Core component (srd001-core R1)
   - T2: Config subsystem
 `
 	dir := t.TempDir()
@@ -192,36 +192,36 @@ func TestExtractReqGroup(t *testing.T) {
 
 // --- ExtractCitationsFromTouchpoints ---
 
-func TestExtractCitationsFromTouchpoints_SinglePRD(t *testing.T) {
-	tps := []string{"T1: GeneratorStart: prd002-lifecycle R2"}
+func TestExtractCitationsFromTouchpoints_SingleSRD(t *testing.T) {
+	tps := []string{"T1: GeneratorStart: srd002-lifecycle R2"}
 	got := ExtractCitationsFromTouchpoints(tps)
 	if len(got) != 1 {
 		t.Fatalf("got %d citations, want 1", len(got))
 	}
-	if got[0].PRDID != "prd002-lifecycle" {
-		t.Errorf("PRDID: got %q, want %q", got[0].PRDID, "prd002-lifecycle")
+	if got[0].SRDID != "srd002-lifecycle" {
+		t.Errorf("SRDID: got %q, want %q", got[0].SRDID, "srd002-lifecycle")
 	}
 	if len(got[0].Groups) != 1 || got[0].Groups[0] != "R2" {
 		t.Errorf("Groups: got %v, want [R2]", got[0].Groups)
 	}
 }
 
-func TestExtractCitationsFromTouchpoints_MultiplePRDs(t *testing.T) {
-	tps := []string{"T1: Config: prd001-core R1, prd003-workflows R1, R2"}
+func TestExtractCitationsFromTouchpoints_MultipleSRDs(t *testing.T) {
+	tps := []string{"T1: Config: srd001-core R1, srd003-workflows R1, R2"}
 	got := ExtractCitationsFromTouchpoints(tps)
 	if len(got) != 2 {
 		t.Fatalf("got %d citations, want 2", len(got))
 	}
-	if got[0].PRDID != "prd001-core" || len(got[0].Groups) != 1 {
-		t.Errorf("citation[0]: got %+v, want prd001-core [R1]", got[0])
+	if got[0].SRDID != "srd001-core" || len(got[0].Groups) != 1 {
+		t.Errorf("citation[0]: got %+v, want srd001-core [R1]", got[0])
 	}
-	if got[1].PRDID != "prd003-workflows" || len(got[1].Groups) != 2 {
-		t.Errorf("citation[1]: got %+v, want prd003-workflows [R1, R2]", got[1])
+	if got[1].SRDID != "srd003-workflows" || len(got[1].Groups) != 2 {
+		t.Errorf("citation[1]: got %+v, want srd003-workflows [R1, R2]", got[1])
 	}
 }
 
 func TestExtractCitationsFromTouchpoints_SubItems(t *testing.T) {
-	tps := []string{"T2: Git tags: prd006-vscode R2.2, prd002-lifecycle R1.2"}
+	tps := []string{"T2: Git tags: srd006-vscode R2.2, srd002-lifecycle R1.2"}
 	got := ExtractCitationsFromTouchpoints(tps)
 	if len(got) != 2 {
 		t.Fatalf("got %d citations, want 2", len(got))
@@ -235,7 +235,7 @@ func TestExtractCitationsFromTouchpoints_SubItems(t *testing.T) {
 }
 
 func TestExtractCitationsFromTouchpoints_Parenthetical(t *testing.T) {
-	tps := []string{"T1: Start: prd002-lifecycle R2 (including R2.8 base branch)"}
+	tps := []string{"T1: Start: srd002-lifecycle R2 (including R2.8 base branch)"}
 	got := ExtractCitationsFromTouchpoints(tps)
 	if len(got) != 1 {
 		t.Fatalf("got %d citations, want 1", len(got))
@@ -252,8 +252,8 @@ func TestExtractCitationsFromTouchpoints_Empty(t *testing.T) {
 	}
 }
 
-func TestExtractCitationsFromTouchpoints_NoPRD(t *testing.T) {
-	tps := []string{"T1: Some component with no PRD reference"}
+func TestExtractCitationsFromTouchpoints_NoSRD(t *testing.T) {
+	tps := []string{"T1: Some component with no SRD reference"}
 	got := ExtractCitationsFromTouchpoints(tps)
 	if len(got) != 0 {
 		t.Errorf("got %v, want empty", got)
@@ -366,7 +366,7 @@ func TestDetectConstitutionDrift_OnlyInDocs(t *testing.T) {
 
 func setupMinimalAnalyzeDir(t *testing.T) {
 	t.Helper()
-	os.MkdirAll("docs/specs/product-requirements", 0o755)
+	os.MkdirAll("docs/specs/software-requirements", 0o755)
 	os.MkdirAll("docs/specs/use-cases", 0o755)
 	os.MkdirAll("docs/specs/test-suites", 0o755)
 	os.MkdirAll("docs/constitutions", 0o755)
@@ -388,7 +388,7 @@ func TestCollectAnalyzeResult_InvalidReleases(t *testing.T) {
 	os.Chdir(dir)
 	defer os.Chdir(orig)
 
-	os.MkdirAll("docs/specs/product-requirements", 0o755)
+	os.MkdirAll("docs/specs/software-requirements", 0o755)
 	os.MkdirAll("docs/specs/use-cases", 0o755)
 	os.MkdirAll("docs/specs/test-suites", 0o755)
 	os.MkdirAll("docs/constitutions", 0o755)
@@ -407,9 +407,9 @@ releases:
 `
 	os.WriteFile("docs/road-map.yaml", []byte(roadmap), 0o644)
 	os.WriteFile("docs/specs/use-cases/rel01.0-uc001-init.yaml",
-		[]byte("id: rel01.0-uc001-init\ntitle: Init\ntouchpoints:\n  - T1: prd001-core R1\n"), 0o644)
-	os.WriteFile("docs/specs/product-requirements/prd001-core.yaml",
-		[]byte("id: prd001-core\ntitle: Core\nrequirements:\n  - id: R1\n    title: Req 1\n"), 0o644)
+		[]byte("id: rel01.0-uc001-init\ntitle: Init\ntouchpoints:\n  - T1: srd001-core R1\n"), 0o644)
+	os.WriteFile("docs/specs/software-requirements/srd001-core.yaml",
+		[]byte("id: srd001-core\ntitle: Core\nrequirements:\n  - id: R1\n    title: Req 1\n"), 0o644)
 	os.WriteFile("docs/specs/test-suites/test-rel01.0.yaml",
 		[]byte("id: test-rel01.0\ntitle: Tests\nrelease: rel01.0\ntraces:\n  - rel01.0-uc001-init\n"), 0o644)
 
@@ -435,7 +435,7 @@ func TestCollectAnalyzeResult_ValidReleases(t *testing.T) {
 	os.Chdir(dir)
 	defer os.Chdir(orig)
 
-	os.MkdirAll("docs/specs/product-requirements", 0o755)
+	os.MkdirAll("docs/specs/software-requirements", 0o755)
 	os.MkdirAll("docs/specs/use-cases", 0o755)
 	os.MkdirAll("docs/specs/test-suites", 0o755)
 	os.MkdirAll("docs/constitutions", 0o755)
@@ -454,9 +454,9 @@ releases:
 `
 	os.WriteFile("docs/road-map.yaml", []byte(roadmap), 0o644)
 	os.WriteFile("docs/specs/use-cases/rel01.0-uc001-init.yaml",
-		[]byte("id: rel01.0-uc001-init\ntitle: Init\ntouchpoints:\n  - T1: prd001-core R1\n"), 0o644)
-	os.WriteFile("docs/specs/product-requirements/prd001-core.yaml",
-		[]byte("id: prd001-core\ntitle: Core\nrequirements:\n  - id: R1\n    title: Req 1\n"), 0o644)
+		[]byte("id: rel01.0-uc001-init\ntitle: Init\ntouchpoints:\n  - T1: srd001-core R1\n"), 0o644)
+	os.WriteFile("docs/specs/software-requirements/srd001-core.yaml",
+		[]byte("id: srd001-core\ntitle: Core\nrequirements:\n  - id: R1\n    title: Req 1\n"), 0o644)
 	os.WriteFile("docs/specs/test-suites/test-rel01.0.yaml",
 		[]byte("id: test-rel01.0\ntitle: Tests\nrelease: rel01.0\ntraces:\n  - rel01.0-uc001-init\n"), 0o644)
 
@@ -473,53 +473,53 @@ releases:
 	}
 }
 
-func TestCollectAnalyzeResult_PRDsSpanningMultipleReleases_Pass(t *testing.T) {
+func TestCollectAnalyzeResult_SRDsSpanningMultipleReleases_Pass(t *testing.T) {
 	dir := t.TempDir()
 	orig, _ := os.Getwd()
 	os.Chdir(dir)
 	defer os.Chdir(orig)
 	setupMinimalAnalyzeDir(t)
 
-	os.WriteFile("docs/specs/product-requirements/prd001-core.yaml",
-		[]byte("id: prd001-core\ntitle: Core\nrequirements:\n  R1:\n    title: Req 1\n    items:\n      - R1.1: Do X\n"), 0o644)
+	os.WriteFile("docs/specs/software-requirements/srd001-core.yaml",
+		[]byte("id: srd001-core\ntitle: Core\nrequirements:\n  R1:\n    title: Req 1\n    items:\n      - R1.1: Do X\n"), 0o644)
 	os.WriteFile("docs/specs/use-cases/rel01.0-uc001-a.yaml",
-		[]byte("id: rel01.0-uc001-a\ntitle: A\ntouchpoints:\n  - T1: prd001-core R1\n"), 0o644)
+		[]byte("id: rel01.0-uc001-a\ntitle: A\ntouchpoints:\n  - T1: srd001-core R1\n"), 0o644)
 	os.WriteFile("docs/specs/use-cases/rel01.0-uc002-b.yaml",
-		[]byte("id: rel01.0-uc002-b\ntitle: B\ntouchpoints:\n  - T1: prd001-core R1\n"), 0o644)
+		[]byte("id: rel01.0-uc002-b\ntitle: B\ntouchpoints:\n  - T1: srd001-core R1\n"), 0o644)
 
 	result, _, err := CollectAnalyzeResult(noopDeps())
 	if err != nil {
 		t.Fatalf("CollectAnalyzeResult: %v", err)
 	}
-	if len(result.PRDsSpanningMultipleReleases) != 0 {
-		t.Errorf("expected no violations, got %v", result.PRDsSpanningMultipleReleases)
+	if len(result.SRDsSpanningMultipleReleases) != 0 {
+		t.Errorf("expected no violations, got %v", result.SRDsSpanningMultipleReleases)
 	}
 }
 
-func TestCollectAnalyzeResult_PRDsSpanningMultipleReleases_Fail(t *testing.T) {
+func TestCollectAnalyzeResult_SRDsSpanningMultipleReleases_Fail(t *testing.T) {
 	dir := t.TempDir()
 	orig, _ := os.Getwd()
 	os.Chdir(dir)
 	defer os.Chdir(orig)
 	setupMinimalAnalyzeDir(t)
 
-	os.WriteFile("docs/specs/product-requirements/prd003-workflows.yaml",
-		[]byte("id: prd003-workflows\ntitle: Workflows\nrequirements:\n  R1:\n    title: Req 1\n    items:\n      - R1.1: Do X\n"), 0o644)
+	os.WriteFile("docs/specs/software-requirements/srd003-workflows.yaml",
+		[]byte("id: srd003-workflows\ntitle: Workflows\nrequirements:\n  R1:\n    title: Req 1\n    items:\n      - R1.1: Do X\n"), 0o644)
 	os.WriteFile("docs/specs/use-cases/rel01.0-uc001-measure.yaml",
-		[]byte("id: rel01.0-uc001-measure\ntitle: Measure\ntouchpoints:\n  - T1: prd003-workflows R1\n"), 0o644)
+		[]byte("id: rel01.0-uc001-measure\ntitle: Measure\ntouchpoints:\n  - T1: srd003-workflows R1\n"), 0o644)
 	os.WriteFile("docs/specs/use-cases/rel03.0-uc001-compare.yaml",
-		[]byte("id: rel03.0-uc001-compare\ntitle: Compare\ntouchpoints:\n  - T1: prd003-workflows R1\n"), 0o644)
+		[]byte("id: rel03.0-uc001-compare\ntitle: Compare\ntouchpoints:\n  - T1: srd003-workflows R1\n"), 0o644)
 
 	result, _, err := CollectAnalyzeResult(noopDeps())
 	if err != nil {
 		t.Fatalf("CollectAnalyzeResult: %v", err)
 	}
-	if len(result.PRDsSpanningMultipleReleases) != 1 {
-		t.Fatalf("expected 1 violation, got %d: %v", len(result.PRDsSpanningMultipleReleases), result.PRDsSpanningMultipleReleases)
+	if len(result.SRDsSpanningMultipleReleases) != 1 {
+		t.Fatalf("expected 1 violation, got %d: %v", len(result.SRDsSpanningMultipleReleases), result.SRDsSpanningMultipleReleases)
 	}
-	msg := result.PRDsSpanningMultipleReleases[0]
-	if !strings.Contains(msg, "prd003-workflows") {
-		t.Errorf("expected message to mention prd003-workflows, got %q", msg)
+	msg := result.SRDsSpanningMultipleReleases[0]
+	if !strings.Contains(msg, "srd003-workflows") {
+		t.Errorf("expected message to mention srd003-workflows, got %q", msg)
 	}
 	if !strings.Contains(msg, "01.0") || !strings.Contains(msg, "03.0") {
 		t.Errorf("expected message to mention both releases, got %q", msg)
@@ -532,7 +532,7 @@ func TestCollectAnalyzeResult_EmptyReleasesNoValidation(t *testing.T) {
 	os.Chdir(dir)
 	defer os.Chdir(orig)
 
-	os.MkdirAll("docs/specs/product-requirements", 0o755)
+	os.MkdirAll("docs/specs/software-requirements", 0o755)
 	os.MkdirAll("docs/specs/use-cases", 0o755)
 	os.MkdirAll("docs/specs/test-suites", 0o755)
 	os.MkdirAll("docs/constitutions", 0o755)
@@ -551,9 +551,9 @@ releases:
 `
 	os.WriteFile("docs/road-map.yaml", []byte(roadmap), 0o644)
 	os.WriteFile("docs/specs/use-cases/rel01.0-uc001-init.yaml",
-		[]byte("id: rel01.0-uc001-init\ntitle: Init\ntouchpoints:\n  - T1: prd001-core R1\n"), 0o644)
-	os.WriteFile("docs/specs/product-requirements/prd001-core.yaml",
-		[]byte("id: prd001-core\ntitle: Core\nrequirements:\n  - id: R1\n    title: Req 1\n"), 0o644)
+		[]byte("id: rel01.0-uc001-init\ntitle: Init\ntouchpoints:\n  - T1: srd001-core R1\n"), 0o644)
+	os.WriteFile("docs/specs/software-requirements/srd001-core.yaml",
+		[]byte("id: srd001-core\ntitle: Core\nrequirements:\n  - id: R1\n    title: Req 1\n"), 0o644)
 	os.WriteFile("docs/specs/test-suites/test-rel01.0.yaml",
 		[]byte("id: test-rel01.0\ntitle: Tests\nrelease: rel01.0\ntraces:\n  - rel01.0-uc001-init\n"), 0o644)
 
@@ -635,8 +635,8 @@ func TestPrintReport_AllClear(t *testing.T) {
 	if !strings.Contains(out, "All consistency checks passed") {
 		t.Errorf("output missing success message, got %q", out)
 	}
-	if !strings.Contains(out, "5 PRDs") {
-		t.Errorf("output missing PRD count, got %q", out)
+	if !strings.Contains(out, "5 SRDs") {
+		t.Errorf("output missing SRD count, got %q", out)
 	}
 	if !strings.Contains(out, "10 use cases") {
 		t.Errorf("output missing use case count, got %q", out)
@@ -651,8 +651,8 @@ func TestPrintReport_AllClear(t *testing.T) {
 
 func TestPrintReport_WithIssues(t *testing.T) {
 	r := AnalyzeResult{
-		OrphanedPRDs:    []string{"prd099-unused"},
-		BrokenCitations: []string{"uc001 T1: prd001 R99 not found"},
+		OrphanedSRDs:    []string{"prd099-unused"},
+		BrokenCitations: []string{"uc001 T1: srd001 R99 not found"},
 	}
 	out := captureStdout(t, func() {
 		err := r.PrintReport(2, 3, 1, 0)
@@ -663,11 +663,11 @@ func TestPrintReport_WithIssues(t *testing.T) {
 			t.Errorf("error should mention consistency issues, got %v", err)
 		}
 	})
-	if !strings.Contains(out, "Orphaned PRDs") {
-		t.Errorf("output missing orphaned PRDs section, got %q", out)
+	if !strings.Contains(out, "Orphaned SRDs") {
+		t.Errorf("output missing orphaned SRDs section, got %q", out)
 	}
 	if !strings.Contains(out, "prd099-unused") {
-		t.Errorf("output missing orphaned PRD item, got %q", out)
+		t.Errorf("output missing orphaned SRD item, got %q", out)
 	}
 	if !strings.Contains(out, "Broken citations") {
 		t.Errorf("output missing broken citations section, got %q", out)
@@ -676,7 +676,7 @@ func TestPrintReport_WithIssues(t *testing.T) {
 
 func TestPrintReport_AllSections(t *testing.T) {
 	r := AnalyzeResult{
-		OrphanedPRDs:                 []string{"a"},
+		OrphanedSRDs:                 []string{"a"},
 		ReleasesWithoutTestSuites:    []string{"b"},
 		OrphanedTestSuites:           []string{"c"},
 		BrokenTouchpoints:            []string{"d"},
@@ -685,7 +685,7 @@ func TestPrintReport_AllSections(t *testing.T) {
 		ConstitutionDrift:            []string{"g"},
 		BrokenCitations:              []string{"h"},
 		InvalidReleases:              []string{"i"},
-		PRDsSpanningMultipleReleases: []string{"j"},
+		SRDsSpanningMultipleReleases: []string{"j"},
 	}
 	out := captureStdout(t, func() {
 		err := r.PrintReport(1, 1, 1, 0)
@@ -711,21 +711,21 @@ func TestAnalyze_WithIssues(t *testing.T) {
 	os.Chdir(dir)
 	t.Cleanup(func() { os.Chdir(orig) })
 
-	os.MkdirAll("docs/specs/product-requirements", 0o755)
+	os.MkdirAll("docs/specs/software-requirements", 0o755)
 	os.MkdirAll("docs/specs/use-cases", 0o755)
 	os.MkdirAll("docs/specs/test-suites", 0o755)
 	os.WriteFile("docs/road-map.yaml", []byte("releases: []\n"), 0o644)
-	os.WriteFile("docs/specs/product-requirements/prd001-orphan.yaml",
-		[]byte("id: prd001-orphan\ntitle: Orphan\nrequirements:\n  - id: R1\n    title: Req 1\n"), 0o644)
+	os.WriteFile("docs/specs/software-requirements/srd001-orphan.yaml",
+		[]byte("id: srd001-orphan\ntitle: Orphan\nrequirements:\n  - id: R1\n    title: Req 1\n"), 0o644)
 
 	out := captureStdout(t, func() {
 		err := Analyze(noopDeps())
 		if err == nil {
-			t.Error("expected error for orphaned PRDs")
+			t.Error("expected error for orphaned SRDs")
 		}
 	})
-	if !strings.Contains(out, "Orphaned PRDs") {
-		t.Errorf("expected orphaned PRDs section, got:\n%s", out)
+	if !strings.Contains(out, "Orphaned SRDs") {
+		t.Errorf("expected orphaned SRDs section, got:\n%s", out)
 	}
 }
 
@@ -735,7 +735,7 @@ func TestAnalyze_EmptyDocs(t *testing.T) {
 	os.Chdir(dir)
 	t.Cleanup(func() { os.Chdir(orig) })
 
-	os.MkdirAll("docs/specs/product-requirements", 0o755)
+	os.MkdirAll("docs/specs/software-requirements", 0o755)
 	os.MkdirAll("docs/specs/use-cases", 0o755)
 	os.MkdirAll("docs/specs/test-suites", 0o755)
 
@@ -746,17 +746,17 @@ func TestAnalyze_EmptyDocs(t *testing.T) {
 
 // --- OOD Check 10: depends_on violations ---
 
-func TestCollectAnalyzeResult_DependsOnViolation_MissingPRD(t *testing.T) {
+func TestCollectAnalyzeResult_DependsOnViolation_MissingSRD(t *testing.T) {
 	dir := t.TempDir()
 	orig, _ := os.Getwd()
 	os.Chdir(dir)
 	defer os.Chdir(orig)
 	setupMinimalAnalyzeDir(t)
 
-	os.WriteFile("docs/specs/product-requirements/prd002-cmd.yaml", []byte(`id: prd002-cmd
+	os.WriteFile("docs/specs/software-requirements/srd002-cmd.yaml", []byte(`id: srd002-cmd
 title: Cmd
 depends_on:
-  - prd_id: prd001-pkg
+  - prd_id: srd001-pkg
     symbols_used:
       - SomeFunc
 `), 0o644)
@@ -768,8 +768,8 @@ depends_on:
 	if len(result.DependsOnViolations) != 1 {
 		t.Fatalf("expected 1 violation, got %d: %v", len(result.DependsOnViolations), result.DependsOnViolations)
 	}
-	if !strings.Contains(result.DependsOnViolations[0], "prd001-pkg") {
-		t.Errorf("violation should mention prd001-pkg, got %q", result.DependsOnViolations[0])
+	if !strings.Contains(result.DependsOnViolations[0], "srd001-pkg") {
+		t.Errorf("violation should mention srd001-pkg, got %q", result.DependsOnViolations[0])
 	}
 }
 
@@ -780,17 +780,17 @@ func TestCollectAnalyzeResult_DependsOnViolation_SymbolMissing(t *testing.T) {
 	defer os.Chdir(orig)
 	setupMinimalAnalyzeDir(t)
 
-	os.WriteFile("docs/specs/product-requirements/prd001-pkg.yaml", []byte(`id: prd001-pkg
+	os.WriteFile("docs/specs/software-requirements/srd001-pkg.yaml", []byte(`id: srd001-pkg
 title: Pkg
 package_contract:
   exports:
     - name: FuncA
       signature: "func FuncA() error"
 `), 0o644)
-	os.WriteFile("docs/specs/product-requirements/prd002-cmd.yaml", []byte(`id: prd002-cmd
+	os.WriteFile("docs/specs/software-requirements/srd002-cmd.yaml", []byte(`id: srd002-cmd
 title: Cmd
 depends_on:
-  - prd_id: prd001-pkg
+  - prd_id: srd001-pkg
     symbols_used:
       - FuncA
       - FuncB
@@ -815,17 +815,17 @@ func TestCollectAnalyzeResult_DependsOnViolation_AllSymbolsPresent(t *testing.T)
 	defer os.Chdir(orig)
 	setupMinimalAnalyzeDir(t)
 
-	os.WriteFile("docs/specs/product-requirements/prd001-pkg.yaml", []byte(`id: prd001-pkg
+	os.WriteFile("docs/specs/software-requirements/srd001-pkg.yaml", []byte(`id: srd001-pkg
 title: Pkg
 package_contract:
   exports:
     - name: FuncA
     - name: FuncB
 `), 0o644)
-	os.WriteFile("docs/specs/product-requirements/prd002-cmd.yaml", []byte(`id: prd002-cmd
+	os.WriteFile("docs/specs/software-requirements/srd002-cmd.yaml", []byte(`id: srd002-cmd
 title: Cmd
 depends_on:
-  - prd_id: prd001-pkg
+  - prd_id: srd001-pkg
     symbols_used:
       - FuncA
       - FuncB
@@ -911,17 +911,17 @@ component_dependencies:
 
 // --- OOD Check 12: broken struct_refs ---
 
-func TestCollectAnalyzeResult_BrokenStructRef_MissingPRD(t *testing.T) {
+func TestCollectAnalyzeResult_BrokenStructRef_MissingSRD(t *testing.T) {
 	dir := t.TempDir()
 	orig, _ := os.Getwd()
 	os.Chdir(dir)
 	defer os.Chdir(orig)
 	setupMinimalAnalyzeDir(t)
 
-	os.WriteFile("docs/specs/product-requirements/prd002-cmd.yaml", []byte(`id: prd002-cmd
+	os.WriteFile("docs/specs/software-requirements/srd002-cmd.yaml", []byte(`id: srd002-cmd
 title: Cmd
 struct_refs:
-  - prd_id: prd999-missing
+  - prd_id: srd999-missing
     requirement: R1
 `), 0o644)
 
@@ -932,8 +932,8 @@ struct_refs:
 	if len(result.BrokenStructRefs) != 1 {
 		t.Fatalf("expected 1 broken ref, got %d: %v", len(result.BrokenStructRefs), result.BrokenStructRefs)
 	}
-	if !strings.Contains(result.BrokenStructRefs[0], "prd999-missing") {
-		t.Errorf("broken ref should mention prd999-missing, got %q", result.BrokenStructRefs[0])
+	if !strings.Contains(result.BrokenStructRefs[0], "srd999-missing") {
+		t.Errorf("broken ref should mention srd999-missing, got %q", result.BrokenStructRefs[0])
 	}
 }
 
@@ -944,7 +944,7 @@ func TestCollectAnalyzeResult_BrokenStructRef_MissingRequirement(t *testing.T) {
 	defer os.Chdir(orig)
 	setupMinimalAnalyzeDir(t)
 
-	os.WriteFile("docs/specs/product-requirements/prd001-pkg.yaml", []byte(`id: prd001-pkg
+	os.WriteFile("docs/specs/software-requirements/srd001-pkg.yaml", []byte(`id: srd001-pkg
 title: Pkg
 requirements:
   R1:
@@ -952,10 +952,10 @@ requirements:
     items:
       - R1.1: Do X
 `), 0o644)
-	os.WriteFile("docs/specs/product-requirements/prd002-cmd.yaml", []byte(`id: prd002-cmd
+	os.WriteFile("docs/specs/software-requirements/srd002-cmd.yaml", []byte(`id: srd002-cmd
 title: Cmd
 struct_refs:
-  - prd_id: prd001-pkg
+  - prd_id: srd001-pkg
     requirement: R9
 `), 0o644)
 
@@ -978,7 +978,7 @@ func TestCollectAnalyzeResult_StructRef_Valid(t *testing.T) {
 	defer os.Chdir(orig)
 	setupMinimalAnalyzeDir(t)
 
-	os.WriteFile("docs/specs/product-requirements/prd001-pkg.yaml", []byte(`id: prd001-pkg
+	os.WriteFile("docs/specs/software-requirements/srd001-pkg.yaml", []byte(`id: srd001-pkg
 title: Pkg
 requirements:
   R1:
@@ -986,10 +986,10 @@ requirements:
     items:
       - R1.1: Do X
 `), 0o644)
-	os.WriteFile("docs/specs/product-requirements/prd002-cmd.yaml", []byte(`id: prd002-cmd
+	os.WriteFile("docs/specs/software-requirements/srd002-cmd.yaml", []byte(`id: srd002-cmd
 title: Cmd
 struct_refs:
-  - prd_id: prd001-pkg
+  - prd_id: srd001-pkg
     requirement: R1
 `), 0o644)
 
@@ -1011,13 +1011,13 @@ func TestCollectAnalyzeResult_ComponentDepViolation_MissingFromArch(t *testing.T
 	defer os.Chdir(orig)
 	setupMinimalAnalyzeDir(t)
 
-	os.WriteFile("docs/specs/product-requirements/prd001-pkg.yaml", []byte(`id: prd001-pkg
+	os.WriteFile("docs/specs/software-requirements/srd001-pkg.yaml", []byte(`id: srd001-pkg
 title: Pkg
 `), 0o644)
-	os.WriteFile("docs/specs/product-requirements/prd002-cmd.yaml", []byte(`id: prd002-cmd
+	os.WriteFile("docs/specs/software-requirements/srd002-cmd.yaml", []byte(`id: srd002-cmd
 title: Cmd
 depends_on:
-  - prd_id: prd001-pkg
+  - prd_id: srd001-pkg
 `), 0o644)
 	os.WriteFile("docs/ARCHITECTURE.yaml", []byte(`id: arch-test
 title: Test Architecture
@@ -1037,8 +1037,8 @@ component_dependencies:
 	if len(result.ComponentDepViolations) != 1 {
 		t.Fatalf("expected 1 violation, got %d: %v", len(result.ComponentDepViolations), result.ComponentDepViolations)
 	}
-	if !strings.Contains(result.ComponentDepViolations[0], "prd001-pkg") {
-		t.Errorf("violation should mention prd001-pkg, got %q", result.ComponentDepViolations[0])
+	if !strings.Contains(result.ComponentDepViolations[0], "srd001-pkg") {
+		t.Errorf("violation should mention srd001-pkg, got %q", result.ComponentDepViolations[0])
 	}
 }
 
@@ -1049,13 +1049,13 @@ func TestCollectAnalyzeResult_ComponentDepViolation_NoArchDeps(t *testing.T) {
 	defer os.Chdir(orig)
 	setupMinimalAnalyzeDir(t)
 
-	os.WriteFile("docs/specs/product-requirements/prd001-pkg.yaml", []byte(`id: prd001-pkg
+	os.WriteFile("docs/specs/software-requirements/srd001-pkg.yaml", []byte(`id: srd001-pkg
 title: Pkg
 `), 0o644)
-	os.WriteFile("docs/specs/product-requirements/prd002-cmd.yaml", []byte(`id: prd002-cmd
+	os.WriteFile("docs/specs/software-requirements/srd002-cmd.yaml", []byte(`id: srd002-cmd
 title: Cmd
 depends_on:
-  - prd_id: prd001-pkg
+  - prd_id: srd001-pkg
 `), 0o644)
 	os.WriteFile("docs/ARCHITECTURE.yaml", []byte(`id: arch-test
 title: Test Architecture
@@ -1284,49 +1284,49 @@ func TestValidateStandaloneSemanticModel_MissingAlgorithm(t *testing.T) {
 	}
 }
 
-func TestValidatePRDSemanticModel_NoSemanticModel(t *testing.T) {
+func TestValidateSRDSemanticModel_NoSemanticModel(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	path := dir + "/prd001.yaml"
-	os.WriteFile(path, []byte(`id: prd001
-title: Test PRD
+	path := dir + "/srd001.yaml"
+	os.WriteFile(path, []byte(`id: srd001
+title: Test SRD
 problem: test
 `), 0o644)
-	errs := ValidatePRDSemanticModel(path)
+	errs := ValidateSRDSemanticModel(path)
 	if len(errs) != 0 {
-		t.Errorf("expected no errors for PRD without semantic_model, got %v", errs)
+		t.Errorf("expected no errors for SRD without semantic_model, got %v", errs)
 	}
 }
 
-func TestValidatePRDSemanticModel_ValidShorthand(t *testing.T) {
+func TestValidateSRDSemanticModel_ValidShorthand(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	path := dir + "/prd001.yaml"
-	os.WriteFile(path, []byte(`id: prd001
-title: Test PRD
+	path := dir + "/srd001.yaml"
+	os.WriteFile(path, []byte(`id: srd001
+title: Test SRD
 problem: test
 semantic_model:
   observe: input data
   reason: apply logic
   produce: output result
 `), 0o644)
-	errs := ValidatePRDSemanticModel(path)
+	errs := ValidateSRDSemanticModel(path)
 	if len(errs) != 0 {
 		t.Errorf("expected no errors for valid shorthand model, got %v", errs)
 	}
 }
 
-func TestValidatePRDSemanticModel_MissingShorthandKey(t *testing.T) {
+func TestValidateSRDSemanticModel_MissingShorthandKey(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	path := dir + "/prd001.yaml"
-	os.WriteFile(path, []byte(`id: prd001
-title: Test PRD
+	path := dir + "/srd001.yaml"
+	os.WriteFile(path, []byte(`id: srd001
+title: Test SRD
 semantic_model:
   observe: input data
   reason: apply logic
 `), 0o644)
-	errs := ValidatePRDSemanticModel(path)
+	errs := ValidateSRDSemanticModel(path)
 	if len(errs) != 1 {
 		t.Errorf("expected 1 error for missing produce key, got %d: %v", len(errs), errs)
 	}
@@ -1377,7 +1377,7 @@ func TestValidateSemanticModels_Count(t *testing.T) {
 	defer os.Chdir(orig)
 
 	os.MkdirAll("docs/specs/semantic-models", 0o755)
-	os.MkdirAll("docs/specs/product-requirements", 0o755)
+	os.MkdirAll("docs/specs/software-requirements", 0o755)
 	os.MkdirAll("docs/prompts", 0o755)
 
 	writeValidSMFile := func(name, behavior string) {
@@ -1462,7 +1462,7 @@ func TestCollectAnalyzeResult_RItemCoverage_FullCoverage(t *testing.T) {
 	defer os.Chdir(orig)
 	setupMinimalAnalyzeDir(t)
 
-	prd := `id: prd001-core
+	srd := `id: srd001-core
 title: Core
 requirements:
   R1:
@@ -1477,7 +1477,7 @@ acceptance_criteria:
       - R1.1
       - R1.2
 `
-	os.WriteFile("docs/specs/product-requirements/prd001-core.yaml", []byte(prd), 0o644)
+	os.WriteFile("docs/specs/software-requirements/srd001-core.yaml", []byte(srd), 0o644)
 
 	result, _, err := CollectAnalyzeResult(noopDeps())
 	if err != nil {
@@ -1495,7 +1495,7 @@ func TestCollectAnalyzeResult_RItemCoverage_MissingCoverage(t *testing.T) {
 	defer os.Chdir(orig)
 	setupMinimalAnalyzeDir(t)
 
-	prd := `id: prd001-core
+	srd := `id: srd001-core
 title: Core
 requirements:
   R1:
@@ -1510,7 +1510,7 @@ acceptance_criteria:
     traces:
       - R1.1
 `
-	os.WriteFile("docs/specs/product-requirements/prd001-core.yaml", []byte(prd), 0o644)
+	os.WriteFile("docs/specs/software-requirements/srd001-core.yaml", []byte(srd), 0o644)
 
 	result, _, err := CollectAnalyzeResult(noopDeps())
 	if err != nil {
@@ -1538,7 +1538,7 @@ func TestCollectAnalyzeResult_ACCoverage_Covered(t *testing.T) {
 	defer os.Chdir(orig)
 	setupMinimalAnalyzeDir(t)
 
-	prd := `id: prd001-core
+	srd := `id: srd001-core
 title: Core
 requirements:
   R1:
@@ -1551,7 +1551,7 @@ acceptance_criteria:
     traces:
       - R1.1
 `
-	os.WriteFile("docs/specs/product-requirements/prd001-core.yaml", []byte(prd), 0o644)
+	os.WriteFile("docs/specs/software-requirements/srd001-core.yaml", []byte(srd), 0o644)
 
 	ts := `id: test-rel01.0
 title: Tests
@@ -1562,11 +1562,11 @@ test_cases:
   - use_case: rel01.0-uc001-init
     name: Config fields test
     traces:
-      - prd001-core AC1
+      - srd001-core AC1
 `
 	os.WriteFile("docs/specs/test-suites/test-rel01.0.yaml", []byte(ts), 0o644)
 	os.WriteFile("docs/specs/use-cases/rel01.0-uc001-init.yaml",
-		[]byte("id: rel01.0-uc001-init\ntitle: Init\ntouchpoints:\n  - T1: prd001-core R1\n"), 0o644)
+		[]byte("id: rel01.0-uc001-init\ntitle: Init\ntouchpoints:\n  - T1: srd001-core R1\n"), 0o644)
 
 	result, _, err := CollectAnalyzeResult(noopDeps())
 	if err != nil {
@@ -1584,7 +1584,7 @@ func TestCollectAnalyzeResult_ACCoverage_Uncovered(t *testing.T) {
 	defer os.Chdir(orig)
 	setupMinimalAnalyzeDir(t)
 
-	prd := `id: prd001-core
+	srd := `id: srd001-core
 title: Core
 requirements:
   R1:
@@ -1601,7 +1601,7 @@ acceptance_criteria:
     traces:
       - R1.1
 `
-	os.WriteFile("docs/specs/product-requirements/prd001-core.yaml", []byte(prd), 0o644)
+	os.WriteFile("docs/specs/software-requirements/srd001-core.yaml", []byte(srd), 0o644)
 
 	// No test suite traces to ACs
 	ts := `id: test-rel01.0
@@ -1615,7 +1615,7 @@ test_cases:
 `
 	os.WriteFile("docs/specs/test-suites/test-rel01.0.yaml", []byte(ts), 0o644)
 	os.WriteFile("docs/specs/use-cases/rel01.0-uc001-init.yaml",
-		[]byte("id: rel01.0-uc001-init\ntitle: Init\ntouchpoints:\n  - T1: prd001-core R1\n"), 0o644)
+		[]byte("id: rel01.0-uc001-init\ntitle: Init\ntouchpoints:\n  - T1: srd001-core R1\n"), 0o644)
 
 	result, _, err := CollectAnalyzeResult(noopDeps())
 	if err != nil {
@@ -1639,22 +1639,22 @@ func TestCollectAnalyzeResult_SItemTraces_Valid(t *testing.T) {
 	defer os.Chdir(orig)
 	setupMinimalAnalyzeDir(t)
 
-	os.WriteFile("docs/specs/product-requirements/prd001-core.yaml",
-		[]byte("id: prd001-core\ntitle: Core\nrequirements:\n  R1:\n    title: Req\n    items:\n      - R1.1: X\n"), 0o644)
+	os.WriteFile("docs/specs/software-requirements/srd001-core.yaml",
+		[]byte("id: srd001-core\ntitle: Core\nrequirements:\n  R1:\n    title: Req\n    items:\n      - R1.1: X\n"), 0o644)
 
 	uc := `id: rel01.0-uc001-init
 title: Init
 touchpoints:
-  - T1: prd001-core R1
+  - T1: srd001-core R1
 success_criteria:
   - id: S1
     criterion: Init works
     traces:
-      - prd001-core AC1
+      - srd001-core AC1
   - id: S2
     criterion: Defaults applied
     traces:
-      - prd001-core AC2
+      - srd001-core AC2
 `
 	os.WriteFile("docs/specs/use-cases/rel01.0-uc001-init.yaml", []byte(uc), 0o644)
 
@@ -1674,18 +1674,18 @@ func TestCollectAnalyzeResult_SItemTraces_MissingACTrace(t *testing.T) {
 	defer os.Chdir(orig)
 	setupMinimalAnalyzeDir(t)
 
-	os.WriteFile("docs/specs/product-requirements/prd001-core.yaml",
-		[]byte("id: prd001-core\ntitle: Core\nrequirements:\n  R1:\n    title: Req\n    items:\n      - R1.1: X\n"), 0o644)
+	os.WriteFile("docs/specs/software-requirements/srd001-core.yaml",
+		[]byte("id: srd001-core\ntitle: Core\nrequirements:\n  R1:\n    title: Req\n    items:\n      - R1.1: X\n"), 0o644)
 
 	uc := `id: rel01.0-uc001-init
 title: Init
 touchpoints:
-  - T1: prd001-core R1
+  - T1: srd001-core R1
 success_criteria:
   - id: S1
     criterion: Init works
     traces:
-      - prd001-core AC1
+      - srd001-core AC1
   - id: S2
     criterion: Something else
     traces: []
@@ -1718,18 +1718,18 @@ func TestCollectAnalyzeResult_UnreachableUC_NoRItems(t *testing.T) {
 	os.Chdir(dir)
 	defer os.Chdir(orig)
 
-	os.MkdirAll("docs/specs/product-requirements", 0o755)
+	os.MkdirAll("docs/specs/software-requirements", 0o755)
 	os.MkdirAll("docs/specs/use-cases", 0o755)
 	os.MkdirAll("docs/specs/test-suites", 0o755)
 	os.MkdirAll("docs/constitutions", 0o755)
 	os.MkdirAll("pkg/orchestrator/constitutions", 0o755)
 
-	// PRD with no R-items (empty requirements).
-	prd := "id: prd001-core\ntitle: Core\nrequirements: {}\n"
-	os.WriteFile("docs/specs/product-requirements/prd001-core.yaml", []byte(prd), 0o644)
+	// SRD with no R-items (empty requirements).
+	srd := "id: srd001-core\ntitle: Core\nrequirements: {}\n"
+	os.WriteFile("docs/specs/software-requirements/srd001-core.yaml", []byte(srd), 0o644)
 
-	// UC that references this PRD.
-	uc := "id: rel01.0-uc001-init\ntitle: Init\ntouchpoints:\n  - T1: prd001-core R1\n"
+	// UC that references this SRD.
+	uc := "id: rel01.0-uc001-init\ntitle: Init\ntouchpoints:\n  - T1: srd001-core R1\n"
 	os.WriteFile("docs/specs/use-cases/rel01.0-uc001-init.yaml", []byte(uc), 0o644)
 
 	roadmap := "id: rm\ntitle: R\nreleases:\n  - version: \"01.0\"\n    name: R1\n    status: pending\n    use_cases:\n      - id: rel01.0-uc001-init\n        summary: Init\n"
@@ -1755,23 +1755,23 @@ func TestCollectAnalyzeResult_ReachableUC_HasRItems(t *testing.T) {
 	os.Chdir(dir)
 	defer os.Chdir(orig)
 
-	os.MkdirAll("docs/specs/product-requirements", 0o755)
+	os.MkdirAll("docs/specs/software-requirements", 0o755)
 	os.MkdirAll("docs/specs/use-cases", 0o755)
 	os.MkdirAll("docs/specs/test-suites", 0o755)
 	os.MkdirAll("docs/constitutions", 0o755)
 	os.MkdirAll("pkg/orchestrator/constitutions", 0o755)
 
-	// PRD with R-items.
-	prd := "id: prd001-core\ntitle: Core\nrequirements:\n  R1:\n    title: Config\n    items:\n      - R1.1: first\n"
-	os.WriteFile("docs/specs/product-requirements/prd001-core.yaml", []byte(prd), 0o644)
+	// SRD with R-items.
+	srd := "id: srd001-core\ntitle: Core\nrequirements:\n  R1:\n    title: Config\n    items:\n      - R1.1: first\n"
+	os.WriteFile("docs/specs/software-requirements/srd001-core.yaml", []byte(srd), 0o644)
 
-	uc := "id: rel01.0-uc001-init\ntitle: Init\ntouchpoints:\n  - T1: prd001-core R1\n"
+	uc := "id: rel01.0-uc001-init\ntitle: Init\ntouchpoints:\n  - T1: srd001-core R1\n"
 	os.WriteFile("docs/specs/use-cases/rel01.0-uc001-init.yaml", []byte(uc), 0o644)
 
 	roadmap := "id: rm\ntitle: R\nreleases:\n  - version: \"01.0\"\n    name: R1\n    status: pending\n    use_cases:\n      - id: rel01.0-uc001-init\n        summary: Init\n"
 	os.WriteFile("docs/road-map.yaml", []byte(roadmap), 0o644)
 	os.WriteFile("docs/specs/test-suites/test-rel01.0.yaml",
-		[]byte("id: test-rel01.0\ntitle: T\ntraces:\n  - rel01.0-uc001-init\ntest_cases:\n  - name: tc1\n    use_case: rel01.0-uc001-init\n    traces:\n      - prd001-core AC1\n"), 0o644)
+		[]byte("id: test-rel01.0\ntitle: T\ntraces:\n  - rel01.0-uc001-init\ntest_cases:\n  - name: tc1\n    use_case: rel01.0-uc001-init\n    traces:\n      - srd001-core AC1\n"), 0o644)
 
 	result, _, err := CollectAnalyzeResult(noopDeps())
 	if err != nil {
@@ -1782,20 +1782,20 @@ func TestCollectAnalyzeResult_ReachableUC_HasRItems(t *testing.T) {
 	}
 }
 
-func TestCollectAnalyzeResult_UnreachableUC_MissingPRD(t *testing.T) {
+func TestCollectAnalyzeResult_UnreachableUC_MissingSRD(t *testing.T) {
 	dir := t.TempDir()
 	orig, _ := os.Getwd()
 	os.Chdir(dir)
 	defer os.Chdir(orig)
 
-	os.MkdirAll("docs/specs/product-requirements", 0o755)
+	os.MkdirAll("docs/specs/software-requirements", 0o755)
 	os.MkdirAll("docs/specs/use-cases", 0o755)
 	os.MkdirAll("docs/specs/test-suites", 0o755)
 	os.MkdirAll("docs/constitutions", 0o755)
 	os.MkdirAll("pkg/orchestrator/constitutions", 0o755)
 
-	// UC references a PRD that doesn't exist.
-	uc := "id: rel01.0-uc001-init\ntitle: Init\ntouchpoints:\n  - T1: prd999-missing R1\n"
+	// UC references a SRD that doesn't exist.
+	uc := "id: rel01.0-uc001-init\ntitle: Init\ntouchpoints:\n  - T1: srd999-missing R1\n"
 	os.WriteFile("docs/specs/use-cases/rel01.0-uc001-init.yaml", []byte(uc), 0o644)
 
 	roadmap := "id: rm\ntitle: R\nreleases:\n  - version: \"01.0\"\n    name: R1\n    status: pending\n    use_cases:\n      - id: rel01.0-uc001-init\n        summary: Init\n"
@@ -1820,18 +1820,18 @@ func TestCollectAnalyzeResult_BareTouchpoint_FlagsMissingRGroups(t *testing.T) {
 	os.Chdir(dir)
 	defer os.Chdir(orig)
 
-	os.MkdirAll("docs/specs/product-requirements", 0o755)
+	os.MkdirAll("docs/specs/software-requirements", 0o755)
 	os.MkdirAll("docs/specs/use-cases", 0o755)
 	os.MkdirAll("docs/specs/test-suites", 0o755)
 	os.MkdirAll("docs/constitutions", 0o755)
 	os.MkdirAll("pkg/orchestrator/constitutions", 0o755)
 
-	// PRD with R-items.
-	prd := "id: prd096-users\ntitle: Users\nrequirements:\n  R1:\n    title: Core\n    items:\n      - R1.1: Must print users\n"
-	os.WriteFile("docs/specs/product-requirements/prd096-users.yaml", []byte(prd), 0o644)
+	// SRD with R-items.
+	srd := "id: srd096-users\ntitle: Users\nrequirements:\n  R1:\n    title: Core\n    items:\n      - R1.1: Must print users\n"
+	os.WriteFile("docs/specs/software-requirements/srd096-users.yaml", []byte(srd), 0o644)
 
-	// UC that cites PRD WITHOUT R-group references.
-	uc := "id: rel01.0-uc001-users\ntitle: Users\ntouchpoints:\n  - T1: \"cmd/users — prints logged-in usernames (prd096-users)\"\n"
+	// UC that cites SRD WITHOUT R-group references.
+	uc := "id: rel01.0-uc001-users\ntitle: Users\ntouchpoints:\n  - T1: \"cmd/users — prints logged-in usernames (srd096-users)\"\n"
 	os.WriteFile("docs/specs/use-cases/rel01.0-uc001-users.yaml", []byte(uc), 0o644)
 
 	roadmap := "id: rm\ntitle: R\nreleases:\n  - version: \"01.0\"\n    name: R1\n    status: pending\n    use_cases:\n      - id: rel01.0-uc001-users\n        summary: Users\n"
@@ -1846,8 +1846,8 @@ func TestCollectAnalyzeResult_BareTouchpoint_FlagsMissingRGroups(t *testing.T) {
 	if len(result.BareTouchpoints) != 1 {
 		t.Fatalf("expected 1 bare touchpoint, got %d: %v", len(result.BareTouchpoints), result.BareTouchpoints)
 	}
-	if !strings.Contains(result.BareTouchpoints[0], "prd096-users") {
-		t.Errorf("expected bare touchpoint to mention prd096-users, got %q", result.BareTouchpoints[0])
+	if !strings.Contains(result.BareTouchpoints[0], "srd096-users") {
+		t.Errorf("expected bare touchpoint to mention srd096-users, got %q", result.BareTouchpoints[0])
 	}
 }
 
@@ -1857,17 +1857,17 @@ func TestCollectAnalyzeResult_BareTouchpoint_NotFlaggedWithRGroups(t *testing.T)
 	os.Chdir(dir)
 	defer os.Chdir(orig)
 
-	os.MkdirAll("docs/specs/product-requirements", 0o755)
+	os.MkdirAll("docs/specs/software-requirements", 0o755)
 	os.MkdirAll("docs/specs/use-cases", 0o755)
 	os.MkdirAll("docs/specs/test-suites", 0o755)
 	os.MkdirAll("docs/constitutions", 0o755)
 	os.MkdirAll("pkg/orchestrator/constitutions", 0o755)
 
-	prd := "id: prd096-users\ntitle: Users\nrequirements:\n  R1:\n    title: Core\n    items:\n      - R1.1: Must print users\n"
-	os.WriteFile("docs/specs/product-requirements/prd096-users.yaml", []byte(prd), 0o644)
+	srd := "id: srd096-users\ntitle: Users\nrequirements:\n  R1:\n    title: Core\n    items:\n      - R1.1: Must print users\n"
+	os.WriteFile("docs/specs/software-requirements/srd096-users.yaml", []byte(srd), 0o644)
 
-	// UC that cites PRD WITH R-group references — no warning expected.
-	uc := "id: rel01.0-uc001-users\ntitle: Users\ntouchpoints:\n  - T1: \"cmd/users — prints usernames (prd096-users R1)\"\n"
+	// UC that cites SRD WITH R-group references — no warning expected.
+	uc := "id: rel01.0-uc001-users\ntitle: Users\ntouchpoints:\n  - T1: \"cmd/users — prints usernames (srd096-users R1)\"\n"
 	os.WriteFile("docs/specs/use-cases/rel01.0-uc001-users.yaml", []byte(uc), 0o644)
 
 	roadmap := "id: rm\ntitle: R\nreleases:\n  - version: \"01.0\"\n    name: R1\n    status: pending\n    use_cases:\n      - id: rel01.0-uc001-users\n        summary: Users\n"
@@ -1894,10 +1894,10 @@ func TestCollectAnalyzeResult_UCIDPrefixMismatch_Pass(t *testing.T) {
 	defer os.Chdir(orig)
 	setupMinimalAnalyzeDir(t)
 
-	os.WriteFile("docs/specs/product-requirements/prd001-core.yaml",
-		[]byte("id: prd001-core\ntitle: Core\nrequirements:\n  R1:\n    title: Req 1\n    items:\n      - R1.1: Do X\n"), 0o644)
+	os.WriteFile("docs/specs/software-requirements/srd001-core.yaml",
+		[]byte("id: srd001-core\ntitle: Core\nrequirements:\n  R1:\n    title: Req 1\n    items:\n      - R1.1: Do X\n"), 0o644)
 	os.WriteFile("docs/specs/use-cases/rel01.0-uc001-init.yaml",
-		[]byte("id: rel01.0-uc001-init\ntitle: Init\ntouchpoints:\n  - T1: prd001-core R1\n"), 0o644)
+		[]byte("id: rel01.0-uc001-init\ntitle: Init\ntouchpoints:\n  - T1: srd001-core R1\n"), 0o644)
 
 	roadmap := "id: rm\ntitle: R\nreleases:\n  - version: \"01.0\"\n    name: Core\n    status: done\n    use_cases:\n      - id: rel01.0-uc001-init\n        summary: Init\n        status: done\n"
 	os.WriteFile("docs/road-map.yaml", []byte(roadmap), 0o644)
@@ -1921,11 +1921,11 @@ func TestCollectAnalyzeResult_UCIDPrefixMismatch_Fail(t *testing.T) {
 	defer os.Chdir(orig)
 	setupMinimalAnalyzeDir(t)
 
-	os.WriteFile("docs/specs/product-requirements/prd001-core.yaml",
-		[]byte("id: prd001-core\ntitle: Core\nrequirements:\n  R1:\n    title: Req 1\n    items:\n      - R1.1: Do X\n"), 0o644)
+	os.WriteFile("docs/specs/software-requirements/srd001-core.yaml",
+		[]byte("id: srd001-core\ntitle: Core\nrequirements:\n  R1:\n    title: Req 1\n    items:\n      - R1.1: Do X\n"), 0o644)
 	// File and ID have rel05.5 prefix, but roadmap assigns it to release 15.0
 	os.WriteFile("docs/specs/use-cases/rel05.5-uc001-ts.yaml",
-		[]byte("id: rel05.5-uc001-ts\ntitle: TS\ntouchpoints:\n  - T1: prd001-core R1\n"), 0o644)
+		[]byte("id: rel05.5-uc001-ts\ntitle: TS\ntouchpoints:\n  - T1: srd001-core R1\n"), 0o644)
 
 	roadmap := "id: rm\ntitle: R\nreleases:\n  - version: \"15.0\"\n    name: Moved\n    status: pending\n    use_cases:\n      - id: rel05.5-uc001-ts\n        summary: TS\n        status: pending\n"
 	os.WriteFile("docs/road-map.yaml", []byte(roadmap), 0o644)
@@ -1953,16 +1953,16 @@ func TestCollectAnalyzeResult_UCIDPrefixMismatch_Multiple(t *testing.T) {
 	defer os.Chdir(orig)
 	setupMinimalAnalyzeDir(t)
 
-	os.WriteFile("docs/specs/product-requirements/prd001-core.yaml",
-		[]byte("id: prd001-core\ntitle: Core\nrequirements:\n  R1:\n    title: Req 1\n    items:\n      - R1.1: Do X\n"), 0o644)
+	os.WriteFile("docs/specs/software-requirements/srd001-core.yaml",
+		[]byte("id: srd001-core\ntitle: Core\nrequirements:\n  R1:\n    title: Req 1\n    items:\n      - R1.1: Do X\n"), 0o644)
 	// Two mismatched use cases assigned to release 15.0
 	os.WriteFile("docs/specs/use-cases/rel05.5-uc001-ts.yaml",
-		[]byte("id: rel05.5-uc001-ts\ntitle: TS\ntouchpoints:\n  - T1: prd001-core R1\n"), 0o644)
+		[]byte("id: rel05.5-uc001-ts\ntitle: TS\ntouchpoints:\n  - T1: srd001-core R1\n"), 0o644)
 	os.WriteFile("docs/specs/use-cases/rel12.1-uc001-join.yaml",
-		[]byte("id: rel12.1-uc001-join\ntitle: Join\ntouchpoints:\n  - T1: prd001-core R1\n"), 0o644)
+		[]byte("id: rel12.1-uc001-join\ntitle: Join\ntouchpoints:\n  - T1: srd001-core R1\n"), 0o644)
 	// One correctly prefixed use case
 	os.WriteFile("docs/specs/use-cases/rel15.0-uc001-sort.yaml",
-		[]byte("id: rel15.0-uc001-sort\ntitle: Sort\ntouchpoints:\n  - T1: prd001-core R1\n"), 0o644)
+		[]byte("id: rel15.0-uc001-sort\ntitle: Sort\ntouchpoints:\n  - T1: srd001-core R1\n"), 0o644)
 
 	roadmap := "id: rm\ntitle: R\nreleases:\n  - version: \"15.0\"\n    name: Batch\n    status: pending\n    use_cases:\n      - id: rel05.5-uc001-ts\n        summary: TS\n      - id: rel12.1-uc001-join\n        summary: Join\n      - id: rel15.0-uc001-sort\n        summary: Sort\n"
 	os.WriteFile("docs/road-map.yaml", []byte(roadmap), 0o644)
@@ -1994,7 +1994,7 @@ interfaces:
   - name: Orchestrator and Config
     summary: Entry point
 `), 0o644)
-	os.WriteFile("docs/specs/product-requirements/prd001-core.yaml", []byte(`id: prd001-core
+	os.WriteFile("docs/specs/software-requirements/srd001-core.yaml", []byte(`id: srd001-core
 title: Core
 implemented_by:
   - Nonexistent Interface
@@ -2026,7 +2026,7 @@ interfaces:
   - name: Prompt Templates
     summary: Templates
 `), 0o644)
-	os.WriteFile("docs/specs/product-requirements/prd001-core.yaml", []byte(`id: prd001-core
+	os.WriteFile("docs/specs/software-requirements/srd001-core.yaml", []byte(`id: srd001-core
 title: Core
 used_by:
   - Missing Interface
@@ -2060,7 +2060,7 @@ interfaces:
   - name: Prompt Templates
     summary: Templates
 `), 0o644)
-	os.WriteFile("docs/specs/product-requirements/prd001-core.yaml", []byte(`id: prd001-core
+	os.WriteFile("docs/specs/software-requirements/srd001-core.yaml", []byte(`id: srd001-core
 title: Core
 implemented_by:
   - Orchestrator and Config
@@ -2085,7 +2085,7 @@ func TestCollectAnalyzeResult_InterfaceRef_NoArchDoc(t *testing.T) {
 	setupMinimalAnalyzeDir(t)
 
 	// No ARCHITECTURE.yaml — interface refs should not cause errors
-	os.WriteFile("docs/specs/product-requirements/prd001-core.yaml", []byte(`id: prd001-core
+	os.WriteFile("docs/specs/software-requirements/srd001-core.yaml", []byte(`id: srd001-core
 title: Core
 implemented_by:
   - Some Interface
@@ -2113,7 +2113,7 @@ interfaces:
   - name: Orchestrator and Config
     summary: Entry point
 `), 0o644)
-	os.WriteFile("docs/specs/product-requirements/prd001-core.yaml", []byte(`id: prd001-core
+	os.WriteFile("docs/specs/software-requirements/srd001-core.yaml", []byte(`id: srd001-core
 title: Core
 `), 0o644)
 
@@ -2122,6 +2122,6 @@ title: Core
 		t.Fatalf("CollectAnalyzeResult: %v", err)
 	}
 	if len(result.BrokenInterfaceRefs) != 0 {
-		t.Errorf("expected no violations when PRDs have no interface refs, got %v", result.BrokenInterfaceRefs)
+		t.Errorf("expected no violations when SRDs have no interface refs, got %v", result.BrokenInterfaceRefs)
 	}
 }

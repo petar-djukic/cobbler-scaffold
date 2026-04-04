@@ -548,7 +548,7 @@ func (s *Stitch) buildStitchPrompt(task stitchTask) (string, error) {
 	executionConst := orDefault(s.cfg.Cobbler.ExecutionConstitution, executionConstitution)
 	goStyleConst := orDefault(s.cfg.Cobbler.GoStyleConstitution, goStyleConstitution)
 
-	// Load per-phase context file (prd003 R9.9).
+	// Load per-phase context file (srd003 R9.9).
 	stitchCtxPath := filepath.Join(s.cfg.Cobbler.Dir, "stitch_context.yaml")
 	phaseCtx, phaseErr := ictx.LoadPhaseContext(stitchCtxPath)
 	if phaseErr != nil {
@@ -571,18 +571,18 @@ func (s *Stitch) buildStitchPrompt(task stitchTask) (string, error) {
 		}
 	}
 
-	// Exclude PRDs from stitch context — Claude reads them via required_reading
+	// Exclude SRDs from stitch context — Claude reads them via required_reading
 	// instead. This avoids double-delivery (inline + Read tool) and shrinks the
 	// prompt by 10-30KB (GH-1464).
 	{
 		if phaseCtx == nil {
 			phaseCtx = &PhaseContext{}
 		}
-		prdExclude := "docs/specs/product-requirements/prd*.yaml"
+		srdExclude := "docs/specs/software-requirements/srd*.yaml"
 		if phaseCtx.Exclude == "" {
-			phaseCtx.Exclude = prdExclude
+			phaseCtx.Exclude = srdExclude
 		} else {
-			phaseCtx.Exclude = phaseCtx.Exclude + "\n" + prdExclude
+			phaseCtx.Exclude = phaseCtx.Exclude + "\n" + srdExclude
 		}
 	}
 
@@ -650,10 +650,10 @@ func (s *Stitch) buildStitchPrompt(task stitchTask) (string, error) {
 		s.logf("buildStitchPrompt: injecting %d package_contracts", len(oodContracts))
 	}
 
-	// Load semantic model from PRD (informational context for stitch).
-	semanticModel := ictx.LoadPRDSemanticModel()
+	// Load semantic model from SRD (informational context for stitch).
+	semanticModel := ictx.LoadSRDSemanticModel()
 	if semanticModel != nil {
-		s.logf("buildStitchPrompt: injecting semantic_model from PRD")
+		s.logf("buildStitchPrompt: injecting semantic_model from SRD")
 	}
 
 	doc := StitchPromptDoc{

@@ -609,7 +609,7 @@ func TestComputeReqCompletion_AllComplete(t *testing.T) {
 	os.MkdirAll("docs/specs/use-cases", 0o755)
 
 	os.WriteFile(filepath.Join(cobblerDir, "requirements.yaml"), []byte(`requirements:
-  prd001-core:
+  srd001-core:
     R1.1:
       status: complete
     R1.2:
@@ -619,7 +619,7 @@ func TestComputeReqCompletion_AllComplete(t *testing.T) {
 	os.WriteFile("docs/specs/use-cases/rel01.0-uc001-init.yaml", []byte(`id: rel01.0-uc001-init
 title: Init
 touchpoints:
-  - T1: prd001-core R1
+  - T1: srd001-core R1
 `), 0o644)
 
 	result := ComputeReqCompletion(cobblerDir)
@@ -642,7 +642,7 @@ func TestComputeReqCompletion_PartiallyComplete(t *testing.T) {
 	os.MkdirAll("docs/specs/use-cases", 0o755)
 
 	os.WriteFile(filepath.Join(cobblerDir, "requirements.yaml"), []byte(`requirements:
-  prd001-core:
+  srd001-core:
     R1.1:
       status: complete
     R1.2:
@@ -652,7 +652,7 @@ func TestComputeReqCompletion_PartiallyComplete(t *testing.T) {
 	os.WriteFile("docs/specs/use-cases/rel01.0-uc001-init.yaml", []byte(`id: rel01.0-uc001-init
 title: Init
 touchpoints:
-  - T1: prd001-core R1
+  - T1: srd001-core R1
 `), 0o644)
 
 	result := ComputeReqCompletion(cobblerDir)
@@ -680,7 +680,7 @@ func TestComputeReqCompletion_SkipStatusCountsAsComplete(t *testing.T) {
 	os.MkdirAll("docs/specs/use-cases", 0o755)
 
 	os.WriteFile(filepath.Join(cobblerDir, "requirements.yaml"), []byte(`requirements:
-  prd001-core:
+  srd001-core:
     R1.1:
       status: complete
     R1.2:
@@ -690,7 +690,7 @@ func TestComputeReqCompletion_SkipStatusCountsAsComplete(t *testing.T) {
 	os.WriteFile("docs/specs/use-cases/rel01.0-uc001-init.yaml", []byte(`id: rel01.0-uc001-init
 title: Init
 touchpoints:
-  - T1: prd001-core R1
+  - T1: srd001-core R1
 `), 0o644)
 
 	result := ComputeReqCompletion(cobblerDir)
@@ -710,7 +710,7 @@ func TestComputeReqCompletion_CompleteWithFailuresCountsAsComplete(t *testing.T)
 	os.MkdirAll("docs/specs/use-cases", 0o755)
 
 	os.WriteFile(filepath.Join(cobblerDir, "requirements.yaml"), []byte(`requirements:
-  prd001-core:
+  srd001-core:
     R1.1:
       status: complete_with_failures
 `), 0o644)
@@ -718,7 +718,7 @@ func TestComputeReqCompletion_CompleteWithFailuresCountsAsComplete(t *testing.T)
 	os.WriteFile("docs/specs/use-cases/rel01.0-uc001-init.yaml", []byte(`id: rel01.0-uc001-init
 title: Init
 touchpoints:
-  - T1: prd001-core R1
+  - T1: srd001-core R1
 `), 0o644)
 
 	result := ComputeReqCompletion(cobblerDir)
@@ -727,7 +727,7 @@ touchpoints:
 	}
 }
 
-func TestComputeReqCompletion_MissingPRDInReqs(t *testing.T) {
+func TestComputeReqCompletion_MissingSRDInReqs(t *testing.T) {
 	dir := t.TempDir()
 	origDir, _ := os.Getwd()
 	os.Chdir(dir)
@@ -746,12 +746,12 @@ func TestComputeReqCompletion_MissingPRDInReqs(t *testing.T) {
 	os.WriteFile("docs/specs/use-cases/rel01.0-uc001-init.yaml", []byte(`id: rel01.0-uc001-init
 title: Init
 touchpoints:
-  - T1: prd001-core R1
+  - T1: srd001-core R1
 `), 0o644)
 
 	result := ComputeReqCompletion(cobblerDir)
 	if result["rel01.0-uc001"] {
-		t.Error("rel01.0-uc001 should NOT be complete (prd001-core not in requirements)")
+		t.Error("rel01.0-uc001 should NOT be complete (srd001-core not in requirements)")
 	}
 }
 
@@ -765,9 +765,9 @@ func TestComputeReqCompletion_PrefixMatch(t *testing.T) {
 	os.MkdirAll(cobblerDir, 0o755)
 	os.MkdirAll("docs/specs/use-cases", 0o755)
 
-	// requirements.yaml has full stem "prd001-core", touchpoint cites "prd001"
+	// requirements.yaml has full stem "srd001-core", touchpoint cites "srd001"
 	os.WriteFile(filepath.Join(cobblerDir, "requirements.yaml"), []byte(`requirements:
-  prd001-core:
+  srd001-core:
     R1.1:
       status: complete
 `), 0o644)
@@ -775,12 +775,12 @@ func TestComputeReqCompletion_PrefixMatch(t *testing.T) {
 	os.WriteFile("docs/specs/use-cases/rel01.0-uc001-init.yaml", []byte(`id: rel01.0-uc001-init
 title: Init
 touchpoints:
-  - T1: prd001 R1
+  - T1: srd001 R1
 `), 0o644)
 
 	result := ComputeReqCompletion(cobblerDir)
 	if !result["rel01.0-uc001"] {
-		t.Error("rel01.0-uc001 should be complete (prd001 prefix matches prd001-core)")
+		t.Error("rel01.0-uc001 should be complete (srd001 prefix matches srd001-core)")
 	}
 }
 
@@ -804,44 +804,44 @@ func TestIsRequirementComplete(t *testing.T) {
 	}
 }
 
-// --- findPRDRequirements ---
+// --- findSRDRequirements ---
 
-func TestFindPRDRequirements_ExactMatch(t *testing.T) {
+func TestFindSRDRequirements_ExactMatch(t *testing.T) {
 	reqs := map[string]map[string]RequirementState{
-		"prd001-core": {"R1.1": {Status: "complete"}},
+		"srd001-core": {"R1.1": {Status: "complete"}},
 	}
-	got := findPRDRequirements(reqs, "prd001-core")
+	got := findSRDRequirements(reqs, "srd001-core")
 	if got == nil || got["R1.1"].Status != "complete" {
-		t.Errorf("expected exact match for prd001-core")
+		t.Errorf("expected exact match for srd001-core")
 	}
 }
 
-func TestFindPRDRequirements_PrefixMatch(t *testing.T) {
+func TestFindSRDRequirements_PrefixMatch(t *testing.T) {
 	reqs := map[string]map[string]RequirementState{
-		"prd001-core": {"R1.1": {Status: "ready"}},
+		"srd001-core": {"R1.1": {Status: "ready"}},
 	}
-	got := findPRDRequirements(reqs, "prd001")
+	got := findSRDRequirements(reqs, "srd001")
 	if got == nil || got["R1.1"].Status != "ready" {
-		t.Errorf("expected prefix match prd001 -> prd001-core")
+		t.Errorf("expected prefix match srd001 -> srd001-core")
 	}
 }
 
-func TestFindPRDRequirements_NoMatch(t *testing.T) {
+func TestFindSRDRequirements_NoMatch(t *testing.T) {
 	reqs := map[string]map[string]RequirementState{
-		"prd001-core": {"R1.1": {Status: "ready"}},
+		"srd001-core": {"R1.1": {Status: "ready"}},
 	}
-	got := findPRDRequirements(reqs, "prd999")
+	got := findSRDRequirements(reqs, "srd999")
 	if got != nil {
 		t.Errorf("expected nil for non-matching stem, got %v", got)
 	}
 }
 
-func TestFindPRDRequirements_LongestPrefixWins(t *testing.T) {
+func TestFindSRDRequirements_LongestPrefixWins(t *testing.T) {
 	reqs := map[string]map[string]RequirementState{
-		"prd001-core":     {"R1.1": {Status: "ready"}},
-		"prd001-core-ext": {"R1.1": {Status: "complete"}},
+		"srd001-core":     {"R1.1": {Status: "ready"}},
+		"srd001-core-ext": {"R1.1": {Status: "complete"}},
 	}
-	got := findPRDRequirements(reqs, "prd001-core")
+	got := findSRDRequirements(reqs, "srd001-core")
 	// Exact match should win over prefix
 	if got == nil || got["R1.1"].Status != "ready" {
 		t.Errorf("exact match should take precedence")

@@ -545,7 +545,7 @@ requirements:
 func TestExpandedRequirementCount_NilSubItemCounts(t *testing.T) {
 	t.Parallel()
 	reqs := []issueDescItem{
-		{ID: "R1", Text: "Implement prd003 R2"},
+		{ID: "R1", Text: "Implement srd003 R2"},
 		{ID: "R2", Text: "Something else"},
 	}
 	got := expandedRequirementCount(reqs, nil)
@@ -557,12 +557,12 @@ func TestExpandedRequirementCount_NilSubItemCounts(t *testing.T) {
 func TestExpandedRequirementCount_GroupExpansion(t *testing.T) {
 	t.Parallel()
 	subItems := map[string]map[string]int{
-		"prd003": {"R2": 4, "R5": 2},
+		"srd003": {"R2": 4, "R5": 2},
 	}
 	reqs := []issueDescItem{
-		{ID: "R1", Text: "Implement prd003 R2"},       // expands to 4
-		{ID: "R2", Text: "Handle prd003 R5"},           // expands to 2
-		{ID: "R3", Text: "Something with no PRD ref"},  // counts as 1
+		{ID: "R1", Text: "Implement srd003 R2"},       // expands to 4
+		{ID: "R2", Text: "Handle srd003 R5"},           // expands to 2
+		{ID: "R3", Text: "Something with no SRD ref"},  // counts as 1
 	}
 	got := expandedRequirementCount(reqs, subItems)
 	if got != 7 {
@@ -573,10 +573,10 @@ func TestExpandedRequirementCount_GroupExpansion(t *testing.T) {
 func TestExpandedRequirementCount_SubItemRefCountsAsOne(t *testing.T) {
 	t.Parallel()
 	subItems := map[string]map[string]int{
-		"prd003": {"R2": 4},
+		"srd003": {"R2": 4},
 	}
 	reqs := []issueDescItem{
-		{ID: "R1", Text: "Implement prd003 R2.3"}, // specific sub-item = 1
+		{ID: "R1", Text: "Implement srd003 R2.3"}, // specific sub-item = 1
 	}
 	got := expandedRequirementCount(reqs, subItems)
 	if got != 1 {
@@ -584,29 +584,29 @@ func TestExpandedRequirementCount_SubItemRefCountsAsOne(t *testing.T) {
 	}
 }
 
-func TestExpandedRequirementCount_UnknownPRDCountsAsOne(t *testing.T) {
+func TestExpandedRequirementCount_UnknownSRDCountsAsOne(t *testing.T) {
 	t.Parallel()
 	subItems := map[string]map[string]int{
-		"prd003": {"R2": 4},
+		"srd003": {"R2": 4},
 	}
 	reqs := []issueDescItem{
-		{ID: "R1", Text: "Implement prd999 R1"}, // unknown PRD
+		{ID: "R1", Text: "Implement srd999 R1"}, // unknown SRD
 	}
 	got := expandedRequirementCount(reqs, subItems)
 	if got != 1 {
-		t.Errorf("expandedRequirementCount for unknown PRD = %d, want 1", got)
+		t.Errorf("expandedRequirementCount for unknown SRD = %d, want 1", got)
 	}
 }
 
-func TestExpandedRequirementCount_FuzzyPRDStemMatch(t *testing.T) {
+func TestExpandedRequirementCount_FuzzySRDStemMatch(t *testing.T) {
 	t.Parallel()
-	// "prd003-cobbler-workflows" mapped under both full stem and "prd003".
+	// "srd003-cobbler-workflows" mapped under both full stem and "srd003".
 	subItems := map[string]map[string]int{
-		"prd003-cobbler-workflows": {"R2": 4},
-		"prd003":                   {"R2": 4},
+		"srd003-cobbler-workflows": {"R2": 4},
+		"srd003":                   {"R2": 4},
 	}
 	reqs := []issueDescItem{
-		{ID: "R1", Text: "Implement prd003 R2"}, // matches short prefix
+		{ID: "R1", Text: "Implement srd003 R2"}, // matches short prefix
 	}
 	got := expandedRequirementCount(reqs, subItems)
 	if got != 4 {
@@ -618,10 +618,10 @@ func TestExpandedRequirementCount_FuzzyPRDStemMatch(t *testing.T) {
 
 func TestValidateMeasureOutput_ExpandedCount_ExceedsLimit_HardError(t *testing.T) {
 	t.Parallel()
-	// 4 listed requirements (within limit), but prd003 R2 expands to 10 sub-items.
+	// 4 listed requirements (within limit), but srd003 R2 expands to 10 sub-items.
 	// Expanded total = 10+3 = 13, maxReqs = 8 → hard error.
 	subItems := map[string]map[string]int{
-		"prd003": {"R2": 10},
+		"srd003": {"R2": 10},
 	}
 	issues := []proposedIssue{{
 		Index: 0,
@@ -629,7 +629,7 @@ func TestValidateMeasureOutput_ExpandedCount_ExceedsLimit_HardError(t *testing.T
 		Description: `deliverable_type: code
 requirements:
   - id: R1
-    text: Implement prd003 R2
+    text: Implement srd003 R2
   - id: R2
     text: plain req
   - id: R3
@@ -671,9 +671,9 @@ design_decisions:
 
 func TestValidateMeasureOutput_ExpandedCount_WithinLimit_NoError(t *testing.T) {
 	t.Parallel()
-	// prd003 R2 has 2 sub-items; total expanded = 2+3 = 5, maxReqs = 8 → no error.
+	// srd003 R2 has 2 sub-items; total expanded = 2+3 = 5, maxReqs = 8 → no error.
 	subItems := map[string]map[string]int{
-		"prd003": {"R2": 2},
+		"srd003": {"R2": 2},
 	}
 	issues := []proposedIssue{{
 		Index: 0,
@@ -681,7 +681,7 @@ func TestValidateMeasureOutput_ExpandedCount_WithinLimit_NoError(t *testing.T) {
 		Description: `deliverable_type: code
 requirements:
   - id: R1
-    text: Implement prd003 R2
+    text: Implement srd003 R2
   - id: R2
     text: plain req
   - id: R3
@@ -722,7 +722,7 @@ design_decisions:
 func TestValidateMeasureOutput_NoExpandedErrorWhenUnderLimit(t *testing.T) {
 	t.Parallel()
 	subItems := map[string]map[string]int{
-		"prd003": {"R2": 2},
+		"srd003": {"R2": 2},
 	}
 	issues := []proposedIssue{{
 		Index: 0,
@@ -730,7 +730,7 @@ func TestValidateMeasureOutput_NoExpandedErrorWhenUnderLimit(t *testing.T) {
 		Description: `deliverable_type: code
 requirements:
   - id: R1
-    text: Implement prd003 R2
+    text: Implement srd003 R2
   - id: R2
     text: plain req
   - id: R3
@@ -1262,8 +1262,8 @@ func TestIntraBatchDedup_TitleMatch(t *testing.T) {
 	t.Parallel()
 	// Two proposed issues with the same normalized title. Second should be filtered.
 	issues := []proposedIssue{
-		{Index: 0, Title: "prd001 R1.1-R1.4: Build testutils", Description: "deliverable_type: code\nfiles:\n  - path: pkg/a.go\n"},
-		{Index: 1, Title: "prd001 R1.1-R1.4: Build testutils", Description: "deliverable_type: code\nfiles:\n  - path: pkg/b.go\n"},
+		{Index: 0, Title: "srd001 R1.1-R1.4: Build testutils", Description: "deliverable_type: code\nfiles:\n  - path: pkg/a.go\n"},
+		{Index: 1, Title: "srd001 R1.1-R1.4: Build testutils", Description: "deliverable_type: code\nfiles:\n  - path: pkg/b.go\n"},
 	}
 
 	existingTitles := make(map[string]int)
@@ -1592,11 +1592,11 @@ func contains(s, substr string) bool {
 // warnOversizedGroups tests (GH-508 audit)
 // ---------------------------------------------------------------------------
 
-func TestWarnOversizedGroups_NoPRDs(t *testing.T) {
+func TestWarnOversizedGroups_NoSRDs(t *testing.T) {
 	_, cleanup := setupContextTestDir(t)
 	defer cleanup()
 
-	// No PRD files present — function must not panic.
+	// No SRD files present — function must not panic.
 	warnOversizedGroups(5)
 }
 
@@ -1604,8 +1604,8 @@ func TestWarnOversizedGroups_WithinLimit(t *testing.T) {
 	_, cleanup := setupContextTestDir(t)
 	defer cleanup()
 
-	prd := `id: prd001-test
-title: Test PRD
+	srd := `id: srd001-test
+title: Test SRD
 problem: test
 goals: []
 requirements:
@@ -1617,7 +1617,7 @@ requirements:
 non_goals: []
 acceptance_criteria: []
 `
-	os.WriteFile("docs/specs/product-requirements/prd001-test.yaml", []byte(prd), 0o644)
+	os.WriteFile("docs/specs/software-requirements/srd001-test.yaml", []byte(srd), 0o644)
 
 	// 2 items, maxReqs=5 → no warning, no panic.
 	warnOversizedGroups(5)
@@ -1627,8 +1627,8 @@ func TestWarnOversizedGroups_OversizedGroup(t *testing.T) {
 	_, cleanup := setupContextTestDir(t)
 	defer cleanup()
 
-	prd := `id: prd001-test
-title: Test PRD
+	srd := `id: srd001-test
+title: Test SRD
 problem: test
 goals: []
 requirements:
@@ -1644,35 +1644,35 @@ requirements:
 non_goals: []
 acceptance_criteria: []
 `
-	os.WriteFile("docs/specs/product-requirements/prd001-test.yaml", []byte(prd), 0o644)
+	os.WriteFile("docs/specs/software-requirements/srd001-test.yaml", []byte(srd), 0o644)
 
 	// 6 items, maxReqs=3 → should log a warning but not panic.
 	warnOversizedGroups(3)
 }
 
 // ---------------------------------------------------------------------------
-// loadPRDSubItemCounts tests (GH-508 audit)
+// loadSRDSubItemCounts tests (GH-508 audit)
 // ---------------------------------------------------------------------------
 
-func TestLoadPRDSubItemCounts_NoPRDs(t *testing.T) {
+func TestLoadSRDSubItemCounts_NoSRDs(t *testing.T) {
 	_, cleanup := setupContextTestDir(t)
 	defer cleanup()
 
-	counts := loadPRDSubItemCounts()
+	counts := loadSRDSubItemCounts()
 	if counts == nil {
 		t.Error("expected non-nil map")
 	}
 	if len(counts) != 0 {
-		t.Errorf("expected empty map with no PRDs, got %d entries", len(counts))
+		t.Errorf("expected empty map with no SRDs, got %d entries", len(counts))
 	}
 }
 
-func TestLoadPRDSubItemCounts_WithPRD(t *testing.T) {
+func TestLoadSRDSubItemCounts_WithSRD(t *testing.T) {
 	_, cleanup := setupContextTestDir(t)
 	defer cleanup()
 
-	prd := `id: prd003-wf
-title: Workflow PRD
+	srd := `id: srd003-wf
+title: Workflow SRD
 problem: test
 goals: []
 requirements:
@@ -1690,29 +1690,29 @@ requirements:
 non_goals: []
 acceptance_criteria: []
 `
-	os.WriteFile("docs/specs/product-requirements/prd003-wf.yaml", []byte(prd), 0o644)
+	os.WriteFile("docs/specs/software-requirements/srd003-wf.yaml", []byte(srd), 0o644)
 
-	counts := loadPRDSubItemCounts()
+	counts := loadSRDSubItemCounts()
 
 	// Full stem entry.
-	if counts["prd003-wf"]["R1"] != 3 {
-		t.Errorf("expected R1=3, got %d", counts["prd003-wf"]["R1"])
+	if counts["srd003-wf"]["R1"] != 3 {
+		t.Errorf("expected R1=3, got %d", counts["srd003-wf"]["R1"])
 	}
-	if counts["prd003-wf"]["R2"] != 2 {
-		t.Errorf("expected R2=2, got %d", counts["prd003-wf"]["R2"])
+	if counts["srd003-wf"]["R2"] != 2 {
+		t.Errorf("expected R2=2, got %d", counts["srd003-wf"]["R2"])
 	}
 	// Short prefix entry.
-	if counts["prd003"]["R1"] != 3 {
-		t.Errorf("expected short prefix R1=3, got %d", counts["prd003"]["R1"])
+	if counts["srd003"]["R1"] != 3 {
+		t.Errorf("expected short prefix R1=3, got %d", counts["srd003"]["R1"])
 	}
 }
 
-func TestLoadPRDSubItemCounts_EmptyItemsCountAs1(t *testing.T) {
+func TestLoadSRDSubItemCounts_EmptyItemsCountAs1(t *testing.T) {
 	_, cleanup := setupContextTestDir(t)
 	defer cleanup()
 
-	prd := `id: prd005-empty
-title: PRD with empty group
+	srd := `id: srd005-empty
+title: SRD with empty group
 problem: test
 goals: []
 requirements:
@@ -1722,22 +1722,22 @@ requirements:
 non_goals: []
 acceptance_criteria: []
 `
-	os.WriteFile("docs/specs/product-requirements/prd005-empty.yaml", []byte(prd), 0o644)
+	os.WriteFile("docs/specs/software-requirements/srd005-empty.yaml", []byte(srd), 0o644)
 
-	counts := loadPRDSubItemCounts()
+	counts := loadSRDSubItemCounts()
 
 	// Empty items list → count defaults to 1.
-	if counts["prd005-empty"]["R1"] != 1 {
-		t.Errorf("expected R1=1 for empty items, got %d", counts["prd005-empty"]["R1"])
+	if counts["srd005-empty"]["R1"] != 1 {
+		t.Errorf("expected R1=1 for empty items, got %d", counts["srd005-empty"]["R1"])
 	}
 }
 
-func TestLoadPRDSubItemCounts_ShortPrefixNotDuplicated(t *testing.T) {
+func TestLoadSRDSubItemCounts_ShortPrefixNotDuplicated(t *testing.T) {
 	_, cleanup := setupContextTestDir(t)
 	defer cleanup()
 
-	// Two PRDs with the same prefix (prd001) — short entry maps to the first.
-	prd1 := `id: prd001-alpha
+	// Two SRDs with the same prefix (srd001) — short entry maps to the first.
+	prd1 := `id: srd001-alpha
 title: Alpha
 problem: test
 goals: []
@@ -1749,7 +1749,7 @@ requirements:
 non_goals: []
 acceptance_criteria: []
 `
-	prd2 := `id: prd001-beta
+	prd2 := `id: srd001-beta
 title: Beta
 problem: test
 goals: []
@@ -1762,21 +1762,21 @@ requirements:
 non_goals: []
 acceptance_criteria: []
 `
-	os.WriteFile("docs/specs/product-requirements/prd001-alpha.yaml", []byte(prd1), 0o644)
-	os.WriteFile("docs/specs/product-requirements/prd001-beta.yaml", []byte(prd2), 0o644)
+	os.WriteFile("docs/specs/software-requirements/srd001-alpha.yaml", []byte(prd1), 0o644)
+	os.WriteFile("docs/specs/software-requirements/srd001-beta.yaml", []byte(prd2), 0o644)
 
-	counts := loadPRDSubItemCounts()
+	counts := loadSRDSubItemCounts()
 
 	// Both full stems must be present.
-	if _, ok := counts["prd001-alpha"]; !ok {
-		t.Error("expected prd001-alpha in counts")
+	if _, ok := counts["srd001-alpha"]; !ok {
+		t.Error("expected srd001-alpha in counts")
 	}
-	if _, ok := counts["prd001-beta"]; !ok {
-		t.Error("expected prd001-beta in counts")
+	if _, ok := counts["srd001-beta"]; !ok {
+		t.Error("expected srd001-beta in counts")
 	}
 	// Short prefix must exist (set to whichever was processed first; not duplicated).
-	if _, ok := counts["prd001"]; !ok {
-		t.Error("expected prd001 short prefix in counts")
+	if _, ok := counts["srd001"]; !ok {
+		t.Error("expected srd001 short prefix in counts")
 	}
 }
 
@@ -1800,7 +1800,7 @@ func setupMeasureRoadmapDir(t *testing.T, roadmapYAML, ucID, ucYAML string) (cob
 
 	for _, d := range []string{
 		"docs/specs/use-cases",
-		"docs/specs/product-requirements",
+		"docs/specs/software-requirements",
 		".cobbler",
 	} {
 		os.MkdirAll(d, 0o755)
@@ -1861,7 +1861,7 @@ releases:
 	ucYAML := `id: rel01.0-uc002-wf
 title: Workflow
 touchpoints:
-  - T1: "pkg/workflow ` + "\u2014" + ` prd003-wf R1"
+  - T1: "pkg/workflow ` + "\u2014" + ` srd003-wf R1"
 `
 	cobblerDir, cleanup := setupMeasureRoadmapDir(t, roadmap, "rel01.0-uc002-wf", ucYAML)
 	defer cleanup()
@@ -1898,7 +1898,7 @@ releases:
 	ucYAML := `id: rel01.0-uc001-init
 title: Init
 touchpoints:
-  - T1: "pkg/init ` + "\u2014" + ` prd001-init R1"
+  - T1: "pkg/init ` + "\u2014" + ` srd001-init R1"
 `
 	cobblerDir, cleanup := setupMeasureRoadmapDir(t, roadmap, "rel01.0-uc001-init", ucYAML)
 	defer cleanup()
@@ -1934,7 +1934,7 @@ releases:
 	ucYAML := `id: rel01.0-uc001-init
 title: Init
 touchpoints:
-  - T1: "Config fields: prd001-init R1, R2"
+  - T1: "Config fields: srd001-init R1, R2"
 `
 	cobblerDir, cleanup := setupMeasureRoadmapDir(t, roadmap, "rel01.0-uc001-init", ucYAML)
 	defer cleanup()
@@ -2005,7 +2005,7 @@ func TestBuildMeasurePrompt_ExcludeTests_DisabledFalse(t *testing.T) {
 
 // TestBuildMeasurePrompt_SourceMode_HeadersWired verifies that
 // MeasureSourceMode="headers" strips function bodies from source files
-// included in the measure prompt (prd003 R12).
+// included in the measure prompt (srd003 R12).
 func TestBuildMeasurePrompt_SourceMode_HeadersWired(t *testing.T) {
 	_, cleanup := setupContextTestDir(t)
 	defer cleanup()
@@ -2033,7 +2033,7 @@ func TestBuildMeasurePrompt_SourceMode_HeadersWired(t *testing.T) {
 
 // TestBuildMeasurePrompt_SourceMode_PhaseCtxWins verifies that a SourceMode
 // set in the phase context file takes precedence over the config value
-// (prd003 R12.6).
+// (srd003 R12.6).
 func TestBuildMeasurePrompt_SourceMode_PhaseCtxWins(t *testing.T) {
 	_, cleanup := setupContextTestDir(t)
 	defer cleanup()

@@ -372,11 +372,11 @@ func TestLoadOODPromptContext_Empty(t *testing.T) {
 	orig, _ := os.Getwd()
 	os.Chdir(dir)
 	defer os.Chdir(orig)
-	os.MkdirAll("docs/specs/product-requirements", 0o755)
+	os.MkdirAll("docs/specs/software-requirements", 0o755)
 
 	contracts, protocols := ictx.LoadOODPromptContext()
 	if len(contracts) != 0 {
-		t.Errorf("expected no contracts with no PRD files, got %d", len(contracts))
+		t.Errorf("expected no contracts with no SRD files, got %d", len(contracts))
 	}
 	if len(protocols) != 0 {
 		t.Errorf("expected no protocols with no ARCHITECTURE.yaml, got %d", len(protocols))
@@ -390,16 +390,16 @@ func TestLoadOODPromptContext_PackageContracts(t *testing.T) {
 	os.Chdir(dir)
 	defer os.Chdir(orig)
 
-	os.MkdirAll("docs/specs/product-requirements", 0o755)
-	// One PRD with package_contract, one without.
-	os.WriteFile(filepath.Join("docs/specs/product-requirements", "prd001-pkg.yaml"), []byte(`id: prd001-pkg
+	os.MkdirAll("docs/specs/software-requirements", 0o755)
+	// One SRD with package_contract, one without.
+	os.WriteFile(filepath.Join("docs/specs/software-requirements", "srd001-pkg.yaml"), []byte(`id: srd001-pkg
 title: Pkg
 package_contract:
   exports:
     - name: FuncA
       signature: "func FuncA() error"
 `), 0o644)
-	os.WriteFile(filepath.Join("docs/specs/product-requirements", "prd002-cmd.yaml"), []byte(`id: prd002-cmd
+	os.WriteFile(filepath.Join("docs/specs/software-requirements", "srd002-cmd.yaml"), []byte(`id: srd002-cmd
 title: Cmd
 `), 0o644)
 
@@ -407,8 +407,8 @@ title: Cmd
 	if len(contracts) != 1 {
 		t.Fatalf("expected 1 contract, got %d", len(contracts))
 	}
-	if contracts[0].PRDID != "prd001-pkg" {
-		t.Errorf("expected prd001-pkg, got %q", contracts[0].PRDID)
+	if contracts[0].SRDID != "srd001-pkg" {
+		t.Errorf("expected srd001-pkg, got %q", contracts[0].SRDID)
 	}
 	if len(contracts[0].Contract.Exports) != 1 || contracts[0].Contract.Exports[0].Name != "FuncA" {
 		t.Errorf("expected FuncA export, got %v", contracts[0].Contract.Exports)
@@ -422,7 +422,7 @@ func TestLoadOODPromptContext_SharedProtocols(t *testing.T) {
 	os.Chdir(dir)
 	defer os.Chdir(orig)
 
-	os.MkdirAll("docs/specs/product-requirements", 0o755)
+	os.MkdirAll("docs/specs/software-requirements", 0o755)
 	os.MkdirAll("docs", 0o755)
 	os.WriteFile("docs/ARCHITECTURE.yaml", []byte(`id: arch
 title: Architecture
@@ -447,14 +447,14 @@ shared_protocols:
 
 func TestLoadOODPromptContext_EmptyContract_Skipped(t *testing.T) {
 	// Not parallel: uses os.Chdir.
-	// PRD with package_contract but no exports should be skipped.
+	// SRD with package_contract but no exports should be skipped.
 	dir := t.TempDir()
 	orig, _ := os.Getwd()
 	os.Chdir(dir)
 	defer os.Chdir(orig)
 
-	os.MkdirAll("docs/specs/product-requirements", 0o755)
-	os.WriteFile(filepath.Join("docs/specs/product-requirements", "prd001-empty.yaml"), []byte(`id: prd001-empty
+	os.MkdirAll("docs/specs/software-requirements", 0o755)
+	os.WriteFile(filepath.Join("docs/specs/software-requirements", "srd001-empty.yaml"), []byte(`id: srd001-empty
 title: Empty
 package_contract:
   exports: []
@@ -476,7 +476,7 @@ func TestBuildStitchPrompt_OODSharedProtocols(t *testing.T) {
 	os.Chdir(dir)
 	defer os.Chdir(orig)
 
-	os.MkdirAll("docs/specs/product-requirements", 0o755)
+	os.MkdirAll("docs/specs/software-requirements", 0o755)
 	os.MkdirAll("docs", 0o755)
 	os.WriteFile("docs/ARCHITECTURE.yaml", []byte(`id: arch
 title: Architecture
@@ -514,8 +514,8 @@ func TestBuildStitchPrompt_OODPackageContracts(t *testing.T) {
 	os.Chdir(dir)
 	defer os.Chdir(orig)
 
-	os.MkdirAll("docs/specs/product-requirements", 0o755)
-	os.WriteFile(filepath.Join("docs/specs/product-requirements", "prd001-pkg.yaml"), []byte(`id: prd001-pkg
+	os.MkdirAll("docs/specs/software-requirements", 0o755)
+	os.WriteFile(filepath.Join("docs/specs/software-requirements", "srd001-pkg.yaml"), []byte(`id: srd001-pkg
 title: Pkg
 package_contract:
   exports:
@@ -540,14 +540,14 @@ package_contract:
 
 func TestBuildStitchPrompt_SemanticModelPresent(t *testing.T) {
 	// Not parallel: uses os.Chdir.
-	// When a PRD has a semantic_model, the stitch prompt includes it.
+	// When a SRD has a semantic_model, the stitch prompt includes it.
 	dir := t.TempDir()
 	orig, _ := os.Getwd()
 	os.Chdir(dir)
 	defer os.Chdir(orig)
 
-	os.MkdirAll("docs/specs/product-requirements", 0o755)
-	os.WriteFile(filepath.Join("docs/specs/product-requirements", "prd001-core.yaml"), []byte(`id: prd001-core
+	os.MkdirAll("docs/specs/software-requirements", 0o755)
+	os.WriteFile(filepath.Join("docs/specs/software-requirements", "srd001-core.yaml"), []byte(`id: srd001-core
 title: Core
 semantic_model:
   entities:
@@ -573,15 +573,15 @@ semantic_model:
 
 func TestBuildStitchPrompt_SemanticModelAbsent(t *testing.T) {
 	// Not parallel: uses os.Chdir.
-	// When no PRD has a semantic_model, the field is omitted from the prompt.
+	// When no SRD has a semantic_model, the field is omitted from the prompt.
 	dir := t.TempDir()
 	orig, _ := os.Getwd()
 	os.Chdir(dir)
 	defer os.Chdir(orig)
 
-	os.MkdirAll("docs/specs/product-requirements", 0o755)
-	os.WriteFile(filepath.Join("docs/specs/product-requirements", "prd001-plain.yaml"), []byte(`id: prd001-plain
-title: Plain PRD
+	os.MkdirAll("docs/specs/software-requirements", 0o755)
+	os.WriteFile(filepath.Join("docs/specs/software-requirements", "srd001-plain.yaml"), []byte(`id: srd001-plain
+title: Plain SRD
 `), 0o644)
 
 	o := New(Config{})
@@ -591,7 +591,7 @@ title: Plain PRD
 		t.Fatalf("buildStitchPrompt: %v", err)
 	}
 	if strings.Contains(out, "semantic_model:") {
-		t.Errorf("stitch prompt should omit semantic_model when no PRD has one; output:\n%s", out)
+		t.Errorf("stitch prompt should omit semantic_model when no SRD has one; output:\n%s", out)
 	}
 }
 
@@ -599,14 +599,14 @@ title: Plain PRD
 
 func TestBuildMeasurePrompt_OODContractsHeaders(t *testing.T) {
 	// Not parallel: uses os.Chdir.
-	// When source_mode=headers and a PRD has package_contract, measure prompt includes contracts.
+	// When source_mode=headers and a SRD has package_contract, measure prompt includes contracts.
 	dir := t.TempDir()
 	orig, _ := os.Getwd()
 	os.Chdir(dir)
 	defer os.Chdir(orig)
 
-	os.MkdirAll("docs/specs/product-requirements", 0o755)
-	os.WriteFile(filepath.Join("docs/specs/product-requirements", "prd001-pkg.yaml"), []byte(`id: prd001-pkg
+	os.MkdirAll("docs/specs/software-requirements", 0o755)
+	os.WriteFile(filepath.Join("docs/specs/software-requirements", "srd001-pkg.yaml"), []byte(`id: srd001-pkg
 title: Pkg
 package_contract:
   exports:
@@ -637,8 +637,8 @@ func TestBuildMeasurePrompt_OODContractsFullMode_Excluded(t *testing.T) {
 	os.Chdir(dir)
 	defer os.Chdir(orig)
 
-	os.MkdirAll("docs/specs/product-requirements", 0o755)
-	os.WriteFile(filepath.Join("docs/specs/product-requirements", "prd001-pkg.yaml"), []byte(`id: prd001-pkg
+	os.MkdirAll("docs/specs/software-requirements", 0o755)
+	os.WriteFile(filepath.Join("docs/specs/software-requirements", "srd001-pkg.yaml"), []byte(`id: srd001-pkg
 title: Pkg
 package_contract:
   exports:

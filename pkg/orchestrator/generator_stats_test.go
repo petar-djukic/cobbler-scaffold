@@ -200,8 +200,8 @@ func TestExtractRelease(t *testing.T) {
 		want string
 	}{
 		{"title with rel", "cmd/tee implementation (rel02.1-uc001-tee)", "02.1"},
-		{"rel01.0", "[stitch] prd001: Implement Foo (rel01.0-uc003)", "01.0"},
-		{"no release", "prd001: Implement Foo", ""},
+		{"rel01.0", "[stitch] srd001: Implement Foo (rel01.0-uc003)", "01.0"},
+		{"no release", "srd001: Implement Foo", ""},
 		{"plain text", "no release info here", ""},
 		{"multiple releases", "rel01.0 and rel02.1", "01.0"},
 		{"embedded in word", "xrel03.0y", "03.0"},
@@ -217,44 +217,44 @@ func TestExtractRelease(t *testing.T) {
 	}
 }
 
-// --- extractPRDRefs (delegation sanity check) ---
+// --- extractSRDRefs (delegation sanity check) ---
 
-func TestExtractPRDRefs(t *testing.T) {
+func TestExtractSRDRefs(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		text string
 		want []string
 	}{
 		{
-			text: "Implement prd-auth-flow for login",
-			want: []string{"prd-auth-flow"},
+			text: "Implement srd-auth-flow for login",
+			want: []string{"srd-auth-flow"},
 		},
 		{
-			text: "Covers prd-user-model, prd-auth-flow.",
-			want: []string{"prd-user-model", "prd-auth-flow"},
+			text: "Covers srd-user-model, srd-auth-flow.",
+			want: []string{"srd-user-model", "srd-auth-flow"},
 		},
 		{
-			text: "no prd references here",
+			text: "no srd references here",
 			want: nil,
 		},
 		{
-			text: "prd- alone is not a ref",
+			text: "srd- alone is not a ref",
 			want: nil,
 		},
 		{
-			text: "prd-foo prd-bar prd-foo",
-			want: []string{"prd-foo", "prd-bar"},
+			text: "srd-foo srd-bar srd-foo",
+			want: []string{"srd-foo", "srd-bar"},
 		},
 	}
 	for _, tc := range tests {
-		got := st.ExtractPRDRefs(tc.text)
+		got := st.ExtractSRDRefs(tc.text)
 		if len(got) != len(tc.want) {
-			t.Errorf("st.ExtractPRDRefs(%q): got %v, want %v", tc.text, got, tc.want)
+			t.Errorf("st.ExtractSRDRefs(%q): got %v, want %v", tc.text, got, tc.want)
 			continue
 		}
 		for i := range got {
 			if got[i] != tc.want[i] {
-				t.Errorf("st.ExtractPRDRefs(%q)[%d]: got %q, want %q", tc.text, i, got[i], tc.want[i])
+				t.Errorf("st.ExtractSRDRefs(%q)[%d]: got %q, want %q", tc.text, i, got[i], tc.want[i])
 			}
 		}
 	}
@@ -291,17 +291,17 @@ func TestParseCobblerIssuesJSON_State(t *testing.T) {
 	}
 }
 
-// --- countTotalPRDRequirements (delegation sanity check) ---
+// --- countTotalSRDRequirements (delegation sanity check) ---
 
-func TestCountTotalPRDRequirements(t *testing.T) {
+func TestCountTotalSRDRequirements(t *testing.T) {
 	// Uses os.Chdir — do NOT use t.Parallel()
 	dir := t.TempDir()
 
-	prdDir := filepath.Join(dir, "docs", "specs", "product-requirements")
-	if err := os.MkdirAll(prdDir, 0o755); err != nil {
+	srdDir := filepath.Join(dir, "docs", "specs", "software-requirements")
+	if err := os.MkdirAll(srdDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	prdContent := `name: test-prd
+	srdContent := `name: test-srd
 requirements:
   group-a:
     description: Group A
@@ -316,7 +316,7 @@ requirements:
       - id: REQ-003
         text: Third requirement
 `
-	if err := os.WriteFile(filepath.Join(prdDir, "prd001-test.yaml"), []byte(prdContent), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(srdDir, "srd001-test.yaml"), []byte(srdContent), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -324,28 +324,28 @@ requirements:
 	t.Cleanup(func() { os.Chdir(orig) })
 	os.Chdir(dir)
 
-	total, byPRD := st.CountTotalPRDRequirements()
+	total, bySRD := st.CountTotalSRDRequirements()
 	if total != 3 {
 		t.Errorf("total = %d, want 3", total)
 	}
-	if byPRD["prd001-test"] != 3 {
-		t.Errorf("byPRD[prd001-test] = %d, want 3", byPRD["prd001-test"])
+	if bySRD["srd001-test"] != 3 {
+		t.Errorf("bySRD[srd001-test] = %d, want 3", bySRD["srd001-test"])
 	}
 }
 
-func TestCountTotalPRDRequirements_NoPRDs(t *testing.T) {
+func TestCountTotalSRDRequirements_NoSRDs(t *testing.T) {
 	// Uses os.Chdir — do NOT use t.Parallel()
 	dir := t.TempDir()
 	orig, _ := os.Getwd()
 	t.Cleanup(func() { os.Chdir(orig) })
 	os.Chdir(dir)
 
-	total, byPRD := st.CountTotalPRDRequirements()
+	total, bySRD := st.CountTotalSRDRequirements()
 	if total != 0 {
 		t.Errorf("total = %d, want 0", total)
 	}
-	if len(byPRD) != 0 {
-		t.Errorf("byPRD = %v, want empty", byPRD)
+	if len(bySRD) != 0 {
+		t.Errorf("bySRD = %v, want empty", bySRD)
 	}
 }
 
@@ -395,9 +395,9 @@ func TestCountDescriptionReqs(t *testing.T) {
 	}
 }
 
-// --- buildPRDReleaseMap (delegation sanity check) ---
+// --- buildSRDReleaseMap (delegation sanity check) ---
 
-func TestBuildPRDReleaseMap(t *testing.T) {
+func TestBuildSRDReleaseMap(t *testing.T) {
 	// Uses os.Chdir — do NOT use t.Parallel()
 	dir := t.TempDir()
 	ucDir := filepath.Join(dir, "docs", "specs", "use-cases")
@@ -413,8 +413,8 @@ trigger: mage cobbler:measure
 flow:
   - F1: "step one"
 touchpoints:
-  - T1: "Config: prd001-orchestrator-core R1, prd003-cobbler-workflows R1"
-  - T2: "Prompt: prd003-cobbler-workflows R5"
+  - T1: "Config: srd001-orchestrator-core R1, srd003-cobbler-workflows R1"
+  - T2: "Prompt: srd003-cobbler-workflows R5"
 success_criteria:
   - SC1: "it works"
 out_of_scope: []
@@ -431,7 +431,7 @@ trigger: command palette
 flow:
   - F1: "step one"
 touchpoints:
-  - T1: "Extension: prd006-vscode-extension R1"
+  - T1: "Extension: srd006-vscode-extension R1"
 success_criteria:
   - SC1: "it works"
 out_of_scope: []
@@ -444,32 +444,32 @@ out_of_scope: []
 	t.Cleanup(func() { os.Chdir(orig) })
 	os.Chdir(dir)
 
-	m := st.BuildPRDReleaseMap()
-	if m["prd001-orchestrator-core"] != "01.0" {
-		t.Errorf("prd001-orchestrator-core release = %q, want %q", m["prd001-orchestrator-core"], "01.0")
+	m := st.BuildSRDReleaseMap()
+	if m["srd001-orchestrator-core"] != "01.0" {
+		t.Errorf("srd001-orchestrator-core release = %q, want %q", m["srd001-orchestrator-core"], "01.0")
 	}
-	if m["prd003-cobbler-workflows"] != "01.0" {
-		t.Errorf("prd003-cobbler-workflows release = %q, want %q", m["prd003-cobbler-workflows"], "01.0")
+	if m["srd003-cobbler-workflows"] != "01.0" {
+		t.Errorf("srd003-cobbler-workflows release = %q, want %q", m["srd003-cobbler-workflows"], "01.0")
 	}
-	if m["prd006-vscode-extension"] != "02.0" {
-		t.Errorf("prd006-vscode-extension release = %q, want %q", m["prd006-vscode-extension"], "02.0")
+	if m["srd006-vscode-extension"] != "02.0" {
+		t.Errorf("srd006-vscode-extension release = %q, want %q", m["srd006-vscode-extension"], "02.0")
 	}
 }
 
-func TestBuildPRDReleaseMap_NoUseCases(t *testing.T) {
+func TestBuildSRDReleaseMap_NoUseCases(t *testing.T) {
 	// Uses os.Chdir — do NOT use t.Parallel()
 	dir := t.TempDir()
 	orig, _ := os.Getwd()
 	t.Cleanup(func() { os.Chdir(orig) })
 	os.Chdir(dir)
 
-	m := st.BuildPRDReleaseMap()
+	m := st.BuildSRDReleaseMap()
 	if len(m) != 0 {
 		t.Errorf("expected empty map, got %v", m)
 	}
 }
 
-func TestBuildPRDReleaseMap_MalformedFilename(t *testing.T) {
+func TestBuildSRDReleaseMap_MalformedFilename(t *testing.T) {
 	// Uses os.Chdir — do NOT use t.Parallel()
 	dir := t.TempDir()
 	ucDir := filepath.Join(dir, "docs", "specs", "use-cases")
@@ -483,7 +483,7 @@ trigger: T
 flow:
   - F1: "step"
 touchpoints:
-  - T1: "prd001-core R1"
+  - T1: "srd001-core R1"
 success_criteria:
   - SC1: "ok"
 out_of_scope: []
@@ -494,13 +494,13 @@ out_of_scope: []
 	t.Cleanup(func() { os.Chdir(orig) })
 	os.Chdir(dir)
 
-	m := st.BuildPRDReleaseMap()
+	m := st.BuildSRDReleaseMap()
 	if len(m) != 0 {
 		t.Errorf("expected empty map for malformed filename, got %v", m)
 	}
 }
 
-func TestBuildPRDReleaseMap_InvalidYAML(t *testing.T) {
+func TestBuildSRDReleaseMap_InvalidYAML(t *testing.T) {
 	// Uses os.Chdir — do NOT use t.Parallel()
 	dir := t.TempDir()
 	ucDir := filepath.Join(dir, "docs", "specs", "use-cases")
@@ -512,13 +512,13 @@ func TestBuildPRDReleaseMap_InvalidYAML(t *testing.T) {
 	t.Cleanup(func() { os.Chdir(orig) })
 	os.Chdir(dir)
 
-	m := st.BuildPRDReleaseMap()
+	m := st.BuildSRDReleaseMap()
 	if len(m) != 0 {
 		t.Errorf("expected empty map for invalid YAML, got %v", m)
 	}
 }
 
-func TestBuildPRDReleaseMap_NonNumericPRD(t *testing.T) {
+func TestBuildSRDReleaseMap_NonNumericSRD(t *testing.T) {
 	// Uses os.Chdir — do NOT use t.Parallel()
 	dir := t.TempDir()
 	ucDir := filepath.Join(dir, "docs", "specs", "use-cases")
@@ -526,14 +526,14 @@ func TestBuildPRDReleaseMap_NonNumericPRD(t *testing.T) {
 
 	content := `id: rel01.0-uc001-test
 title: Test
-summary: Non-numeric PRD refs
+summary: Non-numeric SRD refs
 actor: A
 trigger: T
 flow:
   - F1: "step"
 touchpoints:
-  - T1: "Config: prd-alpha R1"
-  - T2: "Short: prd R2"
+  - T1: "Config: srd-alpha R1"
+  - T2: "Short: srd R2"
 success_criteria:
   - SC1: "ok"
 out_of_scope: []
@@ -544,8 +544,8 @@ out_of_scope: []
 	t.Cleanup(func() { os.Chdir(orig) })
 	os.Chdir(dir)
 
-	m := st.BuildPRDReleaseMap()
+	m := st.BuildSRDReleaseMap()
 	if len(m) != 0 {
-		t.Errorf("expected empty map for non-numeric PRD refs, got %v", m)
+		t.Errorf("expected empty map for non-numeric SRD refs, got %v", m)
 	}
 }
