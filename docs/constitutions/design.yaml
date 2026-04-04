@@ -249,16 +249,17 @@ document_types:
       - name (must match ARCHITECTURE.yaml interface entry)
       - summary (one to three sentences)
     optional_fields:
-      - "data_structures (list: name, description, schema as JSON Schema object)"
+      - "data_structures (list: name, description, fields as typed field list)"
       - "operations (list: name, description, parameters, returns)"
       - announcements (list of events the interface emits)
       - references (list of PRD or use case IDs)
     purpose: |
-      Standalone, language-agnostic interface contract. Uses JSON Schema for
-      data structures and typed parameter/return lists for operations.
-      Replaces Go-specific signatures inlined in ARCHITECTURE.yaml with
+      Standalone, language-agnostic interface contract. Uses typed field
+      lists for data structures and typed parameter/return lists for
+      operations. Pure YAML throughout, consistent with D2. Replaces
+      Go-specific signatures inlined in ARCHITECTURE.yaml with
       machine-parseable definitions. See eng10-interface-specifications for
-      the full schema and examples.
+      the full format and examples.
 
   specification:
     location: docs/SPECIFICATIONS.yaml
@@ -399,7 +400,7 @@ completeness_checklists:
     - id matches filename without extension (ifc-[kebab-case-name])
     - name matches the corresponding ARCHITECTURE.yaml interface entry
     - summary describes the interface contract in one to three sentences
-    - data_structures use JSON Schema (type, properties, required)
+    - data_structures use typed field lists (name, type, description, required)
     - operations have name, description, typed parameters, and typed returns
     - references list PRD or use case IDs the interface traces to
     - File saved as ifc-[kebab-case-name].yaml in docs/interfaces/

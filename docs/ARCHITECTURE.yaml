@@ -912,21 +912,24 @@ design_decisions:
       - "Single path only: automated path loses human review; interactive path loses throughput"
 
   - id: 11
-    title: JSON Schema envelope for interface specifications
+    title: Pure YAML interface specifications
     decision: |
-      We define interface specifications as standalone YAML files in docs/interfaces/, using
-      JSON Schema to describe data structures and a custom operations list for methods. Each
-      file is a self-contained contract with metadata, typed data structures, and operations.
-      This replaces the inlined interface entries in ARCHITECTURE.yaml, which remain as
-      summaries pointing to the full specification files.
+      We define interface specifications as standalone YAML files in docs/interfaces/. Data
+      structures use typed field lists (name, type, description, required) and operations use
+      typed parameter and return lists. The format is pure YAML throughout — no embedded JSON
+      Schema, OpenAPI, or other schema languages. Each file is a self-contained contract with
+      metadata, typed data structures, and operations. This replaces the inlined interface
+      entries in ARCHITECTURE.yaml, which remain as summaries pointing to the full
+      specification files.
     benefits:
-      - Language-agnostic — JSON Schema types (string, integer, array, object) replace Go-specific signatures
-      - Machine-parseable — standard JSON Schema validators check data structure definitions
+      - Language-agnostic — type names (string, integer, array, object) replace Go-specific signatures
+      - Single schema language — pure YAML consistent with D2, no JSON Schema mixing
+      - Uniform structure — data structure fields use the same name/type/description pattern as operation parameters
       - Modular — each interface is a separate file, reducing ARCHITECTURE.yaml size
-      - Consistent with YAML-first (D2) and existing document type patterns
     alternatives_rejected:
       - "OpenAPI YAML: designed for REST APIs (paths, HTTP methods); mapping library methods to HTTP endpoints is artificial and the tooling ecosystem targets HTTP clients, not library contracts"
       - "MCP-like JSON: oriented toward tool discovery and invocation; flat parameter schemas do not capture struct hierarchies naturally; less established validation tooling"
+      - "JSON Schema envelope: mixes two schema languages in one file (YAML wrapping JSON Schema keywords); violates D2 YAML-first principle"
 
 technology_choices:
   - component: Language

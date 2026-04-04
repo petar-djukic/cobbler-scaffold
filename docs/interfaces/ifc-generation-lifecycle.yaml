@@ -14,42 +14,40 @@ data_structures:
     description: |
       Standalone struct managing the generation lifecycle. Composes domain
       structs and state callbacks for branch and phase management.
-    schema:
-      type: object
-      properties:
-        config:
-          type: object
-          description: Orchestrator configuration.
-        log_function:
-          type: object
-          description: Logging function for generation events.
-        git:
-          type: object
-          description: Git operations interface.
-        tracker:
-          type: object
-          description: Issue tracking interface.
-        claude_runner:
-          type: object
-          description: Claude execution infrastructure.
-        analyzer:
-          type: object
-          description: Cross-artifact consistency checker.
-        measure:
-          type: object
-          description: Measure workflow struct.
-        stitch:
-          type: object
-          description: Stitch workflow struct.
-        releaser:
-          type: object
-          description: Release lifecycle manager.
-        set_generation:
-          type: object
-          description: Callback to set the active generation on the orchestrator.
-        clear_generation:
-          type: object
-          description: Callback to clear the active generation.
+    fields:
+      - name: config
+        type: object
+        description: Orchestrator configuration.
+      - name: log_function
+        type: object
+        description: Logging function for generation events.
+      - name: git
+        type: object
+        description: Git operations interface.
+      - name: tracker
+        type: object
+        description: Issue tracking interface.
+      - name: claude_runner
+        type: object
+        description: Claude execution infrastructure.
+      - name: analyzer
+        type: object
+        description: Cross-artifact consistency checker.
+      - name: measure
+        type: object
+        description: Measure workflow struct.
+      - name: stitch
+        type: object
+        description: Stitch workflow struct.
+      - name: releaser
+        type: object
+        description: Release lifecycle manager.
+      - name: set_generation
+        type: object
+        description: Callback to set the active generation on the orchestrator.
+      - name: clear_generation
+        type: object
+        description: Callback to clear the active generation.
 
 operations:
   - name: GeneratorStart
