@@ -106,13 +106,21 @@ type ArchitectureDoc struct {
 
 // ArchInterface is an interface entry from ARCHITECTURE.yaml.
 type ArchInterface struct {
-	Name string `yaml:"name"`
+	Name     string `yaml:"name"`
+	SpecFile string `yaml:"spec_file,omitempty"`
 }
 
 // ArchComponentDependency is a single dependency edge in the architecture.
 type ArchComponentDependency struct {
 	From string `yaml:"from"`
 	To   string `yaml:"to"`
+}
+
+// InterfaceSpecDoc holds the fields parsed from docs/interfaces/ifc-*.yaml
+// that are needed for cross-artifact consistency checks (GH-1990).
+type InterfaceSpecDoc struct {
+	ID   string `yaml:"id"`
+	Name string `yaml:"name"`
 }
 
 // ArchDependencyRule is a constraint on component dependencies.

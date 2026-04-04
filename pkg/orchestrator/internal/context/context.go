@@ -157,8 +157,9 @@ type ProjectContext struct {
 	Specifications *SpecificationsDoc `yaml:"specifications,omitempty"`
 	Roadmap        *RoadmapDoc        `yaml:"roadmap,omitempty"`
 	Specs          *SpecsCollection   `yaml:"specs,omitempty"`
-	Engineering    []*EngineeringDoc  `yaml:"engineering,omitempty"`
-	Analysis       any                `yaml:"analysis,omitempty"`
+	Engineering    []*EngineeringDoc    `yaml:"engineering,omitempty"`
+	InterfaceSpecs []*InterfaceSpecDoc `yaml:"interface_specs,omitempty"`
+	Analysis       any                 `yaml:"analysis,omitempty"`
 	SourceCode     []SourceFile       `yaml:"source_code,omitempty"`
 	Issues         []ContextIssue     `yaml:"issues,omitempty"`
 	CompletedWork     []string                                     `yaml:"completed_work,omitempty"`
@@ -241,6 +242,7 @@ type ArchOverview struct {
 type ArchInterface struct {
 	Name           string   `yaml:"name"`
 	Summary        string   `yaml:"summary"`
+	SpecFile       string   `yaml:"spec_file,omitempty"`
 	DataStructures []string `yaml:"data_structures,omitempty"`
 	Operations     []string `yaml:"operations,omitempty"`
 }
@@ -689,6 +691,52 @@ type EngineeringDoc struct {
 type DocSection struct {
 	Title   string `yaml:"title"`
 	Content string `yaml:"content"`
+}
+
+// ---------------------------------------------------------------------------
+// Interface specification (docs/interfaces/ifc-*.yaml, GH-1990)
+// ---------------------------------------------------------------------------
+
+// InterfaceSpecDoc corresponds to docs/interfaces/ifc-*.yaml.
+type InterfaceSpecDoc struct {
+	File       string                  `yaml:"file,omitempty"`
+	ID         string                  `yaml:"id"`
+	Name       string                  `yaml:"name"`
+	Summary    string                  `yaml:"summary"`
+	DataStructures []InterfaceDataStructure `yaml:"data_structures,omitempty"`
+	Operations     []InterfaceOperation     `yaml:"operations,omitempty"`
+	Announcements  []string                 `yaml:"announcements,omitempty"`
+	References     []string                 `yaml:"references,omitempty"`
+}
+
+// InterfaceDataStructure is a typed data structure in an interface spec.
+type InterfaceDataStructure struct {
+	Name        string           `yaml:"name"`
+	Description string           `yaml:"description"`
+	Fields      []InterfaceField `yaml:"fields,omitempty"`
+}
+
+// InterfaceField is a typed field in an interface data structure.
+type InterfaceField struct {
+	Name        string `yaml:"name"`
+	Type        string `yaml:"type"`
+	Description string `yaml:"description"`
+	Required    bool   `yaml:"required,omitempty"`
+}
+
+// InterfaceOperation is a typed operation in an interface spec.
+type InterfaceOperation struct {
+	Name        string           `yaml:"name"`
+	Description string           `yaml:"description"`
+	Parameters  []InterfaceParam `yaml:"parameters,omitempty"`
+	Returns     []InterfaceParam `yaml:"returns,omitempty"`
+}
+
+// InterfaceParam is a typed parameter or return value in an interface operation.
+type InterfaceParam struct {
+	Name        string `yaml:"name"`
+	Type        string `yaml:"type"`
+	Description string `yaml:"description,omitempty"`
 }
 
 // ---------------------------------------------------------------------------
@@ -1438,6 +1486,8 @@ func ClassifyContextFile(path string) string {
 		return "test_suite"
 	case dir == filepath.Join("docs", "specs"):
 		return "spec_aux"
+	case dir == filepath.Join("docs", "interfaces"):
+		return "interface_spec"
 	case dir == filepath.Join("docs", "engineering"):
 		return "engineering"
 	case dir == filepath.Join("docs", "constitutions"):
@@ -1466,6 +1516,7 @@ var StandardContextPatterns = []string{
 	"docs/specs/test-suites/test-rel*.yaml",
 	"docs/specs/dependency-map.yaml",
 	"docs/specs/sources.yaml",
+	"docs/interfaces/ifc-*.yaml",
 }
 
 // TypedDocPaths lists documents that must always be loaded through their
@@ -1825,6 +1876,11 @@ func LoadContextFileInto(ctx *ProjectContext, path string, rf ReleaseFilter) {
 			default:
 				ctx.Extra = append(ctx.Extra, v)
 			}
+		}
+	case "interface_spec":
+		if v := LoadYAML[InterfaceSpecDoc](path); v != nil {
+			v.File = path
+			ctx.InterfaceSpecs = append(ctx.InterfaceSpecs, v)
 		}
 	case "engineering":
 		if v := LoadYAML[EngineeringDoc](path); v != nil {
