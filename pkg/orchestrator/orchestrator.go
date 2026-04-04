@@ -40,6 +40,8 @@ type Orchestrator struct {
 	Releaser   *Releaser
 	Analyzer    *Analyzer
 	ClaudeRunner *ClaudeRunner
+	Measure      *Measure
+	Stitch       *Stitch
 
 	// Logging state — previously package-level globals.
 	phaseMu           sync.RWMutex
@@ -108,13 +110,15 @@ func New(cfg Config) *Orchestrator {
 		o.Builder.ExtractCredentials,
 		o.Stats.CollectStats,
 	)
+	o.Measure = NewMeasure(o)
+	o.Stitch = NewStitch(o)
 
 	return o
 }
 
 // DumpMeasurePrompt assembles and prints the measure prompt to stdout.
 func (o *Orchestrator) DumpMeasurePrompt() error {
-	prompt, err := o.buildMeasurePrompt("", "[]", 1)
+	prompt, err := o.Measure.buildMeasurePrompt("", "[]", 1)
 	if err != nil {
 		return fmt.Errorf("building measure prompt: %w", err)
 	}
@@ -129,7 +133,7 @@ func (o *Orchestrator) DumpStitchPrompt() error {
 	if err != nil {
 		return fmt.Errorf("getting working directory: %w", err)
 	}
-	prompt, err := o.buildStitchPrompt(stitchTask{
+	prompt, err := o.Stitch.buildStitchPrompt(stitchTask{
 		WorktreeDir: cwd,
 		ID:          "EXAMPLE-001",
 		Title:       "Example task",
@@ -167,6 +171,13 @@ func (o *Orchestrator) setGeneration(name string) {
 	o.phaseMu.Lock()
 	o.currentGeneration = name
 	o.phaseMu.Unlock()
+}
+
+// getGeneration returns the current generation name (thread-safe).
+func (o *Orchestrator) getGeneration() string {
+	o.phaseMu.RLock()
+	defer o.phaseMu.RUnlock()
+	return o.currentGeneration
 }
 
 // clearGeneration removes the generation tag from subsequent log lines.

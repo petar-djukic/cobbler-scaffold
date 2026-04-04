@@ -1036,7 +1036,7 @@ func TestSaveHistory_WritesIssuesFile(t *testing.T) {
 	issuesFile := filepath.Join(cobblerDir, "measure-test.yaml")
 	os.WriteFile(issuesFile, []byte("- title: test issue\n"), 0o644)
 
-	o.saveHistory("2026-02-28-12-00-00", []byte("raw output"), issuesFile)
+	o.Measure.saveHistory("2026-02-28-12-00-00", []byte("raw output"), issuesFile)
 
 	// Check that the issues file was copied to history.
 	histIssues := filepath.Join(histDir, "2026-02-28-12-00-00-measure-issues.yaml")
@@ -1053,7 +1053,7 @@ func TestSaveHistory_NoHistoryDir(t *testing.T) {
 	t.Parallel()
 	o := New(Config{})
 	// HistoryDir is empty — saveHistory should be a no-op.
-	o.saveHistory("2026-02-28-12-00-00", []byte("output"), "/nonexistent/file")
+	o.Measure.saveHistory("2026-02-28-12-00-00", []byte("output"), "/nonexistent/file")
 	// No panic is the assertion.
 }
 
@@ -1064,7 +1064,7 @@ func TestSaveHistory_MissingIssuesFile(t *testing.T) {
 	o.cfg.Cobbler.HistoryDir = histDir
 
 	// Call with nonexistent issues file — should not panic.
-	o.saveHistory("2026-02-28-12-00-00", []byte("output"), "/nonexistent/file.yaml")
+	o.Measure.saveHistory("2026-02-28-12-00-00", []byte("output"), "/nonexistent/file.yaml")
 
 	// The issues file should not have been created.
 	matches, _ := filepath.Glob(filepath.Join(histDir, "*issues*"))
@@ -1079,7 +1079,7 @@ func TestBuildMeasurePrompt_DefaultConfig(t *testing.T) {
 	t.Parallel()
 	o := New(Config{})
 
-	prompt, err := o.buildMeasurePrompt("", "", 1)
+	prompt, err := o.Measure.buildMeasurePrompt("", "", 1)
 	if err != nil {
 		t.Fatalf("buildMeasurePrompt() error = %v", err)
 	}
@@ -1101,7 +1101,7 @@ func TestBuildMeasurePrompt_PlaceholderSubstitution(t *testing.T) {
 	o.cfg.Cobbler.EstimatedLinesMax = 500
 	o.cfg.Cobbler.MaxRequirementsPerTask = 8
 
-	prompt, err := o.buildMeasurePrompt("", "", 3)
+	prompt, err := o.Measure.buildMeasurePrompt("", "", 3)
 	if err != nil {
 		t.Fatalf("buildMeasurePrompt() error = %v", err)
 	}
@@ -1116,7 +1116,7 @@ func TestBuildMeasurePrompt_WithUserInput(t *testing.T) {
 	t.Parallel()
 	o := New(Config{})
 
-	prompt, err := o.buildMeasurePrompt("Focus on testing", "", 1)
+	prompt, err := o.Measure.buildMeasurePrompt("Focus on testing", "", 1)
 	if err != nil {
 		t.Fatalf("buildMeasurePrompt() error = %v", err)
 	}
@@ -1130,7 +1130,7 @@ func TestBuildMeasurePrompt_WithExistingIssues(t *testing.T) {
 	o := New(Config{})
 
 	existingIssues := `[{"id":"42","title":"Existing task","status":"ready","type":""}]`
-	prompt, err := o.buildMeasurePrompt("", existingIssues, 1)
+	prompt, err := o.Measure.buildMeasurePrompt("", existingIssues, 1)
 	if err != nil {
 		t.Fatalf("buildMeasurePrompt() error = %v", err)
 	}
@@ -1145,7 +1145,7 @@ func TestBuildMeasurePrompt_InvalidTemplate(t *testing.T) {
 	cfg.Cobbler.MeasurePrompt = "role: [unclosed bracket"
 	o := New(cfg)
 
-	_, err := o.buildMeasurePrompt("", "", 1)
+	_, err := o.Measure.buildMeasurePrompt("", "", 1)
 	if err == nil {
 		t.Error("expected error for invalid template, got nil")
 	}
@@ -1157,7 +1157,7 @@ func TestBuildMeasurePrompt_ReleasesConstraintAppended(t *testing.T) {
 	cfg.Project.Releases = []string{"01.0", "02.0"}
 	o := New(cfg)
 
-	prompt, err := o.buildMeasurePrompt("", "", 1)
+	prompt, err := o.Measure.buildMeasurePrompt("", "", 1)
 	if err != nil {
 		t.Fatalf("buildMeasurePrompt() error = %v", err)
 	}
@@ -1175,7 +1175,7 @@ func TestBuildMeasurePrompt_GoldenExample(t *testing.T) {
 	cfg.Cobbler.GoldenExample = "This is a golden example issue"
 	o := New(cfg)
 
-	prompt, err := o.buildMeasurePrompt("", "", 1)
+	prompt, err := o.Measure.buildMeasurePrompt("", "", 1)
 	if err != nil {
 		t.Fatalf("buildMeasurePrompt() error = %v", err)
 	}
@@ -1325,7 +1325,7 @@ func TestIntraBatchDedup_NoOverlap(t *testing.T) {
 func TestImportIssuesImpl_NonexistentFile(t *testing.T) {
 	t.Parallel()
 	o := New(Config{})
-	_, _, err := o.importIssuesImpl("/nonexistent/file.yaml", "owner/repo", "gen", false, 0)
+	_, _, err := o.Measure.importIssuesImpl("/nonexistent/file.yaml", "owner/repo", "gen", false, 0)
 	if err == nil {
 		t.Error("expected error for nonexistent file")
 	}
@@ -1338,7 +1338,7 @@ func TestImportIssuesImpl_InvalidYAML(t *testing.T) {
 	os.WriteFile(yamlFile, []byte("{{{not valid yaml"), 0o644)
 
 	o := New(Config{})
-	_, _, err := o.importIssuesImpl(yamlFile, "owner/repo", "gen", false, 0)
+	_, _, err := o.Measure.importIssuesImpl(yamlFile, "owner/repo", "gen", false, 0)
 	if err == nil {
 		t.Error("expected error for invalid YAML")
 	}
@@ -1358,7 +1358,7 @@ func TestImportIssuesImpl_EmptyIssueList(t *testing.T) {
 	o := New(cfg)
 
 	// Empty list should not error — no issues to create, no GitHub calls.
-	ids, _, err := o.importIssuesImpl(yamlFile, "owner/repo", "gen", false, 0)
+	ids, _, err := o.Measure.importIssuesImpl(yamlFile, "owner/repo", "gen", false, 0)
 	if err != nil {
 		t.Fatalf("importIssuesImpl() error = %v", err)
 	}
@@ -1393,7 +1393,7 @@ acceptance_criteria:
 	cfg.Cobbler.EnforceMeasureValidation = true
 	o := New(cfg)
 
-	_, validationErrs, err := o.importIssuesImpl(yamlFile, "owner/repo", "gen", false, 0)
+	_, validationErrs, err := o.Measure.importIssuesImpl(yamlFile, "owner/repo", "gen", false, 0)
 	if err == nil {
 		t.Error("expected validation error in enforcing mode")
 	}
@@ -1434,7 +1434,7 @@ acceptance_criteria:
 	// skipEnforcement=true should bypass validation errors.
 	// This will fail at createCobblerIssue (no real GitHub), but should NOT
 	// fail at validation.
-	ids, _, err := o.importIssuesImpl(yamlFile, "owner/repo", "gen", true, 0)
+	ids, _, err := o.Measure.importIssuesImpl(yamlFile, "owner/repo", "gen", true, 0)
 	if err != nil {
 		t.Fatalf("importIssuesImpl() with skipEnforcement should not return validation error, got: %v", err)
 	}
@@ -1464,7 +1464,7 @@ func TestImportIssuesImpl_UpgradePath_PhZero_SingleIssue(t *testing.T) {
 	cfg.Cobbler.Dir = dir
 	o := New(cfg)
 
-	ids, _, err := o.importIssuesImpl(yamlFile, "owner/repo", "gen", false, 0)
+	ids, _, err := o.Measure.importIssuesImpl(yamlFile, "owner/repo", "gen", false, 0)
 	if err != nil {
 		t.Fatalf("importIssuesImpl() unexpected error: %v", err)
 	}
@@ -1488,7 +1488,7 @@ func TestImportIssuesImpl_UpgradePath_PhPositive_SingleIssue(t *testing.T) {
 	o := New(cfg)
 
 	// ph=99 triggers the upgrade path; both gh calls fail without real GitHub.
-	ids, _, err := o.importIssuesImpl(yamlFile, "owner/repo", "gen", false, 99)
+	ids, _, err := o.Measure.importIssuesImpl(yamlFile, "owner/repo", "gen", false, 99)
 	if err != nil {
 		t.Fatalf("importIssuesImpl() unexpected error: %v", err)
 	}
@@ -1513,7 +1513,7 @@ func TestImportIssuesImpl_UpgradePath_PhPositive_MultipleIssues(t *testing.T) {
 	o := New(cfg)
 
 	// ph=42 but 2 issues: upgrade path must not be taken.
-	ids, _, err := o.importIssuesImpl(yamlFile, "owner/repo", "gen", false, 42)
+	ids, _, err := o.Measure.importIssuesImpl(yamlFile, "owner/repo", "gen", false, 42)
 	if err != nil {
 		t.Fatalf("importIssuesImpl() unexpected error: %v", err)
 	}
@@ -1535,7 +1535,7 @@ func TestMeasurePrompt_ProducesOutput(t *testing.T) {
 		null.Close()
 	}()
 
-	err := o.MeasurePrompt()
+	err := o.Measure.MeasurePrompt()
 	if err != nil {
 		t.Errorf("MeasurePrompt() unexpected error: %v", err)
 	}
@@ -1549,7 +1549,7 @@ func TestBuildMeasurePrompt_WithValidationErrors(t *testing.T) {
 		`[1] "My task": requirement count 9 outside P9 range 5-8`,
 		`[1] "My task": design decision count 2 outside P9 range 3-5`,
 	}
-	prompt, err := o.buildMeasurePrompt("", "", 1, errs...)
+	prompt, err := o.Measure.buildMeasurePrompt("", "", 1, errs...)
 	if err != nil {
 		t.Fatalf("buildMeasurePrompt() error = %v", err)
 	}
@@ -1569,7 +1569,7 @@ func TestBuildMeasurePrompt_NoValidationErrorsOnFirstAttempt(t *testing.T) {
 	o := New(Config{})
 
 	// No validation errors passed — field must be absent from the YAML output.
-	prompt, err := o.buildMeasurePrompt("", "", 1)
+	prompt, err := o.Measure.buildMeasurePrompt("", "", 1)
 	if err != nil {
 		t.Fatalf("buildMeasurePrompt() error = %v", err)
 	}
@@ -1836,7 +1836,7 @@ releases:
 	o := New(cfg)
 
 	// All done → no SourcePatterns set, build should succeed normally.
-	prompt, err := o.buildMeasurePrompt("", "", 1)
+	prompt, err := o.Measure.buildMeasurePrompt("", "", 1)
 	if err != nil {
 		t.Fatalf("buildMeasurePrompt() error = %v", err)
 	}
@@ -1873,7 +1873,7 @@ touchpoints:
 
 	// Pending UC with touchpoint "pkg/workflow" → SourcePatterns contains that path pattern.
 	// We can verify the road-map path was selected by checking the prompt builds cleanly.
-	prompt, err := o.buildMeasurePrompt("", "", 1)
+	prompt, err := o.Measure.buildMeasurePrompt("", "", 1)
 	if err != nil {
 		t.Fatalf("buildMeasurePrompt() error = %v", err)
 	}
@@ -1910,7 +1910,7 @@ touchpoints:
 	o := New(cfg)
 
 	// Manual patterns set → road-map source ignored, build must succeed.
-	prompt, err := o.buildMeasurePrompt("", "", 1)
+	prompt, err := o.Measure.buildMeasurePrompt("", "", 1)
 	if err != nil {
 		t.Fatalf("buildMeasurePrompt() error = %v", err)
 	}
@@ -1945,7 +1945,7 @@ touchpoints:
 	o := New(cfg)
 
 	// No em-dash in touchpoints → no pkg paths → no SourcePatterns filter; build must succeed.
-	prompt, err := o.buildMeasurePrompt("", "", 1)
+	prompt, err := o.Measure.buildMeasurePrompt("", "", 1)
 	if err != nil {
 		t.Fatalf("buildMeasurePrompt() error = %v", err)
 	}
@@ -1969,7 +1969,7 @@ func TestBuildMeasurePrompt_ExcludeTests_DefaultTrue(t *testing.T) {
 	// MeasureExcludeTests is nil → effectiveMeasureExcludeTests() returns true.
 	o := New(cfg)
 
-	prompt, err := o.buildMeasurePrompt("", "", 1)
+	prompt, err := o.Measure.buildMeasurePrompt("", "", 1)
 	if err != nil {
 		t.Fatalf("buildMeasurePrompt() error = %v", err)
 	}
@@ -1992,7 +1992,7 @@ func TestBuildMeasurePrompt_ExcludeTests_DisabledFalse(t *testing.T) {
 	cfg.Cobbler.MeasureExcludeTests = &f
 	o := New(cfg)
 
-	prompt, err := o.buildMeasurePrompt("", "", 1)
+	prompt, err := o.Measure.buildMeasurePrompt("", "", 1)
 	if err != nil {
 		t.Fatalf("buildMeasurePrompt() error = %v", err)
 	}
@@ -2018,7 +2018,7 @@ func TestBuildMeasurePrompt_SourceMode_HeadersWired(t *testing.T) {
 	cfg.Cobbler.MeasureSourceMode = "headers"
 	o := New(cfg)
 
-	prompt, err := o.buildMeasurePrompt("", "", 1)
+	prompt, err := o.Measure.buildMeasurePrompt("", "", 1)
 	if err != nil {
 		t.Fatalf("buildMeasurePrompt() error = %v", err)
 	}
@@ -2052,7 +2052,7 @@ func TestBuildMeasurePrompt_SourceMode_PhaseCtxWins(t *testing.T) {
 	cfg.Cobbler.MeasureSourceMode = "headers"
 	o := New(cfg)
 
-	prompt, err := o.buildMeasurePrompt("", "", 1)
+	prompt, err := o.Measure.buildMeasurePrompt("", "", 1)
 	if err != nil {
 		t.Fatalf("buildMeasurePrompt() error = %v", err)
 	}
@@ -2143,7 +2143,7 @@ func TestBuildMeasurePrompt_LimitFromConfig(t *testing.T) {
 	t.Parallel()
 	o := New(Config{})
 	// Simulate tasksPerCall=3 being passed to buildMeasurePrompt.
-	prompt, err := o.buildMeasurePrompt("", "", 3)
+	prompt, err := o.Measure.buildMeasurePrompt("", "", 3)
 	if err != nil {
 		t.Fatalf("buildMeasurePrompt(limit=3) error = %v", err)
 	}

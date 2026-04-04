@@ -21,7 +21,7 @@ func (o *Orchestrator) TokenStats() error {
 		Log:            o.logf,
 		EnumerateFiles: o.enumerateContextFiles,
 		BuildMeasurePrompt: func(analysis, issues string, iteration int) (string, error) {
-			return o.buildMeasurePrompt(analysis, issues, iteration)
+			return o.Measure.buildMeasurePrompt(analysis, issues, iteration)
 		},
 	})
 }

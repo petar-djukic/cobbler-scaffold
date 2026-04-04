@@ -384,7 +384,7 @@ func (o *Orchestrator) GeneratorResume() error {
 	if err != nil {
 		o.logf("resume: warning: detectGitHubRepo: %v", err)
 	}
-	if err := o.recoverStaleTasks(branch, wtBase, ghRepo, branch); err != nil {
+	if err := o.Stitch.recoverStaleTasks(branch, wtBase, ghRepo, branch); err != nil {
 		o.logf("resume: recoverStaleTasks warning: %v", err)
 	}
 
@@ -392,7 +392,7 @@ func (o *Orchestrator) GeneratorResume() error {
 
 	// Drain existing ready issues before starting measure+stitch cycles.
 	o.logf("resume: draining existing ready issues")
-	if _, err := o.RunStitch(); err != nil {
+	if _, err := o.Stitch.RunStitch(); err != nil {
 		o.logf("resume: drain stitch warning: %v", err)
 	}
 
@@ -439,7 +439,7 @@ func (o *Orchestrator) RunCycles(label string) error {
 		// Capture LOC before stitch to detect zero-change cycles.
 		locBefore := o.ClaudeRunner.captureLOC()
 		o.logf("generator %s: cycle %d — stitch (limit=%d, stitched so far=%d)", label, cycle, perCycle, totalStitched)
-		n, err := o.RunStitchN(perCycle)
+		n, err := o.Stitch.RunStitchN(perCycle)
 		totalStitched += n
 		if err != nil {
 			return fmt.Errorf("cycle %d stitch: %w", cycle, err)
@@ -486,7 +486,7 @@ func (o *Orchestrator) RunCycles(label string) error {
 			o.logf("generator %s: cycle %d — skipping measure, open issues remain", label, cycle)
 		} else {
 			o.logf("generator %s: cycle %d — measure", label, cycle)
-			if err := o.RunMeasure(); err != nil {
+			if err := o.Measure.RunMeasure(); err != nil {
 				return fmt.Errorf("cycle %d measure: %w", cycle, err)
 			}
 		}
@@ -504,7 +504,7 @@ func (o *Orchestrator) RunCycles(label string) error {
 			if o.hasUnresolvedRequirements() {
 				o.logf("generator %s: cycle %d — no open issues but unresolved requirements remain, running measure",
 					label, cycle)
-				if err := o.RunMeasure(); err != nil {
+				if err := o.Measure.RunMeasure(); err != nil {
 					return fmt.Errorf("cycle %d measure (fallback): %w", cycle, err)
 				}
 			} else {

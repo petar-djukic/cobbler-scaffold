@@ -138,7 +138,7 @@ func TestParseYAMLNode_Invalid(t *testing.T) {
 
 func TestMeasurePromptIsValidYAML(t *testing.T) {
 	o := New(Config{})
-	prompt, err := o.buildMeasurePrompt("", "[]", 5)
+	prompt, err := o.Measure.buildMeasurePrompt("", "[]", 5)
 	if err != nil {
 		t.Fatalf("buildMeasurePrompt: %v", err)
 	}
@@ -151,7 +151,7 @@ func TestMeasurePromptIsValidYAML(t *testing.T) {
 
 func TestMeasurePromptIncludesPlanningConstitution(t *testing.T) {
 	o := New(Config{})
-	prompt, err := o.buildMeasurePrompt("", "[]", 5)
+	prompt, err := o.Measure.buildMeasurePrompt("", "[]", 5)
 	if err != nil {
 		t.Fatalf("buildMeasurePrompt: %v", err)
 	}
@@ -166,7 +166,7 @@ func TestMeasurePromptIncludesPlanningConstitution(t *testing.T) {
 
 func TestMeasurePromptIncludesIssueFormatConstitution(t *testing.T) {
 	o := New(Config{})
-	prompt, err := o.buildMeasurePrompt("", "[]", 5)
+	prompt, err := o.Measure.buildMeasurePrompt("", "[]", 5)
 	if err != nil {
 		t.Fatalf("buildMeasurePrompt: %v", err)
 	}
@@ -181,7 +181,7 @@ func TestMeasurePromptIncludesIssueFormatConstitution(t *testing.T) {
 
 func TestMeasurePromptIncludesProjectContext(t *testing.T) {
 	o := New(Config{})
-	prompt, err := o.buildMeasurePrompt("", "[]", 5)
+	prompt, err := o.Measure.buildMeasurePrompt("", "[]", 5)
 	if err != nil {
 		t.Fatalf("buildMeasurePrompt: %v", err)
 	}
@@ -196,7 +196,7 @@ func TestMeasurePromptIncludesProjectContext(t *testing.T) {
 
 func TestMeasurePromptSubstitutesPlaceholders(t *testing.T) {
 	o := New(Config{})
-	prompt, err := o.buildMeasurePrompt("", "[]", 3)
+	prompt, err := o.Measure.buildMeasurePrompt("", "[]", 3)
 	if err != nil {
 		t.Fatalf("buildMeasurePrompt: %v", err)
 	}
@@ -220,7 +220,7 @@ func TestBuildMeasurePrompt_MaxRequirementsPlaceholder(t *testing.T) {
 	cfg.applyDefaults()
 	cfg.Cobbler.MaxRequirementsPerTask = 7
 	o := New(cfg)
-	prompt, err := o.buildMeasurePrompt("", "[]", 1)
+	prompt, err := o.Measure.buildMeasurePrompt("", "[]", 1)
 	if err != nil {
 		t.Fatalf("buildMeasurePrompt: %v", err)
 	}
@@ -231,7 +231,7 @@ func TestBuildMeasurePrompt_MaxRequirementsPlaceholder(t *testing.T) {
 
 func TestMeasurePromptNoWriteToolReferences(t *testing.T) {
 	o := New(Config{})
-	prompt, err := o.buildMeasurePrompt("", "[]", 1)
+	prompt, err := o.Measure.buildMeasurePrompt("", "[]", 1)
 	if err != nil {
 		t.Fatalf("buildMeasurePrompt: %v", err)
 	}
@@ -249,7 +249,7 @@ func TestMeasurePromptNoWriteToolReferences(t *testing.T) {
 
 func TestMeasurePromptClosedIssueConstraint(t *testing.T) {
 	o := New(Config{})
-	prompt, err := o.buildMeasurePrompt("", "[]", 1)
+	prompt, err := o.Measure.buildMeasurePrompt("", "[]", 1)
 	if err != nil {
 		t.Fatalf("buildMeasurePrompt: %v", err)
 	}
@@ -264,7 +264,7 @@ func TestMeasurePromptClosedIssueConstraint(t *testing.T) {
 
 func TestMeasurePromptSourceCodeOverProseConstraint(t *testing.T) {
 	o := New(Config{})
-	prompt, err := o.buildMeasurePrompt("", "[]", 1)
+	prompt, err := o.Measure.buildMeasurePrompt("", "[]", 1)
 	if err != nil {
 		t.Fatalf("buildMeasurePrompt: %v", err)
 	}
@@ -284,7 +284,7 @@ func TestStitchPromptIsValidYAML(t *testing.T) {
 		WorktreeDir: "/tmp",
 	}
 
-	prompt, err := o.buildStitchPrompt(task)
+	prompt, err := o.Stitch.buildStitchPrompt(task)
 	if err != nil {
 		t.Fatalf("buildStitchPrompt: %v", err)
 	}
@@ -305,7 +305,7 @@ func TestStitchPromptIncludesExecutionConstitution(t *testing.T) {
 		WorktreeDir: "/tmp",
 	}
 
-	prompt, err := o.buildStitchPrompt(task)
+	prompt, err := o.Stitch.buildStitchPrompt(task)
 	if err != nil {
 		t.Fatalf("buildStitchPrompt: %v", err)
 	}
@@ -328,7 +328,7 @@ func TestStitchPromptIncludesTaskContext(t *testing.T) {
 		WorktreeDir: "/tmp",
 	}
 
-	prompt, err := o.buildStitchPrompt(task)
+	prompt, err := o.Stitch.buildStitchPrompt(task)
 	if err != nil {
 		t.Fatalf("buildStitchPrompt: %v", err)
 	}
@@ -354,7 +354,7 @@ func TestStitchPromptIncludesGoStyleConstitution(t *testing.T) {
 		WorktreeDir: "/tmp",
 	}
 
-	prompt, err := o.buildStitchPrompt(task)
+	prompt, err := o.Stitch.buildStitchPrompt(task)
 	if err != nil {
 		t.Fatalf("buildStitchPrompt: %v", err)
 	}
@@ -495,7 +495,7 @@ shared_protocols:
 		Title:     "Implement ls",
 		IssueType: "code",
 	}
-	out, err := o.buildStitchPrompt(task)
+	out, err := o.Stitch.buildStitchPrompt(task)
 	if err != nil {
 		t.Fatalf("buildStitchPrompt: %v", err)
 	}
@@ -524,7 +524,7 @@ package_contract:
 
 	o := New(Config{})
 	task := stitchTask{ID: "t1", Title: "impl", IssueType: "code"}
-	out, err := o.buildStitchPrompt(task)
+	out, err := o.Stitch.buildStitchPrompt(task)
 	if err != nil {
 		t.Fatalf("buildStitchPrompt: %v", err)
 	}
@@ -559,7 +559,7 @@ semantic_model:
 
 	o := New(Config{})
 	task := stitchTask{ID: "t-sm-1", Title: "impl widget", IssueType: "code"}
-	out, err := o.buildStitchPrompt(task)
+	out, err := o.Stitch.buildStitchPrompt(task)
 	if err != nil {
 		t.Fatalf("buildStitchPrompt: %v", err)
 	}
@@ -586,7 +586,7 @@ title: Plain PRD
 
 	o := New(Config{})
 	task := stitchTask{ID: "t-sm-2", Title: "impl plain", IssueType: "code"}
-	out, err := o.buildStitchPrompt(task)
+	out, err := o.Stitch.buildStitchPrompt(task)
 	if err != nil {
 		t.Fatalf("buildStitchPrompt: %v", err)
 	}
@@ -617,7 +617,7 @@ package_contract:
 	os.WriteFile(".cobbler/measure_context.yaml", []byte("source_mode: headers\n"), 0o644)
 
 	o := New(Config{Cobbler: CobblerConfig{Dir: ".cobbler"}})
-	out, err := o.buildMeasurePrompt("", "", 1)
+	out, err := o.Measure.buildMeasurePrompt("", "", 1)
 	if err != nil {
 		t.Fatalf("buildMeasurePrompt: %v", err)
 	}
@@ -646,7 +646,7 @@ package_contract:
 `), 0o644)
 
 	o := New(Config{})
-	out, err := o.buildMeasurePrompt("", "", 1)
+	out, err := o.Measure.buildMeasurePrompt("", "", 1)
 	if err != nil {
 		t.Fatalf("buildMeasurePrompt: %v", err)
 	}

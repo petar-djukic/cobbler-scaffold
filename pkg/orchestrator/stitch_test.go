@@ -115,7 +115,7 @@ func TestSkipTask_NoOp(t *testing.T) {
 		Repo:       "fake/repo",
 		Generation: "test-gen",
 	}
-	o.skipTask(task, 3) // must not panic
+	o.Stitch.skipTask(task, 3) // must not panic
 }
 
 // TestStitchSleep_DefaultIsTimeSleep verifies the default stitchSleep is
@@ -214,7 +214,7 @@ func TestBuildStitchPrompt_NilContext(t *testing.T) {
 		Title:     "Add unit tests",
 		IssueType: "code",
 	}
-	out, err := o.buildStitchPrompt(task)
+	out, err := o.Stitch.buildStitchPrompt(task)
 	if err != nil {
 		t.Fatalf("buildStitchPrompt() unexpected error: %v", err)
 	}
@@ -238,7 +238,7 @@ func TestBuildStitchPrompt_ConstitutionDocs(t *testing.T) {
 		IssueType:   "code",
 		WorktreeDir: tmp,
 	}
-	out, err := o.buildStitchPrompt(task)
+	out, err := o.Stitch.buildStitchPrompt(task)
 	if err != nil {
 		t.Fatalf("buildStitchPrompt() unexpected error: %v", err)
 	}
@@ -257,7 +257,7 @@ func TestBuildStitchPrompt_InvalidTemplate(t *testing.T) {
 	cfg.Cobbler.StitchPrompt = "role: [unclosed bracket"
 	o := New(cfg)
 	task := stitchTask{ID: "test-03", Title: "Test", IssueType: "code"}
-	_, err := o.buildStitchPrompt(task)
+	_, err := o.Stitch.buildStitchPrompt(task)
 	if err == nil {
 		t.Error("buildStitchPrompt() expected error for invalid template, got nil")
 	}
@@ -307,7 +307,7 @@ func TestBuildStitchPrompt_RepositoryFiles(t *testing.T) {
 		IssueType:   "code",
 		WorktreeDir: tmp,
 	}
-	out, err := o.buildStitchPrompt(task)
+	out, err := o.Stitch.buildStitchPrompt(task)
 	if err != nil {
 		t.Fatalf("buildStitchPrompt() unexpected error: %v", err)
 	}
@@ -646,7 +646,7 @@ func TestBuildStitchPrompt_RequiredReadingFilter(t *testing.T) {
 `,
 		WorktreeDir: tmp,
 	}
-	out, err := o.buildStitchPrompt(task)
+	out, err := o.Stitch.buildStitchPrompt(task)
 	if err != nil {
 		t.Fatalf("buildStitchPrompt() unexpected error: %v", err)
 	}
@@ -821,7 +821,7 @@ func TestRecoverStaleTasks_NoStaleState(t *testing.T) {
 	_ = initTestGitRepo(t)
 
 	o := New(Config{})
-	err := o.recoverStaleTasks("main", t.TempDir(), "fake/repo", "test-gen")
+	err := o.Stitch.recoverStaleTasks("main", t.TempDir(), "fake/repo", "test-gen")
 	if err != nil {
 		t.Errorf("recoverStaleTasks() error = %v", err)
 	}
@@ -834,7 +834,7 @@ func TestRecoverStaleTasks_WithStaleBranch(t *testing.T) {
 	gitRun(t, "branch", branchName)
 
 	o := New(Config{})
-	err := o.recoverStaleTasks("main", t.TempDir(), "fake/repo", "test-gen")
+	err := o.Stitch.recoverStaleTasks("main", t.TempDir(), "fake/repo", "test-gen")
 	if err != nil {
 		t.Errorf("recoverStaleTasks() error = %v", err)
 	}
@@ -859,7 +859,7 @@ func TestResetTask_NonExistentWorktree(t *testing.T) {
 		Repo:        "fake/repo",
 	}
 
-	o.resetTask(task, "test reason") // must not panic
+	o.Stitch.resetTask(task, "test reason") // must not panic
 }
 
 func TestResetTask_WithRealWorktree(t *testing.T) {
@@ -880,7 +880,7 @@ func TestResetTask_WithRealWorktree(t *testing.T) {
 		Repo:        "fake/repo",
 	}
 
-	o.resetTask(task, "test cleanup")
+	o.Stitch.resetTask(task, "test cleanup")
 
 	// Worktree and branch should be removed.
 	if _, err := os.Stat(worktreeDir); !os.IsNotExist(err) {
@@ -907,7 +907,7 @@ func TestCloseStitchTask_GHFailureNoOp(t *testing.T) {
 	}
 	rec := claude.InvocationRecord{}
 
-	o.closeStitchTask(task, rec, true) // must not panic
+	o.Stitch.closeStitchTask(task, rec, true) // must not panic
 }
 
 // --- createWorktree (existing branch) ---
@@ -1162,7 +1162,7 @@ func TestBuildStitchPrompt_ExcludeTests_DefaultTrue(t *testing.T) {
 		IssueType:   "code",
 		WorktreeDir: tmp,
 	}
-	out, err := o.buildStitchPrompt(task)
+	out, err := o.Stitch.buildStitchPrompt(task)
 	if err != nil {
 		t.Fatalf("buildStitchPrompt() error = %v", err)
 	}
@@ -1196,7 +1196,7 @@ func TestBuildStitchPrompt_ExcludeTests_DisabledFalse(t *testing.T) {
 		IssueType:   "code",
 		WorktreeDir: tmp,
 	}
-	out, err := o.buildStitchPrompt(task)
+	out, err := o.Stitch.buildStitchPrompt(task)
 	if err != nil {
 		t.Fatalf("buildStitchPrompt() error = %v", err)
 	}
@@ -1226,7 +1226,7 @@ func TestSweepCompletedTasks_EmptyRequirements(t *testing.T) {
 	// With no requirements.yaml (empty cobbler dir), sweep should return
 	// immediately without calling any GitHub API.
 	o := New(Config{Cobbler: CobblerConfig{Dir: t.TempDir()}})
-	o.sweepCompletedTasks("fake/repo", "test-gen") // must not panic
+	o.Stitch.sweepCompletedTasks("fake/repo", "test-gen") // must not panic
 }
 
 func TestSweepCompletedTasks_NoCobblerDir(t *testing.T) {
@@ -1234,7 +1234,7 @@ func TestSweepCompletedTasks_NoCobblerDir(t *testing.T) {
 	// With a nonexistent cobbler dir, LoadRequirementStates returns nil
 	// and sweep returns immediately.
 	o := New(Config{Cobbler: CobblerConfig{Dir: "/nonexistent/dir/xyz"}})
-	o.sweepCompletedTasks("fake/repo", "test-gen") // must not panic
+	o.Stitch.sweepCompletedTasks("fake/repo", "test-gen") // must not panic
 }
 
 // ---------------------------------------------------------------------------

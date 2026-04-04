@@ -250,10 +250,10 @@ func (Test) Benchmark() error {
 // --- Cobbler targets ---
 
 // Measure assesses project state and proposes new tasks via Claude.
-func (Cobbler) Measure() error { return newOrch().Measure() }
+func (Cobbler) Measure() error { return newOrch().Measure.Measure() }
 
 // Stitch picks ready tasks and invokes Claude to execute them.
-func (Cobbler) Stitch() error { return newOrch().Stitch() }
+func (Cobbler) Stitch() error { return newOrch().Stitch.Stitch() }
 
 // Reset removes the cobbler scratch directory.
 func (Cobbler) Reset() error { return newOrch().ClaudeRunner.CobblerReset() }
