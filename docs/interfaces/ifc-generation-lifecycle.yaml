@@ -90,7 +90,10 @@ operations:
       - name: error
         type: error
   - name: GeneratorSwitch
-    description: Switch the working directory to a different generation branch.
+    description: >-
+      Switch to a different generation branch. When the target is the base
+      branch and the current directory is a worktree created by GeneratorStart,
+      saves work, switches to the main repo, and removes the worktree.
     parameters: []
     returns:
       - name: error

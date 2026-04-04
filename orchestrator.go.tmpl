@@ -84,7 +84,7 @@ func Clean() error { return newOrch().Builder.Clean() }
 // Credentials extracts Claude credentials from the macOS Keychain.
 func Credentials() error { return newOrch().Builder.ExtractCredentials() }
 
-// Analyze performs cross-artifact consistency checks (PRDs, use cases, test suites, roadmap).
+// Analyze performs cross-artifact consistency checks (SRDs, use cases, test suites, roadmap).
 func Analyze() error { return newOrch().Analyzer.Analyze() }
 
 // Tag creates a documentation release tag (v0.YYYYMMDD.N) and builds the container image.
