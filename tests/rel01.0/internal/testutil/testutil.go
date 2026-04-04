@@ -988,3 +988,28 @@ func MeasureAndExpectIssues(t testing.TB, dir string, timeout time.Duration) int
 	t.Fatal("MeasureAndExpectIssues: Claude returned empty list on both attempts despite unresolved requirements")
 	return 0
 }
+
+// PatchConfigYAML reads configuration.yaml from dir, applies fn to the
+// decoded map, and writes it back. This allows tests to modify config
+// fields (e.g., generation.branch) without importing the orchestrator
+// package.
+func PatchConfigYAML(t testing.TB, dir string, fn func(cfg map[string]any)) {
+	t.Helper()
+	cfgPath := filepath.Join(dir, "configuration.yaml")
+	data, err := os.ReadFile(cfgPath)
+	if err != nil {
+		t.Fatalf("PatchConfigYAML: reading %s: %v", cfgPath, err)
+	}
+	var cfg map[string]any
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		t.Fatalf("PatchConfigYAML: parsing %s: %v", cfgPath, err)
+	}
+	fn(cfg)
+	out, err := yaml.Marshal(cfg)
+	if err != nil {
+		t.Fatalf("PatchConfigYAML: marshaling: %v", err)
+	}
+	if err := os.WriteFile(cfgPath, out, 0o644); err != nil {
+		t.Fatalf("PatchConfigYAML: writing %s: %v", cfgPath, err)
+	}
+}

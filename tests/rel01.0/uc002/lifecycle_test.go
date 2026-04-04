@@ -138,10 +138,47 @@ func TestRel01_UC002_ResetReturnsToCleanMain(t *testing.T) {
 }
 
 func TestRel01_UC002_SwitchSavesAndChangesBranch(t *testing.T) {
-	// GH-1608: generator:switch to main from a worktree fails because git
-	// does not allow the same branch to be checked out in two worktrees.
-	// This needs a follow-up to adapt generator:switch for worktree mode.
-	t.Skip("generator:switch to main is incompatible with worktree mode (GH-1608)")
+	t.Parallel()
+	dir := testutil.SetupRepo(t, snapshotDir)
+
+	if err := testutil.RunMage(t, dir, "init"); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	wtDir := testutil.GeneratorStart(t, dir)
+	t.Cleanup(func() { testutil.RunMage(t, dir, "generator:reset") }) //nolint:errcheck
+
+	genBranch := testutil.GitBranch(t, wtDir)
+	if !strings.HasPrefix(genBranch, "generation-") {
+		t.Fatalf("expected generation branch after start, got %q", genBranch)
+	}
+
+	// Create a file in the worktree so there is work to save.
+	sentinel := filepath.Join(wtDir, "switch-test.txt")
+	if err := os.WriteFile(sentinel, []byte("dirty"), 0o644); err != nil {
+		t.Fatalf("writing sentinel: %v", err)
+	}
+
+	// Set generation.branch to main so generator:switch targets the base branch.
+	testutil.PatchConfigYAML(t, dir, func(cfg map[string]any) {
+		gen := cfg["generation"].(map[string]any)
+		gen["branch"] = "main"
+	})
+
+	// Switch from generation worktree back to main. This exercises the
+	// worktree-aware path added in GH-2043.
+	if err := testutil.RunMage(t, dir, "generator:switch"); err != nil {
+		t.Fatalf("generator:switch: %v", err)
+	}
+
+	// After switch, the main repo should be on main.
+	if branch := testutil.GitBranch(t, dir); branch != "main" {
+		t.Errorf("expected main after switch, got %q", branch)
+	}
+
+	// The generation worktree should have been removed.
+	if _, err := os.Stat(wtDir); !os.IsNotExist(err) {
+		t.Errorf("expected worktree %s to be removed after switch to main", wtDir)
+	}
 }
 
 func TestRel01_UC002_StartFailsWhenDirty(t *testing.T) {
