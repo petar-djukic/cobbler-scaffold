@@ -12,8 +12,8 @@ introduction: |
   implemented_by claim actually matches the interface it references.
 
   We introduce a standalone interface specification file format that lives in
-  docs/interfaces/. Each file is a self-contained YAML document using JSON
-  Schema to describe data structures and a typed operations list for methods.
+  docs/interfaces/. Each file is a self-contained YAML document with typed
+  field lists for data structures and a typed operations list for methods.
   ARCHITECTURE.yaml retains the summary entries and gains a spec_file field
   pointing to the full specification. The interface constitution (I1-I6)
   governs both the summary and the specification file.
@@ -43,7 +43,7 @@ sections:
       | id | yes | Matches filename without extension (e.g., ifc-generation-lifecycle) |
       | name | yes | Interface name, must match the ARCHITECTURE.yaml entry |
       | summary | yes | One to three sentences describing the interface contract |
-      | data_structures | no | List of typed data structure definitions using JSON Schema |
+      | data_structures | no | List of typed data structure definitions with field lists |
       | operations | no | List of method definitions with typed parameters and returns |
       | announcements | no | List of events or signals the interface emits |
       | references | no | List of PRD or use case IDs this interface traces to |
@@ -51,14 +51,15 @@ sections:
   - title: Data Structure Definitions
     content: |
       Each entry in data_structures is a YAML mapping with three fields:
-      name (the type name), description (one sentence), and schema (a JSON
-      Schema object defining the structure's fields).
+      name (the type name), description (one sentence), and fields (a list
+      of typed field definitions).
 
-      JSON Schema types replace Go types. Use string, integer, number,
-      boolean, array, and object. The format keyword extends basic types
-      (e.g., format: date-time for timestamps, format: duration for time
-      durations). Use $ref to reference other data structures within the
-      same file.
+      Each field has name, type, and an optional description. The type uses
+      language-agnostic names: string, integer, number, boolean, array, and
+      object. Add a required field set to true for fields that must be
+      present. Fields without required default to optional. Reference other
+      data structures defined in the same file by using their name as the
+      type.
 
       Example:
 
@@ -66,30 +67,29 @@ sections:
       data_structures:
         - name: DiffStat
           description: Parsed output from a git diff --shortstat command.
-          schema:
-            type: object
-            properties:
-              files_changed:
-                type: integer
-                description: Number of files changed.
-              insertions:
-                type: integer
-                description: Lines added.
-              deletions:
-                type: integer
-                description: Lines removed.
-            required: [files_changed, insertions, deletions]
+          fields:
+            - name: files_changed
+              type: integer
+              description: Number of files changed.
+              required: true
+            - name: insertions
+              type: integer
+              description: Lines added.
+              required: true
+            - name: deletions
+              type: integer
+              description: Lines removed.
+              required: true
       ```
 
-      Struct hierarchies use nested objects. References between structures
-      in the same file use $ref with a JSON pointer:
+      Nested structures use object as the type with a nested fields list,
+      or reference another data structure by name:
 
       ```yaml
-      schema:
-        type: object
-        properties:
-          diff:
-            $ref: "#/data_structures/DiffStat"
+      fields:
+        - name: diff
+          type: DiffStat
+          description: Aggregate diff statistics.
       ```
 
   - title: Operation Definitions
@@ -99,10 +99,11 @@ sections:
       parameters), and returns (list of typed return values). Parameters and
       returns each have name, type, and an optional description.
 
-      Types in parameters and returns use JSON Schema type names (string,
-      integer, boolean, object, array) or reference data structures defined
-      in the same file by name. Use "void" when a method returns nothing
-      besides an error. Use "error" as the conventional error return type.
+      Types in parameters and returns use the same language-agnostic names
+      (string, integer, boolean, object, array) or reference data structures
+      defined in the same file by name. Use "void" when a method returns
+      nothing besides an error. Use "error" as the conventional error return
+      type.
 
       Example:
 

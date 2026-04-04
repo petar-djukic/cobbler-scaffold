@@ -12,38 +12,37 @@ summary: |
 data_structures:
   - name: DiffStat
     description: Parsed output from a git diff --shortstat command.
-    schema:
-      type: object
-      properties:
-        files_changed:
-          type: integer
-          description: Number of files changed.
-        insertions:
-          type: integer
-          description: Number of lines added.
-        deletions:
-          type: integer
-          description: Number of lines removed.
-      required: [files_changed, insertions, deletions]
+    fields:
+      - name: files_changed
+        type: integer
+        description: Number of files changed.
+        required: true
+      - name: insertions
+        type: integer
+        description: Number of lines added.
+        required: true
+      - name: deletions
+        type: integer
+        description: Number of lines removed.
+        required: true
 
   - name: FileChange
     description: Per-file diff information from git diff --name-status.
-    schema:
-      type: object
-      properties:
-        path:
-          type: string
-          description: File path relative to the repository root.
-        status:
-          type: string
-          description: Git status code (A, M, D, R).
-        insertions:
-          type: integer
-          description: Lines added in this file.
-        deletions:
-          type: integer
-          description: Lines removed from this file.
-      required: [path, status]
+    fields:
+      - name: path
+        type: string
+        description: File path relative to the repository root.
+        required: true
+      - name: status
+        type: string
+        description: Git status code (A, M, D, R).
+        required: true
+      - name: insertions
+        type: integer
+        description: Lines added in this file.
+      - name: deletions
+        type: integer
+        description: Lines removed from this file.
 
 operations:
   # RepoReader sub-interface

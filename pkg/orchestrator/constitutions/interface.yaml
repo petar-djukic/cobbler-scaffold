@@ -32,9 +32,9 @@ articles:
       (path to the full specification file).
 
       Interface specification files in docs/interfaces/ must have id, name,
-      and summary. Optional fields are data_structures (with JSON Schema
-      definitions), operations (with typed parameters and returns),
-      announcements, and references.
+      and summary. Optional fields are data_structures (with typed field
+      lists), operations (with typed parameters and returns), announcements,
+      and references.
 
   - id: I3
     title: Naming conventions
@@ -82,9 +82,10 @@ articles:
       interface name resolves to a declared port.
 
       When a specification file exists (spec_file), the port contract is
-      defined in that file using JSON Schema for data structures and typed
-      operations. The ARCHITECTURE.yaml entry remains the discovery point;
-      the specification file is the contract.
+      defined in that file using typed field lists for data structures and
+      typed parameter/return lists for operations. The ARCHITECTURE.yaml
+      entry remains the discovery point; the specification file is the
+      contract.
 
   - id: I6
     title: Interface traceability
@@ -121,9 +122,9 @@ sections:
       path). PRDs reference interfaces by name using implemented_by and
       used_by string lists.
 
-      Specification files in docs/interfaces/ use JSON Schema for data
-      structures and typed parameter/return lists for operations. See
-      eng10-interface-specifications for the full schema.
+      Specification files in docs/interfaces/ use typed field lists for
+      data structures and typed parameter/return lists for operations.
+      See eng10-interface-specifications for the full format.
   - tag: validation
     title: Analysis Validation
     content: |
