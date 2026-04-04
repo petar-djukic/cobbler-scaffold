@@ -2125,3 +2125,198 @@ title: Core
 		t.Errorf("expected no violations when SRDs have no interface refs, got %v", result.BrokenInterfaceRefs)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Interface spec file support (GH-1990)
+// ---------------------------------------------------------------------------
+
+func TestCollectAnalyzeResult_InterfaceRef_ResolvedFromSpecFile(t *testing.T) {
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(orig)
+	setupMinimalAnalyzeDir(t)
+
+	// ARCHITECTURE.yaml has no interfaces section — the interface is
+	// defined only in docs/interfaces/.
+	os.WriteFile("docs/ARCHITECTURE.yaml", []byte(`id: arch
+title: Arch
+interfaces: []
+`), 0o644)
+	os.MkdirAll("docs/interfaces", 0o755)
+	os.WriteFile("docs/interfaces/ifc-builder.yaml", []byte(`id: ifc-builder
+name: Builder
+summary: Build operations
+`), 0o644)
+	os.WriteFile("docs/specs/software-requirements/srd001-core.yaml", []byte(`id: srd001-core
+title: Core
+implemented_by:
+  - Builder
+`), 0o644)
+
+	result, _, err := CollectAnalyzeResult(noopDeps())
+	if err != nil {
+		t.Fatalf("CollectAnalyzeResult: %v", err)
+	}
+	if len(result.BrokenInterfaceRefs) != 0 {
+		t.Errorf("expected interface resolved from spec file, got broken refs: %v", result.BrokenInterfaceRefs)
+	}
+}
+
+func TestCollectAnalyzeResult_InterfaceRef_CombinedIndex(t *testing.T) {
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(orig)
+	setupMinimalAnalyzeDir(t)
+
+	// One interface in ARCHITECTURE.yaml, another only in docs/interfaces/.
+	os.WriteFile("docs/ARCHITECTURE.yaml", []byte(`id: arch
+title: Arch
+interfaces:
+  - name: Orchestrator and Config
+    summary: Entry point
+`), 0o644)
+	os.MkdirAll("docs/interfaces", 0o755)
+	os.WriteFile("docs/interfaces/ifc-builder.yaml", []byte(`id: ifc-builder
+name: Builder
+summary: Build operations
+`), 0o644)
+	os.WriteFile("docs/specs/software-requirements/srd001-core.yaml", []byte(`id: srd001-core
+title: Core
+implemented_by:
+  - Orchestrator and Config
+  - Builder
+`), 0o644)
+
+	result, _, err := CollectAnalyzeResult(noopDeps())
+	if err != nil {
+		t.Fatalf("CollectAnalyzeResult: %v", err)
+	}
+	if len(result.BrokenInterfaceRefs) != 0 {
+		t.Errorf("expected both interfaces resolved, got broken refs: %v", result.BrokenInterfaceRefs)
+	}
+}
+
+func TestCollectAnalyzeResult_InterfaceRef_StillBrokenWithSpecFiles(t *testing.T) {
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(orig)
+	setupMinimalAnalyzeDir(t)
+
+	os.WriteFile("docs/ARCHITECTURE.yaml", []byte(`id: arch
+title: Arch
+interfaces:
+  - name: Orchestrator and Config
+    summary: Entry point
+`), 0o644)
+	os.MkdirAll("docs/interfaces", 0o755)
+	os.WriteFile("docs/interfaces/ifc-builder.yaml", []byte(`id: ifc-builder
+name: Builder
+summary: Build operations
+`), 0o644)
+	os.WriteFile("docs/specs/software-requirements/srd001-core.yaml", []byte(`id: srd001-core
+title: Core
+implemented_by:
+  - Nonexistent Interface
+`), 0o644)
+
+	result, _, err := CollectAnalyzeResult(noopDeps())
+	if err != nil {
+		t.Fatalf("CollectAnalyzeResult: %v", err)
+	}
+	if len(result.BrokenInterfaceRefs) != 1 {
+		t.Fatalf("expected 1 broken interface ref, got %d: %v",
+			len(result.BrokenInterfaceRefs), result.BrokenInterfaceRefs)
+	}
+	if !strings.Contains(result.BrokenInterfaceRefs[0], "Nonexistent Interface") {
+		t.Errorf("violation should mention Nonexistent Interface, got %q", result.BrokenInterfaceRefs[0])
+	}
+}
+
+func TestCollectAnalyzeResult_MissingSpecFile(t *testing.T) {
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(orig)
+	setupMinimalAnalyzeDir(t)
+
+	os.WriteFile("docs/ARCHITECTURE.yaml", []byte(`id: arch
+title: Arch
+interfaces:
+  - name: Builder
+    summary: Build operations
+    spec_file: docs/interfaces/ifc-builder.yaml
+`), 0o644)
+	// No docs/interfaces/ directory — spec_file does not exist.
+
+	result, _, err := CollectAnalyzeResult(noopDeps())
+	if err != nil {
+		t.Fatalf("CollectAnalyzeResult: %v", err)
+	}
+	if len(result.MissingSpecFiles) != 1 {
+		t.Fatalf("expected 1 missing spec file, got %d: %v",
+			len(result.MissingSpecFiles), result.MissingSpecFiles)
+	}
+	if !strings.Contains(result.MissingSpecFiles[0], "ifc-builder.yaml") {
+		t.Errorf("violation should mention ifc-builder.yaml, got %q", result.MissingSpecFiles[0])
+	}
+}
+
+func TestCollectAnalyzeResult_SpecFileExists(t *testing.T) {
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(orig)
+	setupMinimalAnalyzeDir(t)
+
+	os.MkdirAll("docs/interfaces", 0o755)
+	os.WriteFile("docs/interfaces/ifc-builder.yaml", []byte(`id: ifc-builder
+name: Builder
+summary: Build operations
+`), 0o644)
+	os.WriteFile("docs/ARCHITECTURE.yaml", []byte(`id: arch
+title: Arch
+interfaces:
+  - name: Builder
+    summary: Build operations
+    spec_file: docs/interfaces/ifc-builder.yaml
+`), 0o644)
+
+	result, _, err := CollectAnalyzeResult(noopDeps())
+	if err != nil {
+		t.Fatalf("CollectAnalyzeResult: %v", err)
+	}
+	if len(result.MissingSpecFiles) != 0 {
+		t.Errorf("expected no missing spec files, got %v", result.MissingSpecFiles)
+	}
+}
+
+func TestCollectAnalyzeResult_InterfaceRef_OnlySpecFiles(t *testing.T) {
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(orig)
+	setupMinimalAnalyzeDir(t)
+
+	// No ARCHITECTURE.yaml at all — interfaces only from spec files.
+	os.MkdirAll("docs/interfaces", 0o755)
+	os.WriteFile("docs/interfaces/ifc-builder.yaml", []byte(`id: ifc-builder
+name: Builder
+summary: Build operations
+`), 0o644)
+	os.WriteFile("docs/specs/software-requirements/srd001-core.yaml", []byte(`id: srd001-core
+title: Core
+implemented_by:
+  - Builder
+`), 0o644)
+
+	result, _, err := CollectAnalyzeResult(noopDeps())
+	if err != nil {
+		t.Fatalf("CollectAnalyzeResult: %v", err)
+	}
+	if len(result.BrokenInterfaceRefs) != 0 {
+		t.Errorf("expected interface resolved from spec file alone, got broken refs: %v", result.BrokenInterfaceRefs)
+	}
+}

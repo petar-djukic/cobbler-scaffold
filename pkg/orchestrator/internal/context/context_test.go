@@ -452,6 +452,7 @@ func TestClassifyContextFile_AllTypes(t *testing.T) {
 		{filepath.Join("docs", "specs", "use-cases", "rel01.0-uc001-init.yaml"), "use_case"},
 		{filepath.Join("docs", "specs", "test-suites", "test-rel-01.0.yaml"), "test_suite"},
 		{filepath.Join("docs", "specs", "dependency-map.yaml"), "spec_aux"},
+		{filepath.Join("docs", "interfaces", "ifc-builder.yaml"), "interface_spec"},
 		{filepath.Join("docs", "engineering", "eng01-guidelines.yaml"), "engineering"},
 		{filepath.Join("docs", "constitutions", "design.yaml"), "constitution"},
 		{"docs/custom.yaml", "extra"},
@@ -1187,5 +1188,38 @@ func TestLoadSRDSemanticModel_NoSRDs(t *testing.T) {
 	node := LoadSRDSemanticModel()
 	if node != nil {
 		t.Errorf("expected nil when no SRD files exist, got non-nil")
+	}
+}
+
+func TestBuildProjectContext_InterfaceSpecs(t *testing.T) {
+	_, cleanup := setupContextTestDir(t)
+	defer cleanup()
+
+	os.MkdirAll("docs/interfaces", 0o755)
+	os.WriteFile("docs/interfaces/ifc-builder.yaml", []byte(`id: ifc-builder
+name: Builder
+summary: Build operations
+operations:
+  - name: Build
+    description: Build the project
+    parameters: []
+    returns:
+      - name: error
+        type: error
+`), 0o644)
+
+	project := ContextConfig{}
+	ctx, err := BuildProjectContext("", project, nil, ".cobbler")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ctx.InterfaceSpecs) != 1 {
+		t.Fatalf("expected 1 interface spec, got %d", len(ctx.InterfaceSpecs))
+	}
+	if ctx.InterfaceSpecs[0].Name != "Builder" {
+		t.Errorf("expected name Builder, got %q", ctx.InterfaceSpecs[0].Name)
+	}
+	if len(ctx.InterfaceSpecs[0].Operations) != 1 {
+		t.Errorf("expected 1 operation, got %d", len(ctx.InterfaceSpecs[0].Operations))
 	}
 }

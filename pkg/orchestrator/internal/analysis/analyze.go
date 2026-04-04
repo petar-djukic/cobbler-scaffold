@@ -41,6 +41,7 @@ type AnalyzeResult struct {
 	BareTouchpoints                []string // Touchpoints citing SRDs without R-group references (warning, GH-1961)
 	UCIDPrefixMismatch             []string // Use case ID prefix doesn't match assigned release in roadmap (GH-1964)
 	BrokenInterfaceRefs            []string // implemented_by/used_by references non-existent architecture interface (GH-1968)
+	MissingSpecFiles               []string // spec_file declared in ARCHITECTURE.yaml but file does not exist (GH-1990)
 }
 
 // AnalyzeCounts holds the artifact counts discovered during analysis.
@@ -445,23 +446,54 @@ func CollectAnalyzeResult(deps AnalyzeDeps) (AnalyzeResult, AnalyzeCounts, error
 	deps.Log("analyze: component_dep violations found %d", len(result.ComponentDepViolations))
 
 	// Check 20: interface references — implemented_by/used_by must resolve to
-	// an interface name in ARCHITECTURE.yaml (GH-1968).
-	if archDoc != nil && len(srdInterfaceRefs) > 0 {
-		archIfaceNames := make(map[string]bool)
+	// an interface name in ARCHITECTURE.yaml or docs/interfaces/ (GH-1968, GH-1990).
+	//
+	// Build a combined index of interface names from both sources.
+	allIfaceNames := make(map[string]bool)
+	if archDoc != nil {
 		for _, iface := range archDoc.Interfaces {
-			archIfaceNames[iface.Name] = true
+			allIfaceNames[iface.Name] = true
 		}
+	}
+
+	// Load interface spec files from docs/interfaces/ifc-*.yaml (GH-1990).
+	ifcFiles, _ := filepath.Glob("docs/interfaces/ifc-*.yaml")
+	for _, path := range ifcFiles {
+		if spec := loadYAML[InterfaceSpecDoc](path); spec != nil && spec.Name != "" {
+			allIfaceNames[spec.Name] = true
+		}
+	}
+	deps.Log("analyze: loaded %d interface spec files from docs/interfaces/", len(ifcFiles))
+
+	// Validate SRD interface references against the combined index.
+	if len(allIfaceNames) > 0 && len(srdInterfaceRefs) > 0 {
 		for srdID, refs := range srdInterfaceRefs {
 			for _, ref := range refs {
-				if !archIfaceNames[ref] {
+				if !allIfaceNames[ref] {
 					result.BrokenInterfaceRefs = append(result.BrokenInterfaceRefs,
-						fmt.Sprintf("%s: interface %q not found in ARCHITECTURE.yaml", srdID, ref))
+						fmt.Sprintf("%s: interface %q not found in ARCHITECTURE.yaml or docs/interfaces/", srdID, ref))
 				}
 			}
 		}
 	}
 	sort.Strings(result.BrokenInterfaceRefs)
 	deps.Log("analyze: broken interface refs found %d", len(result.BrokenInterfaceRefs))
+
+	// Check 21: spec_file existence — when an ARCHITECTURE.yaml interface
+	// declares a spec_file, verify the file exists on disk (GH-1990).
+	if archDoc != nil {
+		for _, iface := range archDoc.Interfaces {
+			if iface.SpecFile == "" {
+				continue
+			}
+			if _, err := os.Stat(iface.SpecFile); os.IsNotExist(err) {
+				result.MissingSpecFiles = append(result.MissingSpecFiles,
+					fmt.Sprintf("%s: spec_file %q does not exist", iface.Name, iface.SpecFile))
+			}
+		}
+	}
+	sort.Strings(result.MissingSpecFiles)
+	deps.Log("analyze: missing spec files found %d", len(result.MissingSpecFiles))
 
 	// Check 15: R-item coverage by acceptance criteria.
 	// Every R-item in a SRD should appear in at least one AC's traces list.
@@ -631,6 +663,7 @@ func (r AnalyzeResult) PrintReport(srdCount, ucCount, tsCount, smCount int) erro
 	hasIssues = PrintSection("Semantic model errors (SM1 sections, SM3 traceability, SM7 naming)", r.SemanticModelErrors) || hasIssues
 	hasIssues = PrintSection("Use case ID prefix mismatch (ID prefix does not match assigned release in roadmap)", r.UCIDPrefixMismatch) || hasIssues
 	hasIssues = PrintSection("Broken interface refs (implemented_by/used_by references non-existent architecture interface)", r.BrokenInterfaceRefs) || hasIssues
+	hasIssues = PrintSection("Missing spec files (spec_file declared in ARCHITECTURE.yaml but file does not exist)", r.MissingSpecFiles) || hasIssues
 	hasIssues = PrintSection("Uncovered R-items (R-item not traced by any acceptance criterion)", r.UncoveredRItems) || hasIssues
 	PrintSection("Uncovered ACs (AC not covered by any test case — warning)", r.UncoveredACs)
 	PrintSection("Untraced success criteria (S-item with no AC trace — warning)", r.UntracedSuccessCriteria)
