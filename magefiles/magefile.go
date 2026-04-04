@@ -77,10 +77,10 @@ func logf(format string, args ...any) {
 // --- Top-level targets ---
 
 // Init initializes the project.
-func Init() error { return newOrch().Init() }
+func Init() error { return newOrch().Generator.Init() }
 
 // Reset performs a full reset: cobbler and generator.
-func Reset() error { return newOrch().FullReset() }
+func Reset() error { return newOrch().Generator.FullReset() }
 
 // Build compiles the project binary.
 func Build() error { return newOrch().Builder.Build() }
@@ -261,30 +261,30 @@ func (Cobbler) Reset() error { return newOrch().ClaudeRunner.CobblerReset() }
 // --- Generator targets ---
 
 // Start begins a new generation trail.
-func (Generator) Start() error { return newOrch().GeneratorStart() }
+func (Generator) Start() error { return newOrch().Generator.GeneratorStart() }
 
 // Run executes measure + stitch cycles using the generation.cycles value in configuration.yaml.
 // Use RunN to override the cycle count for a single invocation.
-func (Generator) Run() error { return newOrch().GeneratorRun(0) }
+func (Generator) Run() error { return newOrch().Generator.GeneratorRun(0) }
 
 // RunN executes exactly n cycles of measure + stitch within the current generation.
 // Pass n > 0 to override generation.cycles in configuration.yaml for this run only.
-func (Generator) RunN(n int) error { return newOrch().GeneratorRun(n) }
+func (Generator) RunN(n int) error { return newOrch().Generator.GeneratorRun(n) }
 
 // Resume recovers from an interrupted run and continues.
-func (Generator) Resume() error { return newOrch().GeneratorResume() }
+func (Generator) Resume() error { return newOrch().Generator.GeneratorResume() }
 
 // Stop completes a generation trail and merges it into main.
-func (Generator) Stop() error { return newOrch().GeneratorStop() }
+func (Generator) Stop() error { return newOrch().Generator.GeneratorStop() }
 
 // List shows active branches and past generations.
-func (Generator) List() error { return newOrch().GeneratorList() }
+func (Generator) List() error { return newOrch().Generator.GeneratorList() }
 
 // Switch commits current work and checks out another generation branch.
-func (Generator) Switch() error { return newOrch().GeneratorSwitch() }
+func (Generator) Switch() error { return newOrch().Generator.GeneratorSwitch() }
 
 // Reset destroys generation branches, worktrees, and Go source directories.
-func (Generator) Reset() error { return newOrch().GeneratorReset() }
+func (Generator) Reset() error { return newOrch().Generator.GeneratorReset() }
 
 // --- Stats targets ---
 

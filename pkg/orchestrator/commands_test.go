@@ -340,7 +340,7 @@ func TestGitDiffNameStatus(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	changes, err := testOrch().diffNameStatus("HEAD", "")
+	changes, err := testOrch().Generator.diffNameStatus("HEAD", "")
 	if err != nil {
 		t.Fatalf("gitDiffNameStatus: %v", err)
 	}

@@ -42,6 +42,7 @@ type Orchestrator struct {
 	ClaudeRunner *ClaudeRunner
 	Measure      *Measure
 	Stitch       *Stitch
+	Generator    *Generator
 
 	// Logging state — previously package-level globals.
 	phaseMu           sync.RWMutex
@@ -110,8 +111,15 @@ func New(cfg Config) *Orchestrator {
 		o.Builder.ExtractCredentials,
 		o.Stats.CollectStats,
 	)
+	// Generator is created first (without Measure/Stitch) so that
+	// Measure and Stitch constructors can reference its helper methods
+	// (resolveBranch, ensureOnBranch, etc.). The domain references
+	// are wired afterward.
+	o.Generator = NewGenerator(o)
 	o.Measure = NewMeasure(o)
 	o.Stitch = NewStitch(o)
+	o.Generator.measure = o.Measure
+	o.Generator.stitch = o.Stitch
 
 	return o
 }

@@ -60,10 +60,10 @@ func NewMeasure(o *Orchestrator) *Measure {
 		getGeneration:   o.getGeneration,
 		openLogSink:     o.openLogSink,
 		closeLogSink:    o.closeLogSink,
-		resolveBranch:   o.resolveBranch,
-		ensureOnBranch:  o.ensureOnBranch,
-		enterWorktree:   o.enterGenerationWorktree,
-		hasUnresolved:   o.hasUnresolvedRequirements,
+		resolveBranch:   o.Generator.resolveBranch,
+		ensureOnBranch:  o.Generator.ensureOnBranch,
+		enterWorktree:   o.Generator.enterGenerationWorktree,
+		hasUnresolved:   o.Generator.hasUnresolvedRequirements,
 	}
 }
 

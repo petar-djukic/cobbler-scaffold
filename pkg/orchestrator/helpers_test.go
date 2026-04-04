@@ -45,7 +45,10 @@ func testOrchWithCfg(cfg Config) *Orchestrator {
 		o.Builder.ExtractCredentials,
 		o.Stats.CollectStats,
 	)
+	o.Generator = NewGenerator(o)
 	o.Measure = NewMeasure(o)
 	o.Stitch = NewStitch(o)
+	o.Generator.measure = o.Measure
+	o.Generator.stitch = o.Stitch
 	return o
 }

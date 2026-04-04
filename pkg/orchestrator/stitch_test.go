@@ -275,7 +275,7 @@ func TestCleanupWorktree_NonExistentDir_NoOp(t *testing.T) {
 		WorktreeDir: "/nonexistent/worktree/path",
 		BranchName:  "stitch-test-cleanup",
 	}
-	ok := testOrch().cleanupWorktree(task) // must not panic
+	ok := testOrch().Generator.cleanupWorktree(task) // must not panic
 	if ok {
 		t.Error("cleanupWorktree should return false for non-existent worktree")
 	}
@@ -612,8 +612,8 @@ func TestCreateWorktree_CreatesWorktreeAndBranch(t *testing.T) {
 		WorktreeDir: filepath.Join(dir+"-worktrees", "789"),
 	}
 
-	if err := testOrch().createWorktree(task); err != nil {
-		t.Fatalf("testOrch().createWorktree() error = %v", err)
+	if err := testOrch().Generator.createWorktree(task); err != nil {
+		t.Fatalf("testOrch().Generator.createWorktree() error = %v", err)
 	}
 	t.Cleanup(func() {
 		testGitOps().WorktreeRemove(task.WorktreeDir, "")
@@ -622,12 +622,12 @@ func TestCreateWorktree_CreatesWorktreeAndBranch(t *testing.T) {
 
 	// Verify the worktree directory exists.
 	if _, err := os.Stat(task.WorktreeDir); os.IsNotExist(err) {
-		t.Error("worktree directory should exist after testOrch().createWorktree()")
+		t.Error("worktree directory should exist after testOrch().Generator.createWorktree()")
 	}
 
 	// Verify the branch was created.
 	if !testGitOps().BranchExists(task.BranchName, "") {
-		t.Errorf("branch %q should exist after testOrch().createWorktree()", task.BranchName)
+		t.Errorf("branch %q should exist after testOrch().Generator.createWorktree()", task.BranchName)
 	}
 }
 
@@ -689,8 +689,8 @@ func TestMergeBranch_Success(t *testing.T) {
 	// Switch back to main before merge.
 	gitRun(t, "checkout", "main")
 
-	if err := testOrch().mergeBranch("feature/test-merge", "main", dir); err != nil {
-		t.Fatalf("testOrch().mergeBranch() error = %v", err)
+	if err := testOrch().Generator.mergeBranch("feature/test-merge", "main", dir); err != nil {
+		t.Fatalf("testOrch().Generator.mergeBranch() error = %v", err)
 	}
 
 	// Verify the feature file is present on main after merge.
@@ -702,7 +702,7 @@ func TestMergeBranch_Success(t *testing.T) {
 func TestMergeBranch_NonExistentBranch(t *testing.T) {
 	_ = initTestGitRepo(t)
 
-	err := testOrch().mergeBranch("nonexistent-branch-xyz", "main", t.TempDir())
+	err := testOrch().Generator.mergeBranch("nonexistent-branch-xyz", "main", t.TempDir())
 	if err == nil {
 		t.Error("expected error merging non-existent branch")
 	}
@@ -734,7 +734,7 @@ func TestMergeBranch_MergeConflict(t *testing.T) {
 	gitRun(t, "add", "-A")
 	gitRun(t, "commit", "--no-verify", "-m", "modify shared on main")
 
-	err := testOrch().mergeBranch("feature/conflict", "main", dir)
+	err := testOrch().Generator.mergeBranch("feature/conflict", "main", dir)
 	if err == nil {
 		t.Error("expected error for merge conflict")
 	}
@@ -748,7 +748,7 @@ func TestMergeBranch_MergeConflict(t *testing.T) {
 func TestRecoverStaleBranches_NoBranches(t *testing.T) {
 	_ = initTestGitRepo(t)
 
-	got := testOrch().recoverStaleBranches("main", t.TempDir(), "fake/repo")
+	got := testOrch().Generator.recoverStaleBranches("main", t.TempDir(), "fake/repo")
 	if got {
 		t.Error("expected false when no stale branches exist")
 	}
@@ -766,7 +766,7 @@ func TestRecoverStaleBranches_WithStaleBranch(t *testing.T) {
 	}
 
 	// Use a fake repo so removeInProgressLabel fails harmlessly.
-	got := testOrch().recoverStaleBranches("main", t.TempDir(), "fake/repo")
+	got := testOrch().Generator.recoverStaleBranches("main", t.TempDir(), "fake/repo")
 	if !got {
 		t.Error("expected true when stale branches were recovered")
 	}
@@ -789,7 +789,7 @@ func TestRecoverStaleBranches_WithWorktree(t *testing.T) {
 	os.MkdirAll(filepath.Dir(worktreeDir), 0o755)
 	gitRun(t, "worktree", "add", worktreeDir, branchName)
 
-	got := testOrch().recoverStaleBranches("main", worktreeBase, "fake/repo")
+	got := testOrch().Generator.recoverStaleBranches("main", worktreeBase, "fake/repo")
 	if !got {
 		t.Error("expected true when stale branches with worktrees were recovered")
 	}
@@ -809,7 +809,7 @@ func TestResetOrphanedIssues_ListFails(t *testing.T) {
 	t.Parallel()
 	// With a fake repo, listOpenCobblerIssues fails and the function
 	// returns false without modifying anything.
-	got := testOrch().resetOrphanedIssues("main", "fake/repo", "test-gen")
+	got := testOrch().Generator.resetOrphanedIssues("main", "fake/repo", "test-gen")
 	if got {
 		t.Error("expected false when listing issues fails")
 	}
@@ -924,8 +924,8 @@ func TestCreateWorktree_ExistingBranch(t *testing.T) {
 		WorktreeDir: filepath.Join(dir+"-worktrees", "existing"),
 	}
 
-	if err := testOrch().createWorktree(task); err != nil {
-		t.Fatalf("testOrch().createWorktree() with existing branch error = %v", err)
+	if err := testOrch().Generator.createWorktree(task); err != nil {
+		t.Fatalf("testOrch().Generator.createWorktree() with existing branch error = %v", err)
 	}
 	t.Cleanup(func() {
 		testGitOps().WorktreeRemove(task.WorktreeDir, "")
@@ -955,7 +955,7 @@ func TestCleanupWorktree_RealWorktree(t *testing.T) {
 		WorktreeDir: worktreeDir,
 	}
 
-	ok := testOrch().cleanupWorktree(task)
+	ok := testOrch().Generator.cleanupWorktree(task)
 	if !ok {
 		t.Error("cleanupWorktree should return true for successful removal")
 	}
@@ -982,7 +982,7 @@ func TestCreateWorktree_Success(t *testing.T) {
 		WorktreeDir: worktreeDir,
 	}
 
-	err := testOrch().createWorktree(task)
+	err := testOrch().Generator.createWorktree(task)
 	if err != nil {
 		t.Fatalf("createWorktree failed: %v", err)
 	}
@@ -998,7 +998,7 @@ func TestCreateWorktree_Success(t *testing.T) {
 	}
 
 	// Cleanup.
-	testOrch().cleanupWorktree(task)
+	testOrch().Generator.cleanupWorktree(task)
 }
 
 func TestCreateWorktree_InvalidParentDir(t *testing.T) {
@@ -1009,7 +1009,7 @@ func TestCreateWorktree_InvalidParentDir(t *testing.T) {
 		WorktreeDir: "/dev/null/impossible/path",
 	}
 
-	err := testOrch().createWorktree(task)
+	err := testOrch().Generator.createWorktree(task)
 	if err == nil {
 		t.Error("expected error for impossible parent directory")
 	}

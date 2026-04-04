@@ -91,7 +91,7 @@ func TestWriteBaseBranch_CreatesFile(t *testing.T) {
 	cobblerDir := filepath.Join(dir, ".cobbler")
 	o := testOrchWithCfg( Config{Cobbler: CobblerConfig{Dir: cobblerDir}})
 
-	if err := o.writeBaseBranch("feature-branch"); err != nil {
+	if err := o.Generator.writeBaseBranch("feature-branch"); err != nil {
 		t.Fatalf("writeBaseBranch() error = %v", err)
 	}
 
@@ -111,7 +111,7 @@ func TestWriteBaseBranch_CreatesDir(t *testing.T) {
 	cobblerDir := filepath.Join(dir, "nested", "cobbler")
 	o := testOrchWithCfg( Config{Cobbler: CobblerConfig{Dir: cobblerDir}})
 
-	if err := o.writeBaseBranch("main"); err != nil {
+	if err := o.Generator.writeBaseBranch("main"); err != nil {
 		t.Fatalf("writeBaseBranch() error = %v", err)
 	}
 
@@ -132,7 +132,7 @@ func TestReadBaseBranch_FileExists(t *testing.T) {
 	}
 
 	o := testOrchWithCfg( Config{Cobbler: CobblerConfig{Dir: cobblerDir}})
-	got := o.readBaseBranch()
+	got := o.Generator.readBaseBranch()
 	if got != "develop" {
 		t.Errorf("readBaseBranch() = %q, want %q", got, "develop")
 	}
@@ -143,7 +143,7 @@ func TestReadBaseBranch_FileMissing_ReturnsMain(t *testing.T) {
 	dir := t.TempDir()
 	o := testOrchWithCfg( Config{Cobbler: CobblerConfig{Dir: filepath.Join(dir, "nonexistent")}})
 
-	got := o.readBaseBranch()
+	got := o.Generator.readBaseBranch()
 	if got != "main" {
 		t.Errorf("readBaseBranch() = %q, want %q", got, "main")
 	}
@@ -161,7 +161,7 @@ func TestReadBaseBranch_EmptyFile_ReturnsMain(t *testing.T) {
 	}
 
 	o := testOrchWithCfg( Config{Cobbler: CobblerConfig{Dir: cobblerDir}})
-	got := o.readBaseBranch()
+	got := o.Generator.readBaseBranch()
 	if got != "main" {
 		t.Errorf("readBaseBranch() = %q, want %q", got, "main")
 	}
@@ -175,10 +175,10 @@ func TestWriteReadBaseBranch_RoundTrip(t *testing.T) {
 
 	branches := []string{"main", "develop", "feature/my-feature", "release-1.0"}
 	for _, branch := range branches {
-		if err := o.writeBaseBranch(branch); err != nil {
+		if err := o.Generator.writeBaseBranch(branch); err != nil {
 			t.Fatalf("writeBaseBranch(%q) error = %v", branch, err)
 		}
-		got := o.readBaseBranch()
+		got := o.Generator.readBaseBranch()
 		if got != branch {
 			t.Errorf("round-trip: wrote %q, read %q", branch, got)
 		}
@@ -199,7 +199,7 @@ func TestSeedFiles_CreatesFiles(t *testing.T) {
 		},
 	})
 
-	if err := o.seedFiles("v1"); err != nil {
+	if err := o.Generator.seedFiles("v1"); err != nil {
 		t.Fatalf("seedFiles() error = %v", err)
 	}
 
@@ -227,7 +227,7 @@ const Module = "{{.ModulePath}}"
 		},
 	})
 
-	if err := o.seedFiles("v2.0.0"); err != nil {
+	if err := o.Generator.seedFiles("v2.0.0"); err != nil {
 		t.Fatalf("seedFiles() error = %v", err)
 	}
 
@@ -257,7 +257,7 @@ func TestSeedFiles_CreatesSubdirectories(t *testing.T) {
 		},
 	})
 
-	if err := o.seedFiles("main"); err != nil {
+	if err := o.Generator.seedFiles("main"); err != nil {
 		t.Fatalf("seedFiles() error = %v", err)
 	}
 
@@ -278,7 +278,7 @@ func TestSeedFiles_InvalidTemplate(t *testing.T) {
 		},
 	})
 
-	err := o.seedFiles("main")
+	err := o.Generator.seedFiles("main")
 	if err == nil {
 		t.Error("seedFiles() expected error for invalid template, got nil")
 	}
@@ -292,7 +292,7 @@ func TestSeedFiles_EmptyMap(t *testing.T) {
 		},
 	})
 
-	if err := o.seedFiles("main"); err != nil {
+	if err := o.Generator.seedFiles("main"); err != nil {
 		t.Fatalf("seedFiles() with empty map error = %v", err)
 	}
 }
@@ -307,7 +307,7 @@ func TestDeleteGoFiles_RemovesGoFiles(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "pkg", "lib.go"), []byte("package pkg"), 0o644)
 
 	o := testOrchWithCfg( Config{Project: ProjectConfig{MagefilesDir: "magefiles"}})
-	o.deleteGoFiles(".")
+	o.Generator.deleteGoFiles(".")
 
 	if _, err := os.Stat(filepath.Join(dir, "main.go")); !os.IsNotExist(err) {
 		t.Error("main.go should have been deleted")
@@ -324,7 +324,7 @@ func TestDeleteGoFiles_SkipsMagefilesDir(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "magefiles", "magefile.go"), []byte("package main"), 0o644)
 
 	o := testOrchWithCfg( Config{Project: ProjectConfig{MagefilesDir: "magefiles"}})
-	o.deleteGoFiles(".")
+	o.Generator.deleteGoFiles(".")
 
 	if _, err := os.Stat(filepath.Join(dir, "magefiles", "magefile.go")); os.IsNotExist(err) {
 		t.Error("magefiles/magefile.go should have been preserved")
@@ -338,7 +338,7 @@ func TestDeleteGoFiles_SkipsGitDir(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, ".git", "hooks", "pre-commit.go"), []byte("package hooks"), 0o644)
 
 	o := testOrchWithCfg( Config{Project: ProjectConfig{MagefilesDir: "magefiles"}})
-	o.deleteGoFiles(".")
+	o.Generator.deleteGoFiles(".")
 
 	if _, err := os.Stat(filepath.Join(dir, ".git", "hooks", "pre-commit.go")); os.IsNotExist(err) {
 		t.Error(".git/hooks/pre-commit.go should have been preserved")
@@ -353,7 +353,7 @@ func TestDeleteGoFiles_PreservesNonGoFiles(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main"), 0o644)
 
 	o := testOrchWithCfg( Config{Project: ProjectConfig{MagefilesDir: "magefiles"}})
-	o.deleteGoFiles(".")
+	o.Generator.deleteGoFiles(".")
 
 	if _, err := os.Stat(filepath.Join(dir, "README.md")); os.IsNotExist(err) {
 		t.Error("README.md should have been preserved")
@@ -420,7 +420,7 @@ func TestCleanupDirs_RemovesDirs(t *testing.T) {
 	o := testOrchWithCfg( Config{
 		Generation: GenerationConfig{CleanupDirs: []string{d1, d2}},
 	})
-	o.cleanupDirs()
+	o.Generator.cleanupDirs()
 
 	if _, err := os.Stat(d1); !os.IsNotExist(err) {
 		t.Error("cleanup dir 1 should have been removed")
@@ -435,7 +435,7 @@ func TestCleanupDirs_IgnoresNonExistent(t *testing.T) {
 	o := testOrchWithCfg( Config{
 		Generation: GenerationConfig{CleanupDirs: []string{"/nonexistent/dir/abc123"}},
 	})
-	o.cleanupDirs()
+	o.Generator.cleanupDirs()
 }
 
 func TestCleanupDirs_EmptyList(t *testing.T) {
@@ -443,7 +443,7 @@ func TestCleanupDirs_EmptyList(t *testing.T) {
 	o := testOrchWithCfg( Config{
 		Generation: GenerationConfig{CleanupDirs: nil},
 	})
-	o.cleanupDirs()
+	o.Generator.cleanupDirs()
 }
 
 // --- ensureOnBranch (git, NOT parallel) ---
@@ -456,8 +456,8 @@ func TestEnsureOnBranch_AlreadyOnBranch(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := testOrch().ensureOnBranch(current); err != nil {
-		t.Errorf("testOrch().ensureOnBranch(current) error = %v", err)
+	if err := testOrch().Generator.ensureOnBranch(current); err != nil {
+		t.Errorf("testOrch().Generator.ensureOnBranch(current) error = %v", err)
 	}
 }
 
@@ -468,8 +468,8 @@ func TestEnsureOnBranch_SwitchesBranch(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := testOrch().ensureOnBranch("test-branch"); err != nil {
-		t.Fatalf("testOrch().ensureOnBranch(test-branch) error = %v", err)
+	if err := testOrch().Generator.ensureOnBranch("test-branch"); err != nil {
+		t.Fatalf("testOrch().Generator.ensureOnBranch(test-branch) error = %v", err)
 	}
 
 	current, err := testGitOps().CurrentBranch("")
@@ -487,8 +487,8 @@ func TestSaveAndSwitchBranch_AlreadyOnTarget(t *testing.T) {
 	initTestGitRepo(t)
 
 	current, _ := testGitOps().CurrentBranch("")
-	if err := testOrch().saveAndSwitchBranch(current); err != nil {
-		t.Errorf("testOrch().saveAndSwitchBranch(current) error = %v", err)
+	if err := testOrch().Generator.saveAndSwitchBranch(current); err != nil {
+		t.Errorf("testOrch().Generator.saveAndSwitchBranch(current) error = %v", err)
 	}
 }
 
@@ -499,8 +499,8 @@ func TestSaveAndSwitchBranch_CleanSwitch(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := testOrch().saveAndSwitchBranch("target"); err != nil {
-		t.Fatalf("testOrch().saveAndSwitchBranch(target) error = %v", err)
+	if err := testOrch().Generator.saveAndSwitchBranch("target"); err != nil {
+		t.Fatalf("testOrch().Generator.saveAndSwitchBranch(target) error = %v", err)
 	}
 
 	current, err := testGitOps().CurrentBranch("")
@@ -525,7 +525,7 @@ func TestSaveAndSwitchBranch_DirtyWorkingTree(t *testing.T) {
 
 	os.WriteFile(filepath.Join(dir, "tracked.txt"), []byte("modified"), 0o644)
 
-	if err := testOrch().saveAndSwitchBranch("other"); err != nil {
+	if err := testOrch().Generator.saveAndSwitchBranch("other"); err != nil {
 		t.Fatalf("saveAndSwitchBranch with dirty tree error = %v", err)
 	}
 
@@ -548,7 +548,7 @@ func TestResolveBranch_ExplicitBranchExists(t *testing.T) {
 	}
 
 	o := testOrchWithCfg( Config{Generation: GenerationConfig{Prefix: "generation-"}})
-	got, err := o.resolveBranch("explicit-branch")
+	got, err := o.Generator.resolveBranch("explicit-branch")
 	if err != nil {
 		t.Fatalf("resolveBranch() error = %v", err)
 	}
@@ -561,7 +561,7 @@ func TestResolveBranch_ExplicitBranchNotExist(t *testing.T) {
 	initTestGitRepo(t)
 
 	o := testOrchWithCfg( Config{Generation: GenerationConfig{Prefix: "generation-"}})
-	_, err := o.resolveBranch("nonexistent-branch")
+	_, err := o.Generator.resolveBranch("nonexistent-branch")
 	if err == nil {
 		t.Error("resolveBranch() expected error for nonexistent branch")
 	}
@@ -571,7 +571,7 @@ func TestResolveBranch_NoGenerationBranches(t *testing.T) {
 	initTestGitRepo(t)
 
 	o := testOrchWithCfg( Config{Generation: GenerationConfig{Prefix: "generation-"}})
-	got, err := o.resolveBranch("")
+	got, err := o.Generator.resolveBranch("")
 	if err != nil {
 		t.Fatalf("resolveBranch() error = %v", err)
 	}
@@ -590,7 +590,7 @@ func TestResolveBranch_SingleGenerationBranch(t *testing.T) {
 	}
 
 	o := testOrchWithCfg( Config{Generation: GenerationConfig{Prefix: "generation-"}})
-	got, err := o.resolveBranch("")
+	got, err := o.Generator.resolveBranch("")
 	if err != nil {
 		t.Fatalf("resolveBranch() error = %v", err)
 	}
@@ -606,7 +606,7 @@ func TestResolveBranch_MultipleGenerationBranches(t *testing.T) {
 	testGitOps().CreateBranch("generation-2026-02-28-13-00-00", "")
 
 	o := testOrchWithCfg( Config{Generation: GenerationConfig{Prefix: "generation-"}})
-	_, err := o.resolveBranch("")
+	_, err := o.Generator.resolveBranch("")
 	if err == nil {
 		t.Error("resolveBranch() expected error for multiple generation branches")
 	}
@@ -621,7 +621,7 @@ func TestListGenerationBranches_NoBranches(t *testing.T) {
 	initTestGitRepo(t)
 
 	o := testOrchWithCfg( Config{Generation: GenerationConfig{Prefix: "generation-"}})
-	got := o.listGenerationBranches()
+	got := o.Generator.listGenerationBranches()
 	if len(got) != 0 {
 		t.Errorf("listGenerationBranches() = %v, want empty", got)
 	}
@@ -635,7 +635,7 @@ func TestListGenerationBranches_WithBranches(t *testing.T) {
 	testGitOps().CreateBranch("other-branch", "")
 
 	o := testOrchWithCfg( Config{Generation: GenerationConfig{Prefix: "generation-"}})
-	got := o.listGenerationBranches()
+	got := o.Generator.listGenerationBranches()
 	if len(got) != 2 {
 		t.Errorf("listGenerationBranches() returned %d branches, want 2: %v", len(got), got)
 	}
@@ -651,7 +651,7 @@ func TestGeneratorResume_NotGenerationBranch(t *testing.T) {
 			Branch: "main",
 		},
 	})
-	err := o.GeneratorResume()
+	err := o.Generator.GeneratorResume()
 	if err == nil {
 		t.Error("GeneratorResume() expected error for non-generation branch")
 	}
@@ -673,7 +673,7 @@ func TestGeneratorStart_DirtyWorkingTree(t *testing.T) {
 		Project:    ProjectConfig{MagefilesDir: "magefiles"},
 	})
 
-	err := o.GeneratorStart()
+	err := o.Generator.GeneratorStart()
 	if err == nil {
 		t.Error("GeneratorStart() expected error for dirty working tree")
 	}
@@ -715,7 +715,7 @@ func TestGeneratorStart_PreserveSources(t *testing.T) {
 		Cobbler: CobblerConfig{Dir: ".cobbler/"},
 	})
 
-	if err := o.GeneratorStart(); err != nil {
+	if err := o.Generator.GeneratorStart(); err != nil {
 		t.Fatalf("GeneratorStart() error = %v", err)
 	}
 
@@ -739,7 +739,7 @@ func TestGeneratorStart_CustomName(t *testing.T) {
 		Cobbler: CobblerConfig{Dir: ".cobbler/"},
 	})
 
-	if err := o.GeneratorStart(); err != nil {
+	if err := o.Generator.GeneratorStart(); err != nil {
 		t.Fatalf("GeneratorStart() error = %v", err)
 	}
 
@@ -772,7 +772,7 @@ func TestGeneratorStart_EnvNameOverridesConfig(t *testing.T) {
 		Cobbler: CobblerConfig{Dir: ".cobbler/"},
 	})
 
-	if err := o.GeneratorStart(); err != nil {
+	if err := o.Generator.GeneratorStart(); err != nil {
 		t.Fatalf("GeneratorStart() error = %v", err)
 	}
 
@@ -800,7 +800,7 @@ func TestGeneratorStart_AddsBinToGitignore(t *testing.T) {
 		Cobbler: CobblerConfig{Dir: ".cobbler/"},
 	})
 
-	if err := o.GeneratorStart(); err != nil {
+	if err := o.Generator.GeneratorStart(); err != nil {
 		t.Fatalf("GeneratorStart() error = %v", err)
 	}
 
@@ -830,7 +830,7 @@ func TestGeneratorStart_CreatesWorktree(t *testing.T) {
 		Cobbler: CobblerConfig{Dir: ".cobbler/"},
 	})
 
-	if err := o.GeneratorStart(); err != nil {
+	if err := o.Generator.GeneratorStart(); err != nil {
 		t.Fatalf("GeneratorStart() error = %v", err)
 	}
 
@@ -866,7 +866,7 @@ func TestGeneratorStart_CreatesWorktree(t *testing.T) {
 	}
 
 	// The repo-root file should record the main repo path.
-	repoRoot := o.readRepoRoot()
+	repoRoot := o.Generator.readRepoRoot()
 	repoRootReal, _ := filepath.EvalSymlinks(repoRoot)
 	repoDirReal, _ := filepath.EvalSymlinks(repoDir)
 	if repoRootReal != repoDirReal {
@@ -883,10 +883,10 @@ func TestGeneratorStart_WorktreeRecordsRepoRoot(t *testing.T) {
 		Cobbler: CobblerConfig{Dir: filepath.Join(dir, ".cobbler")},
 	})
 
-	if err := o.writeRepoRoot("/some/path"); err != nil {
+	if err := o.Generator.writeRepoRoot("/some/path"); err != nil {
 		t.Fatalf("writeRepoRoot: %v", err)
 	}
-	got := o.readRepoRoot()
+	got := o.Generator.readRepoRoot()
 	if got != "/some/path" {
 		t.Errorf("readRepoRoot() = %q, want %q", got, "/some/path")
 	}
@@ -900,7 +900,7 @@ func TestGeneratorStart_WorktreeReadRepoRoot_Missing(t *testing.T) {
 	o := testOrchWithCfg( Config{
 		Cobbler: CobblerConfig{Dir: filepath.Join(dir, ".cobbler")},
 	})
-	got := o.readRepoRoot()
+	got := o.Generator.readRepoRoot()
 	if got != "" {
 		t.Errorf("readRepoRoot() = %q, want empty string", got)
 	}
@@ -921,7 +921,7 @@ func TestGeneratorStop_CleansUpWorktree(t *testing.T) {
 		Cobbler: CobblerConfig{Dir: ".cobbler/"},
 	})
 
-	if err := o.GeneratorStart(); err != nil {
+	if err := o.Generator.GeneratorStart(); err != nil {
 		t.Fatalf("GeneratorStart() error = %v", err)
 	}
 
@@ -940,7 +940,7 @@ func TestGeneratorStop_CleansUpWorktree(t *testing.T) {
 	_ = testGitOps().StageAll(".")
 	_ = testGitOps().Commit("Add test output", ".")
 
-	if err := o.GeneratorStop(); err != nil {
+	if err := o.Generator.GeneratorStop(); err != nil {
 		t.Fatalf("GeneratorStop() error = %v", err)
 	}
 
@@ -1002,7 +1002,7 @@ func TestGeneratorStop_CleansSourcesOnGenerationBranch(t *testing.T) {
 		Cobbler: CobblerConfig{Dir: ".cobbler/"},
 	})
 
-	if err := o.GeneratorStart(); err != nil {
+	if err := o.Generator.GeneratorStart(); err != nil {
 		t.Fatalf("GeneratorStart() error = %v", err)
 	}
 
@@ -1022,7 +1022,7 @@ func TestGeneratorStop_CleansSourcesOnGenerationBranch(t *testing.T) {
 	}
 
 	// Verify the -finished tag captures the generated code.
-	if err := o.GeneratorStop(); err != nil {
+	if err := o.Generator.GeneratorStop(); err != nil {
 		t.Fatalf("GeneratorStop() error = %v", err)
 	}
 
@@ -1111,7 +1111,7 @@ func TestGeneratorSwitch_NoBranchConfigured(t *testing.T) {
 		Generation: GenerationConfig{Prefix: "generation-", Branch: ""},
 	})
 
-	err := o.GeneratorSwitch()
+	err := o.Generator.GeneratorSwitch()
 	if err == nil {
 		t.Error("GeneratorSwitch() expected error when no branch configured")
 	}
@@ -1127,7 +1127,7 @@ func TestGeneratorSwitch_NotGenerationBranch(t *testing.T) {
 		Generation: GenerationConfig{Prefix: "generation-", Branch: "feature-branch"},
 	})
 
-	err := o.GeneratorSwitch()
+	err := o.Generator.GeneratorSwitch()
 	if err == nil {
 		t.Error("GeneratorSwitch() expected error for non-generation branch")
 	}
@@ -1143,7 +1143,7 @@ func TestGeneratorSwitch_BranchNotExist(t *testing.T) {
 		Generation: GenerationConfig{Prefix: "generation-", Branch: "generation-2026-01-01-00-00-00"},
 	})
 
-	err := o.GeneratorSwitch()
+	err := o.Generator.GeneratorSwitch()
 	if err == nil {
 		t.Error("GeneratorSwitch() expected error for nonexistent branch")
 	}
@@ -1164,7 +1164,7 @@ func TestGeneratorSwitch_AlreadyOnBranch(t *testing.T) {
 		Generation: GenerationConfig{Prefix: "generation-", Branch: branch},
 	})
 
-	if err := o.GeneratorSwitch(); err != nil {
+	if err := o.Generator.GeneratorSwitch(); err != nil {
 		t.Errorf("GeneratorSwitch() already on branch error = %v", err)
 	}
 
@@ -1186,7 +1186,7 @@ func TestGeneratorSwitch_SwitchToMain(t *testing.T) {
 		Cobbler:    CobblerConfig{BaseBranch: "main"},
 	})
 
-	if err := o.GeneratorSwitch(); err != nil {
+	if err := o.Generator.GeneratorSwitch(); err != nil {
 		t.Errorf("GeneratorSwitch() to main error = %v", err)
 	}
 
@@ -1207,7 +1207,7 @@ func TestGeneratorReset_UsesConfiguredBaseBranch(t *testing.T) {
 		Project:    ProjectConfig{MagefilesDir: "magefiles"},
 	})
 
-	err := o.GeneratorReset()
+	err := o.Generator.GeneratorReset()
 	if err == nil {
 		t.Fatal("GeneratorReset() expected error when configured base branch 'trunk' does not exist")
 	}
@@ -1229,7 +1229,7 @@ func TestCleanupUnmergedTags_MergedNotTouched(t *testing.T) {
 	testGitOps().Tag("generation-2026-02-28-12-00-00-merged", "")
 
 	o := testOrchWithCfg( Config{Generation: GenerationConfig{Prefix: "generation-"}})
-	o.cleanupUnmergedTags()
+	o.Generator.cleanupUnmergedTags()
 
 	tags := testGitOps().ListTags("generation-2026-02-28-12-00-00-*", "")
 	if len(tags) != 3 {
@@ -1244,7 +1244,7 @@ func TestCleanupUnmergedTags_UnmergedAbandoned(t *testing.T) {
 	testGitOps().Tag("generation-2026-02-28-12-00-00-finished", "")
 
 	o := testOrchWithCfg( Config{Generation: GenerationConfig{Prefix: "generation-"}})
-	o.cleanupUnmergedTags()
+	o.Generator.cleanupUnmergedTags()
 
 	tags := testGitOps().ListTags("generation-2026-02-28-12-00-00-*", "")
 	found := false
@@ -1293,10 +1293,11 @@ func TestCleanGoSources_RemovesGoFiles(t *testing.T) {
 	os.WriteFile("magefiles/build.go", []byte("package main"), 0o644) // should be preserved
 	os.WriteFile("bin/binary", []byte("binary"), 0o644)
 
-	o := testOrchWithCfg(Config{})
-	o.cfg.applyDefaults()
-	o.cfg.Project.GoSourceDirs = []string{"pkg"}
-	o.cleanGoSources()
+	cfg := Config{}
+	cfg.applyDefaults()
+	cfg.Project.GoSourceDirs = []string{"pkg"}
+	o := testOrchWithCfg(cfg)
+	o.Generator.cleanGoSources()
 
 	// Go files outside magefiles/ should be deleted.
 	if _, err := os.Stat("main.go"); !os.IsNotExist(err) {
@@ -1363,7 +1364,7 @@ func TestGitCurrentBranch_ExplicitDir(t *testing.T) {
 func TestInit_NoOp(t *testing.T) {
 	t.Parallel()
 	o := testOrchWithCfg(Config{})
-	if err := o.Init(); err != nil {
+	if err := o.Generator.Init(); err != nil {
 		t.Errorf("Init() error = %v", err)
 	}
 }
@@ -1375,7 +1376,7 @@ func TestGeneratorList_NoGenerations(t *testing.T) {
 	o := testOrchWithCfg( Config{
 		Generation: GenerationConfig{Prefix: "generation-"},
 	})
-	if err := o.GeneratorList(); err != nil {
+	if err := o.Generator.GeneratorList(); err != nil {
 		t.Fatalf("GeneratorList() error = %v", err)
 	}
 }
@@ -1389,7 +1390,7 @@ func TestGeneratorList_WithBranchAndTags(t *testing.T) {
 	o := testOrchWithCfg( Config{
 		Generation: GenerationConfig{Prefix: "generation-"},
 	})
-	if err := o.GeneratorList(); err != nil {
+	if err := o.Generator.GeneratorList(); err != nil {
 		t.Fatalf("GeneratorList() error = %v", err)
 	}
 }
@@ -1416,7 +1417,7 @@ func TestRestoreFromStartTag_RestoresMissingGoFiles(t *testing.T) {
 	o := testOrchWithCfg( Config{
 		Project: ProjectConfig{MagefilesDir: "magefiles"},
 	})
-	if err := o.restoreFromStartTag("gen-start"); err != nil {
+	if err := o.Generator.restoreFromStartTag("gen-start"); err != nil {
 		t.Fatalf("restoreFromStartTag: %v", err)
 	}
 
@@ -1445,7 +1446,7 @@ func TestRestoreFromStartTag_SkipsExistingFiles(t *testing.T) {
 	o := testOrchWithCfg( Config{
 		Project: ProjectConfig{MagefilesDir: "magefiles"},
 	})
-	if err := o.restoreFromStartTag("gen-start-exist"); err != nil {
+	if err := o.Generator.restoreFromStartTag("gen-start-exist"); err != nil {
 		t.Fatalf("restoreFromStartTag: %v", err)
 	}
 
@@ -1474,7 +1475,7 @@ func TestRestoreFromStartTag_SkipsNonGoFiles(t *testing.T) {
 	o := testOrchWithCfg( Config{
 		Project: ProjectConfig{MagefilesDir: "magefiles"},
 	})
-	if err := o.restoreFromStartTag("gen-start-nongo"); err != nil {
+	if err := o.Generator.restoreFromStartTag("gen-start-nongo"); err != nil {
 		t.Fatalf("restoreFromStartTag: %v", err)
 	}
 
@@ -1491,7 +1492,7 @@ func TestCleanupUnmergedTags_NoTags(t *testing.T) {
 		Generation: GenerationConfig{Prefix: "generation-"},
 	})
 	// Must not panic with no tags.
-	o.cleanupUnmergedTags()
+	o.Generator.cleanupUnmergedTags()
 }
 
 func TestCleanupUnmergedTags_AllMerged(t *testing.T) {
@@ -1505,7 +1506,7 @@ func TestCleanupUnmergedTags_AllMerged(t *testing.T) {
 	o := testOrchWithCfg( Config{
 		Generation: GenerationConfig{Prefix: "generation-"},
 	})
-	o.cleanupUnmergedTags()
+	o.Generator.cleanupUnmergedTags()
 
 	// All tags should still exist (nothing abandoned).
 	tags := testGitOps().ListTags("generation-*", ".")
@@ -1524,7 +1525,7 @@ func TestListGenerationBranches_CustomPrefix(t *testing.T) {
 	o := testOrchWithCfg( Config{
 		Generation: GenerationConfig{Prefix: "myprefix-"},
 	})
-	branches := o.listGenerationBranches()
+	branches := o.Generator.listGenerationBranches()
 
 	if len(branches) != 2 {
 		t.Errorf("expected 2 branches with prefix myprefix-, got %d: %v", len(branches), branches)
@@ -1561,7 +1562,7 @@ func TestRestoreFromStartTag_SkipsMagefiles(t *testing.T) {
 	o := testOrchWithCfg( Config{
 		Project: ProjectConfig{MagefilesDir: "magefiles"},
 	})
-	if err := o.restoreFromStartTag("gen-start-mf"); err != nil {
+	if err := o.Generator.restoreFromStartTag("gen-start-mf"); err != nil {
 		t.Fatalf("restoreFromStartTag: %v", err)
 	}
 
@@ -1692,7 +1693,7 @@ touchpoints:
 	os.WriteFile(filepath.Join(cobblerDir, "requirements.yaml"), []byte(reqContent), 0o644)
 
 	o := testOrchWithCfg( Config{Cobbler: CobblerConfig{Dir: cobblerDir}})
-	o.validateAndMarkUCs()
+	o.Generator.validateAndMarkUCs()
 
 	rmPath := filepath.Join(dir, "docs", "road-map.yaml")
 	statuses, err := roadmapUCStatuses(rmPath, "00.0")
@@ -1744,7 +1745,7 @@ releases:
 	writeRoadmapFile(t, dir, roadmapContent)
 
 	o := testOrchWithCfg(Config{})
-	o.validateAndMarkUCs()
+	o.Generator.validateAndMarkUCs()
 
 	// 01.0 UC has no tests → should remain spec_complete (not blindly marked).
 	rmPath := filepath.Join(dir, "docs", "road-map.yaml")
@@ -1764,7 +1765,7 @@ func TestValidateAndMarkUCs_NoRoadmap(t *testing.T) {
 
 	o := testOrchWithCfg(Config{})
 	// Should be a no-op, no panic.
-	o.validateAndMarkUCs()
+	o.Generator.validateAndMarkUCs()
 }
 
 // --- checkAutoAdvanceRelease (GH-1006) ---
@@ -1799,7 +1800,7 @@ releases:
 	writeConfigFile(t, cfgPath, []string{"00.0", "01.0"})
 
 	o := testOrchWithCfg(Config{})
-	advanced, ver := o.checkAutoAdvanceRelease()
+	advanced, ver := o.Generator.checkAutoAdvanceRelease()
 	if !advanced {
 		t.Fatal("expected auto-advance, got false")
 	}
@@ -1839,7 +1840,7 @@ func TestCheckAutoAdvanceRelease_NotAllDone(t *testing.T) {
 	writeConfigFile(t, cfgPath, []string{"00.0"})
 
 	o := testOrchWithCfg(Config{})
-	advanced, ver := o.checkAutoAdvanceRelease()
+	advanced, ver := o.Generator.checkAutoAdvanceRelease()
 	if advanced {
 		t.Errorf("should not advance when UCs are pending, got version=%q", ver)
 	}
@@ -1849,7 +1850,7 @@ func TestCheckAutoAdvanceRelease_NoRoadmap(t *testing.T) {
 	_ = chdirTemp(t)
 
 	o := testOrchWithCfg(Config{})
-	advanced, _ := o.checkAutoAdvanceRelease()
+	advanced, _ := o.Generator.checkAutoAdvanceRelease()
 	if advanced {
 		t.Error("should not advance when no road-map.yaml exists")
 	}
@@ -1872,7 +1873,7 @@ releases:
 	writeRoadmapFile(t, dir, roadmapContent)
 
 	o := testOrchWithCfg(Config{})
-	advanced, _ := o.checkAutoAdvanceRelease()
+	advanced, _ := o.Generator.checkAutoAdvanceRelease()
 	if advanced {
 		t.Error("should not advance when all releases already done")
 	}
@@ -1926,7 +1927,7 @@ touchpoints:
 	os.WriteFile(filepath.Join(cobblerDir, "requirements.yaml"), []byte(reqContent), 0o644)
 
 	o := testOrchWithCfg( Config{Cobbler: CobblerConfig{Dir: ".cobbler/"}})
-	advanced, _ := o.checkAutoAdvanceRelease()
+	advanced, _ := o.Generator.checkAutoAdvanceRelease()
 	if advanced {
 		t.Error("should not advance when PRD requirements are still ready")
 	}
@@ -1973,7 +1974,7 @@ touchpoints:
 	os.WriteFile(filepath.Join(cobblerDir, "requirements.yaml"), []byte(reqContent), 0o644)
 
 	o := testOrchWithCfg( Config{Cobbler: CobblerConfig{Dir: ".cobbler/"}})
-	advanced, _ := o.checkAutoAdvanceRelease()
+	advanced, _ := o.Generator.checkAutoAdvanceRelease()
 	if advanced {
 		t.Error("should not advance when bare PRD touchpoint has ready requirements (GH-1960)")
 	}
@@ -2014,7 +2015,7 @@ releases:
 	writeConfigFile(t, cfgPath, []string{"02.0"})
 
 	o := testOrchWithCfg(Config{})
-	if err := o.resetImplementedReleases(); err != nil {
+	if err := o.Generator.resetImplementedReleases(); err != nil {
 		t.Fatalf("resetImplementedReleases error: %v", err)
 	}
 
@@ -2091,7 +2092,7 @@ releases:
 	writeRoadmapFile(t, dir, roadmapContent)
 
 	o := testOrchWithCfg(Config{})
-	if err := o.resetImplementedReleases(); err != nil {
+	if err := o.Generator.resetImplementedReleases(); err != nil {
 		t.Fatalf("resetImplementedReleases error: %v", err)
 	}
 	// No error, no commit — just a no-op.
@@ -2146,7 +2147,7 @@ func TestGeneratorStop_CommitsHistoryBeforeTag(t *testing.T) {
 		Cobbler: CobblerConfig{Dir: ".cobbler", HistoryDir: "history"},
 	})
 
-	err := o.GeneratorStop()
+	err := o.Generator.GeneratorStop()
 	if err != nil {
 		t.Fatalf("GeneratorStop error: %v", err)
 	}
@@ -2200,7 +2201,7 @@ func TestResetImplementedReleases_RevertsUCStatuses(t *testing.T) {
 	cmd.CombinedOutput()
 
 	o := testOrchWithCfg(Config{})
-	if err := o.resetImplementedReleases(); err != nil {
+	if err := o.Generator.resetImplementedReleases(); err != nil {
 		t.Fatalf("resetImplementedReleases error: %v", err)
 	}
 
@@ -2272,7 +2273,7 @@ func TestResetImplementedReleases_NoRoadmap(t *testing.T) {
 	initTestGitRepo(t)
 
 	o := testOrchWithCfg(Config{})
-	if err := o.resetImplementedReleases(); err != nil {
+	if err := o.Generator.resetImplementedReleases(); err != nil {
 		t.Fatalf("resetImplementedReleases error: %v", err)
 	}
 }
@@ -2294,7 +2295,7 @@ func TestHasUnresolvedRequirements_ReadyItems(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, ".cobbler", "requirements.yaml"), []byte(reqYAML), 0o644)
 
 	o := testOrchWithCfg( Config{Cobbler: CobblerConfig{Dir: filepath.Join(dir, ".cobbler")}})
-	if !o.hasUnresolvedRequirements() {
+	if !o.Generator.hasUnresolvedRequirements() {
 		t.Error("expected true: R1.2 is still ready")
 	}
 }
@@ -2314,7 +2315,7 @@ func TestHasUnresolvedRequirements_AllComplete(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, ".cobbler", "requirements.yaml"), []byte(reqYAML), 0o644)
 
 	o := testOrchWithCfg( Config{Cobbler: CobblerConfig{Dir: filepath.Join(dir, ".cobbler")}})
-	if o.hasUnresolvedRequirements() {
+	if o.Generator.hasUnresolvedRequirements() {
 		t.Error("expected false: all items are complete or skip")
 	}
 }
@@ -2322,7 +2323,7 @@ func TestHasUnresolvedRequirements_AllComplete(t *testing.T) {
 func TestHasUnresolvedRequirements_NoFile(t *testing.T) {
 	t.Parallel()
 	o := testOrchWithCfg( Config{Cobbler: CobblerConfig{Dir: "/nonexistent"}})
-	if o.hasUnresolvedRequirements() {
+	if o.Generator.hasUnresolvedRequirements() {
 		t.Error("expected false: no requirements file")
 	}
 }
