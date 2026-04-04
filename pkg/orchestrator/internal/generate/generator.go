@@ -79,6 +79,25 @@ func GenerationName(tag string) string {
 // Git branch helpers
 // ---------------------------------------------------------------------------
 
+// SaveWork commits or stashes uncommitted changes on the current branch
+// without switching branches. It tries a WIP commit first; if that fails
+// and the tree is still dirty, it stashes changes.
+func SaveWork(reason string, deps GitDeps) error {
+	if err := deps.StageAll("."); err != nil {
+		return fmt.Errorf("staging changes: %w", err)
+	}
+
+	msg := fmt.Sprintf("WIP: %s", reason)
+	if err := deps.Commit(msg, "."); err != nil {
+		_ = deps.UnstageAll(".")
+		if deps.HasChanges(".") {
+			Log("saveWork: commit failed, stashing dirty tree")
+			_ = deps.Stash(msg, ".")
+		}
+	}
+	return nil
+}
+
 // SaveAndSwitchBranch commits or stashes uncommitted changes on the
 // current branch, then checks out the target branch. It tries a WIP
 // commit first; if that fails and the tree is still dirty, it stashes
@@ -94,19 +113,8 @@ func SaveAndSwitchBranch(target string, deps GitDeps) error {
 		return nil
 	}
 
-	if err := deps.StageAll("."); err != nil {
-		return fmt.Errorf("staging changes: %w", err)
-	}
-
-	msg := fmt.Sprintf("WIP: save state before switching to %s", target)
-	if err := deps.Commit(msg, "."); err != nil {
-		// Commit failed (e.g. nothing to commit). Unstage and fall
-		// back to stash if the tree is still dirty.
-		_ = deps.UnstageAll(".") // best-effort; unstage before stash fallback
-		if deps.HasChanges(".") {
-			Log("saveAndSwitchBranch: commit failed, stashing dirty tree")
-			_ = deps.Stash(msg, ".") // best-effort; switching branch is the priority
-		}
+	if err := SaveWork(fmt.Sprintf("save state before switching to %s", target), deps); err != nil {
+		return err
 	}
 
 	Log("saveAndSwitchBranch: %s -> %s", current, target)

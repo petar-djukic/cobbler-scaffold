@@ -191,6 +191,10 @@ func generationName(tag string) string {
 	return generate.GenerationName(tag)
 }
 
+func (g *Generator) saveCurrentWork() error {
+	return generate.SaveWork("save state before leaving worktree", g.genGitDeps())
+}
+
 func (g *Generator) saveAndSwitchBranch(target string) error {
 	return generate.SaveAndSwitchBranch(target, g.genGitDeps())
 }
@@ -1445,7 +1449,17 @@ func (g *Generator) GeneratorList() error {
 }
 
 // GeneratorSwitch commits current work and checks out another generation branch.
+//
+// When running inside a worktree created by GeneratorStart (GH-2043) and the
+// target is the base branch, a plain checkout would fail because git does not
+// allow the same branch to be checked out in two worktrees. In that case we
+// save work, switch to the main repo, and remove the worktree.
 func (g *Generator) GeneratorSwitch() error {
+	// If invoked from the main repo, try to enter the worktree (GH-1608).
+	if _, err := g.enterGenerationWorktree(); err != nil {
+		return err
+	}
+
 	target := g.cfg.Generation.Branch
 	baseBranch := g.cfg.Cobbler.BaseBranch
 	if target == "" {
@@ -1465,6 +1479,29 @@ func (g *Generator) GeneratorSwitch() error {
 	}
 	if current == target {
 		g.logf("generator:switch: already on %s", target)
+		return nil
+	}
+
+	// When switching to the base branch from a worktree, git checkout would
+	// fail because the base branch is already checked out in the main repo.
+	// Save work, switch to the main repo, and remove the worktree (GH-2043).
+	repoRoot := g.readRepoRoot()
+	if repoRoot != "" && target == baseBranch {
+		g.logf("generator:switch: saving work on %s before leaving worktree", current)
+		if err := g.saveCurrentWork(); err != nil {
+			return fmt.Errorf("saving work: %w", err)
+		}
+		worktreeDir, _ := filepath.Abs(".")
+		g.logf("generator:switch: switching to main repo at %s", repoRoot)
+		if err := os.Chdir(repoRoot); err != nil {
+			return fmt.Errorf("switching to main repo: %w", err)
+		}
+		g.logf("generator:switch: removing worktree %s", worktreeDir)
+		if err := g.git.WorktreeRemove(worktreeDir, "."); err != nil {
+			g.logf("generator:switch: worktree remove warning: %v", err)
+		}
+		_ = g.git.WorktreePrune(".")
+		g.logf("generator:switch: now on %s", target)
 		return nil
 	}
 
