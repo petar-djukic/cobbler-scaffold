@@ -2,6 +2,7 @@ id: prd004-differential-comparison
 title: Cross-Generation Differential Comparison
 
 implemented_by:
+  - Comparer
   - Binary Resolution
 
 problem: |

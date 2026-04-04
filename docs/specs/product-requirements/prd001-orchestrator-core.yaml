@@ -3,6 +3,9 @@ title: Orchestrator Core Interface
 
 implemented_by:
   - Orchestrator and Config
+  - Builder
+  - Analyzer
+  - Releaser
   - Git Operations
 used_by:
   - Context Assembly

@@ -1,6 +1,8 @@
 id: prd005-metrics-collection
 title: Metrics Collection and Reporting
 
+implemented_by:
+  - Stats and Metrics
 used_by:
   - Issue Tracking
 

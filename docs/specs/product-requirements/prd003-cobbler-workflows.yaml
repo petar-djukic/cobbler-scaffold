@@ -2,6 +2,9 @@ id: prd003-cobbler-workflows
 title: Cobbler Measure and Stitch Workflows
 
 implemented_by:
+  - Measure Workflow
+  - Stitch Workflow
+  - Claude Runner
   - Issue Tracking
   - Claude Execution
   - Prompt Templates

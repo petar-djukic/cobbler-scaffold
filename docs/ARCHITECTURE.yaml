@@ -9,10 +9,14 @@ overview:
     and expose its methods as Mage targets.
 
     The system operates as build tooling, not a standalone application. An Orchestrator struct
-    holds a Config and provides methods that Mage calls as targets. These methods coordinate
-    four subsystems: git branch management, Claude invocation (host CLI or Go Agent SDK
-    — selected by cobbler.mode in configuration.yaml), issue tracking (GitHub Issues via
-    gh CLI), metrics collection, and project scaffolding.
+    serves as the composition root: it holds a Config and constructs 10 domain structs (Generator,
+    Measure, Stitch, Builder, Scaffolder, Comparer, VsCode, Stats, Releaser, Analyzer) plus a
+    shared ClaudeRunner infrastructure struct. Each domain struct declares its dependencies
+    explicitly via constructor injection. Mage targets call methods on these domain structs
+    through the Orchestrator's public fields (e.g., o.Generator.GeneratorStart()). The domains
+    coordinate git branch management, Claude invocation (host CLI or Go Agent SDK — selected
+    by cobbler.mode in configuration.yaml), issue tracking (GitHub Issues via gh CLI), metrics
+    collection, and project scaffolding.
 
   lifecycle: |
     Generations are the primary unit of work. A generation starts from a tagged main state,
@@ -68,70 +72,172 @@ overview:
 interfaces:
   - name: Orchestrator and Config
     summary: |
-      The Orchestrator is the entry point. Consuming projects place a configuration.yaml at
-      the repository root and call NewFromFile(), or construct a Config in Go and pass it to
-      New(). Config holds all orchestrator settings. The YAML file is the sole source of
-      truth for all options, making every generation reproducible.
+      The Orchestrator is the composition root. Consuming projects place a configuration.yaml
+      at the repository root and call NewFromFile(), or construct a Config in Go and pass it
+      to New(). The constructor builds 10 domain structs and a shared ClaudeRunner, wiring
+      all dependencies via constructor injection. Mage targets access domain structs through
+      public fields (e.g., o.Generator.GeneratorStart()). Config holds all orchestrator
+      settings; the YAML file is the sole source of truth for all options.
     data_structures:
-      - "Orchestrator: holds Config, provides New() and NewFromFile() constructors"
+      - "Orchestrator: composition root holding Config and 10 domain struct fields (Generator, Measure, Stitch, Builder, Scaffolder, Comparer, VsCode, Stats, Releaser, Analyzer) plus ClaudeRunner"
       - "Config: all orchestrator settings with YAML tags (see prd001-orchestrator-core for full field spec)"
       - "InvocationRecord: metrics per Claude invocation (Caller, StartedAt, DurationS, Tokens, LOCBefore, LOCAfter, Diff, NumTurns)"
       - "HistoryStats: YAML-serializable per-invocation stats saved to history directory (Caller, TaskID, TaskTitle, StartedAt, Duration, Tokens, CostUSD, LOCBefore, LOCAfter, Diff, NumTurns, DurationAPIMs, RateLimitWaitS, SessionID)"
     operations:
-      - "New(cfg Config) *Orchestrator: construct with explicit config"
+      - "New(cfg Config) *Orchestrator: construct composition root, wire all domain structs"
       - "NewFromFile(path string) (*Orchestrator, error): construct from configuration.yaml"
+      - "Config(), Tracker(), Git(): accessor methods for config, tracker, git interfaces"
+      - "DumpMeasurePrompt(): write measure prompt to stdout for debugging"
+      - "DumpStitchPrompt(): write stitch prompt to stdout for debugging"
+      - "TokenStats(): enumerate context files and report token counts (prd005)"
+      - "PrintContextFiles(): list files included in Claude prompts with sizes"
+      - "ConstitutionPreviewFile(): render constitution YAML to markdown"
+      - "GeneratorInit(): package-level function to initialize generator state from configuration.yaml"
+      - "WriteDefaultConfig(): package-level function to write a default configuration.yaml file"
+
+  - name: Generation Lifecycle
+    summary: |
+      The Generator struct manages the generation lifecycle. It composes Measure, Stitch,
+      Analyzer, Releaser, and ClaudeRunner to coordinate branch creation, measure-stitch
+      cycles, merge, and cleanup. Dependencies are injected via NewGenerator(o *Orchestrator).
+    data_structures:
+      - "Generator: standalone struct with cfg, logf, git, tracker, claudeRunner, analyzer, measure, stitch, releaser, setGeneration, clearGeneration"
+    operations:
       - "GeneratorStart(): tag base branch, create generation branch, reset sources unless preserve_sources is true (prd002)"
-      - "GeneratorRun(): run measure+stitch cycles until all issues are closed (prd002)"
+      - "GeneratorRun(cycles int): run measure+stitch cycles until all issues are closed (prd002)"
       - "GeneratorResume(): recover and continue interrupted run (prd002)"
-      - "GeneratorStop(): merge generation into base branch, tag, clean up; skips source reset when preserve_sources is true (prd002)"
+      - "GeneratorStop(): merge generation into base branch, tag, clean up (prd002)"
       - "GeneratorReset(): destroy all generations, return to clean main (prd002)"
       - "GeneratorList(): show active and past generations (prd002)"
       - "GeneratorSwitch(): switch between generation branches (prd002)"
-      - "GeneratorStats(): print status report for the current generation run — issue table with release, cost, duration, turns, attempts, LOC deltas; per-release breakdown; PRD coverage table; requirements progress (stats:generator target)"
-      - "ReleaseStats(): print per-release table with PRD counts (complete/started/untouched) and requirement totals (stats:releases target)"
-      - "ReleaseUpdate(version string) error: mark a release complete — set UC statuses to implemented, remove from project.releases in configuration.yaml (release:update target)"
-      - "ReleaseClear(version string) error: reverse ReleaseUpdate — reset UC statuses to spec_complete, re-add to project.releases (release:clear target)"
-      - "Measure(): propose tasks via Claude (prd003)"
-      - "RunMeasure(): run measure phase with full lifecycle (prompt build, Claude invocation, issue import) (prd003)"
-      - "Stitch(): execute ready tasks in worktrees (prd003)"
-      - "RunStitch(): run stitch phase, executing all ready tasks (prd003)"
-      - "RunStitchN(limit int): run stitch phase up to limit tasks (prd003)"
       - "RunCycles(label string): run measure+stitch cycles until no open issues remain (prd002)"
-      - "Stats(): print LOC and documentation metrics (prd005)"
-      - "RunStats(name string): print aggregate statistics for a completed generation run; lists available generations when name is empty (stats:run target)"
-      - "CompareRunStats(name1, name2 string): print side-by-side comparison of two generation runs (stats:compare target)"
-      - "Scaffold(): scaffold orchestrator into consuming project"
-      - "Uninstall(): remove scaffold artifacts from target project"
-      - "Tag(): create versioned doc-release tag, update version file"
-      - "Reserved (BuildImage removed — podman support dropped)"
-      - "BuildAll(): go build all cmd/ sub-packages when MainPackage is empty (prd003)"
-      - "Build(): go build the consuming project binary"
-      - "Analyze(): cross-artifact consistency checking"
       - "Init(): initialize project (prd001)"
       - "FullReset(): reset cobbler and generator (prd001)"
-      - "CobblerReset(): remove scratch directory (prd003)"
-      - "HistoryClean(): remove history subdirectory from scratch directory"
-      - "Compare(): differential comparison between two git references (prd004)"
-      - "CodeStatus(): report spec-vs-code gaps per use case and release (prd001)"
-      - "TokenStats(): enumerate context files and report token counts (prd005)"
-      - "CollectStats(): collect LOC and doc metrics programmatically (prd005)"
-      - "Outcomes(): parse and display outcome trailers from git history"
-      - "PrintContextFiles(): list files included in Claude prompts with sizes"
+
+  - name: Measure Workflow
+    summary: |
+      The Measure struct builds the measure prompt from existing issues and project state,
+      invokes Claude, parses YAML output, and creates GitHub Issues with dependency labels.
+      Dependencies are injected via NewMeasure(o *Orchestrator), including function references
+      for orchestrator state (setPhase, setGeneration) and generator helpers (resolveBranch,
+      ensureOnBranch, enterWorktree).
+    data_structures:
+      - "Measure: standalone struct with cfg, logf, git, tracker, claudeRunner, analyzer, plus state callbacks and generator helper functions"
+    operations:
+      - "Measure(): enter generation worktree and run measure (prd003)"
       - "MeasurePrompt(): print assembled measure prompt to stdout"
-      - "DumpMeasurePrompt(): write measure prompt to stdout for debugging"
-      - "DumpStitchPrompt(): write stitch prompt to stdout for debugging"
+      - "RunMeasure(): run measure phase with full lifecycle (prd003)"
+      - "buildMeasurePrompt(): assemble measure prompt from project context"
+      - "importIssues(): import Claude-proposed tasks as GitHub Issues"
+
+  - name: Stitch Workflow
+    summary: |
+      The Stitch struct picks ready GitHub Issues, creates worktrees, invokes Claude, commits
+      changes, merges branches, and closes tasks. Dependencies are injected via
+      NewStitch(o *Orchestrator), including function references for generator helpers
+      (pickTask, createWorktree, mergeBranch, cleanupWorktree).
+    data_structures:
+      - "Stitch: standalone struct with cfg, logf, git, tracker, claudeRunner, plus state callbacks and generator helper functions"
+    operations:
+      - "Stitch(): enter generation worktree and run stitch (prd003)"
+      - "RunStitch(): run stitch phase, executing all ready tasks (prd003)"
+      - "RunStitchN(limit int): run stitch phase up to limit tasks (prd003)"
+      - "doOneTask(): execute a single task in a worktree"
+      - "resetTask(): reset a failed task to ready"
+      - "skipTask(): mark a task as skipped after retry limit"
+
+  - name: Builder
+    summary: |
+      The Builder struct provides build, lint, install, clean, and credential operations.
+      It depends only on Config. Created via NewBuilder(cfg Config).
+    operations:
+      - "Build(): go build the consuming project binary"
+      - "BuildAll(): go build all cmd/ sub-packages when MainPackage is empty (prd003)"
       - "Lint(): run golangci-lint on the project"
       - "Install(): go install the project binary"
       - "Clean(): remove build artifacts"
       - "ExtractCredentials(): extract Claude credentials from macOS Keychain"
+
+  - name: Scaffolder
+    summary: |
+      The Scaffolder struct scaffolds the orchestrator into consuming projects and manages
+      test repositories. It depends on git (GitOps) and logf. Created via
+      NewScaffolder(git, logf).
+    operations:
+      - "Scaffold(): scaffold orchestrator into consuming project"
+      - "Uninstall(): remove scaffold artifacts from target project"
+      - "PrepareTestRepo(): download and scaffold a test repository for E2E tests"
+
+  - name: Stats and Metrics
+    summary: |
+      The Stats struct collects LOC counts, documentation word counts, generator status,
+      release statistics, run statistics, and outcome trailer parsing. It depends on
+      cfg, logf, git, and tracker. Created via NewStats(cfg, logf, git, tracker).
+    operations:
+      - "PrintStats(): print LOC and documentation metrics as YAML (prd005)"
+      - "CollectStats(): collect LOC and doc metrics programmatically (prd005)"
+      - "GeneratorStats(): print status report for the current generation run (stats:generator)"
+      - "ReleaseStats(): print per-release table with PRD counts (stats:releases)"
+      - "RunStats(name string): print aggregate statistics for a completed generation run (stats:run)"
+      - "CompareRunStats(name1, name2 string): compare two generation runs side by side (stats:compare)"
+      - "Outcomes(): parse and display outcome trailers from git history (stats:outcomes)"
+
+  - name: Releaser
+    summary: |
+      The Releaser struct manages release lifecycle state in road-map.yaml and
+      configuration.yaml, and creates versioned documentation tags. It depends only on
+      Config. Created via NewReleaser(cfg Config).
+    operations:
+      - "ReleaseUpdate(version string): mark a release complete — set UC statuses to implemented (release:update)"
+      - "ReleaseClear(version string): reverse ReleaseUpdate — reset UC statuses to spec_complete (release:clear)"
+      - "Tag(): create versioned doc-release tag, update version file"
+
+  - name: Analyzer
+    summary: |
+      The Analyzer struct performs cross-artifact consistency checks, code status detection,
+      and pre-cycle analysis. It depends on cfg and logf. Created via NewAnalyzer(cfg, logf).
+    operations:
+      - "Analyze(): cross-artifact consistency checking"
+      - "CodeStatus(): report spec-vs-code gaps per use case and release (prd001)"
+      - "RunPreCycleAnalysis(): write analysis.yaml before each measure/stitch cycle"
+      - "validateDocSchemas(): validate YAML schemas against typed structs"
+
+  - name: Comparer
+    summary: |
+      The Comparer struct runs cross-generation differential comparison between binary
+      sources. It depends on logf and git. Created via NewComparer(logf, git).
+    operations:
+      - "Compare(): differential comparison between two git references (prd004)"
+      - "ResolverFromArg(): resolve a BinaryResolver from argument string"
+
+  - name: VsCode Manager
+    summary: |
+      The VsCode struct manages VS Code extension packaging and installation. It depends
+      only on logf. Created via NewVsCode(logf).
+    operations:
       - "VscodePush(): build, package, and install VS Code extension"
       - "VscodePop(): uninstall VS Code extension"
-      - "Reserved (PodmanClean removed — podman support dropped)"
-      - "ConstitutionPreviewFile(): render constitution YAML to markdown"
-      - "RunPreCycleAnalysis(): write analysis.yaml before each measure/stitch cycle"
-      - "PrepareTestRepo(): download and scaffold a test repository for E2E tests"
-      - "GeneratorInit(): package-level function to initialize generator state from configuration.yaml"
-      - "WriteDefaultConfig(): package-level function to write a default configuration.yaml file"
+
+  - name: Claude Runner
+    summary: |
+      The ClaudeRunner struct encapsulates all Claude execution infrastructure shared by
+      Measure and Stitch: running Claude (CLI or SDK mode), capturing LOC, saving history
+      artifacts, checking credentials, and detecting open issues. Dependencies are injected
+      via NewClaudeRunner(cfg, git, tracker, sdkQueryFn, logf, extractCredentials, collectStats).
+      Cross-domain dependencies (extractCredentials from Builder, collectStats from Stats) are
+      passed as function references to avoid circular struct dependencies.
+    data_structures:
+      - "ClaudeRunner: standalone struct with cfg, git, tracker, sdkQueryFn, logf, extractCredentials, collectStats"
+    operations:
+      - "runClaude(): execute Claude and return token usage"
+      - "runMeasureClaude(): execute Claude with measure-specific idle timeout"
+      - "runClaudeSDK(): execute Claude via Go Agent SDK"
+      - "checkClaude(): verify Claude can be invoked"
+      - "captureLOC(): snapshot current Go LOC counts"
+      - "saveHistoryReport/Stats/Prompt/Log(): save history artifacts"
+      - "HistoryClean(): remove history subdirectory"
+      - "CobblerReset(): remove cobbler scratch directory"
+      - "hasOpenIssues(): check for open orchestrator issues"
 
   - name: Git Operations
     summary: |
@@ -237,21 +343,27 @@ interfaces:
 components:
   - name: Orchestrator
     responsibility: |
-      Entry point. Holds Config, provides New() and NewFromFile() constructors, manages
-      logging with optional generation tagging. All other components are methods on this
-      struct or package-level functions.
+      Composition root. Holds Config, provides New() and NewFromFile() constructors, manages
+      logging with optional generation tagging. Constructs and wires 10 domain structs
+      (Generator, Measure, Stitch, Builder, Scaffolder, Comparer, VsCode, Stats, Releaser,
+      Analyzer) and a shared ClaudeRunner via constructor injection. Domain structs are
+      exposed as public fields. Only accessor and cross-domain utility methods remain on
+      the Orchestrator itself.
     capabilities:
       - Construct from Config or configuration.yaml file
-      - Wire all subsystems through method dispatch
+      - Wire all domain structs through constructor injection
+      - Provide accessor methods for Config, Tracker, Git
+      - Host cross-domain utilities (DumpMeasurePrompt, DumpStitchPrompt, TokenStats, PrintContextFiles, ConstitutionPreviewFile)
     references:
       - prd001-orchestrator-core
 
   - name: Generator
     responsibility: |
-      Manages the generation lifecycle. Creates generation branches, runs cycles, merges
+      Standalone Generator struct managing the generation lifecycle. Composes Measure, Stitch,
+      Analyzer, Releaser, and ClaudeRunner. Creates generation branches, runs cycles, merges
       results to the base branch, handles resume from interrupted runs. Uses git tags to mark
       lifecycle events. Resets Go sources and re-seeds template files on start and reset,
-      unless generation.preserve_sources is true (library mode).
+      unless generation.preserve_sources is true (library mode). Created via NewGenerator(o).
     capabilities:
       - Start, run, resume, stop, reset, list, switch generation branches
       - Tag lifecycle events on git
@@ -266,10 +378,12 @@ components:
 
   - name: Cobbler - Measure
     responsibility: |
-      Builds the measure prompt from existing issues and project state, invokes Claude,
-      parses the YAML output, and creates GitHub Issues with dependency labels via the gh CLI.
-      Records invocation metrics. Saves history artifacts (prompt, log, issues, stats) per
-      iteration to the configured history directory.
+      Standalone Measure struct. Builds the measure prompt from existing issues and project
+      state, invokes Claude, parses the YAML output, and creates GitHub Issues with dependency
+      labels via the gh CLI. Records invocation metrics. Saves history artifacts (prompt, log,
+      issues, stats) per iteration to the configured history directory. Created via
+      NewMeasure(o), with orchestrator state callbacks and generator helpers passed as
+      function references.
     capabilities:
       - Build measure prompt from MeasurePromptDoc with full ProjectContext
       - Parse Claude YAML output into task list
@@ -286,11 +400,12 @@ components:
 
   - name: Cobbler - Stitch
     responsibility: |
-      Picks ready GitHub Issues, creates worktrees, invokes Claude, commits Claude's
-      changes (the orchestrator manages all git operations — Claude is forbidden from running
-      git commands), merges branches, records metrics, and closes tasks. Saves history
-      artifacts (prompt, log, stats) per task. Handles recovery of stale tasks from
-      interrupted runs.
+      Standalone Stitch struct. Picks ready GitHub Issues, creates worktrees, invokes Claude,
+      commits Claude's changes (the orchestrator manages all git operations — Claude is
+      forbidden from running git commands), merges branches, records metrics, and closes tasks.
+      Saves history artifacts (prompt, log, stats) per task. Handles recovery of stale tasks
+      from interrupted runs. Created via NewStitch(o), with generator helpers passed as
+      function references.
     capabilities:
       - Create git worktree per task on a dedicated branch
       - Invoke Claude in worktree context with full ProjectContext
@@ -305,11 +420,14 @@ components:
 
   - name: Cobbler Common
     responsibility: |
-      Claude invocation (runClaude dispatches to runClaudeCLI or runClaudeSDK based on
+      Standalone ClaudeRunner struct encapsulating Claude execution infrastructure shared by
+      Measure and Stitch. Claude invocation (runClaude dispatches to CLI or SDK based on
       effectiveMode()), token parsing, LOC capture, invocation recording, history artifact
       saving, progress logging, configuration logging, and worktree path management. The
       progressWriter logs real-time Claude stream events (tool calls, turns, timing) with
-      claude: prefix for clear log attribution.
+      claude: prefix for clear log attribution. Created via NewClaudeRunner with cross-domain
+      deps (extractCredentials from Builder, collectStats from Stats) passed as function
+      references.
     capabilities:
       - Dispatch Claude invocation to CLI or SDK mode via effectiveMode()
       - Invoke claude binary directly on host (cli mode)
@@ -379,10 +497,11 @@ components:
 
   - name: Stats
     responsibility: |
-      Collects Go LOC counts (production and test) and documentation word counts. Uses the
-      configured GoSourceDirs and SpecGlobs. Output feeds invocation records and the mage
-      stats target. Run statistics aggregate per-generation-run metrics from history
-      artifacts, and cross-generation comparison places two runs side by side.
+      Standalone Stats struct. Collects Go LOC counts (production and test) and documentation
+      word counts. Uses the configured GoSourceDirs and SpecGlobs. Output feeds invocation
+      records and the mage stats target. Run statistics aggregate per-generation-run metrics
+      from history artifacts, and cross-generation comparison places two runs side by side.
+      Created via NewStats(cfg, logf, git, tracker).
     capabilities:
       - Count Go LOC by production and test files
       - Count documentation words by glob pattern
@@ -393,11 +512,12 @@ components:
 
   - name: Analyze
     responsibility: |
-      Cross-artifact consistency checking. Validates that PRDs, use cases, and test suites
-      are properly linked and complete. Reports orphaned PRDs, missing test suites, broken
-      touchpoints, use cases not in the roadmap, schema drift, and semantic model violations.
-      Validates structured traceability chains: R-items covered by acceptance criteria (ACs),
-      ACs covered by test cases, and use case success criteria (S-items) traced to PRD ACs.
+      Standalone Analyzer struct. Cross-artifact consistency checking. Validates that PRDs,
+      use cases, and test suites are properly linked and complete. Reports orphaned PRDs,
+      missing test suites, broken touchpoints, use cases not in the roadmap, schema drift,
+      and semantic model violations. Validates structured traceability chains: R-items covered
+      by acceptance criteria (ACs), ACs covered by test cases, and use case success criteria
+      (S-items) traced to PRD ACs. Created via NewAnalyzer(cfg, logf).
     capabilities:
       - Load and index all PRDs, use cases, test suites, and roadmap entries
       - Check PRD-to-use-case traceability via touchpoints
@@ -435,11 +555,12 @@ components:
 
   - name: Scaffold
     responsibility: |
-      Scaffolds the orchestrator into consuming projects. Detects project structure (module
-      path, binary name, main package, source directories), generates a configuration.yaml
-      with detected values, writes a magefiles/orchestrator.go template, copies constitution
-      files, and wires go.mod with the correct module dependency. Also provides Uninstall()
-      to remove scaffold artifacts and PrepareTestRepo() for E2E test setup.
+      Standalone Scaffolder struct. Scaffolds the orchestrator into consuming projects. Detects
+      project structure (module path, binary name, main package, source directories), generates
+      a configuration.yaml with detected values, writes a magefiles/orchestrator.go template,
+      copies constitution files, and wires go.mod with the correct module dependency. Also
+      provides Uninstall() to remove scaffold artifacts and PrepareTestRepo() for E2E test
+      setup. Created via NewScaffolder(git, logf).
     capabilities:
       - Detect module path, binary name, main package, and source directories from existing project structure
       - Generate configuration.yaml with detected values and defaults
@@ -479,10 +600,13 @@ components:
 
   - name: Logging
     responsibility: |
-      Phase-aware structured logging to stderr. logf() includes timestamp, generation name
-      (when set via setGeneration), and phase name with elapsed time (when set via setPhase).
-      Generation tagging is set by the generator lifecycle and auto-set by measure/stitch
-      when called directly. Phase tagging brackets measure and stitch workflows.
+      Phase-aware structured logging to stderr. logf() is an Orchestrator method that includes
+      timestamp, generation name (when set via setGeneration), and phase name with elapsed
+      time (when set via setPhase). Logging state (phaseMu, currentGeneration, currentPhase,
+      logSink) is held on the Orchestrator instance. Domain structs receive logf and state
+      callbacks (setPhase, clearPhase, setGeneration, clearGeneration) via constructor
+      injection. Generation tagging is set by the Generator lifecycle and auto-set by
+      Measure/Stitch when called directly.
     capabilities:
       - Timestamped log lines with optional generation and phase tags
       - Phase-relative elapsed time tracking
@@ -816,35 +940,35 @@ project_structure:
   - path: pkg/orchestrator/
     role: Library package; all production code
   - path: pkg/orchestrator/orchestrator.go
-    role: Orchestrator struct, New(), NewFromFile(), logging
+    role: Orchestrator composition root — struct with 10 domain fields, New(), NewFromFile(), logging state, accessors
   - path: pkg/orchestrator/config.go
     role: Config struct, LoadConfig(), YAML parsing, defaults
   - path: pkg/orchestrator/cobbler.go
-    role: runClaude, token parsing, LOC capture, metrics
+    role: ClaudeRunner struct — runClaude, token parsing, LOC capture, history, credentials
   - path: pkg/orchestrator/measure.go
-    role: Measure phase — prompt, Claude, import
+    role: Measure struct — prompt, Claude, import
   - path: pkg/orchestrator/stitch.go
-    role: Stitch phase — worktree, Claude, merge
+    role: Stitch struct — worktree, Claude, merge
   - path: pkg/orchestrator/generator.go
-    role: Generation lifecycle — start/run/resume/stop/reset
+    role: Generator struct — generation lifecycle start/run/resume/stop/reset
   - path: pkg/orchestrator/commands.go
     role: Git, Go command wrappers
   - path: pkg/orchestrator/issues_gh.go
     role: GitHub Issues management — create, list, close, label, GC stale generation issues
   - path: pkg/orchestrator/stats.go
-    role: LOC and documentation metrics
+    role: Stats struct — LOC and documentation metrics
   - path: pkg/orchestrator/analyze.go
-    role: Cross-artifact consistency checking
+    role: Analyzer struct — cross-artifact consistency checking
   - path: pkg/orchestrator/scaffold.go
-    role: Scaffold orchestrator into consuming projects
+    role: Scaffolder struct — scaffold orchestrator into consuming projects
   - path: pkg/orchestrator/context.go
     role: ProjectContext assembly from docs, specs, source code
   - path: pkg/orchestrator/tag.go
     role: Versioned doc-release tagging
   - path: pkg/orchestrator/build.go
-    role: Go build, lint, test, install, credential extraction
+    role: Builder struct — Go build, lint, install, clean, credential extraction
   - path: pkg/orchestrator/vscode.go
-    role: VS Code extension build, package, install, uninstall
+    role: VsCode struct — VS Code extension build, package, install, uninstall
   - path: pkg/orchestrator/precycle.go
     role: Pre-cycle analysis — cross-artifact consistency check, code status, writes analysis.yaml to scratch directory before each cycle
   - path: pkg/orchestrator/constitution_md.go
@@ -854,7 +978,7 @@ project_structure:
   - path: pkg/orchestrator/codestatus.go
     role: Code implementation status — scan tests/ for use-case test directories, compare roadmap spec status with test file presence, detect spec-vs-code gaps
   - path: pkg/orchestrator/compare.go
-    role: Cross-generation differential comparison — binary resolution, build, Compare() entry point, and differential binary runner (prd004)
+    role: Comparer struct — cross-generation differential comparison, binary resolution (prd004)
   - path: pkg/orchestrator/testloader.go
     role: Load CompareTestCase records from YAML test suite files and run them against both binaries (prd004)
   - path: pkg/orchestrator/outcomes.go
@@ -868,7 +992,7 @@ project_structure:
   - path: pkg/orchestrator/run_stats.go
     role: Run statistics — RunStats() and CompareRunStats() delegate to internal/stats for aggregate per-generation-run reporting and side-by-side comparison (stats:run and stats:compare targets)
   - path: pkg/orchestrator/release.go
-    role: Release lifecycle management — ReleaseUpdate sets UC statuses to implemented and removes a release from configuration.yaml; ReleaseClear reverses it (release:update/clear targets)
+    role: Releaser struct — ReleaseUpdate/ReleaseClear for release lifecycle (release:update/clear targets)
   - path: pkg/orchestrator/token_stats.go
     role: Token statistics — enumerate context files by category with byte sizes, optional Anthropic Token Counting API for exact prompt token counts
   - path: pkg/orchestrator/internal/
@@ -934,6 +1058,7 @@ implementation_status:
     - done: Run statistics — aggregate per-generation-run reporting and cross-generation comparison (stats:run, stats:compare targets)
     - done: Rate-limit handling separated from task failures (GH-1805)
     - done: MinMeasureIssues enforcement to prevent empty measure results (GH-1882)
+    - done: Domain struct decomposition — Orchestrator refactored from god-object into 10 composable domain structs with explicit dependency injection (GH-1709)
 
 related_documents:
   - doc: docs/VISION.yaml

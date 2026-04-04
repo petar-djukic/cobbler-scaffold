@@ -1,6 +1,8 @@
 id: prd002-generation-lifecycle
 title: Generation Lifecycle Management
 
+implemented_by:
+  - Generation Lifecycle
 used_by:
   - Git Operations
   - Issue Tracking

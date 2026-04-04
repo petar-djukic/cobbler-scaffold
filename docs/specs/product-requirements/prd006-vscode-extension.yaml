@@ -1,6 +1,9 @@
 id: prd006-vscode-extension
 title: VS Code Extension for Generation Tracking and Lifecycle Management
 
+implemented_by:
+  - VsCode Manager
+
 problem: |
   The orchestrator runs generation cycles from the terminal via mage
   targets. Developers must switch between terminal, git log, and the GitHub
