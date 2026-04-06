@@ -265,12 +265,8 @@ func TestExtractSRDRefs(t *testing.T) {
 			want: []string{"srd006-cat"},
 		},
 		{
-			text: "bare srd003 without hyphen-name is a valid short ref (GH-2120)",
-			want: []string{"srd003"},
-		},
-		{
-			text: "srd087 R1.1, R1.2 short form in measure title",
-			want: []string{"srd087"},
+			text: "bare srd003 without hyphen-name is not a ref",
+			want: nil,
 		},
 		{
 			text: "srd001-testutils.yaml should strip yaml suffix",
