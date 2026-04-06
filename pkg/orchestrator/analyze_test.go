@@ -645,7 +645,7 @@ func TestSRDDoc_Validate_AllPresent(t *testing.T) {
 		Title:   "Core",
 		Problem: "The problem",
 		Requirements: map[string]SRDRequirementGroup{
-			"R1": {Title: "Group 1", Items: []SRDRequirementItem{{ID: "R1.1", Text: "Do X", Weight: 1}}},
+			"R1": {Title: "Group 1", Items: []SRDRequirementItem{{ID: "R1.1", Text: "Do X"}}},
 		},
 	}
 	if errs := d.Validate(); len(errs) != 0 {
@@ -675,7 +675,7 @@ func TestSRDDoc_Validate_RequirementGroupMissingTitle(t *testing.T) {
 		Title:   "Core",
 		Problem: "The problem",
 		Requirements: map[string]SRDRequirementGroup{
-			"R1": {Items: []SRDRequirementItem{{ID: "R1.1", Text: "Do X", Weight: 1}}},
+			"R1": {Items: []SRDRequirementItem{{ID: "R1.1", Text: "Do X"}}},
 		},
 	}
 	errs := d.Validate()
@@ -714,8 +714,8 @@ func TestSRDDoc_Validate_ItemIDLetterSuffix_Error(t *testing.T) {
 		Problem: "The problem",
 		Requirements: map[string]SRDRequirementGroup{
 			"R2": {Title: "Group 2", Items: []SRDRequirementItem{
-				{ID: "R2a", Text: "Do A", Weight: 1},
-				{ID: "R2b", Text: "Do B", Weight: 1},
+				{ID: "R2a", Text: "Do A"},
+				{ID: "R2b", Text: "Do B"},
 			}},
 		},
 	}
@@ -739,11 +739,11 @@ func TestSRDDoc_Validate_ItemIDDotted_Valid(t *testing.T) {
 		Problem: "The problem",
 		Requirements: map[string]SRDRequirementGroup{
 			"R1": {Title: "Group 1", Items: []SRDRequirementItem{
-				{ID: "R1.1", Text: "Do X", Weight: 1},
-				{ID: "R1.2", Text: "Do Y", Weight: 1},
+				{ID: "R1.1", Text: "Do X"},
+				{ID: "R1.2", Text: "Do Y"},
 			}},
 			"R2": {Title: "Group 2", Items: []SRDRequirementItem{
-				{ID: "R2.3", Text: "Do Z", Weight: 1},
+				{ID: "R2.3", Text: "Do Z"},
 			}},
 		},
 	}
