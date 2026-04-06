@@ -452,17 +452,19 @@ type SRDRequirementGroup struct {
 // SRDRequirementItem represents a single R-item in a SRD. It supports two
 // YAML formats:
 //
-//	Simple:  - R1.1: Must accept -f flag         (weight defaults to 1)
-//	Weighted: - R1.1:
+//	Simple:  - R1.1: Must accept -f flag
+//	Map:    - R1.1:
 //	              text: Must scan each input line
-//	              weight: 3
+//
+// Weights are managed in requirements.yaml, not in SRDs (GH-2080).
 type SRDRequirementItem struct {
-	ID     string
-	Text   string
-	Weight int // positive integer, default 1, no upper bound (GH-1832)
+	ID   string
+	Text string
 }
 
-// UnmarshalYAML handles both string and {text, weight} map values for R-items.
+// UnmarshalYAML handles both string and map values for R-items.
+// The map format may contain a legacy weight field which is ignored —
+// weights live in requirements.yaml (GH-2080).
 func (item *SRDRequirementItem) UnmarshalYAML(value *yaml.Node) error {
 	// Items are single-key maps: {"R1.1": <value>}
 	if value.Kind != yaml.MappingNode || len(value.Content) < 2 {
@@ -475,21 +477,15 @@ func (item *SRDRequirementItem) UnmarshalYAML(value *yaml.Node) error {
 	case yaml.ScalarNode:
 		// Simple format: "R1.1: text"
 		item.Text = valNode.Value
-		item.Weight = 1
 	case yaml.MappingNode:
-		// Weighted format: "R1.1: {text: ..., weight: N}"
+		// Map format: "R1.1: {text: ...}" (may contain legacy weight field)
 		var fields struct {
-			Text   string `yaml:"text"`
-			Weight int    `yaml:"weight"`
+			Text string `yaml:"text"`
 		}
 		if err := valNode.Decode(&fields); err != nil {
 			return fmt.Errorf("decoding requirement item %s: %w", item.ID, err)
 		}
 		item.Text = fields.Text
-		item.Weight = fields.Weight
-		if item.Weight <= 0 {
-			item.Weight = 1
-		}
 	default:
 		return fmt.Errorf("unexpected node kind %d for requirement item %s", valNode.Kind, item.ID)
 	}

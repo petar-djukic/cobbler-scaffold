@@ -1067,12 +1067,9 @@ items:
 	if group.Items[0].Text != "Must accept -f flag" {
 		t.Errorf("item 0 Text = %q, want 'Must accept -f flag'", group.Items[0].Text)
 	}
-	if group.Items[0].Weight != 1 {
-		t.Errorf("item 0 Weight = %d, want 1 (default)", group.Items[0].Weight)
-	}
 }
 
-func TestSRDRequirementItem_WeightedFormat(t *testing.T) {
+func TestSRDRequirementItem_MapFormatWithLegacyWeight(t *testing.T) {
 	t.Parallel()
 	input := `
 title: Complex parsing
@@ -1082,7 +1079,6 @@ items:
       weight: 3
   - R6.2:
       text: Must recognize 4 timestamp formats
-      weight: 10
 `
 	var group SRDRequirementGroup
 	if err := yaml.Unmarshal([]byte(input), &group); err != nil {
@@ -1091,14 +1087,12 @@ items:
 	if len(group.Items) != 2 {
 		t.Fatalf("expected 2 items, got %d", len(group.Items))
 	}
-	if group.Items[0].Weight != 3 {
-		t.Errorf("item 0 Weight = %d, want 3", group.Items[0].Weight)
-	}
+	// Legacy weight field is silently ignored (GH-2080).
 	if group.Items[0].Text != "Must scan each input line for known timestamp patterns" {
 		t.Errorf("item 0 Text = %q", group.Items[0].Text)
 	}
-	if group.Items[1].Weight != 10 {
-		t.Errorf("item 1 Weight = %d, want 10", group.Items[1].Weight)
+	if group.Items[1].Text != "Must recognize 4 timestamp formats" {
+		t.Errorf("item 1 Text = %q", group.Items[1].Text)
 	}
 }
 
@@ -1116,29 +1110,11 @@ items:
 	if err := yaml.Unmarshal([]byte(input), &group); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if group.Items[0].Weight != 1 {
-		t.Errorf("simple item Weight = %d, want 1", group.Items[0].Weight)
+	if group.Items[0].Text != "Simple requirement" {
+		t.Errorf("simple item Text = %q", group.Items[0].Text)
 	}
-	if group.Items[1].Weight != 5 {
-		t.Errorf("weighted item Weight = %d, want 5", group.Items[1].Weight)
-	}
-}
-
-func TestSRDRequirementItem_ZeroWeightDefaultsToOne(t *testing.T) {
-	t.Parallel()
-	input := `
-title: Zero weight
-items:
-  - R1.1:
-      text: Should default
-      weight: 0
-`
-	var group SRDRequirementGroup
-	if err := yaml.Unmarshal([]byte(input), &group); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	if group.Items[0].Weight != 1 {
-		t.Errorf("zero weight should default to 1, got %d", group.Items[0].Weight)
+	if group.Items[1].Text != "Complex requirement" {
+		t.Errorf("map item Text = %q", group.Items[1].Text)
 	}
 }
 
@@ -1169,11 +1145,11 @@ acceptance_criteria: []
 	if len(r1.Items) != 2 {
 		t.Fatalf("expected 2 items in R1, got %d", len(r1.Items))
 	}
-	if r1.Items[0].Weight != 1 {
-		t.Errorf("R1.1 weight = %d, want 1", r1.Items[0].Weight)
+	if r1.Items[0].Text != "Simple" {
+		t.Errorf("R1.1 text = %q, want Simple", r1.Items[0].Text)
 	}
-	if r1.Items[1].Weight != 7 {
-		t.Errorf("R1.2 weight = %d, want 7", r1.Items[1].Weight)
+	if r1.Items[1].Text != "Weighted" {
+		t.Errorf("R1.2 text = %q, want Weighted", r1.Items[1].Text)
 	}
 }
 
