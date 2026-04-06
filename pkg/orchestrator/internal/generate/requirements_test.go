@@ -1657,3 +1657,65 @@ acceptance_criteria: []
 		t.Errorf("R1.2 status = %q, want complete", s)
 	}
 }
+
+func TestGenerateRequirementsFile_PreserveFalseRetainsWeights(t *testing.T) {
+	dir := t.TempDir()
+	srdDir := filepath.Join(dir, "docs", "specs", "software-requirements")
+	os.MkdirAll(srdDir, 0o755)
+	cobblerDir := filepath.Join(dir, ".cobbler")
+	os.MkdirAll(cobblerDir, 0o755)
+
+	srd := `id: srd001
+title: Test
+problem: test
+goals:
+  - G1: goal
+requirements:
+  R1:
+    title: Test
+    items:
+      - R1.1: Item one
+      - R1.2: Item two
+non_goals: []
+acceptance_criteria: []
+`
+	os.WriteFile(filepath.Join(srdDir, "srd001-test.yaml"), []byte(srd), 0o644)
+
+	// Pre-populate requirements.yaml with custom weights and statuses.
+	existing := `requirements:
+    srd001-test:
+        R1.1:
+            status: complete
+            issue: 42
+            weight: 4
+        R1.2:
+            status: complete
+            issue: 43
+            weight: 7
+`
+	os.WriteFile(filepath.Join(cobblerDir, "requirements.yaml"), []byte(existing), 0o644)
+
+	// Regenerate with preserveExisting=false (full reset).
+	_, err := GenerateRequirementsFile(srdDir, cobblerDir, false)
+	if err != nil {
+		t.Fatalf("GenerateRequirementsFile: %v", err)
+	}
+
+	states := LoadRequirementStates(cobblerDir)
+	srdStates := states["srd001-test"]
+
+	// Weights must be preserved even with preserveExisting=false (GH-2117).
+	if w := srdStates["R1.1"].Weight; w != 4 {
+		t.Errorf("R1.1 weight = %d, want 4 (preserved despite preserveExisting=false)", w)
+	}
+	if w := srdStates["R1.2"].Weight; w != 7 {
+		t.Errorf("R1.2 weight = %d, want 7 (preserved despite preserveExisting=false)", w)
+	}
+	// Statuses should be reset to "ready" since preserveExisting=false.
+	if s := srdStates["R1.1"].Status; s != "ready" {
+		t.Errorf("R1.1 status = %q, want ready (reset)", s)
+	}
+	if s := srdStates["R1.2"].Status; s != "ready" {
+		t.Errorf("R1.2 status = %q, want ready (reset)", s)
+	}
+}
