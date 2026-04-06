@@ -579,17 +579,25 @@ func (m *Measure) buildMeasurePrompt(userInput, existingIssues string, limit int
 	activeRelease := filterImplementedRelease(m.cfg.Project.Release)
 	doc.Constraints += measureReleasesConstraint(activeReleases, activeRelease)
 
-	// When MinMeasureIssues is set and unresolved requirements exist, add
-	// a constraint that overrides the "return [] when complete" instruction.
-	// This prevents the LLM from non-deterministically returning empty
-	// When max_weight_per_task is set, add a constraint explaining weight-
-	// based batching so Claude respects the budget (GH-1832).
+	// When max_weight_per_task is set, inject a chain-of-thought weight-
+	// reasoning step between "Reason about priorities" (step 3) and
+	// "Propose tasks" (step 4). This makes the agent do the arithmetic
+	// explicitly before writing YAML, which is more reliable than a prose
+	// constraint (GH-2077, replaces GH-1832 constraint).
 	if maxW := m.cfg.Cobbler.MaxWeightPerTask; maxW > 0 {
-		doc.Constraints += fmt.Sprintf("\n- Requirements in requirements.yaml carry a weight field "+
-			"(default 1). When batching requirements into tasks, sum the weights of all "+
-			"R-items. Each task's total weight must not exceed %d. A task with one weight-4 "+
-			"requirement has budget for at most %d more weight-1 requirements.", maxW, maxW-4)
-		m.logf("buildMeasurePrompt: max_weight_per_task=%d constraint injected", maxW)
+		cotStep := fmt.Sprintf("\n\n  3b. **Check weight budgets** — Before proposing each task, "+
+			"list the requirements you plan to include and their weights from requirements.yaml. "+
+			"Sum the total. If total exceeds %d, move the heaviest requirement(s) to a separate task. "+
+			"Show your arithmetic:\n\n"+
+			"      Task: cmd/foo R2.5 (w=4), R2.6 (w=1), R3.1 (w=1)\n"+
+			"      Total weight: 4+1+1 = 6 → exceeds %d\n"+
+			"      Fix: move R2.5 (w=4) to its own task\n\n"+
+			"      Every requirement in requirements.yaml has a weight field (default 1). "+
+			"Each task's total weight must not exceed %d.", maxW, maxW, maxW)
+		doc.Task += cotStep
+		doc.Constraints += fmt.Sprintf("\n- Each task's total requirement weight must not exceed %d. "+
+			"Follow step 3b to verify weight budgets before proposing tasks.", maxW)
+		m.logf("buildMeasurePrompt: max_weight_per_task=%d CoT step injected", maxW)
 	}
 
 	// results for projects with high documentation-to-code ratios (GH-1882).

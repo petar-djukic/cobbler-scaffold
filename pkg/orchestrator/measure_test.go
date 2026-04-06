@@ -1169,6 +1169,40 @@ func TestBuildMeasurePrompt_ReleasesConstraintAppended(t *testing.T) {
 	}
 }
 
+func TestBuildMeasurePrompt_WeightCoTStepInjected(t *testing.T) {
+	t.Parallel()
+	cfg := Config{}
+	cfg.Cobbler.MaxWeightPerTask = 4
+	o := New(cfg)
+
+	prompt, err := o.Measure.buildMeasurePrompt("", "", 1)
+	if err != nil {
+		t.Fatalf("buildMeasurePrompt() error = %v", err)
+	}
+	if !strings.Contains(prompt, "Check weight budgets") {
+		t.Error("prompt should contain weight-reasoning CoT step when max_weight_per_task > 0")
+	}
+	if !strings.Contains(prompt, "Show your arithmetic") {
+		t.Error("prompt should instruct agent to show weight arithmetic")
+	}
+	if !strings.Contains(prompt, "must not exceed 4") {
+		t.Error("prompt should contain the max weight value")
+	}
+}
+
+func TestBuildMeasurePrompt_WeightCoTStepAbsentWhenZero(t *testing.T) {
+	t.Parallel()
+	o := New(Config{})
+
+	prompt, err := o.Measure.buildMeasurePrompt("", "", 1)
+	if err != nil {
+		t.Fatalf("buildMeasurePrompt() error = %v", err)
+	}
+	if strings.Contains(prompt, "Check weight budgets") {
+		t.Error("prompt should NOT contain weight CoT step when max_weight_per_task is 0")
+	}
+}
+
 func TestBuildMeasurePrompt_GoldenExample(t *testing.T) {
 	t.Parallel()
 	cfg := Config{}
