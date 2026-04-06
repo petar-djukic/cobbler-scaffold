@@ -61,11 +61,10 @@ func GenerateRequirementsFile(srdDir, cobblerDir string, preserveExisting bool) 
 		return "", fmt.Errorf("globbing SRDs in %s: %w", srdDir, err)
 	}
 
-	// Load existing states when preserving.
-	var existing map[string]map[string]RequirementState
-	if preserveExisting {
-		existing = LoadRequirementStates(cobblerDir)
-	}
+	// Always load existing requirements.yaml to preserve weights.
+	// Weights are the sole authority in requirements.yaml (GH-2080) and
+	// must survive regeneration regardless of preserveExisting (GH-2117).
+	existing := LoadRequirementStates(cobblerDir)
 
 	allReqs := make(map[string]map[string]RequirementState)
 
@@ -77,13 +76,16 @@ func GenerateRequirementsFile(srdDir, cobblerDir string, preserveExisting bool) 
 		}
 		group := make(map[string]RequirementState, len(items))
 		for _, item := range items {
-			if existing != nil {
-				if prev, ok := existing[slug]; ok {
-					if st, ok := prev[item.ID]; ok {
-						// Preserve existing state and weight (GH-2080).
+			if prev, ok := existing[slug]; ok {
+				if st, ok := prev[item.ID]; ok {
+					if preserveExisting {
+						// Preserve both status and weight.
 						group[item.ID] = st
-						continue
+					} else {
+						// Reset status to "ready" but preserve weight (GH-2117).
+						group[item.ID] = RequirementState{Status: "ready", Weight: st.Weight}
 					}
+					continue
 				}
 			}
 			// New items default to weight 1. Weights are managed in
