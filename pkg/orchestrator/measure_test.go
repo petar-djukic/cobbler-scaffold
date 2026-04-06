@@ -1478,12 +1478,13 @@ acceptance_criteria:
 	}
 }
 
-func TestImportIssuesImpl_WeightOnlyEnforcementRejectsWeightViolation(t *testing.T) {
+func TestImportIssuesImpl_WeightOnlyEnforcementSplitsOverweightTask(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	yamlFile := filepath.Join(dir, "issues.yaml")
 
-	// Code issue with valid P9 shape but exceeds weight budget.
+	// Code issue with valid P9 shape but exceeds weight budget (6 reqs, max 5).
+	// Since GH-2072, overweight tasks are split instead of rejected.
 	issues := []proposedIssue{{
 		Index: 1,
 		Title: "Heavy task",
@@ -1527,15 +1528,92 @@ design_decisions:
 	cfg := Config{}
 	cfg.Cobbler.Dir = dir
 	cfg.Cobbler.EnforceWeightValidation = true
-	cfg.Cobbler.MaxRequirementsPerTask = 5 // 6 reqs exceeds limit
+	cfg.Cobbler.MaxRequirementsPerTask = 5 // 6 reqs, weight 6 > max 5
 	o := New(cfg)
 
-	_, validationErrs, err := o.Measure.importIssuesImpl(yamlFile, "owner/repo", "gen", false, 0)
-	if err == nil {
-		t.Error("expected validation error for weight violation")
+	// Should NOT return a validation error — overweight task is split (GH-2072).
+	// Will fail at createCobblerIssue (no real GitHub), but should NOT
+	// fail at validation.
+	_, _, err := o.Measure.importIssuesImpl(yamlFile, "owner/repo", "gen", false, 0)
+	if err != nil && strings.Contains(err.Error(), "validation failed") {
+		t.Fatalf("expected no validation error after splitting, got: %v", err)
 	}
-	if len(validationErrs) == 0 {
-		t.Error("expected non-empty validationErrs")
+}
+
+func TestImportIssuesImpl_OverweightSplitNoRetry(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	// Write a requirements.yaml with known weights.
+	reqDir := filepath.Join(dir, "requirements")
+	os.MkdirAll(reqDir, 0o755)
+	reqYAML := `srd001:
+  R1.1:
+    status: ready
+    weight: 4
+  R1.2:
+    status: ready
+    weight: 4
+  R1.3:
+    status: ready
+    weight: 1
+  R1.4:
+    status: ready
+    weight: 1
+`
+	os.WriteFile(filepath.Join(reqDir, "requirements.yaml"), []byte(reqYAML), 0o644)
+
+	yamlFile := filepath.Join(dir, "issues.yaml")
+	// 4 requirements, total weight = 10, max = 4.
+	issues := []proposedIssue{{
+		Index: 1,
+		Title: "Overweight task",
+		Description: `deliverable_type: code
+requirements:
+  - id: R1
+    text: "srd001 R1.1 heavy"
+  - id: R2
+    text: "srd001 R1.2 heavy"
+  - id: R3
+    text: "srd001 R1.3 light"
+  - id: R4
+    text: "srd001 R1.4 light"
+acceptance_criteria:
+  - id: AC1
+    text: ac1
+  - id: AC2
+    text: ac2
+  - id: AC3
+    text: ac3
+  - id: AC4
+    text: ac4
+  - id: AC5
+    text: ac5
+design_decisions:
+  - id: DD1
+    text: dd1
+  - id: DD2
+    text: dd2
+  - id: DD3
+    text: dd3
+`,
+	}}
+	data, _ := yaml.Marshal(issues)
+	os.WriteFile(yamlFile, data, 0o644)
+
+	cfg := Config{}
+	cfg.Cobbler.Dir = dir
+	cfg.Cobbler.MaxWeightPerTask = 4
+	cfg.Cobbler.EnforceWeightValidation = true
+	o := New(cfg)
+
+	// Should NOT return a validation error — the splitter handles overweight
+	// tasks before validation sees them.
+	// Will fail at createCobblerIssue (no real GitHub), but should NOT
+	// fail at validation.
+	_, _, err := o.Measure.importIssuesImpl(yamlFile, "owner/repo", "gen", false, 0)
+	if err != nil && strings.Contains(err.Error(), "validation failed") {
+		t.Fatalf("expected no validation error after splitting, got: %v", err)
 	}
 }
 

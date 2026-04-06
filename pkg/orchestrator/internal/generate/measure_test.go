@@ -733,3 +733,167 @@ func TestExpandedRequirementWeight_FallsBackToCount(t *testing.T) {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// SplitOverweightTasks (GH-2072)
+// ---------------------------------------------------------------------------
+
+func TestSplitOverweightTasks_UnderBudget_PassThrough(t *testing.T) {
+	t.Parallel()
+	reqStates := map[string]map[string]RequirementState{
+		"srd001": {
+			"R1.1": {Status: "ready", Weight: 1},
+			"R1.2": {Status: "ready", Weight: 2},
+		},
+	}
+	issues := []ProposedIssue{{
+		Index: 0,
+		Title: "Small task",
+		Description: `deliverable_type: code
+requirements:
+  - id: R1
+    text: "srd001 R1.1 simple"
+  - id: R2
+    text: "srd001 R1.2 moderate"
+`,
+	}}
+	// Total weight = 1+2 = 3, max = 4 → no split.
+	result := SplitOverweightTasks(issues, 4, nil, reqStates)
+	if len(result) != 1 {
+		t.Fatalf("expected 1 issue (pass-through), got %d", len(result))
+	}
+	if result[0].Title != "Small task" {
+		t.Errorf("title = %q, want %q", result[0].Title, "Small task")
+	}
+}
+
+func TestSplitOverweightTasks_OverBudget_SplitsIntoSubTasks(t *testing.T) {
+	t.Parallel()
+	reqStates := map[string]map[string]RequirementState{
+		"srd001": {
+			"R1.1": {Status: "ready", Weight: 4},
+			"R1.2": {Status: "ready", Weight: 4},
+			"R1.3": {Status: "ready", Weight: 1},
+			"R1.4": {Status: "ready", Weight: 1},
+		},
+	}
+	issues := []ProposedIssue{{
+		Index: 0,
+		Title: "Heavy task",
+		Description: `deliverable_type: code
+requirements:
+  - id: R1
+    text: "srd001 R1.1 heavy"
+  - id: R2
+    text: "srd001 R1.2 heavy"
+  - id: R3
+    text: "srd001 R1.3 light"
+  - id: R4
+    text: "srd001 R1.4 light"
+files:
+  - path: pkg/foo/bar.go
+acceptance_criteria:
+  - id: AC1
+    text: works
+design_decisions:
+  - id: DD1
+    text: use stdlib
+`,
+	}}
+	// Total weight = 4+4+1+1 = 10, max = 4.
+	// R1.1 (w=4) >= max → own bin. R1.2 (w=4) >= max → own bin.
+	// R1.3+R1.4 (w=2) fits in one bin. → 3 parts.
+	result := SplitOverweightTasks(issues, 4, nil, reqStates)
+	if len(result) != 3 {
+		t.Fatalf("expected 3 split tasks, got %d", len(result))
+	}
+	for i, r := range result {
+		if !strings.Contains(r.Title, "Heavy task") {
+			t.Errorf("part %d title should contain original title, got %q", i, r.Title)
+		}
+		expected := "Heavy task (part " + strings.Replace("1/3,2/3,3/3", ",", "", i)[:3] + ")"
+		_ = expected
+		// Verify metadata is preserved.
+		if !strings.Contains(r.Description, "pkg/foo/bar.go") {
+			t.Errorf("part %d should contain files metadata", i)
+		}
+		if !strings.Contains(r.Description, "works") {
+			t.Errorf("part %d should contain acceptance criteria", i)
+		}
+	}
+	// Verify part suffixes.
+	if !strings.Contains(result[0].Title, "(part 1/3)") {
+		t.Errorf("first part title = %q, want part 1/3", result[0].Title)
+	}
+	if !strings.Contains(result[2].Title, "(part 3/3)") {
+		t.Errorf("last part title = %q, want part 3/3", result[2].Title)
+	}
+}
+
+func TestSplitOverweightTasks_SingleHeavyRequirement_SoloTask(t *testing.T) {
+	t.Parallel()
+	reqStates := map[string]map[string]RequirementState{
+		"srd001": {
+			"R1.1": {Status: "ready", Weight: 6},
+		},
+	}
+	issues := []ProposedIssue{{
+		Index: 0,
+		Title: "Solo task",
+		Description: `deliverable_type: code
+requirements:
+  - id: R1
+    text: "srd001 R1.1 massive"
+`,
+	}}
+	// Single req with weight 6, max = 4 → gets own bin, no part suffix needed
+	// since there's only 1 bin.
+	result := SplitOverweightTasks(issues, 4, nil, reqStates)
+	if len(result) != 1 {
+		t.Fatalf("expected 1 task for single heavy requirement, got %d", len(result))
+	}
+	// No part suffix when only one bin.
+	if strings.Contains(result[0].Title, "part") {
+		t.Errorf("single-bin task should not have part suffix, got %q", result[0].Title)
+	}
+}
+
+func TestSplitOverweightTasks_MaxWeightZero_PassThrough(t *testing.T) {
+	t.Parallel()
+	issues := []ProposedIssue{{
+		Index: 0,
+		Title: "Any task",
+		Description: `deliverable_type: code
+requirements:
+  - id: R1
+    text: req1
+`,
+	}}
+	result := SplitOverweightTasks(issues, 0, nil, nil)
+	if len(result) != 1 {
+		t.Fatalf("maxWeight=0 should pass through, got %d", len(result))
+	}
+}
+
+func TestSplitOverweightTasks_NilReqStates_PassThrough(t *testing.T) {
+	t.Parallel()
+	// Without reqStates, weights default to 1 per requirement.
+	// 3 requirements with max=4 → no split.
+	issues := []ProposedIssue{{
+		Index: 0,
+		Title: "No-states task",
+		Description: `deliverable_type: code
+requirements:
+  - id: R1
+    text: req1
+  - id: R2
+    text: req2
+  - id: R3
+    text: req3
+`,
+	}}
+	result := SplitOverweightTasks(issues, 4, nil, nil)
+	if len(result) != 1 {
+		t.Fatalf("expected pass-through with nil reqStates, got %d", len(result))
+	}
+}
+

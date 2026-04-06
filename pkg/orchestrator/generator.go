@@ -241,6 +241,29 @@ func validateMeasureOutput(issues []proposedIssue, maxReqs, maxWeight int, subIt
 	return generate.ValidateMeasureOutput(genIssues, maxReqs, maxWeight, subItemCounts, reqStates)
 }
 
+func splitOverweightTasks(issues []proposedIssue, maxWeight int, subItemCounts map[string]map[string]int, reqStates map[string]map[string]generate.RequirementState) []proposedIssue {
+	genIssues := make([]generate.ProposedIssue, len(issues))
+	for i, iss := range issues {
+		genIssues[i] = generate.ProposedIssue{
+			Index:       iss.Index,
+			Title:       iss.Title,
+			Description: iss.Description,
+			Dependency:  iss.Dependency,
+		}
+	}
+	split := generate.SplitOverweightTasks(genIssues, maxWeight, subItemCounts, reqStates)
+	result := make([]proposedIssue, len(split))
+	for i, s := range split {
+		result[i] = proposedIssue{
+			Index:       s.Index,
+			Title:       s.Title,
+			Description: s.Description,
+			Dependency:  s.Dependency,
+		}
+	}
+	return result
+}
+
 func expandedRequirementCount(reqs []issueDescItem, subItemCounts map[string]map[string]int) int {
 	return generate.ExpandedRequirementCount(reqs, subItemCounts)
 }

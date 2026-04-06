@@ -643,9 +643,19 @@ func (m *Measure) importIssuesImpl(yamlFile, repo, generation string, skipEnforc
 		m.logf("importIssues: [%d] title=%q dep=%d", i, issue.Title, issue.Dependency)
 	}
 
-	// Validate proposed issues against P9/P7 rules and completed R-items (GH-1386).
+	// Split overweight tasks before validation so they fit the weight
+	// budget without needing retries (GH-2072).
 	subItemCounts := loadSRDSubItemCounts()
 	reqStates := loadRequirementStates(m.cfg.Cobbler.Dir)
+	if m.cfg.Cobbler.MaxWeightPerTask > 0 {
+		before := len(issues)
+		issues = splitOverweightTasks(issues, m.cfg.Cobbler.MaxWeightPerTask, subItemCounts, reqStates)
+		if len(issues) != before {
+			m.logf("importIssues: split %d overweight task(s) into %d", before, len(issues))
+		}
+	}
+
+	// Validate proposed issues against P9/P7 rules and completed R-items (GH-1386).
 	vr := validateMeasureOutput(issues, m.cfg.Cobbler.MaxRequirementsPerTask, m.cfg.Cobbler.MaxWeightPerTask, subItemCounts, reqStates)
 	if len(vr.Warnings) > 0 {
 		m.logf("importIssues: %d warning(s)", len(vr.Warnings))

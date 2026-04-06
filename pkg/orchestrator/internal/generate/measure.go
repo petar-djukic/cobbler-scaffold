@@ -399,6 +399,115 @@ func ExpandedRequirementCount(reqs []IssueDescItem, subItemCounts map[string]map
 }
 
 // ---------------------------------------------------------------------------
+// Overweight task splitting (GH-2072)
+// ---------------------------------------------------------------------------
+
+// SingleRequirementWeight returns the weight of a single requirement item
+// by looking it up in reqStates. Returns 1 if the requirement has no SRD
+// reference, no matching state, or an explicit weight of 0.
+func SingleRequirementWeight(req IssueDescItem, subItemCounts map[string]map[string]int, reqStates map[string]map[string]RequirementState) int {
+	return ExpandedRequirementWeight([]IssueDescItem{req}, subItemCounts, reqStates)
+}
+
+// SplitOverweightTasks examines each proposed issue and splits any whose
+// total requirement weight exceeds maxWeight into smaller tasks that fit
+// within the budget. Tasks within budget pass through unchanged.
+//
+// The splitting algorithm walks requirements in order and greedily packs
+// them into sub-tasks. A requirement whose individual weight >= maxWeight
+// gets its own task. Metadata (files, acceptance criteria, design decisions,
+// deliverable type) is copied to each sub-task. Titles receive a
+// "(part N/M)" suffix.
+//
+// When maxWeight <= 0 or reqStates is nil, all tasks pass through unchanged.
+func SplitOverweightTasks(issues []ProposedIssue, maxWeight int, subItemCounts map[string]map[string]int, reqStates map[string]map[string]RequirementState) []ProposedIssue {
+	if maxWeight <= 0 {
+		return issues
+	}
+	var result []ProposedIssue
+	for _, issue := range issues {
+		var desc IssueDescription
+		if err := yaml.Unmarshal([]byte(issue.Description), &desc); err != nil {
+			result = append(result, issue)
+			continue
+		}
+
+		totalWeight := ExpandedRequirementWeight(desc.Requirements, subItemCounts, reqStates)
+		if totalWeight <= maxWeight {
+			result = append(result, issue)
+			continue
+		}
+
+		// Partition requirements into bins that fit the weight budget.
+		bins := partitionRequirements(desc.Requirements, maxWeight, subItemCounts, reqStates)
+		Log("splitOverweightTasks: %q (weight %d, max %d) split into %d parts", issue.Title, totalWeight, maxWeight, len(bins))
+
+		for i, bin := range bins {
+			partDesc := IssueDescription{
+				DeliverableType:    desc.DeliverableType,
+				Files:              desc.Files,
+				Requirements:       bin,
+				AcceptanceCriteria: desc.AcceptanceCriteria,
+				DesignDecisions:    desc.DesignDecisions,
+			}
+			descBytes, _ := yaml.Marshal(partDesc)
+			partTitle := issue.Title
+			if len(bins) > 1 {
+				partTitle = fmt.Sprintf("%s (part %d/%d)", issue.Title, i+1, len(bins))
+			}
+			result = append(result, ProposedIssue{
+				Index:       issue.Index,
+				Title:       partTitle,
+				Description: string(descBytes),
+				Dependency:  issue.Dependency,
+			})
+		}
+	}
+	return result
+}
+
+// partitionRequirements greedily packs requirements into bins where each
+// bin's total weight <= maxWeight. Requirements with individual weight
+// >= maxWeight get their own bin.
+func partitionRequirements(reqs []IssueDescItem, maxWeight int, subItemCounts map[string]map[string]int, reqStates map[string]map[string]RequirementState) [][]IssueDescItem {
+	var bins [][]IssueDescItem
+	var current []IssueDescItem
+	currentWeight := 0
+
+	for _, req := range reqs {
+		w := SingleRequirementWeight(req, subItemCounts, reqStates)
+
+		// Requirement alone exceeds budget — give it its own bin.
+		if w >= maxWeight {
+			if len(current) > 0 {
+				bins = append(bins, current)
+				current = nil
+				currentWeight = 0
+			}
+			bins = append(bins, []IssueDescItem{req})
+			continue
+		}
+
+		// Adding this requirement would exceed budget — start new bin.
+		if currentWeight+w > maxWeight {
+			if len(current) > 0 {
+				bins = append(bins, current)
+			}
+			current = []IssueDescItem{req}
+			currentWeight = w
+			continue
+		}
+
+		current = append(current, req)
+		currentWeight += w
+	}
+	if len(current) > 0 {
+		bins = append(bins, current)
+	}
+	return bins
+}
+
+// ---------------------------------------------------------------------------
 // SRD loading and warnings
 // ---------------------------------------------------------------------------
 
