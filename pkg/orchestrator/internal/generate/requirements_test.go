@@ -2101,4 +2101,177 @@ func TestValidateTaskWeights(t *testing.T) {
 			t.Errorf("expected PASS when maxWeight=0, got:\n%s", result)
 		}
 	})
+
+	t.Run("SRD prefix matching with short stem", func(t *testing.T) {
+		tmp := t.TempDir()
+		cobblerDir := filepath.Join(tmp, ".cobbler")
+		os.MkdirAll(cobblerDir, 0o755)
+
+		initial := RequirementsFile{
+			Requirements: map[string]map[string]RequirementState{
+				"srd005-wc": {
+					"R1.1": {Status: "ready", Weight: 5},
+					"R1.2": {Status: "ready", Weight: 2},
+				},
+			},
+		}
+		data, _ := yaml.Marshal(initial)
+		os.WriteFile(filepath.Join(cobblerDir, RequirementsFileName), data, 0o644)
+
+		// Short stem "srd005" should match "srd005-wc" via prefix.
+		result := ValidateTaskWeights(cobblerDir, "srd005 R1.1, R1.2", 10)
+		if !strings.Contains(result, "PASS") {
+			t.Errorf("expected PASS with prefix match, got:\n%s", result)
+		}
+		if !strings.Contains(result, "total: 7") {
+			t.Errorf("expected total: 7 (5+2), got:\n%s", result)
+		}
+	})
+}
+
+// --- Audit #16: Additional edge case tests (GH-1686) ---
+
+func TestMarkRequirementsProposed_MissingCobblerDir(t *testing.T) {
+	tmp := t.TempDir()
+	// cobblerDir does not exist — should return nil gracefully.
+	err := MarkRequirementsProposed(filepath.Join(tmp, "nonexistent"), `requirements:
+  - id: R1
+    text: "srd001 R1.1 — implement config"
+`)
+	if err != nil {
+		t.Fatalf("expected nil error for missing dir, got: %v", err)
+	}
+}
+
+func TestMarkRequirementsInProgress_MissingCobblerDir(t *testing.T) {
+	tmp := t.TempDir()
+	err := MarkRequirementsInProgress(filepath.Join(tmp, "nonexistent"), `requirements:
+  - id: R1
+    text: "srd001 R1.1 — implement config"
+`)
+	if err != nil {
+		t.Fatalf("expected nil error for missing dir, got: %v", err)
+	}
+}
+
+func TestUpdateRequirementsFile_ZeroLOC_FromProposed(t *testing.T) {
+	tmp := t.TempDir()
+	cobblerDir := filepath.Join(tmp, ".cobbler")
+	os.MkdirAll(cobblerDir, 0o755)
+
+	initial := RequirementsFile{
+		Requirements: map[string]map[string]RequirementState{
+			"srd001-core": {
+				"R1.1": {Status: "proposed", Weight: 2},
+				"R1.2": {Status: "ready", Weight: 1},
+			},
+		},
+	}
+	data, _ := yaml.Marshal(initial)
+	os.WriteFile(filepath.Join(cobblerDir, RequirementsFileName), data, 0o644)
+
+	desc := `requirements:
+  - id: R1
+    text: "srd001 R1 — implement group"
+`
+	err := UpdateRequirementsFile(cobblerDir, desc, 88, true, true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	result := readReqFile(t, filepath.Join(cobblerDir, RequirementsFileName))
+	// Both proposed and ready should transition to uncertain.
+	assertReqState(t, result, "srd001-core", "R1.1", "uncertain", 88)
+	assertReqState(t, result, "srd001-core", "R1.2", "uncertain", 88)
+}
+
+func TestUpdateRequirementsFile_ZeroLOC_OverridesTestFailure(t *testing.T) {
+	// When zeroLOC=true, status should be "uncertain" regardless of testsPassed.
+	tmp := t.TempDir()
+	cobblerDir := filepath.Join(tmp, ".cobbler")
+	os.MkdirAll(cobblerDir, 0o755)
+
+	initial := RequirementsFile{
+		Requirements: map[string]map[string]RequirementState{
+			"srd001-core": {
+				"R1.1": {Status: "in_progress", Weight: 1},
+			},
+		},
+	}
+	data, _ := yaml.Marshal(initial)
+	os.WriteFile(filepath.Join(cobblerDir, RequirementsFileName), data, 0o644)
+
+	desc := `requirements:
+  - id: R1
+    text: "srd001 R1.1 — implement config"
+`
+	// zeroLOC=true, testsPassed=false — should still be uncertain, not complete_with_failures.
+	err := UpdateRequirementsFile(cobblerDir, desc, 99, false, true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	result := readReqFile(t, filepath.Join(cobblerDir, RequirementsFileName))
+	assertReqState(t, result, "srd001-core", "R1.1", "uncertain", 99)
+}
+
+func TestFullRequirementStateLifecycle(t *testing.T) {
+	tmp := t.TempDir()
+	cobblerDir := filepath.Join(tmp, ".cobbler")
+	os.MkdirAll(cobblerDir, 0o755)
+
+	// Start with ready requirements.
+	initial := RequirementsFile{
+		Requirements: map[string]map[string]RequirementState{
+			"srd001-core": {
+				"R1.1": {Status: "ready", Weight: 3},
+				"R1.2": {Status: "ready", Weight: 1},
+			},
+		},
+	}
+	data, _ := yaml.Marshal(initial)
+	os.WriteFile(filepath.Join(cobblerDir, RequirementsFileName), data, 0o644)
+
+	desc := `requirements:
+  - id: R1
+    text: "srd001 R1 — implement group"
+`
+	// Step 1: Measure marks as proposed.
+	if err := MarkRequirementsProposed(cobblerDir, desc); err != nil {
+		t.Fatalf("MarkRequirementsProposed: %v", err)
+	}
+	result := readReqFile(t, filepath.Join(cobblerDir, RequirementsFileName))
+	assertReqState(t, result, "srd001-core", "R1.1", "proposed", 0)
+	assertReqState(t, result, "srd001-core", "R1.2", "proposed", 0)
+
+	// Step 2: Stitch marks as in_progress.
+	if err := MarkRequirementsInProgress(cobblerDir, desc); err != nil {
+		t.Fatalf("MarkRequirementsInProgress: %v", err)
+	}
+	result = readReqFile(t, filepath.Join(cobblerDir, RequirementsFileName))
+	assertReqState(t, result, "srd001-core", "R1.1", "in_progress", 0)
+	assertReqState(t, result, "srd001-core", "R1.2", "in_progress", 0)
+
+	// Step 3: Stitch completes, marks as complete.
+	if err := UpdateRequirementsFile(cobblerDir, desc, 42, true, false); err != nil {
+		t.Fatalf("UpdateRequirementsFile: %v", err)
+	}
+	result = readReqFile(t, filepath.Join(cobblerDir, RequirementsFileName))
+	assertReqState(t, result, "srd001-core", "R1.1", "complete", 42)
+	assertReqState(t, result, "srd001-core", "R1.2", "complete", 42)
+
+	// Weight preserved throughout.
+	if w := result.Requirements["srd001-core"]["R1.1"].Weight; w != 3 {
+		t.Errorf("R1.1 weight = %d, want 3 (preserved through lifecycle)", w)
+	}
+	if w := result.Requirements["srd001-core"]["R1.2"].Weight; w != 1 {
+		t.Errorf("R1.2 weight = %d, want 1 (preserved through lifecycle)", w)
+	}
+
+	// All terminal.
+	for _, st := range result.Requirements["srd001-core"] {
+		if !IsRequirementTerminal(st.Status) {
+			t.Errorf("expected terminal state, got %q", st.Status)
+		}
+	}
 }
