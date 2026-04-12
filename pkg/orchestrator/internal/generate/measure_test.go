@@ -369,7 +369,7 @@ files:
 	}
 	found := false
 	for _, e := range result.Errors {
-		if strings.Contains(e, "R1.2") && strings.Contains(e, "already complete") {
+		if strings.Contains(e, "R1.2") && strings.Contains(e, "already") {
 			found = true
 		}
 	}
@@ -422,16 +422,16 @@ files:
 	issues := []ProposedIssue{{Index: 0, Title: "test", Description: desc}}
 	result := ValidateMeasureOutput(issues, 0, 0, nil, reqStates)
 	if !result.HasErrors() {
-		t.Fatal("expected errors for proposal targeting fully complete group")
+		t.Fatal("expected errors for proposal targeting fully claimed group")
 	}
 	found := false
 	for _, e := range result.Errors {
-		if strings.Contains(e, "R1") && strings.Contains(e, "fully complete") {
+		if strings.Contains(e, "R1") && strings.Contains(e, "fully claimed") {
 			found = true
 		}
 	}
 	if !found {
-		t.Errorf("expected error mentioning R1 group as fully complete, got: %v", result.Errors)
+		t.Errorf("expected error mentioning R1 group as fully claimed, got: %v", result.Errors)
 	}
 }
 

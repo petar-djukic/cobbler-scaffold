@@ -209,8 +209,9 @@ func ValidateMeasureOutput(issues []ProposedIssue, maxReqs, maxWeight int, subIt
 			}
 		}
 
-		// Check for completed R-items: proposals must not target R-items
-		// already marked complete in requirements.yaml (GH-1386).
+		// Check for claimed R-items: proposals must not target R-items
+		// already proposed, in_progress, or complete in requirements.yaml
+		// (GH-1386, GH-2123).
 		if len(reqStates) > 0 {
 			for _, req := range desc.Requirements {
 				matches := SRDRefPattern.FindAllStringSubmatch(req.Text, -1)
@@ -224,23 +225,23 @@ func ValidateMeasureOutput(issues []ProposedIssue, maxReqs, maxWeight int, subIt
 					}
 					if subItem != "" {
 						key := fmt.Sprintf("R%s.%s", groupNum, subItem)
-						if st, ok := srdReqs[key]; ok && isRequirementComplete(st.Status) {
-							msg := fmt.Sprintf("[%d] %q: requirement %s %s is already complete (issue #%d)",
-								issue.Index, issue.Title, srdStem, key, st.Issue)
+						if st, ok := srdReqs[key]; ok && IsRequirementClaimed(st.Status) {
+							msg := fmt.Sprintf("[%d] %q: requirement %s %s is already %s (issue #%d)",
+								issue.Index, issue.Title, srdStem, key, st.Status, st.Issue)
 							Log("validateMeasureOutput: %s", msg)
 							result.Errors = append(result.Errors, msg)
 						}
 					} else {
-						// Group reference — check if ALL sub-items are complete.
+						// Group reference — check if ALL sub-items are claimed.
 						prefix := fmt.Sprintf("R%s.", groupNum)
-						allComplete := true
+						allClaimed := true
 						for k, st := range srdReqs {
-							if strings.HasPrefix(k, prefix) && !isRequirementComplete(st.Status) {
-								allComplete = false
+							if strings.HasPrefix(k, prefix) && !IsRequirementClaimed(st.Status) {
+								allClaimed = false
 								break
 							}
 						}
-						if allComplete {
+						if allClaimed {
 							// Check there are actually sub-items.
 							hasItems := false
 							for k := range srdReqs {
@@ -250,7 +251,7 @@ func ValidateMeasureOutput(issues []ProposedIssue, maxReqs, maxWeight int, subIt
 								}
 							}
 							if hasItems {
-								msg := fmt.Sprintf("[%d] %q: requirement group %s R%s is already fully complete",
+								msg := fmt.Sprintf("[%d] %q: requirement group %s R%s is already fully claimed",
 									issue.Index, issue.Title, srdStem, groupNum)
 								Log("validateMeasureOutput: %s", msg)
 								result.Errors = append(result.Errors, msg)

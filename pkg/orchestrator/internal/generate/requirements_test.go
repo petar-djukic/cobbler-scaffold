@@ -350,7 +350,7 @@ func TestUpdateRequirementsFile(t *testing.T) {
   - id: R2
     text: "srd001 R2.1 — implement other thing"
 `
-		err := UpdateRequirementsFile(cobblerDir, desc, 42, true)
+		err := UpdateRequirementsFile(cobblerDir, desc, 42, true, false)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -385,7 +385,7 @@ func TestUpdateRequirementsFile(t *testing.T) {
   - id: R1
     text: "srd002 R1 — implement entire group"
 `
-		err := UpdateRequirementsFile(cobblerDir, desc, 99, true)
+		err := UpdateRequirementsFile(cobblerDir, desc, 99, true, false)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -398,7 +398,7 @@ func TestUpdateRequirementsFile(t *testing.T) {
 
 	t.Run("missing file returns nil", func(t *testing.T) {
 		tmp := t.TempDir()
-		err := UpdateRequirementsFile(tmp, "requirements:\n  - id: R1\n    text: srd001 R1.1", 1, true)
+		err := UpdateRequirementsFile(tmp, "requirements:\n  - id: R1\n    text: srd001 R1.1", 1, true, false)
 		if err != nil {
 			t.Fatalf("expected nil error, got: %v", err)
 		}
@@ -423,7 +423,7 @@ func TestUpdateRequirementsFile(t *testing.T) {
   - id: R1
     text: "srd999 R5.3 — nonexistent SRD"
 `
-		err := UpdateRequirementsFile(cobblerDir, desc, 10, true)
+		err := UpdateRequirementsFile(cobblerDir, desc, 10, true, false)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -452,7 +452,7 @@ func TestUpdateRequirementsFile(t *testing.T) {
   - id: R1
     text: "srd001 R1 — redo whole group"
 `
-		err := UpdateRequirementsFile(cobblerDir, desc, 20, true)
+		err := UpdateRequirementsFile(cobblerDir, desc, 20, true, false)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -486,7 +486,7 @@ func TestUpdateRequirementsFile_TestsFailed(t *testing.T) {
   - id: R1
     text: "srd001 R1.1 — implement config"
 `
-		err := UpdateRequirementsFile(cobblerDir, desc, 50, false)
+		err := UpdateRequirementsFile(cobblerDir, desc, 50, false, false)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -868,7 +868,7 @@ func TestPartialCompletionSequence(t *testing.T) {
   - id: R1
     text: "srd003-config R1 — implement config file loading"
 `
-	if err := UpdateRequirementsFile(cobblerDir, desc1, 100, true); err != nil {
+	if err := UpdateRequirementsFile(cobblerDir, desc1, 100, true, false); err != nil {
 		t.Fatalf("Task 1 UpdateRequirementsFile: %v", err)
 	}
 
@@ -905,7 +905,7 @@ func TestPartialCompletionSequence(t *testing.T) {
   - id: R2
     text: "srd003-config R3 — implement config defaults"
 `
-	if err := UpdateRequirementsFile(cobblerDir, desc2, 101, true); err != nil {
+	if err := UpdateRequirementsFile(cobblerDir, desc2, 101, true, false); err != nil {
 		t.Fatalf("Task 2 UpdateRequirementsFile: %v", err)
 	}
 
@@ -937,7 +937,7 @@ func TestPartialCompletionSequence(t *testing.T) {
   - id: R1
     text: "srd003-config R4 — implement config hot-reload"
 `
-	if err := UpdateRequirementsFile(cobblerDir, desc3, 102, true); err != nil {
+	if err := UpdateRequirementsFile(cobblerDir, desc3, 102, true, false); err != nil {
 		t.Fatalf("Task 3 UpdateRequirementsFile: %v", err)
 	}
 
@@ -961,7 +961,7 @@ func TestPartialCompletionSequence(t *testing.T) {
 	}
 
 	// Verify no regression: re-updating already-complete items is a no-op.
-	if err := UpdateRequirementsFile(cobblerDir, desc1, 999, true); err != nil {
+	if err := UpdateRequirementsFile(cobblerDir, desc1, 999, true, false); err != nil {
 		t.Fatalf("re-update should not error: %v", err)
 	}
 	rf = readReqFile(t, reqPath)
@@ -1045,12 +1045,12 @@ files:
 		result := ValidateMeasureOutput(issues, 0, 0, nil, reqStates)
 		found := false
 		for _, e := range result.Errors {
-			if strings.Contains(e, "R1") && strings.Contains(e, "complete") {
+			if strings.Contains(e, "R1") && strings.Contains(e, "claimed") {
 				found = true
 			}
 		}
 		if !found {
-			t.Errorf("expected error for completed group R1, got errors: %v", result.Errors)
+			t.Errorf("expected error for claimed group R1, got errors: %v", result.Errors)
 		}
 	})
 
@@ -1060,7 +1060,7 @@ files:
 		result := ValidateMeasureOutput(issues, 0, 0, nil, reqStates)
 		found := false
 		for _, e := range result.Errors {
-			if strings.Contains(e, "R2.1") && strings.Contains(e, "already complete") {
+			if strings.Contains(e, "R2.1") && strings.Contains(e, "already") {
 				found = true
 			}
 		}
@@ -1224,7 +1224,7 @@ requirements:
   - id: R2
     text: "Implement srd002-sys requirement R2.6 as specified in the SRD"`
 
-	if err := UpdateRequirementsFile(dir, description, 660, true); err != nil {
+	if err := UpdateRequirementsFile(dir, description, 660, true, false); err != nil {
 		t.Fatalf("UpdateRequirementsFile: %v", err)
 	}
 
@@ -1280,12 +1280,12 @@ files:
 	result := ValidateMeasureOutput(issues, 0, 0, nil, reqStates)
 	found := 0
 	for _, e := range result.Errors {
-		if strings.Contains(e, "already complete") {
+		if strings.Contains(e, "already") {
 			found++
 		}
 	}
 	if found != 2 {
-		t.Errorf("expected 2 'already complete' errors for R2.5 and R2.6, got %d; errors: %v", found, result.Errors)
+		t.Errorf("expected 2 'already claimed' errors for R2.5 and R2.6, got %d; errors: %v", found, result.Errors)
 	}
 }
 
@@ -1421,7 +1421,7 @@ files:
 		result := ValidateMeasureOutput(issues, 0, 0, nil, reqStates)
 		found := false
 		for _, e := range result.Errors {
-			if strings.Contains(e, "R1.1") && strings.Contains(e, "already complete") {
+			if strings.Contains(e, "R1.1") && strings.Contains(e, "already") {
 				found = true
 			}
 		}
@@ -1435,7 +1435,7 @@ files:
 		issues := []ProposedIssue{{Index: 0, Title: "test", Description: desc}}
 		result := ValidateMeasureOutput(issues, 0, 0, nil, reqStates)
 		for _, e := range result.Errors {
-			if strings.Contains(e, "R2.1") && strings.Contains(e, "complete") {
+			if strings.Contains(e, "R2.1") && strings.Contains(e, "claimed") {
 				t.Errorf("R2.1 is ready, should not be rejected: %s", e)
 			}
 		}
@@ -1717,5 +1717,240 @@ acceptance_criteria: []
 	}
 	if s := srdStates["R1.2"].Status; s != "ready" {
 		t.Errorf("R1.2 status = %q, want ready (reset)", s)
+	}
+}
+
+// --- GH-2123: Requirement state machine tests ---
+
+func TestMarkRequirementsProposed(t *testing.T) {
+	t.Run("marks ready requirements as proposed", func(t *testing.T) {
+		tmp := t.TempDir()
+		cobblerDir := filepath.Join(tmp, ".cobbler")
+		os.MkdirAll(cobblerDir, 0o755)
+
+		initial := RequirementsFile{
+			Requirements: map[string]map[string]RequirementState{
+				"srd001-core": {
+					"R1.1": {Status: "ready", Weight: 3},
+					"R1.2": {Status: "ready", Weight: 1},
+					"R2.1": {Status: "complete", Issue: 10, Weight: 2},
+				},
+			},
+		}
+		data, _ := yaml.Marshal(initial)
+		os.WriteFile(filepath.Join(cobblerDir, RequirementsFileName), data, 0o644)
+
+		desc := `requirements:
+  - id: R1
+    text: "srd001 R1.1 — implement config"
+`
+		err := MarkRequirementsProposed(cobblerDir, desc)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		result := readReqFile(t, filepath.Join(cobblerDir, RequirementsFileName))
+		assertReqState(t, result, "srd001-core", "R1.1", "proposed", 0)
+		// Weight must be preserved.
+		if w := result.Requirements["srd001-core"]["R1.1"].Weight; w != 3 {
+			t.Errorf("R1.1 weight = %d, want 3", w)
+		}
+		// R1.2 and R2.1 should be unchanged.
+		assertReqState(t, result, "srd001-core", "R1.2", "ready", 0)
+		assertReqState(t, result, "srd001-core", "R2.1", "complete", 10)
+	})
+
+	t.Run("skips already proposed requirements", func(t *testing.T) {
+		tmp := t.TempDir()
+		cobblerDir := filepath.Join(tmp, ".cobbler")
+		os.MkdirAll(cobblerDir, 0o755)
+
+		initial := RequirementsFile{
+			Requirements: map[string]map[string]RequirementState{
+				"srd001-core": {
+					"R1.1": {Status: "proposed"},
+					"R1.2": {Status: "ready"},
+				},
+			},
+		}
+		data, _ := yaml.Marshal(initial)
+		os.WriteFile(filepath.Join(cobblerDir, RequirementsFileName), data, 0o644)
+
+		desc := `requirements:
+  - id: R1
+    text: "srd001 R1 — implement entire group"
+`
+		err := MarkRequirementsProposed(cobblerDir, desc)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		result := readReqFile(t, filepath.Join(cobblerDir, RequirementsFileName))
+		// R1.1 stays proposed (not re-proposed).
+		assertReqState(t, result, "srd001-core", "R1.1", "proposed", 0)
+		// R1.2 transitions from ready to proposed.
+		assertReqState(t, result, "srd001-core", "R1.2", "proposed", 0)
+	})
+}
+
+func TestMarkRequirementsInProgress(t *testing.T) {
+	t.Run("transitions proposed to in_progress", func(t *testing.T) {
+		tmp := t.TempDir()
+		cobblerDir := filepath.Join(tmp, ".cobbler")
+		os.MkdirAll(cobblerDir, 0o755)
+
+		initial := RequirementsFile{
+			Requirements: map[string]map[string]RequirementState{
+				"srd001-core": {
+					"R1.1": {Status: "proposed", Weight: 5},
+					"R1.2": {Status: "ready", Weight: 1},
+					"R2.1": {Status: "complete", Issue: 10},
+				},
+			},
+		}
+		data, _ := yaml.Marshal(initial)
+		os.WriteFile(filepath.Join(cobblerDir, RequirementsFileName), data, 0o644)
+
+		desc := `requirements:
+  - id: R1
+    text: "srd001 R1 — implement group"
+`
+		err := MarkRequirementsInProgress(cobblerDir, desc)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		result := readReqFile(t, filepath.Join(cobblerDir, RequirementsFileName))
+		// Both ready and proposed transition to in_progress.
+		assertReqState(t, result, "srd001-core", "R1.1", "in_progress", 0)
+		assertReqState(t, result, "srd001-core", "R1.2", "in_progress", 0)
+		// Weight must be preserved.
+		if w := result.Requirements["srd001-core"]["R1.1"].Weight; w != 5 {
+			t.Errorf("R1.1 weight = %d, want 5", w)
+		}
+		// R2.1 stays complete.
+		assertReqState(t, result, "srd001-core", "R2.1", "complete", 10)
+	})
+}
+
+func TestUpdateRequirementsFile_ZeroLOC(t *testing.T) {
+	t.Run("marks as uncertain when zeroLOC is true", func(t *testing.T) {
+		tmp := t.TempDir()
+		cobblerDir := filepath.Join(tmp, ".cobbler")
+		os.MkdirAll(cobblerDir, 0o755)
+
+		initial := RequirementsFile{
+			Requirements: map[string]map[string]RequirementState{
+				"srd001-core": {
+					"R1.1": {Status: "in_progress", Weight: 2},
+					"R1.2": {Status: "ready"},
+				},
+			},
+		}
+		data, _ := yaml.Marshal(initial)
+		os.WriteFile(filepath.Join(cobblerDir, RequirementsFileName), data, 0o644)
+
+		desc := `requirements:
+  - id: R1
+    text: "srd001 R1.1 — implement config"
+`
+		err := UpdateRequirementsFile(cobblerDir, desc, 77, true, true)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		result := readReqFile(t, filepath.Join(cobblerDir, RequirementsFileName))
+		assertReqState(t, result, "srd001-core", "R1.1", "uncertain", 77)
+		// Weight must be preserved.
+		if w := result.Requirements["srd001-core"]["R1.1"].Weight; w != 2 {
+			t.Errorf("R1.1 weight = %d, want 2", w)
+		}
+		// R1.2 should remain ready (not referenced in desc).
+		assertReqState(t, result, "srd001-core", "R1.2", "ready", 0)
+	})
+
+	t.Run("uncertain requirements do not block new transitions", func(t *testing.T) {
+		tmp := t.TempDir()
+		cobblerDir := filepath.Join(tmp, ".cobbler")
+		os.MkdirAll(cobblerDir, 0o755)
+
+		// Simulate: R1.1 was marked uncertain, now another task completes it.
+		initial := RequirementsFile{
+			Requirements: map[string]map[string]RequirementState{
+				"srd001-core": {
+					"R1.1": {Status: "uncertain", Issue: 77},
+				},
+			},
+		}
+		data, _ := yaml.Marshal(initial)
+		os.WriteFile(filepath.Join(cobblerDir, RequirementsFileName), data, 0o644)
+
+		desc := `requirements:
+  - id: R1
+    text: "srd001 R1.1 — implement config"
+`
+		// uncertain is not transitionable, so this should be a no-op.
+		err := UpdateRequirementsFile(cobblerDir, desc, 88, true, false)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		result := readReqFile(t, filepath.Join(cobblerDir, RequirementsFileName))
+		// uncertain is terminal — should not be overwritten.
+		assertReqState(t, result, "srd001-core", "R1.1", "uncertain", 77)
+	})
+}
+
+func TestUpdateRequirementsFile_TransitionsFromProposedAndInProgress(t *testing.T) {
+	t.Run("transitions proposed and in_progress to complete", func(t *testing.T) {
+		tmp := t.TempDir()
+		cobblerDir := filepath.Join(tmp, ".cobbler")
+		os.MkdirAll(cobblerDir, 0o755)
+
+		initial := RequirementsFile{
+			Requirements: map[string]map[string]RequirementState{
+				"srd001-core": {
+					"R1.1": {Status: "proposed", Weight: 3},
+					"R1.2": {Status: "in_progress", Weight: 1},
+					"R1.3": {Status: "complete", Issue: 5},
+				},
+			},
+		}
+		data, _ := yaml.Marshal(initial)
+		os.WriteFile(filepath.Join(cobblerDir, RequirementsFileName), data, 0o644)
+
+		desc := `requirements:
+  - id: R1
+    text: "srd001 R1 — implement group"
+`
+		err := UpdateRequirementsFile(cobblerDir, desc, 60, true, false)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		result := readReqFile(t, filepath.Join(cobblerDir, RequirementsFileName))
+		assertReqState(t, result, "srd001-core", "R1.1", "complete", 60)
+		assertReqState(t, result, "srd001-core", "R1.2", "complete", 60)
+		// R1.3 was already complete — should not be overwritten.
+		assertReqState(t, result, "srd001-core", "R1.3", "complete", 5)
+		// Weights must be preserved.
+		if w := result.Requirements["srd001-core"]["R1.1"].Weight; w != 3 {
+			t.Errorf("R1.1 weight = %d, want 3", w)
+		}
+	})
+}
+
+func TestIsRequirementTerminal(t *testing.T) {
+	terminal := []string{"complete", "complete_with_failures", "failed", "uncertain", "skip"}
+	for _, s := range terminal {
+		if !IsRequirementTerminal(s) {
+			t.Errorf("IsRequirementTerminal(%q) = false, want true", s)
+		}
+	}
+	nonTerminal := []string{"ready", "proposed", "in_progress"}
+	for _, s := range nonTerminal {
+		if IsRequirementTerminal(s) {
+			t.Errorf("IsRequirementTerminal(%q) = true, want false", s)
+		}
 	}
 }
