@@ -138,10 +138,15 @@ func GenerateRequirementsFile(srdDir, cobblerDir string, preserveExisting bool) 
 
 // UpdateRequirementsFile reads the requirements state file, extracts SRD
 // requirement references from the task description YAML, and transitions
-// matching entries from "ready" to "complete" (or "complete_with_failures"
-// when testsPassed is false) with the given issue number.
+// matching entries to their completion state with the given issue number.
+//
+// When zeroLOC is true, requirements are marked "uncertain" (stitch completed
+// but produced no file changes). Otherwise they transition to "complete" or
+// "complete_with_failures" based on testsPassed. Only requirements in
+// "ready", "proposed", or "in_progress" states are transitioned (GH-2123).
+//
 // If the file does not exist, the function returns nil (backward compat).
-func UpdateRequirementsFile(cobblerDir, description string, issueNumber int, testsPassed bool) error {
+func UpdateRequirementsFile(cobblerDir, description string, issueNumber int, testsPassed, zeroLOC bool) error {
 	reqPath := filepath.Join(cobblerDir, RequirementsFileName)
 	data, err := os.ReadFile(reqPath)
 	if err != nil {
@@ -165,7 +170,9 @@ func UpdateRequirementsFile(cobblerDir, description string, issueNumber int, tes
 	}
 
 	status := "complete"
-	if !testsPassed {
+	if zeroLOC {
+		status = "uncertain"
+	} else if !testsPassed {
 		status = "complete_with_failures"
 	}
 
@@ -178,16 +185,16 @@ func UpdateRequirementsFile(cobblerDir, description string, issueNumber int, tes
 		if ref.SubItem != "" {
 			// Specific sub-item reference (e.g. R1.2).
 			key := fmt.Sprintf("R%s.%s", ref.Group, ref.SubItem)
-			if st, ok := srdReqs[key]; ok && st.Status == "ready" {
-				srdReqs[key] = RequirementState{Status: status, Issue: issueNumber}
+			if st, ok := srdReqs[key]; ok && isRequirementTransitionable(st.Status) {
+				srdReqs[key] = RequirementState{Status: status, Issue: issueNumber, Weight: st.Weight}
 				updated++
 			}
 		} else {
 			// Group reference (e.g. R1) — mark all sub-items.
 			prefix := fmt.Sprintf("R%s.", ref.Group)
 			for key, st := range srdReqs {
-				if strings.HasPrefix(key, prefix) && st.Status == "ready" {
-					srdReqs[key] = RequirementState{Status: status, Issue: issueNumber}
+				if strings.HasPrefix(key, prefix) && isRequirementTransitionable(st.Status) {
+					srdReqs[key] = RequirementState{Status: status, Issue: issueNumber, Weight: st.Weight}
 					updated++
 				}
 			}
@@ -209,12 +216,117 @@ func UpdateRequirementsFile(cobblerDir, description string, issueNumber int, tes
 	return nil
 }
 
+// MarkRequirementsProposed transitions R-items cited in a task description
+// from "ready" to "proposed" before the GitHub issue is created. This
+// prevents duplicate task proposals across measure cycles (GH-2123).
+func MarkRequirementsProposed(cobblerDir, description string) error {
+	return transitionRequirements(cobblerDir, description, "proposed", "ready")
+}
+
+// MarkRequirementsInProgress transitions R-items cited in a task description
+// from "proposed" (or "ready" for backward compat) to "in_progress" when
+// stitch claims the task (GH-2123).
+func MarkRequirementsInProgress(cobblerDir, description string) error {
+	return transitionRequirements(cobblerDir, description, "in_progress", "ready", "proposed")
+}
+
+// transitionRequirements is a helper that reads requirements.yaml, extracts
+// SRD refs from the description, and transitions matching R-items from any
+// of the fromStatuses to toStatus.
+func transitionRequirements(cobblerDir, description, toStatus string, fromStatuses ...string) error {
+	reqPath := filepath.Join(cobblerDir, RequirementsFileName)
+	data, err := os.ReadFile(reqPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("reading %s: %w", reqPath, err)
+	}
+
+	var rf RequirementsFile
+	if err := yaml.Unmarshal(data, &rf); err != nil {
+		return fmt.Errorf("parsing %s: %w", reqPath, err)
+	}
+	if rf.Requirements == nil {
+		return nil
+	}
+
+	refs := extractSRDRefsFromDescription(description)
+	if len(refs) == 0 {
+		return nil
+	}
+
+	fromSet := make(map[string]bool, len(fromStatuses))
+	for _, s := range fromStatuses {
+		fromSet[s] = true
+	}
+
+	updated := 0
+	for _, ref := range refs {
+		srdReqs := findSRDRequirements(rf.Requirements, ref.SRDStem)
+		if srdReqs == nil {
+			continue
+		}
+		if ref.SubItem != "" {
+			key := fmt.Sprintf("R%s.%s", ref.Group, ref.SubItem)
+			if st, ok := srdReqs[key]; ok && fromSet[st.Status] {
+				srdReqs[key] = RequirementState{Status: toStatus, Issue: st.Issue, Weight: st.Weight}
+				updated++
+			}
+		} else {
+			prefix := fmt.Sprintf("R%s.", ref.Group)
+			for key, st := range srdReqs {
+				if strings.HasPrefix(key, prefix) && fromSet[st.Status] {
+					srdReqs[key] = RequirementState{Status: toStatus, Issue: st.Issue, Weight: st.Weight}
+					updated++
+				}
+			}
+		}
+	}
+
+	if updated == 0 {
+		return nil
+	}
+
+	out, err := yaml.Marshal(rf)
+	if err != nil {
+		return fmt.Errorf("marshalling requirements: %w", err)
+	}
+	if err := os.WriteFile(reqPath, out, 0o644); err != nil {
+		return fmt.Errorf("writing %s: %w", reqPath, err)
+	}
+	Log("transitionRequirements: marked %d R-items as %s", updated, toStatus)
+	return nil
+}
+
 // isRequirementComplete returns true if the status represents a completed
 // or skipped R-item. Skipped items are requirements that cannot be fulfilled
 // by the generator (e.g. manual Magefile authoring) and are treated as
 // complete for UC validation and measure filtering (GH-1451).
 func isRequirementComplete(status string) bool {
 	return status == "complete" || status == "complete_with_failures" || status == "skip"
+}
+
+// IsRequirementTerminal returns true if the status represents a terminal
+// state — the requirement will not be worked on further. Terminal states
+// are: complete, complete_with_failures, failed, uncertain, and skip.
+// The generator stops when all requirements reach a terminal state (GH-2123).
+func IsRequirementTerminal(status string) bool {
+	return isRequirementComplete(status) || status == "failed" || status == "uncertain"
+}
+
+// isRequirementTransitionable returns true if the status allows transition
+// to a completion state. Requirements in ready, proposed, or in_progress
+// can be transitioned by UpdateRequirementsFile (GH-2123).
+func isRequirementTransitionable(status string) bool {
+	return status == "ready" || status == "proposed" || status == "in_progress"
+}
+
+// IsRequirementClaimed returns true if the requirement is already claimed
+// by a task (proposed or in_progress) or completed. Used by measure
+// validation to reject proposals targeting non-ready requirements (GH-2123).
+func IsRequirementClaimed(status string) bool {
+	return status != "ready"
 }
 
 // AllRefsAlreadyComplete checks whether every SRD requirement reference in

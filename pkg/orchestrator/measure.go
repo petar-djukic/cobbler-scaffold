@@ -741,6 +741,19 @@ func (m *Measure) importIssuesImpl(yamlFile, repo, generation string, skipEnforc
 		issues = scoped
 	}
 
+	// Mark R-items as "proposed" in requirements.yaml before creating
+	// GitHub issues. This prevents duplicate proposals when measure runs
+	// again before stitch completes the tasks (GH-2123).
+	for _, issue := range issues {
+		if err := generate.MarkRequirementsProposed(m.cfg.Cobbler.Dir, issue.Description); err != nil {
+			m.logf("importIssues: warning marking requirements proposed for %q: %v", issue.Title, err)
+		}
+	}
+	if m.git.HasChanges(".") {
+		_ = m.git.StageAll(".")
+		_ = m.git.Commit("Mark requirements as proposed before issue creation (GH-2123)", ".")
+	}
+
 	// Create all issues on GitHub as separate stitch tasks (GH-1367).
 	// The measure placeholder remains a distinct [measure] issue.
 	var ids []string

@@ -311,6 +311,15 @@ func (s *Stitch) doOneTask(task stitchTask, baseBranch, repoRoot string) error {
 
 	s.logf("doOneTask: task #%d claimed via pickReadyIssue label", task.GhNumber)
 
+	// Mark R-items as "in_progress" in requirements.yaml when claiming
+	// the task. This prevents measure from re-proposing them (GH-2123).
+	if err := generate.MarkRequirementsInProgress(s.cfg.Cobbler.Dir, task.Description); err != nil {
+		s.logf("doOneTask: warning marking requirements in_progress for #%d: %v", task.GhNumber, err)
+	} else if s.git.HasChanges(".") {
+		_ = s.git.StageAll(".")
+		_ = s.git.Commit(fmt.Sprintf("Mark requirements in_progress for #%d", task.GhNumber), ".")
+	}
+
 	// Pre-execution dedup: skip tasks whose R-items were already completed
 	// by an earlier task in the same measure batch (GH-1434).
 	reqStates := generate.LoadRequirementStates(s.cfg.Cobbler.Dir)
@@ -699,7 +708,9 @@ func (s *Stitch) closeStitchTask(task stitchTask, rec claude.InvocationRecord, t
 
 	// Update requirement states before closing (GH-1378).
 	// Pass test result so failures are tracked as complete_with_failures (GH-1388).
-	if err := generate.UpdateRequirementsFile(s.cfg.Cobbler.Dir, task.Description, task.GhNumber, testsPassed); err != nil {
+	// When zero LOC was produced, mark as "uncertain" instead (GH-2123).
+	zeroLOC := locDeltaProd == 0 && locDeltaTest == 0
+	if err := generate.UpdateRequirementsFile(s.cfg.Cobbler.Dir, task.Description, task.GhNumber, testsPassed, zeroLOC); err != nil {
 		s.logf("closeStitchTask: warning updating requirements: %v", err)
 	} else if s.git.HasChanges(".") {
 		// Commit requirement state immediately so it survives interruptions (GH-1385).

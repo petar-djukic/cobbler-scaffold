@@ -254,9 +254,9 @@ func loadRequirementStates(cobblerDir string) map[string]map[string]generate.Req
 }
 
 // hasUnresolvedRequirements returns true if any R-item in requirements.yaml
-// has status "ready" (not yet implemented or skipped). Used to prevent the
-// generator from stopping prematurely when the GitHub API reports no open
-// issues but work remains (GH-1475).
+// is in a non-terminal state (ready, proposed, or in_progress). Used to
+// prevent the generator from stopping prematurely when the GitHub API
+// reports no open issues but work remains (GH-1475, GH-2123).
 func (g *Generator) hasUnresolvedRequirements() bool {
 	states := generate.LoadRequirementStates(g.cfg.Cobbler.Dir)
 	if states == nil {
@@ -264,7 +264,7 @@ func (g *Generator) hasUnresolvedRequirements() bool {
 	}
 	for _, srdReqs := range states {
 		for _, st := range srdReqs {
-			if st.Status == "ready" {
+			if !generate.IsRequirementTerminal(st.Status) {
 				return true
 			}
 		}
@@ -488,15 +488,14 @@ func (g *Generator) RunCycles(label string) error {
 		g.logf("generator %s: cycle %d — LOC delta=%d (prod %d→%d, test %d→%d)",
 			label, cycle, locDelta, locBefore.Production, locAfter.Production, locBefore.Test, locAfter.Test)
 
-		// Track consecutive zero-LOC cycles as a refinement-loop guard.
+		// Track consecutive zero-LOC cycles. Rather than stopping the
+		// generation outright, zero-LOC tasks mark their requirements as
+		// "uncertain" in requirements.yaml. The generation stops when all
+		// requirements reach a terminal state (GH-2123). The counter is
+		// kept for logging visibility.
 		if locDelta == 0 {
 			consecutiveZeroLOC++
 			g.logf("generator %s: cycle %d — zero LOC change (%d consecutive)", label, cycle, consecutiveZeroLOC)
-			if maxZeroLOC > 0 && consecutiveZeroLOC >= maxZeroLOC {
-				g.logf("generator %s: %d consecutive zero-LOC cycles reached limit (%d); spec likely complete — stopping",
-					label, consecutiveZeroLOC, maxZeroLOC)
-				break
-			}
 		} else {
 			consecutiveZeroLOC = 0
 		}
