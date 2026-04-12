@@ -32,7 +32,11 @@ operations:
       - name: error
         type: error
   - name: doOneTask
-    description: Execute the stitch workflow for a single ready issue.
+    description: |
+      Execute the stitch workflow for a single ready issue. Marks cited R-items as
+      in_progress in requirements.yaml when claiming the task (GH-2123). On completion,
+      transitions requirements to complete, complete_with_failures, or uncertain
+      (when zero LOC changes were produced).
     parameters: []
     returns:
       - name: error

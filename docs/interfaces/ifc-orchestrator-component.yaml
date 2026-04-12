@@ -79,6 +79,20 @@ operations:
     returns:
       - name: error
         type: error
+  - name: ValidateTaskWeights
+    description: |
+      Validate a proposed task's weight budget against MaxWeightPerTask from the
+      config. Parses an input string of the form "srd005-wc R2.5, R2.6, R3.1",
+      looks up per-item weights from requirements.yaml, and prints a formatted
+      report with PASS/FAIL to stdout. Used by the measure agent as a tool to
+      check batches before finalizing (GH-2078).
+    parameters:
+      - name: input
+        type: string
+        description: "SRD stem followed by comma-separated R-items (e.g. 'srd005-wc R2.5, R2.6')."
+    returns:
+      - name: error
+        type: error
 
 references:
   - srd001-orchestrator-core

@@ -37,7 +37,11 @@ operations:
       - name: error
         type: error
   - name: importIssues
-    description: Parse Claude YAML output and create GitHub Issues with dependency labels.
+    description: |
+      Parse Claude YAML output and create GitHub Issues with dependency labels.
+      Before creating issues, marks cited R-items as proposed in requirements.yaml
+      to prevent duplicate proposals in subsequent measure cycles (GH-2123).
+      Validates that proposed tasks do not target non-ready requirements.
     parameters: []
     returns:
       - name: error

@@ -26,6 +26,16 @@ overview:
     finished (tagged, ready to merge) -> merged (on main, branch deleted). An alternative
     terminal state is abandoned (generation was never merged).
 
+    Requirements in requirements.yaml track individual R-item states through a state machine:
+    ready -> proposed (measure claimed it) -> in_progress (stitch is working on it) ->
+    complete | complete_with_failures | uncertain | failed. The skip state marks requirements
+    that cannot be fulfilled by the generator. Measure marks R-items as proposed before
+    creating GitHub issues to prevent duplicate proposals across cycles (GH-2123). Stitch
+    marks them in_progress when claiming a task. Zero-LOC completions mark requirements as
+    uncertain rather than triggering a hard stop. The generation stops when all requirements
+    reach a terminal state (complete, complete_with_failures, failed, uncertain, skip) and
+    no open issues remain.
+
     The generation branch name follows the pattern {GenPrefix}{suffix}. When generation.name
     is set, the suffix is the configured name (e.g., "gh-42"); otherwise, it is a timestamp
     formatted as 2006-01-02-15-04-05. Tags mark lifecycle events: {branch}-start,
@@ -225,7 +235,7 @@ components:
       - Construct from Config or configuration.yaml file
       - Wire all domain structs through constructor injection
       - Provide accessor methods for Config, Tracker, Git
-      - Host cross-domain utilities (DumpMeasurePrompt, DumpStitchPrompt, TokenStats, PrintContextFiles, ConstitutionPreviewFile)
+      - Host cross-domain utilities (DumpMeasurePrompt, DumpStitchPrompt, TokenStats, PrintContextFiles, ConstitutionPreviewFile, ValidateTaskWeights)
     references:
       - srd001-orchestrator-core
 
@@ -245,6 +255,7 @@ components:
       - Handle rate limits separately from task failures — rate-limit waits do not count as task retries (GH-1805)
       - Commit specs-only cleanup to generation branch before merge (GH-1876)
       - Block auto-advance when release has ready requirements in requirements.yaml (GH-1952)
+      - Stop generation when all requirements reach terminal states (complete, complete_with_failures, failed, uncertain, skip) — replaces consecutive zero-LOC stop (GH-2123)
     references:
       - srd002-generation-lifecycle
 
@@ -264,6 +275,8 @@ components:
       - "Strip [stitch] prefix from measure-proposed titles before import (GH-1953)"
       - Enforce MinMeasureIssues — re-prompt when too few tasks are proposed and unresolved requirements exist (GH-1882)
       - Validate requirement weight per task against MaxWeightPerTask (GH-1951)
+      - Mark R-items as proposed in requirements.yaml before creating GitHub issues to prevent duplicate proposals (GH-2123)
+      - Reject proposals targeting non-ready requirements (proposed, in_progress, or complete) during validation (GH-2123)
       - Include per-requirement completion status in measure prompt code status (GH-1948)
       - Match bare SRD references in touchpoints for release advance check (GH-1960)
       - Save history artifacts per iteration
@@ -285,6 +298,8 @@ components:
       - Record metrics and save history artifacts per task
       - Recover stale tasks on resume
       - Skip tasks that exceed the retry limit (cobbler-skipped label) instead of halting the generation (GH-1699)
+      - Mark R-items as in_progress in requirements.yaml when claiming a task (GH-2123)
+      - Mark requirements as uncertain (not complete) when stitch produces zero LOC changes (GH-2123)
       - Sweep open tasks after each close, auto-closing any whose R-items are already complete (GH-1647)
       - Track requirement weight in batching and validation (GH-1832)
     references:
@@ -947,6 +962,8 @@ implementation_status:
     - done: Semantic model injection into stitch prompts via LoadSRDSemanticModel and StitchPromptDoc.SemanticModel
     - done: Interface constitution (interface.yaml) and SRD interface reference validation in mage analyze (GH-1968)
     - done: Requirement weight parsing, weight-based measure batching, and MaxWeightPerTask derivation (GH-1832, GH-1951)
+    - done: Requirement state machine — proposed, in_progress, uncertain states prevent duplicate proposals and false zero-LOC stops (GH-2123)
+    - done: Weight validation mage target — validate:weights for measure agent tool use (GH-2078)
     - done: Run statistics — aggregate per-generation-run reporting and cross-generation comparison (stats:run, stats:compare targets)
     - done: Rate-limit handling separated from task failures (GH-1805)
     - done: MinMeasureIssues enforcement to prevent empty measure results (GH-1882)
