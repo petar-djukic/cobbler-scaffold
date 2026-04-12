@@ -1954,3 +1954,151 @@ func TestIsRequirementTerminal(t *testing.T) {
 		}
 	}
 }
+
+// --- GH-2078: ValidateTaskWeights tests ---
+
+func TestValidateTaskWeights(t *testing.T) {
+	t.Run("reports weights and PASS", func(t *testing.T) {
+		tmp := t.TempDir()
+		cobblerDir := filepath.Join(tmp, ".cobbler")
+		os.MkdirAll(cobblerDir, 0o755)
+
+		initial := RequirementsFile{
+			Requirements: map[string]map[string]RequirementState{
+				"srd005-wc": {
+					"R2.5": {Status: "ready", Weight: 4},
+					"R2.6": {Status: "ready", Weight: 1},
+					"R3.1": {Status: "ready", Weight: 1},
+					"R3.2": {Status: "ready", Weight: 1},
+					"R3.3": {Status: "ready", Weight: 1},
+				},
+			},
+		}
+		data, _ := yaml.Marshal(initial)
+		os.WriteFile(filepath.Join(cobblerDir, RequirementsFileName), data, 0o644)
+
+		result := ValidateTaskWeights(cobblerDir, "srd005-wc R2.6, R3.1, R3.2, R3.3", 4)
+		if !strings.Contains(result, "PASS") {
+			t.Errorf("expected PASS, got:\n%s", result)
+		}
+		if !strings.Contains(result, "total: 4") {
+			t.Errorf("expected total: 4, got:\n%s", result)
+		}
+		if !strings.Contains(result, "max: 4") {
+			t.Errorf("expected max: 4, got:\n%s", result)
+		}
+	})
+
+	t.Run("reports weights and FAIL when exceeding max", func(t *testing.T) {
+		tmp := t.TempDir()
+		cobblerDir := filepath.Join(tmp, ".cobbler")
+		os.MkdirAll(cobblerDir, 0o755)
+
+		initial := RequirementsFile{
+			Requirements: map[string]map[string]RequirementState{
+				"srd005-wc": {
+					"R2.5": {Status: "ready", Weight: 4},
+					"R2.6": {Status: "ready", Weight: 1},
+					"R3.1": {Status: "ready", Weight: 1},
+					"R3.2": {Status: "ready", Weight: 1},
+				},
+			},
+		}
+		data, _ := yaml.Marshal(initial)
+		os.WriteFile(filepath.Join(cobblerDir, RequirementsFileName), data, 0o644)
+
+		result := ValidateTaskWeights(cobblerDir, "srd005-wc R2.5, R2.6, R3.1, R3.2", 4)
+		if !strings.Contains(result, "FAIL") {
+			t.Errorf("expected FAIL, got:\n%s", result)
+		}
+		if !strings.Contains(result, "total: 7") {
+			t.Errorf("expected total: 7, got:\n%s", result)
+		}
+		if !strings.Contains(result, "weight 4") {
+			t.Errorf("expected R2.5 weight 4, got:\n%s", result)
+		}
+	})
+
+	t.Run("defaults to weight 1 for missing requirements", func(t *testing.T) {
+		tmp := t.TempDir()
+		cobblerDir := filepath.Join(tmp, ".cobbler")
+		os.MkdirAll(cobblerDir, 0o755)
+
+		initial := RequirementsFile{
+			Requirements: map[string]map[string]RequirementState{
+				"srd005-wc": {
+					"R1.1": {Status: "ready", Weight: 3},
+				},
+			},
+		}
+		data, _ := yaml.Marshal(initial)
+		os.WriteFile(filepath.Join(cobblerDir, RequirementsFileName), data, 0o644)
+
+		result := ValidateTaskWeights(cobblerDir, "srd005-wc R1.1, R9.9", 10)
+		if !strings.Contains(result, "PASS") {
+			t.Errorf("expected PASS, got:\n%s", result)
+		}
+		if !strings.Contains(result, "total: 4") {
+			t.Errorf("expected total: 4 (3+1 default), got:\n%s", result)
+		}
+		if !strings.Contains(result, "not found") {
+			t.Errorf("expected 'not found' annotation for R9.9, got:\n%s", result)
+		}
+	})
+
+	t.Run("handles missing requirements.yaml gracefully", func(t *testing.T) {
+		tmp := t.TempDir()
+		result := ValidateTaskWeights(tmp, "srd005-wc R1.1, R1.2", 4)
+		if !strings.Contains(result, "PASS") {
+			t.Errorf("expected PASS (defaults to weight 1 each), got:\n%s", result)
+		}
+		if !strings.Contains(result, "total: 2") {
+			t.Errorf("expected total: 2, got:\n%s", result)
+		}
+	})
+
+	t.Run("handles group references", func(t *testing.T) {
+		tmp := t.TempDir()
+		cobblerDir := filepath.Join(tmp, ".cobbler")
+		os.MkdirAll(cobblerDir, 0o755)
+
+		initial := RequirementsFile{
+			Requirements: map[string]map[string]RequirementState{
+				"srd005-wc": {
+					"R2.1": {Status: "ready", Weight: 2},
+					"R2.2": {Status: "ready", Weight: 3},
+					"R3.1": {Status: "ready", Weight: 1},
+				},
+			},
+		}
+		data, _ := yaml.Marshal(initial)
+		os.WriteFile(filepath.Join(cobblerDir, RequirementsFileName), data, 0o644)
+
+		result := ValidateTaskWeights(cobblerDir, "srd005-wc R2, R3.1", 10)
+		if !strings.Contains(result, "PASS") {
+			t.Errorf("expected PASS, got:\n%s", result)
+		}
+		// R2 group = 2+3 = 5, R3.1 = 1, total = 6
+		if !strings.Contains(result, "total: 6") {
+			t.Errorf("expected total: 6, got:\n%s", result)
+		}
+		if !strings.Contains(result, "group") {
+			t.Errorf("expected 'group' annotation for R2, got:\n%s", result)
+		}
+	})
+
+	t.Run("invalid input", func(t *testing.T) {
+		result := ValidateTaskWeights(".", "bad-input", 4)
+		if !strings.Contains(result, "FAIL") {
+			t.Errorf("expected FAIL for bad input, got:\n%s", result)
+		}
+	})
+
+	t.Run("PASS when maxWeight is 0 (unlimited)", func(t *testing.T) {
+		tmp := t.TempDir()
+		result := ValidateTaskWeights(tmp, "srd005-wc R1.1, R1.2", 0)
+		if !strings.Contains(result, "PASS") {
+			t.Errorf("expected PASS when maxWeight=0, got:\n%s", result)
+		}
+	})
+}

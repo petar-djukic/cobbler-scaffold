@@ -545,6 +545,97 @@ func extractRItemsFromSRD(path string) []rItemInfo {
 	return items
 }
 
+// ValidateTaskWeights parses an input string of the form
+// "srd005-wc R2.5, R2.6, R3.1, R3.2", looks up each R-item's weight
+// from requirements.yaml, and returns a formatted report with per-item
+// weights, total, max, and PASS/FAIL. Used by the measure agent to
+// validate weight budgets before finalizing proposals (GH-2078).
+func ValidateTaskWeights(cobblerDir, input string, maxWeight int) string {
+	// Parse input: first token is SRD stem, rest are comma-separated R-items.
+	input = strings.TrimSpace(input)
+	parts := strings.SplitN(input, " ", 2)
+	if len(parts) < 2 {
+		return fmt.Sprintf("FAIL: invalid input %q — expected 'srd-stem R1.1, R1.2, ...'", input)
+	}
+	srdStem := parts[0]
+	rItemsStr := parts[1]
+
+	// Parse R-item list.
+	var rItems []string
+	for _, item := range strings.Split(rItemsStr, ",") {
+		item = strings.TrimSpace(item)
+		if item != "" {
+			rItems = append(rItems, item)
+		}
+	}
+	if len(rItems) == 0 {
+		return fmt.Sprintf("FAIL: no R-items found in %q", input)
+	}
+
+	// Load requirements.yaml.
+	reqStates := LoadRequirementStates(cobblerDir)
+
+	// Find SRD requirements (exact or prefix match).
+	var srdReqs map[string]RequirementState
+	if reqStates != nil {
+		srdReqs = findSRDRequirements(reqStates, srdStem)
+	}
+
+	// Look up weights and build report.
+	var lines []string
+	total := 0
+	for _, rItem := range rItems {
+		key := rItem
+		// Normalize: ensure it starts with "R".
+		if !strings.HasPrefix(key, "R") {
+			key = "R" + key
+		}
+
+		w := 1 // default weight
+		if srdReqs != nil {
+			if st, ok := srdReqs[key]; ok && st.Weight > 0 {
+				w = st.Weight
+			} else if !ok {
+				// Check if this is a group reference (e.g. R2 without sub-item).
+				// Sum all sub-items in the group.
+				prefix := key + "."
+				groupWeight := 0
+				found := false
+				for id, st := range srdReqs {
+					if strings.HasPrefix(id, prefix) {
+						gw := st.Weight
+						if gw <= 0 {
+							gw = 1
+						}
+						groupWeight += gw
+						found = true
+					}
+				}
+				if found {
+					lines = append(lines, fmt.Sprintf("%s %s: weight %d (group)", srdStem, key, groupWeight))
+					total += groupWeight
+					continue
+				}
+				// Not found at all — use default.
+				lines = append(lines, fmt.Sprintf("%s %s: weight %d (default, not found)", srdStem, key, w))
+				total += w
+				continue
+			}
+		}
+		lines = append(lines, fmt.Sprintf("%s %s: weight %d", srdStem, key, w))
+		total += w
+	}
+
+	lines = append(lines, fmt.Sprintf("total: %d", total))
+	lines = append(lines, fmt.Sprintf("max: %d", maxWeight))
+	if maxWeight > 0 && total > maxWeight {
+		lines = append(lines, fmt.Sprintf("FAIL: total weight %d exceeds max %d", total, maxWeight))
+	} else {
+		lines = append(lines, "PASS")
+	}
+	return strings.Join(lines, "\n")
+}
+
 // extractRItems reads a SRD YAML file and returns all R-item IDs in sorted order.
 func extractRItems(path string) []string {
 	items := extractRItemsFromSRD(path)

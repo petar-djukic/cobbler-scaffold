@@ -275,3 +275,12 @@ func (o *Orchestrator) logf(format string, args ...any) {
 	}
 	o.logSinkMu.Unlock()
 }
+
+// ValidateTaskWeights validates a proposed task's weight budget against
+// MaxWeightPerTask from the config. The input string has the form
+// "srd005-wc R2.5, R2.6, R3.1, R3.2". Prints the report to stdout (GH-2078).
+func (o *Orchestrator) ValidateTaskWeights(input string) error {
+	result := generate.ValidateTaskWeights(o.cfg.Cobbler.Dir, input, o.cfg.Cobbler.MaxWeightPerTask)
+	fmt.Println(result)
+	return nil
+}

@@ -43,6 +43,9 @@ type Compare mg.Namespace
 // Vscode groups the VS Code extension build and install targets.
 type Vscode mg.Namespace
 
+// Validate groups validation targets for agent tool use.
+type Validate mg.Namespace
+
 // Constitution groups constitution preview targets.
 type Constitution mg.Namespace
 
@@ -343,6 +346,12 @@ func (Vscode) Pop() error { return newOrch().VsCode.VscodePop("") }
 // PopProfile uninstalls the extension from a named VS Code profile
 // (e.g., mage vscode:popProfile GO).
 func (Vscode) PopProfile(profile string) error { return newOrch().VsCode.VscodePop(profile) }
+
+// --- Validate targets ---
+
+// Weights validates a proposed task's weight budget against MaxWeightPerTask.
+// Pass a string like 'srd005-wc R2.5, R2.6, R3.1, R3.2'.
+func (Validate) Weights(input string) error { return newOrch().ValidateTaskWeights(input) }
 
 // --- Constitution targets ---
 
