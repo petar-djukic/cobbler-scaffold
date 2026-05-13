@@ -44,7 +44,7 @@ func NewRunner(deps RunClaudeDeps) Runner {
 		return &CLIRunner{
 			execRunner: execRunner{
 				buildCmd: func(ctx context.Context, workDir string, extraArgs ...string) *exec.Cmd {
-					return BuildDirectCmd(ctx, workDir, deps.ClaudeArgs, extraArgs...)
+					return BuildDirectCmd(ctx, workDir, deps.Model, deps.ClaudeArgs, extraArgs...)
 				},
 				idleTimeoutS: deps.IdleTimeoutS,
 			},

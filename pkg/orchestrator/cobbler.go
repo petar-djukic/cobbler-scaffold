@@ -132,6 +132,7 @@ func (cr *ClaudeRunner) runClaudeDeps() claude.RunClaudeDeps {
 		ClaudeTimeout:        cr.cfg.ClaudeTimeout(),
 		Temperature:          cr.cfg.Claude.Temperature,
 		Silence:              cr.cfg.Silence(),
+		Model:                cr.cfg.Claude.Model,
 		ClaudeArgs:           cr.cfg.Claude.Args,
 		SecretsDir:           cr.cfg.Claude.SecretsDir,
 		TokenFile:            cr.cfg.EffectiveTokenFile(),
@@ -155,7 +156,7 @@ func (cr *ClaudeRunner) runClaudeSDK(ctx context.Context, prompt, workDir string
 
 // buildDirectCmd constructs the exec.Cmd for running claude directly.
 func (cr *ClaudeRunner) buildDirectCmd(ctx context.Context, workDir string, extraClaudeArgs ...string) *exec.Cmd {
-	return claude.BuildDirectCmd(ctx, workDir, cr.cfg.Claude.Args, extraClaudeArgs...)
+	return claude.BuildDirectCmd(ctx, workDir, cr.cfg.Claude.Model, cr.cfg.Claude.Args, extraClaudeArgs...)
 }
 
 // hasOpenIssues returns true if there are open orchestrator issues.

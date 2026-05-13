@@ -782,6 +782,32 @@ func TestBuildDirectCmd_StripsCLAUDECODE(t *testing.T) {
 	}
 }
 
+func TestBuildDirectCmd_IncludesDefaultModel(t *testing.T) {
+	t.Parallel()
+	o := New(Config{})
+	cmd := o.ClaudeRunner.buildDirectCmd(context.TODO(), "/work")
+
+	if len(cmd.Args) < 3 {
+		t.Fatalf("expected at least 3 args; got %v", cmd.Args)
+	}
+	if cmd.Args[1] != "--model" || cmd.Args[2] != DefaultModel {
+		t.Errorf("expected --model %s as first args; got %v", DefaultModel, cmd.Args[1:3])
+	}
+}
+
+func TestBuildDirectCmd_CustomModel(t *testing.T) {
+	t.Parallel()
+	o := New(Config{Claude: ClaudeConfig{Model: "claude-sonnet-4-6"}})
+	cmd := o.ClaudeRunner.buildDirectCmd(context.TODO(), "/work")
+
+	if len(cmd.Args) < 3 {
+		t.Fatalf("expected at least 3 args; got %v", cmd.Args)
+	}
+	if cmd.Args[1] != "--model" || cmd.Args[2] != "claude-sonnet-4-6" {
+		t.Errorf("expected --model claude-sonnet-4-6; got %v", cmd.Args[1:3])
+	}
+}
+
 // --- effectiveMode ---
 
 func TestEffectiveMode_DefaultIsCLI(t *testing.T) {

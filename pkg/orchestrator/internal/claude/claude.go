@@ -184,6 +184,7 @@ type RunClaudeDeps struct {
 	ClaudeTimeout  time.Duration
 	Temperature    float64
 	Silence        bool
+	Model          string
 	ClaudeArgs     []string
 	SecretsDir     string
 	TokenFile      string
@@ -702,8 +703,9 @@ func RunClaude(deps RunClaudeDeps, prompt, dir string, silence bool, extraClaude
 
 // BuildDirectCmd constructs the exec.Cmd for running the claude binary
 // directly on the host. CLAUDECODE is stripped from the environment.
-func BuildDirectCmd(ctx context.Context, workDir string, claudeArgs []string, extraClaudeArgs ...string) *exec.Cmd {
-	args := append([]string{}, claudeArgs...)
+func BuildDirectCmd(ctx context.Context, workDir string, model string, claudeArgs []string, extraClaudeArgs ...string) *exec.Cmd {
+	args := []string{"--model", model}
+	args = append(args, claudeArgs...)
 	args = append(args, extraClaudeArgs...)
 	deadline, _ := ctx.Deadline()
 	Log("runClaude: exec %s %v (mode=cli timeout=%s)", BinClaude, args, deadline)

@@ -389,8 +389,15 @@ func (c *CobblerConfig) effectiveMode() string {
 	}
 }
 
+// DefaultModel is the Claude model used when ClaudeConfig.Model is empty.
+const DefaultModel = "claude-opus-4-6"
+
 // ClaudeConfig holds settings for the Claude CLI.
 type ClaudeConfig struct {
+	// Model is the Claude model to use (e.g., "claude-opus-4-6").
+	// Passed as --model to the Claude CLI. Default: DefaultModel.
+	Model string `yaml:"model"`
+
 	// Args are the CLI arguments for automated Claude execution.
 	// If empty, defaults to the standard automated flags.
 	Args []string `yaml:"args"`
@@ -551,6 +558,9 @@ func (c *Config) applyDefaults() {
 	}
 	if c.Claude.DefaultTokenFile == "" {
 		c.Claude.DefaultTokenFile = "claude.json"
+	}
+	if c.Claude.Model == "" {
+		c.Claude.Model = DefaultModel
 	}
 	if len(c.Claude.Args) == 0 {
 		c.Claude.Args = defaultClaudeArgs
