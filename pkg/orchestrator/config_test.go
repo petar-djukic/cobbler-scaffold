@@ -109,6 +109,9 @@ func TestLoadConfig_AppliesDefaults(t *testing.T) {
 	if cfg.Claude.MaxTimeSec != 300 {
 		t.Errorf("Claude.MaxTimeSec default: got %d, want 300", cfg.Claude.MaxTimeSec)
 	}
+	if cfg.Claude.Model != DefaultModel {
+		t.Errorf("Claude.Model default: got %q, want %q", cfg.Claude.Model, DefaultModel)
+	}
 	if len(cfg.Claude.Args) == 0 {
 		t.Error("Claude.Args default: expected non-empty default args")
 	}
@@ -247,6 +250,17 @@ func TestLoadConfig_TemperatureFromYAML(t *testing.T) {
 	}
 	if cfg.Claude.Temperature != 0.7 {
 		t.Errorf("Temperature: got %f, want 0.7", cfg.Claude.Temperature)
+	}
+}
+
+func TestLoadConfig_CustomModelPreserved(t *testing.T) {
+	f := writeTemp(t, "claude:\n  model: claude-sonnet-4-6\n")
+	cfg, err := LoadConfig(f)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if cfg.Claude.Model != "claude-sonnet-4-6" {
+		t.Errorf("Claude.Model: got %q, want \"claude-sonnet-4-6\"", cfg.Claude.Model)
 	}
 }
 
