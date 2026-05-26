@@ -1,0 +1,1058 @@
+id: srd008-pi-agent-backend
+title: Pi Coding Agent Backend for Cobbler Orchestrator
+
+implemented_by:
+  - PiRunner (pkg/orchestrator/internal/pi/)
+  - Runner interface (pkg/orchestrator/internal/claude/runner.go)
+  - BuildDirectCmd refactoring (pkg/orchestrator/internal/claude/claude.go)
+  - Config struct (pkg/orchestrator/config.go)
+used_by:
+  - ClaudeRunner (pkg/orchestrator/cobbler.go)
+  - Measure (pkg/orchestrator/measure.go)
+  - Stitch (pkg/orchestrator/stitch.go)
+
+problem: |
+  The cobbler-scaffold orchestrator currently hard-codes Claude Code as
+  its sole code-generation backend.  All code-generation work — both
+  measure (task planning) and stitch (task execution) — is performed by
+  spawning the `claude` CLI binary as a subprocess.  The orchestrator
+  pipes a structured YAML prompt to stdin, captures NDJSON streaming
+  output on stdout, and parses a final `"type": "result"` event to
+  extract token usage and cost.
+
+  This coupling creates several problems:
+
+  1. Vendor lock-in.  The orchestrator is tied to a single closed-source
+     CLI binary (`claude`) whose output format, flag set, and
+     availability are controlled by Anthropic.  The `claude` binary is
+     not open-source, cannot be forked, and may be discontinued or
+     changed without notice.
+
+  2. Limited model support.  Claude Code supports only Anthropic models.
+     The orchestrator cannot use OpenAI, Google, DeepSeek, or local
+     models without rewriting the invocation layer.
+
+  3. Opaque execution.  The `--output-format stream-json` format is
+     undocumented and has changed across Claude Code versions.
+     ParseClaudeTokens and ProgressWriter contain format-specific
+     parsing logic that breaks on schema changes.
+
+  4. No extensibility.  Claude Code has no extension system.  The
+     orchestrator cannot inject custom tools, gate dangerous operations,
+     or add domain-specific capabilities without modifying Claude Code
+     itself.
+
+  5. Permission model.  The orchestrator uses
+     `--dangerously-skip-permissions` to bypass Claude Code's
+     interactive permission dialogs.  This is a security blunt
+     instrument — it grants unrestricted tool access with no
+     granularity.
+
+  Pi (github.com/earendil-works/pi) is an open-source, MIT-licensed
+  coding agent with a well-documented TypeScript extension system, a
+  structured JSON event stream, an RPC subprocess protocol, multi-
+  provider model support (30+ providers), and a Node.js SDK.  It
+  provides the same core tools as Claude Code (read, bash, edit, write,
+  grep, find, ls) and can be extended with custom tools, skills, and
+  prompt templates.
+
+  Cobbler-scaffold already has the Runner interface — a clean seam
+  designed for alternative backends.  This SRD specifies a PiRunner
+  that implements the Runner interface using the `pi` CLI or RPC
+  protocol, enabling the orchestrator to use Pi as a drop-in
+  replacement for Claude Code.
+
+goals:
+  - G1: Define a PiRunner struct that implements the Runner interface using the pi CLI
+  - G2: Map every Claude Code CLI flag to its Pi equivalent
+  - G3: Preserve identical orchestrator behavior — measure and stitch must produce equivalent results
+  - G4: Support Pi's JSON event stream for progress reporting and token tracking
+  - G5: Support Pi's RPC mode as an alternative to print mode for richer subprocess control
+  - G6: Enable multi-provider model selection through Pi's model abstraction
+  - G7: Add a configuration option to select between claude and pi backends
+  - G8: Preserve backward compatibility — claude must remain the default
+
+# ---------------------------------------------------------------------------
+# ANALYSIS: How Claude Code Is Invoked in Cobbler-Scaffold
+# ---------------------------------------------------------------------------
+#
+# This section documents every aspect of how the orchestrator invokes
+# Claude Code, and the corresponding Pi equivalent.  The analysis is
+# the foundation for all requirements below.
+#
+# ---------------------------------------------------------------------------
+# A1: Central Invocation Point
+# ---------------------------------------------------------------------------
+#
+# All Claude Code invocations flow through a single function:
+#
+#   BuildDirectCmd(ctx, workDir, model, claudeArgs, extraArgs...)
+#     → exec.CommandContext(ctx, "claude", args...)
+#
+# Located in: pkg/orchestrator/internal/claude/claude.go
+#
+# The function:
+#   1. Prepends --model <model> to args
+#   2. Appends default claudeArgs (from config or defaultClaudeArgs)
+#   3. Appends extraArgs (e.g. --max-turns 1)
+#   4. Creates exec.Cmd with cmd.Dir = workDir
+#   5. Strips CLAUDECODE= from environment
+#   6. Returns the *exec.Cmd (caller sets stdin/stdout)
+#
+# Call chain:
+#   Measure/Stitch → ClaudeRunner.runClaude()/runMeasureClaude()
+#     → claude.RunClaude() → runner.Run() → execRunner.run()
+#       → BuildDirectCmd()
+#
+# Pi equivalent: BuildPiCmd(ctx, workDir, model, piArgs, extraArgs...)
+#   → exec.CommandContext(ctx, "pi", args...)
+#   Same pattern, different binary and flags.
+#
+# ---------------------------------------------------------------------------
+# A2: Default CLI Flags
+# ---------------------------------------------------------------------------
+#
+# Claude Code default args (from commands.go):
+#
+#   var defaultClaudeArgs = []string{
+#       "--dangerously-skip-permissions",
+#       "-p",
+#       "--verbose",
+#       "--output-format", "stream-json",
+#   }
+#
+# Resulting invocation for stitch:
+#   claude --model claude-opus-4-6 \
+#     --dangerously-skip-permissions \
+#     -p \
+#     --verbose \
+#     --output-format stream-json
+#
+# For measure (adds --max-turns 1):
+#   claude --model claude-opus-4-6 \
+#     --dangerously-skip-permissions \
+#     -p \
+#     --verbose \
+#     --output-format stream-json \
+#     --max-turns 1
+#
+# Pi equivalents:
+#
+# | Claude Code Flag                    | Pi Equivalent                         | Notes                                          |
+# |-------------------------------------|---------------------------------------|-------------------------------------------------|
+# | --dangerously-skip-permissions      | (not needed)                          | Pi has no permission dialogs by default          |
+# | -p                                  | -p / --print                          | Identical flag, identical semantics              |
+# | --verbose                           | --verbose                             | Identical flag                                   |
+# | --output-format stream-json         | --mode json                           | Pi uses --mode json for NDJSON event stream      |
+# | --model <id>                        | --model <provider/id>                 | Pi supports provider/id syntax                   |
+# | --max-turns 1                       | (no direct equivalent)                | See A7 below for workaround                      |
+#
+# Default Pi args:
+#   var defaultPiArgs = []string{
+#       "-p",
+#       "--verbose",
+#       "--mode", "json",        // OR: drop -p, use only --mode json
+#       "--no-session",          // ephemeral, no session persistence
+#       "--no-context-files",    // orchestrator provides its own prompt
+#   }
+#
+# Note: Pi's -p (print) and --mode json are two different modes:
+#   - `-p` / `--print`: text output to stdout, exits after completion
+#   - `--mode json`: NDJSON event stream to stdout, exits after completion
+#   The orchestrator needs structured events for progress/tokens, so
+#   --mode json is the primary mode.  However, if using --mode json,
+#   the -p flag is implicit (non-interactive, single prompt, exit).
+#
+# ---------------------------------------------------------------------------
+# A3: Prompt Delivery
+# ---------------------------------------------------------------------------
+#
+# Claude Code receives the prompt via stdin:
+#   cmd.Stdin = strings.NewReader(prompt)
+#
+# The prompt is a YAML document marshaled from MeasurePromptDoc or
+# StitchPromptDoc.  It includes role, project context, constitutions,
+# task description, constraints, and output format instructions.
+#
+# Pi equivalent:
+#   - Print mode (-p) reads from stdin if no positional argument given:
+#     `cat README.md | pi -p "Summarize this text"`
+#   - JSON mode (--mode json) takes a positional prompt argument:
+#     `pi --mode json "Your prompt"`
+#   - Both support piped stdin merged with the prompt.
+#
+# For cobbler, the prompt should be passed as the positional argument
+# or via stdin pipe — either works.  Stdin pipe is simplest for
+# compatibility with the existing code.
+#
+# ---------------------------------------------------------------------------
+# A4: Stdout Capture and NDJSON Parsing
+# ---------------------------------------------------------------------------
+#
+# Claude Code with --output-format stream-json produces NDJSON lines.
+# The orchestrator:
+#   1. Wraps stdout in IdleTrackingWriter (idle watchdog)
+#   2. Optionally tees to os.Stdout via MultiWriter
+#   3. Captures full output in bytes.Buffer
+#   4. After exit, calls ParseClaudeTokens(rawOutput):
+#      - Scans lines BACKWARDS for "type": "result"
+#      - Extracts usage.input_tokens, output_tokens, cache_*_tokens, total_cost_usd
+#   5. ProgressWriter.LogLine() parses each line during execution:
+#      - "assistant" → log turn number, text snippet, tool calls
+#      - "user" → "tools done, waiting for LLM"
+#      - "rate_limit_event" → track wait time
+#      - "result" → log final counts
+#
+# Pi --mode json produces a DIFFERENT NDJSON schema:
+#   First line: {"type":"session","version":3,"id":"...","timestamp":"...","cwd":"..."}
+#   Events:     {"type":"agent_start"}
+#               {"type":"turn_start"}
+#               {"type":"message_start","message":{...}}
+#               {"type":"message_update","message":{...},"assistantMessageEvent":{...}}
+#               {"type":"message_end","message":{...}}
+#               {"type":"tool_execution_start","toolCallId":"...","toolName":"...","args":{...}}
+#               {"type":"tool_execution_update","toolCallId":"...","toolName":"...","partialResult":{...}}
+#               {"type":"tool_execution_end","toolCallId":"...","toolName":"...","result":{...},"isError":...}
+#               {"type":"turn_end","message":{...},"toolResults":[...]}
+#               {"type":"agent_end","messages":[...]}
+#
+# Token usage is in AssistantMessage.usage:
+#   {"role":"assistant","content":[...],"usage":{"input":N,"output":N,
+#    "cacheRead":N,"cacheWrite":N,"cost":{"input":F,"output":F,
+#    "cacheRead":F,"cacheWrite":F,"total":F}},...}
+#
+# A ParsePiTokens function must extract from the LAST message_end event
+# that contains an assistant message with usage data.  The mapping:
+#
+# | Claude Code field              | Pi field                               |
+# |--------------------------------|----------------------------------------|
+# | usage.input_tokens             | message.usage.input                    |
+# | usage.output_tokens            | message.usage.output                   |
+# | usage.cache_creation_input_tokens | message.usage.cacheWrite            |
+# | usage.cache_read_input_tokens  | message.usage.cacheRead                |
+# | total_cost_usd                 | message.usage.cost.total               |
+#
+# ---------------------------------------------------------------------------
+# A5: Measure Text Extraction
+# ---------------------------------------------------------------------------
+#
+# After measure completes, the orchestrator extracts the task plan:
+#   textOutput := claude.ExtractTextFromStreamJSON(tokens.RawOutput)
+#   yamlContent, _ := claude.ExtractYAMLBlock(textOutput)
+#
+# ExtractTextFromStreamJSON concatenates all text blocks from
+# assistant messages in the NDJSON stream.
+#
+# Pi equivalent: ExtractTextFromPiJSON must:
+#   1. Find all message_end events where message.role == "assistant"
+#   2. Extract content blocks where type == "text"
+#   3. Concatenate the text fields
+#
+# ExtractYAMLBlock is format-agnostic (regex for ```yaml fences).
+# It can be reused unchanged.
+#
+# ---------------------------------------------------------------------------
+# A6: Idle Watchdog
+# ---------------------------------------------------------------------------
+#
+# The orchestrator wraps stdout in IdleTrackingWriter.  A goroutine
+# polls every second; if LastWrite hasn't advanced for IdleTimeoutS
+# (stitch: 60s, measure: 1800s), the context is cancelled.
+#
+# Pi equivalent: Same pattern works unchanged.  Pi's --mode json
+# streams events to stdout, so the idle tracker sees writes whenever
+# the agent emits events (turn starts, tool output, text deltas).
+# No changes needed to IdleTrackingWriter.
+#
+# ---------------------------------------------------------------------------
+# A7: --max-turns 1 for Measure
+# ---------------------------------------------------------------------------
+#
+# Measure uses --max-turns 1 to restrict Claude Code to a single
+# assistant response with no tool calls.  This forces the model to
+# produce a task plan as text rather than trying to implement it.
+#
+# Pi has no --max-turns flag.  Alternatives:
+#
+#   Option A: Use --no-tools / -nt flag.
+#     Pi supports `--no-tools` which disables all tools.  Without tools,
+#     the model cannot make tool calls and will respond with text only.
+#     This is semantically equivalent to --max-turns 1 for planning.
+#     `pi --mode json --no-tools "plan the work..."`
+#
+#   Option B: Use --tools flag with empty list.
+#     Pi supports `--tools ""` which has the same effect.
+#
+#   Option C: Use system prompt instruction.
+#     Add "Do not use any tools. Respond with text only." to the
+#     measure prompt.  This is fragile and model-dependent.
+#
+#   Recommendation: Option A (--no-tools) is the cleanest equivalent.
+#   The measure prompt already instructs the model to produce a YAML
+#   plan, not to execute code.  Disabling tools enforces this.
+#
+# ---------------------------------------------------------------------------
+# A8: Environment Handling
+# ---------------------------------------------------------------------------
+#
+# BuildDirectCmd strips CLAUDECODE= from the environment:
+#   filtered := make([]string, 0, len(os.Environ()))
+#   for _, e := range os.Environ() {
+#       if !strings.HasPrefix(e, "CLAUDECODE=") {
+#           filtered = append(filtered, e)
+#       }
+#   }
+#   cmd.Env = filtered
+#
+# Pi equivalent: Strip PI_CODING_AGENT_DIR and similar Pi-specific
+# env vars if needed, or simply pass the full environment.  Pi uses
+# ANTHROPIC_API_KEY, OPENAI_API_KEY, etc. for authentication, which
+# are standard and should be inherited from the parent process.
+#
+# Pi env vars to consider:
+#   PI_CODING_AGENT_DIR — override config directory
+#   PI_OFFLINE — disable network checks
+#   PI_SKIP_VERSION_CHECK — skip version check
+#
+# For orchestrator use, set PI_SKIP_VERSION_CHECK=1 and
+# PI_OFFLINE=1 to avoid startup delays.
+#
+# ---------------------------------------------------------------------------
+# A9: Runner Interface
+# ---------------------------------------------------------------------------
+#
+# The existing Runner interface:
+#
+#   type Runner interface {
+#       Run(ctx context.Context, prompt, workDir string, silence bool,
+#           extraArgs ...string) (ClaudeResult, error)
+#   }
+#
+# ClaudeResult:
+#   type ClaudeResult struct {
+#       RawOutput  string
+#       InputTokens int
+#       OutputTokens int
+#       CacheCreationTokens int
+#       CacheReadTokens int
+#       CostUSD float64
+#   }
+#
+# The PiRunner must implement this same interface and return a
+# ClaudeResult with the same fields populated from Pi's event stream.
+# The field names are Claude-specific but the data is generic token
+# usage — Pi provides identical data in its AssistantMessage.usage.
+#
+# ---------------------------------------------------------------------------
+# A10: SDK/RPC Mode Alternative
+# ---------------------------------------------------------------------------
+#
+# Claude Code has two modes in cobbler:
+#   - "cli" (default): exec.Command spawns claude binary
+#   - "sdk": uses Go Agent SDK via JSONL --stdio protocol
+#
+# Pi has three non-interactive modes:
+#   - Print mode (-p): text output, single prompt, exits
+#   - JSON mode (--mode json): NDJSON event stream, single prompt, exits
+#   - RPC mode (--mode rpc): JSONL command/response protocol over stdin/stdout
+#
+# For cobbler integration:
+#   - JSON mode is the direct replacement for claude --output-format stream-json
+#   - RPC mode is the replacement for the SDK mode (richer control)
+#
+# RPC mode advantages over JSON mode:
+#   - Can send multiple prompts in sequence
+#   - Can abort mid-execution
+#   - Can query state (get_state, get_session_stats)
+#   - Better for stitch where the orchestrator may need to steer
+#   - Session stats include precise token/cost data
+#
+# However, JSON mode is simpler and closer to the existing CLI pattern.
+# Recommendation: Start with JSON mode for parity, add RPC mode later.
+#
+# ---------------------------------------------------------------------------
+# A11: Model Mapping
+# ---------------------------------------------------------------------------
+#
+# Claude Code uses bare model IDs: "claude-opus-4-6", "claude-sonnet-4-5"
+# Pi uses provider/id syntax: "anthropic/claude-opus-4-6"
+#
+# Pi also supports:
+#   --provider anthropic --model claude-opus-4-6
+#   --model anthropic/claude-opus-4-6
+#   --model anthropic/claude-opus-4-6:high  (with thinking level)
+#
+# For non-Anthropic models:
+#   --model openai/gpt-4o
+#   --model google/gemini-2.5-pro
+#   --model deepseek/deepseek-chat
+#
+# The orchestrator's DefaultModel = "claude-opus-4-6" maps to
+# "anthropic/claude-opus-4-6" in Pi.  The config must support
+# provider/id syntax when pi is selected as the backend.
+#
+# ---------------------------------------------------------------------------
+# A12: System Prompt and Context Files
+# ---------------------------------------------------------------------------
+#
+# Claude Code has no --system-prompt flag in cobbler's usage.  The
+# prompt is a structured YAML document piped to stdin.  Claude Code
+# uses its own default system prompt plus the user's prompt.
+#
+# Pi has several system prompt mechanisms:
+#   --system-prompt <text>   — replace default prompt
+#   --append-system-prompt   — append to default prompt
+#   --no-context-files       — disable AGENTS.md discovery
+#   SYSTEM.md files          — project-level override
+#
+# For cobbler, the orchestrator should:
+#   1. Use --no-context-files (-nc) to prevent Pi from loading
+#      AGENTS.md from the worktree (the orchestrator controls all context)
+#   2. Use --system-prompt with the role/constitution text
+#   3. Pipe the task-specific prompt (project context, task description)
+#      to stdin or as a positional argument
+#
+# Alternatively, the orchestrator can continue piping everything via
+# stdin and let Pi treat it as the user prompt.  The orchestrator's
+# prompts already contain role instructions, so this works without
+# a separate system prompt.
+#
+# ---------------------------------------------------------------------------
+# A13: Credential Management
+# ---------------------------------------------------------------------------
+#
+# Claude Code CLI mode: claude handles its own auth (API key from
+# env or keychain).  The orchestrator just checks LookPath("claude").
+#
+# Claude Code SDK mode: credentials from .secrets/claude.json with
+# optional keychain extraction.
+#
+# Pi: uses env vars (ANTHROPIC_API_KEY, OPENAI_API_KEY, etc.) or
+# its own auth storage (~/.pi/agent/auth.json).  The /login command
+# supports OAuth for subscription providers.
+#
+# For cobbler, the simplest approach is to rely on env vars that Pi
+# inherits from the parent process.  No credential extraction needed
+# if ANTHROPIC_API_KEY is set.  This is simpler than Claude Code's
+# credential management.
+#
+# CheckPi() should:
+#   1. exec.LookPath("pi") — verify binary exists
+#   2. Optionally exec pi --version to verify minimum version
+#   3. No credential extraction needed (env vars are inherited)
+#
+# ---------------------------------------------------------------------------
+# A14: Extension Opportunities
+# ---------------------------------------------------------------------------
+#
+# Unlike Claude Code, Pi's extension system enables cobbler-specific
+# behaviors without modifying the agent binary:
+#
+#   - Permission gating: an extension can intercept tool_call events
+#     and block specific operations (e.g., no rm -rf, no network access)
+#   - Progress reporting: an extension can emit custom messages for
+#     orchestrator consumption
+#   - Git safety: the git-checkpoint extension stashes at each turn
+#   - Custom tools: register bd, gh, or project-specific tools
+#   - Prompt injection: before_agent_start can modify system prompt
+#
+# These are future enhancements; the initial PiRunner should work
+# without any extensions.  Extension support can be added later via
+# --extension flags in the Pi args.
+
+requirements:
+
+  # =========================================================================
+  # R1: Configuration — Backend Selection
+  # =========================================================================
+  - id: R1
+    title: Backend selection configuration
+    description: |
+      Add a top-level configuration key `cobbler.agent_backend` that selects
+      the code-generation backend.  Valid values: "claude" (default), "pi".
+
+      When "pi" is selected, the orchestrator constructs a PiRunner instead
+      of a CLIRunner/SDKRunner for all Claude invocations.
+
+      The `claude` section of configuration.yaml continues to work for the
+      claude backend.  A new `pi` section is added for pi-specific config.
+    traced_to: [G7, G8]
+
+  # =========================================================================
+  # R2: Configuration — Pi Section
+  # =========================================================================
+  - id: R2
+    title: Pi configuration section
+    description: |
+      Add a `pi` configuration section in configuration.yaml:
+
+        pi:
+          model: ""                         # default: "anthropic/claude-sonnet-4-20250514"
+          provider: ""                      # optional: override provider
+          thinking: "medium"                # thinking level
+          args:                             # default pi CLI args
+            - --mode
+            - json
+            - --no-session
+            - --no-context-files
+            - --verbose
+          silence_agent: true               # suppress pi stdout (same as claude)
+          max_time_sec: 300                 # hard timeout per invocation
+          mode: "json"                      # "json" or "rpc"
+          extensions: []                    # extension paths to load
+
+      The model field uses Pi's provider/id syntax.  If provider is set
+      separately, it is prepended: provider/model.
+    traced_to: [G6, G7]
+
+  # =========================================================================
+  # R3: PiRunner Struct
+  # =========================================================================
+  - id: R3
+    title: PiRunner struct definition
+    description: |
+      Define a PiRunner struct in pkg/orchestrator/internal/pi/ that
+      implements the Runner interface:
+
+        type PiRunner struct {
+            Model         string
+            Provider      string
+            Thinking      string
+            PiArgs        []string
+            PiBin         string        // path to pi binary, default "pi"
+            Silence       bool
+            IdleTimeoutS  int
+            Timeout       time.Duration
+            Extensions    []string
+        }
+
+        func (r *PiRunner) Run(ctx context.Context, prompt, workDir string,
+            silence bool, extraArgs ...string) (claude.ClaudeResult, error)
+
+      The Run method:
+        1. Builds the exec.Cmd via BuildPiCmd
+        2. Sets cmd.Stdin to the prompt
+        3. Captures stdout with IdleTrackingWriter
+        4. Waits for exit
+        5. Parses Pi NDJSON output via ParsePiTokens
+        6. Returns ClaudeResult with token/cost data
+    traced_to: [G1, G3]
+
+  # =========================================================================
+  # R4: BuildPiCmd Function
+  # =========================================================================
+  - id: R4
+    title: BuildPiCmd command construction
+    description: |
+      Define BuildPiCmd analogous to BuildDirectCmd:
+
+        func BuildPiCmd(ctx context.Context, workDir string, model string,
+            provider string, thinking string, piArgs []string,
+            extensions []string, extraPiArgs ...string) *exec.Cmd
+
+      Argument construction order:
+        1. --model <provider/model> (or --provider <p> --model <m>)
+        2. --thinking <level> (if thinking != "")
+        3. piArgs (default: --mode json --no-session --no-context-files --verbose)
+        4. For each extension: -e <path>
+        5. extraPiArgs (e.g. --no-tools for measure)
+        6. A sentinel empty string or "--" to separate flags from prompt
+
+      Set cmd.Dir = workDir.
+      Set cmd.Env to os.Environ() plus:
+        PI_SKIP_VERSION_CHECK=1
+        PI_OFFLINE=1
+    traced_to: [G1, G2]
+
+  # =========================================================================
+  # R5: Flag Mapping
+  # =========================================================================
+  - id: R5
+    title: Claude Code to Pi flag mapping
+    description: |
+      The following flag mapping must be implemented:
+
+      | Claude Code Flag                     | Pi Flag                    | Required |
+      |--------------------------------------|----------------------------|----------|
+      | --dangerously-skip-permissions       | (omit)                     | No       |
+      | -p                                   | (implicit in --mode json)  | No       |
+      | --verbose                            | --verbose                  | Yes      |
+      | --output-format stream-json          | --mode json                | Yes      |
+      | --model <id>                         | --model <provider/id>      | Yes      |
+      | --max-turns 1                        | --no-tools                 | Yes      |
+      | (none)                               | --no-session               | Yes      |
+      | (none)                               | --no-context-files         | Yes      |
+      | (none)                               | --thinking <level>         | Optional |
+
+      The --no-session flag prevents Pi from persisting session state to disk.
+      The --no-context-files flag prevents Pi from loading AGENTS.md.
+      Both are required because the orchestrator controls all context.
+    traced_to: [G2]
+
+  # =========================================================================
+  # R6: NDJSON Event Parsing — ParsePiTokens
+  # =========================================================================
+  - id: R6
+    title: ParsePiTokens function
+    description: |
+      Define ParsePiTokens to extract token usage from Pi's NDJSON output:
+
+        func ParsePiTokens(rawOutput string) ClaudeResult
+
+      Algorithm:
+        1. Split rawOutput into lines
+        2. Scan BACKWARDS for a line containing "type":"message_end"
+           where the message has role "assistant" and a usage object
+        3. Extract:
+           - InputTokens  = message.usage.input
+           - OutputTokens = message.usage.output
+           - CacheCreationTokens = message.usage.cacheWrite
+           - CacheReadTokens = message.usage.cacheRead
+           - CostUSD = message.usage.cost.total
+        4. Set RawOutput = rawOutput
+        5. Return ClaudeResult
+
+      If no usage data is found, return zero values with RawOutput set.
+
+      The JSON structure to parse:
+        {"type":"message_end","message":{"role":"assistant",
+         "usage":{"input":N,"output":N,"cacheRead":N,"cacheWrite":N,
+         "cost":{"input":F,"output":F,"cacheRead":F,"cacheWrite":F,
+         "total":F}}}}
+    traced_to: [G4]
+
+  # =========================================================================
+  # R7: Text Extraction — ExtractTextFromPiJSON
+  # =========================================================================
+  - id: R7
+    title: ExtractTextFromPiJSON function
+    description: |
+      Define ExtractTextFromPiJSON to extract assistant text from Pi's
+      NDJSON output:
+
+        func ExtractTextFromPiJSON(rawOutput string) string
+
+      Algorithm:
+        1. Split rawOutput into lines
+        2. For each line, parse as JSON
+        3. If type == "message_end" and message.role == "assistant":
+           a. Iterate message.content array
+           b. For each block where type == "text", append block.text
+        4. Return concatenated text
+
+      This is used by measure to extract the YAML task plan.
+      ExtractYAMLBlock is reused unchanged on the result.
+    traced_to: [G3]
+
+  # =========================================================================
+  # R8: Progress Logging — PiProgressWriter
+  # =========================================================================
+  - id: R8
+    title: PiProgressWriter for live progress
+    description: |
+      Define a PiProgressWriter analogous to ProgressWriter that parses
+      Pi's NDJSON event stream and logs progress:
+
+      Event mapping:
+        | Pi Event                 | Log Action                              |
+        |--------------------------|-----------------------------------------|
+        | agent_start              | "Agent started"                         |
+        | turn_start               | "Turn N started"                        |
+        | message_update (text)    | Log text snippet (first 80 chars)       |
+        | tool_execution_start     | "Tool: <name> <args summary>"           |
+        | tool_execution_end       | "Tool done: <name> (error: <bool>)"     |
+        | turn_end                 | "Turn N complete"                       |
+        | message_end (assistant)  | Log token counts from usage             |
+        | agent_end                | "Agent complete, N messages"            |
+        | auto_retry_start         | "Retry attempt N after error"           |
+
+      When silence is true, use a compact progress indicator (dots/spinner).
+      When silence is false, tee raw output to os.Stdout.
+    traced_to: [G4]
+
+  # =========================================================================
+  # R9: Measure Integration
+  # =========================================================================
+  - id: R9
+    title: Measure uses PiRunner with --no-tools
+    description: |
+      When agent_backend is "pi", ClaudeRunner.runMeasureClaude must:
+        1. Select the PiRunner
+        2. Pass extraArgs = ["--no-tools"] instead of ["--max-turns", "1"]
+        3. Use the measure idle timeout (1800s)
+        4. After completion, call ExtractTextFromPiJSON instead of
+           ExtractTextFromStreamJSON
+        5. Call ExtractYAMLBlock on the result (unchanged)
+
+      The measure prompt document (YAML) is piped to stdin unchanged.
+      Pi treats it as the user prompt and responds with text.
+    traced_to: [G3]
+
+  # =========================================================================
+  # R10: Stitch Integration
+  # =========================================================================
+  - id: R10
+    title: Stitch uses PiRunner with full tools
+    description: |
+      When agent_backend is "pi", ClaudeRunner.runClaude must:
+        1. Select the PiRunner
+        2. Pass no extraArgs (Pi has all tools enabled by default)
+        3. Use the stitch idle timeout (60s)
+        4. Set workDir to task.WorktreeDir
+
+      Pi runs inside the git worktree with full tool access (read, bash,
+      edit, write, grep, find, ls).  The stitch prompt document (YAML) is
+      piped to stdin unchanged.
+    traced_to: [G3]
+
+  # =========================================================================
+  # R11: Idle Watchdog Compatibility
+  # =========================================================================
+  - id: R11
+    title: IdleTrackingWriter works with Pi output
+    description: |
+      IdleTrackingWriter wraps stdout and tracks the timestamp of the last
+      write.  A goroutine cancels the context if no output arrives for
+      IdleTimeoutS seconds.
+
+      Pi's --mode json streams events continuously during execution:
+        - text_delta events during LLM response
+        - tool_execution_update events during tool execution
+        - turn_start/turn_end events between turns
+
+      These events keep the idle tracker alive.  No changes needed to
+      IdleTrackingWriter.  The existing implementation works unchanged
+      with Pi's event stream.
+    traced_to: [G3]
+
+  # =========================================================================
+  # R12: CheckPi Binary Verification
+  # =========================================================================
+  - id: R12
+    title: CheckPi function for binary verification
+    description: |
+      Define CheckPi analogous to CheckClaude:
+
+        func CheckPi() error
+
+      Steps:
+        1. exec.LookPath("pi") — verify binary exists in PATH
+        2. Optionally: run `pi --version` and verify >= minimum version
+        3. Return nil on success, descriptive error on failure
+
+      Called at orchestrator startup when agent_backend is "pi".
+      No credential extraction is needed — Pi uses inherited env vars
+      (ANTHROPIC_API_KEY, OPENAI_API_KEY, etc.) or its own auth store.
+    traced_to: [G1]
+
+  # =========================================================================
+  # R13: Backend Selection in ClaudeRunner
+  # =========================================================================
+  - id: R13
+    title: ClaudeRunner selects runner by backend config
+    description: |
+      Modify ClaudeRunner (cobbler.go) to construct either a CLIRunner
+      or PiRunner based on cfg.AgentBackend:
+
+        switch cfg.AgentBackend {
+        case "pi":
+            runner = pi.NewPiRunner(pi.PiRunnerConfig{
+                Model:    cfg.Pi.Model,
+                Provider: cfg.Pi.Provider,
+                Thinking: cfg.Pi.Thinking,
+                PiArgs:   cfg.Pi.Args,
+                Silence:  cfg.Pi.SilenceAgent,
+                Timeout:  cfg.Pi.MaxTimeSec,
+                Extensions: cfg.Pi.Extensions,
+            })
+        default:  // "claude" or ""
+            runner = claude.NewCLIRunner(claude.CLIRunnerConfig{...})
+        }
+
+      The rest of ClaudeRunner (runClaude, runMeasureClaude) operates on
+      the Runner interface and is backend-agnostic.
+    traced_to: [G7, G8]
+
+  # =========================================================================
+  # R14: Text Extraction Dispatch
+  # =========================================================================
+  - id: R14
+    title: Backend-aware text extraction
+    description: |
+      After measure completes, the orchestrator extracts text.  The
+      extraction function must match the backend:
+
+        switch cfg.AgentBackend {
+        case "pi":
+            textOutput = pi.ExtractTextFromPiJSON(tokens.RawOutput)
+        default:
+            textOutput = claude.ExtractTextFromStreamJSON(tokens.RawOutput)
+        }
+
+      Alternatively, define an Extractor interface on Runner:
+        type TextExtractor interface {
+            ExtractText(rawOutput string) string
+        }
+
+      And have both CLIRunner and PiRunner implement it.
+    traced_to: [G3]
+
+  # =========================================================================
+  # R15: Model Provider Mapping
+  # =========================================================================
+  - id: R15
+    title: Model identifier mapping
+    description: |
+      When the pi backend is selected, model identifiers must include
+      the provider prefix.  Define a mapping function:
+
+        func MapModelToPi(claudeModel string) string
+
+      Default mappings:
+        "claude-opus-4-6"     → "anthropic/claude-opus-4-6"
+        "claude-sonnet-4-5"   → "anthropic/claude-sonnet-4-5"
+        "claude-haiku-4-5"    → "anthropic/claude-haiku-4-5"
+
+      If the model already contains "/" (provider/id format), pass through
+      unchanged.  This allows users to specify non-Anthropic models in
+      the pi config:
+        pi:
+          model: "openai/gpt-4o"
+          model: "google/gemini-2.5-pro"
+          model: "deepseek/deepseek-chat"
+    traced_to: [G6]
+
+  # =========================================================================
+  # R16: Error Handling
+  # =========================================================================
+  - id: R16
+    title: Error handling for Pi subprocess
+    description: |
+      The PiRunner.Run method must handle:
+
+      1. Non-zero exit code: return error with stderr content
+      2. Context cancellation (timeout): return error with "pi timed out"
+      3. Idle timeout: IdleTrackingWriter cancels context, same as claude
+      4. Signal handling: SIGTERM/SIGINT propagated to child process
+      5. Parse failure: if ParsePiTokens finds no usage data, return
+         ClaudeResult with zero token counts and log a warning
+
+      Error messages must include the backend name for debugging:
+        "pi exited with code %d: %s"
+        "pi timed out after %v"
+        "pi idle timeout after %ds"
+    traced_to: [G1, G3]
+
+  # =========================================================================
+  # R17: RPC Mode Runner (Future)
+  # =========================================================================
+  - id: R17
+    title: PiRPCRunner for RPC mode integration
+    description: |
+      Define a PiRPCRunner that uses Pi's RPC mode for richer control:
+
+        type PiRPCRunner struct {
+            // ... same fields as PiRunner plus:
+            proc    *exec.Cmd
+            stdin   io.WriteCloser
+            reader  *bufio.Scanner
+        }
+
+      The RPC runner:
+        1. Starts `pi --mode rpc --no-session --no-context-files`
+        2. Sends {"type":"prompt","message":"..."} via stdin
+        3. Reads events from stdout until agent_end
+        4. Sends {"type":"get_session_stats"} to get token usage
+        5. Returns ClaudeResult with data from session stats
+
+      Advantages over JSON mode:
+        - Can reuse a single Pi process for multiple prompts
+        - Can abort mid-execution via {"type":"abort"}
+        - Can query state and stats without parsing event stream
+        - Better for multi-turn stitch operations
+
+      This is a future enhancement.  JSON mode (R3-R8) is sufficient for
+      initial parity with Claude Code.
+    traced_to: [G5]
+
+  # =========================================================================
+  # R18: Extension Loading
+  # =========================================================================
+  - id: R18
+    title: Extension loading via configuration
+    description: |
+      When the pi backend is selected and pi.extensions is non-empty,
+      BuildPiCmd appends -e <path> for each extension:
+
+        for _, ext := range extensions {
+            args = append(args, "-e", ext)
+        }
+
+      This enables cobbler-specific extensions such as:
+        - bd-integration: custom tool for beads issue tracking
+        - git-safety: stash/restore on turn boundaries
+        - permission-gate: block dangerous operations
+
+      Extensions are loaded from absolute paths specified in config.
+      No extension is required for basic operation.
+    traced_to: [G1]
+
+  # =========================================================================
+  # R19: Prompt Compatibility
+  # =========================================================================
+  - id: R19
+    title: Prompt format compatibility
+    description: |
+      The orchestrator's prompt documents (MeasurePromptDoc,
+      StitchPromptDoc) are YAML-serialized structs piped to stdin.
+      These must work with Pi unchanged.
+
+      Validation:
+        - Pi in print/JSON mode reads stdin and treats it as the prompt
+        - The YAML document is valid text content — Pi processes it as
+          the user's request
+        - Role instructions, constitutions, project context, and task
+          descriptions embedded in the YAML work identically
+        - Pi's default system prompt ("You are an expert coding
+          assistant...") does not conflict with the embedded role
+
+      If the orchestrator wants to suppress Pi's default system prompt
+      to avoid redundancy with the embedded role, use:
+        --system-prompt ""  (empty string replaces default)
+      or
+        --system-prompt "Follow the instructions in the user prompt."
+    traced_to: [G3]
+
+  # =========================================================================
+  # R20: Output Format Abstraction
+  # =========================================================================
+  - id: R20
+    title: Output format abstraction
+    description: |
+      Create a backend-agnostic output parsing interface:
+
+        type OutputParser interface {
+            ParseTokens(rawOutput string) ClaudeResult
+            ExtractText(rawOutput string) string
+        }
+
+        type ClaudeOutputParser struct{}
+        type PiOutputParser struct{}
+
+      ClaudeOutputParser wraps ParseClaudeTokens and ExtractTextFromStreamJSON.
+      PiOutputParser wraps ParsePiTokens and ExtractTextFromPiJSON.
+
+      The Runner interface can optionally embed OutputParser, or the
+      orchestrator can select the parser based on config.AgentBackend.
+
+      This is a refactoring opportunity, not strictly required.  The
+      dispatch in R14 achieves the same result.
+    traced_to: [G3, G4]
+
+acceptance_criteria:
+
+  - id: AC1
+    description: |
+      When cobbler.agent_backend is "pi", the orchestrator uses PiRunner
+      for all code-generation invocations.
+    traces: [R1, R13]
+
+  - id: AC2
+    description: |
+      When cobbler.agent_backend is "" or "claude", behavior is identical
+      to the current implementation.  No existing tests break.
+    traces: [R1, R13]
+
+  - id: AC3
+    description: |
+      PiRunner implements the Runner interface.  It can be assigned to a
+      Runner variable and called with the same signature.
+    traces: [R3]
+
+  - id: AC4
+    description: |
+      BuildPiCmd produces a correctly constructed exec.Cmd with:
+        - pi binary
+        - --model with provider/id syntax
+        - --mode json
+        - --no-session
+        - --no-context-files
+        - --verbose
+        - --thinking level (if configured)
+        - Extensions via -e flags
+        - Extra args appended last
+        - cmd.Dir set to workDir
+        - PI_SKIP_VERSION_CHECK=1 in environment
+    traces: [R4, R5]
+
+  - id: AC5
+    description: |
+      ParsePiTokens correctly extracts InputTokens, OutputTokens,
+      CacheCreationTokens, CacheReadTokens, and CostUSD from Pi's
+      NDJSON event stream.
+    traces: [R6]
+
+  - id: AC6
+    description: |
+      ExtractTextFromPiJSON concatenates all text content from assistant
+      messages in Pi's NDJSON output.  ExtractYAMLBlock succeeds on the
+      result when the assistant produces a YAML-fenced code block.
+    traces: [R7]
+
+  - id: AC7
+    description: |
+      Measure with pi backend passes --no-tools instead of --max-turns 1.
+      The model responds with text only (no tool calls).
+    traces: [R9]
+
+  - id: AC8
+    description: |
+      Stitch with pi backend runs in the git worktree directory with all
+      tools enabled.  The agent can read, edit, write files, and run
+      bash commands in the worktree.
+    traces: [R10]
+
+  - id: AC9
+    description: |
+      IdleTrackingWriter correctly detects idle Pi processes.  If no
+      NDJSON events are written for IdleTimeoutS seconds, the context
+      is cancelled and Pi is killed.
+    traces: [R11]
+
+  - id: AC10
+    description: |
+      CheckPi returns nil when `pi` is in PATH and returns a descriptive
+      error when it is not.
+    traces: [R12]
+
+  - id: AC11
+    description: |
+      Model identifiers without a "/" prefix are automatically prepended
+      with "anthropic/" for the pi backend.  Identifiers with "/" are
+      passed through unchanged.
+    traces: [R15]
+
+  - id: AC12
+    description: |
+      Pi subprocess errors (non-zero exit, timeout, idle timeout) produce
+      descriptive error messages that identify "pi" as the backend.
+    traces: [R16]
+
+  - id: AC13
+    description: |
+      The orchestrator's YAML prompt documents (MeasurePromptDoc,
+      StitchPromptDoc) work with Pi's stdin processing without any
+      modification to the prompt format.
+    traces: [R19]
+
+  - id: AC14
+    description: |
+      PiProgressWriter logs meaningful progress during Pi execution:
+      turn numbers, tool calls, text snippets, and token counts.
+    traces: [R8]
+
+  - id: AC15
+    description: |
+      Non-Anthropic models (OpenAI, Google, DeepSeek) can be configured
+      via pi.model and are passed correctly to the pi CLI.
+    traces: [R2, R15]
