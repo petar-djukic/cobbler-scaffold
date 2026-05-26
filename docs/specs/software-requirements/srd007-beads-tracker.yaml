@@ -1,0 +1,978 @@
+id: srd007-beads-tracker
+title: Beads (bd) Work Tracker Backend for Cobbler Orchestrator
+
+implemented_by:
+  - BeadsTracker (pkg/orchestrator/internal/beads/)
+  - WorkTracker interface (pkg/orchestrator/internal/github/issues.go)
+  - Orchestrator constructor (pkg/orchestrator/orchestrator.go)
+  - Config struct (pkg/orchestrator/config.go)
+used_by:
+  - Generator (pkg/orchestrator/generator.go)
+  - Measure (pkg/orchestrator/measure.go)
+  - Stitch (pkg/orchestrator/stitch.go)
+
+problem: |
+  The cobbler-scaffold orchestrator currently depends on GitHub Issues as its
+  sole work-tracking backend. All issue CRUD, label management, dependency
+  promotion, and lifecycle operations are performed via the gh CLI, wrapped by
+  the GitHubTracker struct that implements the WorkTracker interface.
+
+  This coupling creates several problems:
+
+  1. Rate limits. The GitHub REST API enforces per-hour rate limits. The
+     orchestrator already contains a WaitForIssuesVisible polling loop because
+     the label index lags after writes. Long generation runs with many
+     measure-stitch cycles frequently hit secondary rate limits, causing
+     backoff delays and wasted compute time.
+
+  2. Eventual consistency. GitHub's search index is eventually consistent.
+     After creating or labeling an issue, ListOpenCobblerIssues may return
+     stale results. The orchestrator works around this with polling, retries,
+     and defensive checks — all of which add complexity and latency.
+
+  3. Network dependency. Every issue operation requires an internet connection
+     and a valid gh authentication token. Offline development, air-gapped
+     environments, and CI runners without GitHub credentials cannot use the
+     orchestrator.
+
+  4. Manual DAG promotion. GitHub Issues have no native dependency concept.
+     The orchestrator encodes dependencies in YAML front-matter
+     (cobbler_depends_on) embedded in issue bodies, then implements its own
+     DAG promotion logic by toggling cobbler-ready and cobbler-in-progress
+     labels. This is fragile and requires multiple API calls per promotion.
+
+  5. Sub-issue linking complexity. Linking child issues to parent issues
+     requires two API calls per link: one to fetch the child's database ID,
+     another to POST to the sub_issues endpoint. This is brittle and fails
+     silently when the API schema changes.
+
+  Beads (bd) is a lightweight, local-first issue tracker with first-class
+  dependency support, a SQLite/Dolt backing store, structured query language,
+  and JSON output on every command. It eliminates rate limits, eventual
+  consistency, network dependency, and manual DAG logic. The WorkTracker
+  interface was explicitly designed for alternative backends (the source
+  comment reads: "Designed so a future crumbs/trails implementation can
+  satisfy it.").
+
+  This SRD specifies a BeadsTracker struct that implements the WorkTracker
+  interface using the bd CLI, enabling the orchestrator to use beads as an
+  alternative to GitHub Issues without modifying any calling code.
+
+goals:
+  - G1: Define a BeadsTracker struct that implements the full WorkTracker interface using the bd CLI
+  - G2: Map every GitHubTracker gh CLI operation to an equivalent bd CLI operation
+  - G3: Eliminate YAML front-matter encoding of dependencies in favor of native bd dependency primitives
+  - G4: Eliminate DAG promotion logic in favor of native bd ready-state computation
+  - G5: Eliminate API polling and eventual-consistency workarounds
+  - G6: Add a configuration option to select between github and beads backends
+  - G7: Preserve backward compatibility — the github backend must remain the default and must continue to work unchanged
+
+# ---------------------------------------------------------------------------
+# ANALYSIS: How gh Is Used in GitHubTracker
+# ---------------------------------------------------------------------------
+#
+# This section documents every gh CLI invocation in the GitHubTracker
+# implementation (pkg/orchestrator/internal/github/issues.go) and the
+# corresponding bd equivalent. The analysis is grouped by functional
+# category and references the GitHubTracker method that contains each
+# invocation.
+#
+# ---------------------------------------------------------------------------
+# A1: Repo Detection
+# ---------------------------------------------------------------------------
+#
+# GitHubTracker.DetectGitHubRepo(repoRoot) resolves the GitHub owner/repo
+# string used in all subsequent gh commands. Resolution order:
+#   1. t.Cfg.IssuesRepo if set (explicit override)
+#   2. gh repo view --json nameWithOwner -q .nameWithOwner (reads git remote)
+#   3. Strip "github.com/" from t.Cfg.ModulePath
+#
+# gh invocation:
+#   exec.Command(t.GhBin, "repo", "view", "--json", "nameWithOwner",
+#                "-q", ".nameWithOwner")
+#
+# bd equivalent: Not needed. bd auto-discovers its database from
+# .beads/*.db in the repository root. No repo identifier is required.
+# BeadsTracker.DetectGitHubRepo returns a synthetic identifier (the bd
+# database path) to satisfy the interface contract.
+#
+# ---------------------------------------------------------------------------
+# A2: Label Management
+# ---------------------------------------------------------------------------
+#
+# A2.1: EnsureCobblerLabels(repo)
+#   Creates cobbler-ready, cobbler-in-progress, and cobbler-skipped labels
+#   on the GitHub repo if they do not exist.
+#   gh invocation (per label):
+#     exec.Command(t.GhBin, "api", "repos/"+repo+"/labels",
+#                  "--method", "POST",
+#                  "--field", "name="+l.name,
+#                  "--field", "color="+l.color,
+#                  "--field", "description="+l.desc)
+#   bd equivalent: No-op. Labels in bd are created implicitly on first use.
+#   There is no API to pre-create labels. BeadsTracker.EnsureCobblerLabels
+#   is a no-op that returns nil.
+#
+# A2.2: EnsureCobblerGenLabel(repo, generation)
+#   Creates a generation-scoped label (cobbler-gen-{generation}) on the
+#   GitHub repo. Idempotent; ignores 422 errors.
+#   gh invocation:
+#     exec.Command(t.GhBin, "api", "repos/"+repo+"/labels",
+#                  "--method", "POST",
+#                  "--field", "name="+label,
+#                  "--field", "color=ededed",
+#                  "--field", "description=Cobbler generation "+generation)
+#   bd equivalent: No-op. Same as A2.1.
+#
+# A2.3: ListRepoLabels(repo)
+#   Returns all label names on the repo.
+#   gh invocation:
+#     exec.Command(t.GhBin, "label", "list", "--repo", repo,
+#                  "--json", "name", "--limit", "100")
+#   bd equivalent:
+#     exec.Command("bd", "label", "list-all", "--json")
+#   Parses JSON output to extract label names.
+#
+# A2.4: AddIssueLabel(repo, number, label)
+#   Adds a label to a specific issue.
+#   gh invocation:
+#     exec.Command(t.GhBin, "issue", "edit", "--repo", repo,
+#                  fmt.Sprintf("%d", number), "--add-label", label)
+#   bd equivalent:
+#     exec.Command("bd", "label", "add", issueID, label)
+#   where issueID is the bd issue identifier (e.g., "bd-42").
+#
+# A2.5: RemoveIssueLabel(repo, number, label)
+#   Removes a label from a specific issue.
+#   gh invocation:
+#     exec.Command(t.GhBin, "issue", "edit", "--repo", repo,
+#                  fmt.Sprintf("%d", number), "--remove-label", label)
+#   bd equivalent:
+#     exec.Command("bd", "label", "remove", issueID, label)
+#
+# ---------------------------------------------------------------------------
+# A3: Issue CRUD
+# ---------------------------------------------------------------------------
+#
+# A3.1: CreateCobblerIssue(repo, generation, issue)
+#   Creates a GitHub issue with title, body (YAML front-matter + description),
+#   and generation label.
+#   gh invocation:
+#     exec.Command(t.GhBin, "issue", "create",
+#                  "--repo", repo,
+#                  "--title", title,
+#                  "--body", body,
+#                  "--label", genLabel)
+#   The body includes FormatIssueFrontMatter which encodes cobbler_generation,
+#   cobbler_index, and cobbler_depends_on in YAML front-matter. The title is
+#   prefixed with "[measure] ".
+#   bd equivalent:
+#     exec.Command("bd", "create",
+#                  "--title", title,
+#                  "--description", issue.Description,
+#                  "--labels", genLabel,
+#                  "--metadata", metadataJSON,
+#                  "--silent")
+#   where metadataJSON is a JSON string encoding cobbler_generation,
+#   cobbler_index. Dependencies are created separately via bd dep add
+#   instead of embedding cobbler_depends_on in body text.
+#   The --silent flag outputs only the issue ID (e.g., "bd-a3f8e9").
+#
+# A3.2: CreateMeasuringPlaceholder(repo, generation, iteration)
+#   Creates a transient placeholder issue while measure is calling Claude.
+#   No cobbler labels are applied. Stitch ignores it.
+#   gh invocation:
+#     exec.Command(t.GhBin, "issue", "create",
+#                  "--repo", repo,
+#                  "--title", title,
+#                  "--body", body)
+#   bd equivalent:
+#     exec.Command("bd", "create",
+#                  "--title", title,
+#                  "--description", body,
+#                  "--ephemeral",
+#                  "--silent")
+#   The --ephemeral flag marks it as a short-lived issue subject to
+#   compaction, which is semantically correct for placeholders.
+#
+# A3.3: CloseMeasuringPlaceholder(repo, number)
+#   Closes the placeholder issue.
+#   gh invocation:
+#     exec.Command(t.GhBin, "issue", "close",
+#                  "--repo", repo,
+#                  fmt.Sprintf("%d", number))
+#   bd equivalent:
+#     exec.Command("bd", "close", issueID)
+#
+# A3.4: CloseMeasuringPlaceholderWithComment(repo, number, comment)
+#   Adds a comment then closes the placeholder.
+#   gh invocations:
+#     exec.Command(t.GhBin, "issue", "comment", "--repo", repo,
+#                  fmt.Sprintf("%d", number), "--body", comment)
+#     then CloseMeasuringPlaceholder (A3.3)
+#   bd equivalent:
+#     exec.Command("bd", "comment", issueID, comment)
+#     exec.Command("bd", "close", issueID)
+#
+# A3.5: FinalizeMeasurePlaceholder(repo, number, generation, comment, childIssues)
+#   Converts the measuring placeholder into a permanent [measure] issue:
+#   renames it, adds generation label, links child issues, comments, closes.
+#   gh invocations:
+#     exec.Command(t.GhBin, "issue", "edit", ..., "--title", title) — rename
+#     AddIssueLabel(repo, number, genLabel)                          — add gen label
+#     LinkSubIssue(repo, parentNumber, number)                       — link to parent
+#     For each child: LinkSubIssue(repo, number, child)              — link children
+#     exec.Command(t.GhBin, "issue", "comment", ..., "--body", comment) — comment
+#     CloseMeasuringPlaceholder(repo, number)                        — close
+#   bd equivalent:
+#     exec.Command("bd", "update", issueID,
+#                  "--title", title,
+#                  "--add-label", genLabel,
+#                  "--persistent")
+#     For each child: exec.Command("bd", "update", childID, "--parent", issueID)
+#     exec.Command("bd", "comment", issueID, comment)
+#     exec.Command("bd", "close", issueID)
+#   The --persistent flag promotes the ephemeral placeholder to a permanent
+#   issue. Parent-child linking uses bd's native --parent flag instead of the
+#   GitHub sub_issues API.
+#
+# A3.6: CloseCobblerIssue(repo, number, generation)
+#   Removes in-progress label, closes the issue, re-runs DAG promotion.
+#   gh invocations:
+#     RemoveIssueLabel(repo, number, LabelInProgress)
+#     exec.Command(t.GhBin, "issue", "close",
+#                  "--repo", repo,
+#                  fmt.Sprintf("%d", number))
+#     PromoteReadyIssues(repo, generation)
+#   bd equivalent:
+#     exec.Command("bd", "update", issueID,
+#                  "--remove-label", LabelInProgress)
+#     exec.Command("bd", "close", issueID)
+#   DAG promotion (PromoteReadyIssues) is not needed because bd natively
+#   computes ready state from dependency resolution.
+#
+# A3.7: EditIssueTitle(repo, number, title)
+#   Updates the title of a GitHub issue.
+#   gh invocation:
+#     exec.Command(t.GhBin, "issue", "edit",
+#                  "--repo", repo,
+#                  fmt.Sprintf("%d", number), "--title", title)
+#   bd equivalent:
+#     exec.Command("bd", "update", issueID, "--title", title)
+#
+# A3.8: CommentCobblerIssue(repo, number, body)
+#   Posts a comment on a GitHub issue. Best-effort; errors are logged.
+#   gh invocation:
+#     exec.Command(t.GhBin, "issue", "comment",
+#                  fmt.Sprintf("%d", number),
+#                  "--repo", repo,
+#                  "--body", body)
+#   bd equivalent:
+#     exec.Command("bd", "comment", issueID, body)
+#
+# A3.9: CloseGenerationIssues(repo, generation)
+#   Closes all open issues scoped to a generation. Used during reset or
+#   cleanup.
+#   gh invocations:
+#     ListOpenCobblerIssues(repo, generation) to get all open issues
+#     For each: exec.Command(t.GhBin, "issue", "close",
+#                            "--repo", repo,
+#                            fmt.Sprintf("%d", iss.Number))
+#   bd equivalent:
+#     List issues: exec.Command("bd", "list",
+#                               "--status", "open",
+#                               "--label", genLabel,
+#                               "--json")
+#     For each: exec.Command("bd", "close", issueID)
+#
+# A3.10: FileTargetRepoDefects(repo, defects)
+#   Files each defect as a bug issue in the target repo. Best-effort.
+#   gh invocation (per defect):
+#     exec.Command(t.GhBin, "issue", "create",
+#                  "--repo", repo,
+#                  "--title", title,
+#                  "--body", body,
+#                  "--label", "bug")
+#   bd equivalent:
+#     exec.Command("bd", "create",
+#                  "--title", title,
+#                  "--description", body,
+#                  "--labels", "bug",
+#                  "--type", "bug",
+#                  "--silent")
+#
+# ---------------------------------------------------------------------------
+# A4: Issue Queries
+# ---------------------------------------------------------------------------
+#
+# A4.1: ListOpenCobblerIssues(repo, generation)
+#   Returns all open issues for a generation. Uses the REST API endpoint
+#   (gh api repos/.../issues) instead of gh issue list because the search
+#   API is eventually consistent.
+#   gh invocation:
+#     exec.Command(t.GhBin, "api",
+#                  "--method", "GET",
+#                  fmt.Sprintf("repos/%s/issues", repo),
+#                  "-f", "state=open",
+#                  "-f", "labels="+label,
+#                  "-f", "per_page=100")
+#   Response is JSON parsed by ParseCobblerIssuesJSON which extracts
+#   Number, Title, State, Body (parsed for YAML front-matter), and Labels.
+#   bd equivalent:
+#     exec.Command("bd", "list",
+#                  "--status", "open",
+#                  "--label", genLabel,
+#                  "--limit", "0",
+#                  "--json")
+#   bd's writes are immediately visible (SQLite transactions), so no
+#   eventual-consistency workaround is needed.
+#
+# A4.2: ListAllCobblerIssues(repo, generation)
+#   Returns all issues (open + closed) for a generation. Used by stats.
+#   gh invocation:
+#     exec.Command(t.GhBin, "api",
+#                  "--method", "GET",
+#                  "--paginate",
+#                  fmt.Sprintf("repos/%s/issues", repo),
+#                  "-f", "state=all",
+#                  "-f", "labels="+label,
+#                  "-f", "per_page=100")
+#   bd equivalent:
+#     exec.Command("bd", "list",
+#                  "--all",
+#                  "--label", genLabel,
+#                  "--limit", "0",
+#                  "--json")
+#
+# A4.3: FetchIssueComments(repo, number)
+#   Returns the body text of all comments on a given issue.
+#   gh invocation:
+#     exec.Command(t.GhBin, "api",
+#                  fmt.Sprintf("repos/%s/issues/%d/comments", repo, number))
+#   bd equivalent:
+#     exec.Command("bd", "comments", "list", issueID, "--json")
+#
+# A4.4: ListActiveIssuesContext(repo, generation)
+#   Returns a JSON array of ContextIssue objects for all open issues in the
+#   generation, injected into the measure prompt so Claude sees existing work.
+#   Internally calls ListOpenCobblerIssues then IssuesContextJSON.
+#   bd equivalent: Same as A4.1, followed by the same IssuesContextJSON
+#   transformation applied to the parsed results.
+#
+# A4.5: GcStaleGenerationIssues(repo, generationPrefix)
+#   Fetches all open issues, filters locally for cobbler-gen-* labels,
+#   groups by generation, and closes issues whose generation branch no
+#   longer exists.
+#   gh invocation:
+#     exec.Command(t.GhBin, "api",
+#                  fmt.Sprintf("repos/%s/issues", repo),
+#                  "--method", "GET",
+#                  "-f", "state=open",
+#                  "-f", "per_page=100")
+#   bd equivalent:
+#     exec.Command("bd", "list",
+#                  "--status", "open",
+#                  "--label-pattern", "cobbler-gen-*",
+#                  "--limit", "0",
+#                  "--json")
+#   The --label-pattern flag supports glob matching, eliminating the need
+#   for local filtering.
+#
+# ---------------------------------------------------------------------------
+# A5: DAG / Dependency Management
+# ---------------------------------------------------------------------------
+#
+# A5.1: PromoteReadyIssues(repo, generation)
+#   Builds a DAG from open issues by reading cobbler_depends_on from YAML
+#   front-matter. Issues whose dependency is still open have cobbler-ready
+#   removed. Issues whose dependency is closed (or has no dependency) get
+#   cobbler-ready added.
+#   gh invocations: ListOpenCobblerIssues then for each issue:
+#     AddIssueLabel or RemoveIssueLabel (cobbler-ready)
+#   bd equivalent: Not needed. bd natively tracks dependencies and
+#   computes ready state. The bd ready command returns only unblocked
+#   issues. BeadsTracker.PromoteReadyIssues is a no-op returning nil.
+#
+# A5.2: PickReadyIssue(repo, generation)
+#   Calls PromoteReadyIssues, lists open issues, filters for cobbler-ready
+#   (excluding cobbler-in-progress and cobbler-skipped), sorts by number
+#   ascending, picks the first, adds cobbler-in-progress, removes
+#   cobbler-ready, renames [measure] to [stitch].
+#   gh invocations:
+#     PromoteReadyIssues (multiple API calls)
+#     ListOpenCobblerIssues
+#     AddIssueLabel(repo, picked.Number, LabelInProgress)
+#     RemoveIssueLabel(repo, picked.Number, LabelReady)
+#     EditIssueTitle(repo, picked.Number, newTitle)
+#   bd equivalent:
+#     exec.Command("bd", "list",
+#                  "--ready",
+#                  "--status", "open",
+#                  "--label", genLabel,
+#                  "--exclude-label", LabelSkipped,
+#                  "--sort", "id",
+#                  "--limit", "1",
+#                  "--json")
+#   Then claim the picked issue:
+#     exec.Command("bd", "update", issueID, "--claim",
+#                  "--add-label", LabelInProgress)
+#   And rename:
+#     exec.Command("bd", "update", issueID, "--title", newTitle)
+#   The --ready flag uses bd's native dependency resolution. The --claim
+#   flag atomically sets assignee and status to in_progress.
+#
+# ---------------------------------------------------------------------------
+# A6: WaitForIssuesVisible
+# ---------------------------------------------------------------------------
+#
+# A6.1: WaitForIssuesVisible(repo, generation, expected)
+#   Polls ListOpenCobblerIssues up to 15 seconds until at least expected
+#   issues appear. Needed because the GitHub REST API label index lags.
+#   bd equivalent: Not needed. bd uses SQLite transactions; writes are
+#   immediately visible. BeadsTracker.WaitForIssuesVisible is a no-op.
+#
+# ---------------------------------------------------------------------------
+# A7: Generic Escape Hatch
+# ---------------------------------------------------------------------------
+#
+# A7.1: GhExec(repoRoot, args...)
+#   Runs an arbitrary gh subcommand. Used as a generic escape hatch.
+#   bd equivalent:
+#     exec.Command("bd", args...)
+#   with cmd.Dir set to repoRoot.
+#
+# ---------------------------------------------------------------------------
+# A8: Sub-Issue Linking
+# ---------------------------------------------------------------------------
+#
+# A8.1: LinkSubIssue(repo, parentNumber, childNumber)
+#   Fetches the child issue's database ID (distinct from display number)
+#   via gh api, then POSTs to the parent's sub_issues endpoint.
+#   gh invocations:
+#     exec.Command(t.GhBin, "api",
+#                  fmt.Sprintf("repos/%s/issues/%d", repo, childNumber),
+#                  "--jq", ".id")
+#     exec.Command(t.GhBin, "api",
+#                  fmt.Sprintf("repos/%s/issues/%d/sub_issues", repo, parentNumber),
+#                  "--method", "POST",
+#                  "--field", fmt.Sprintf("sub_issue_id=%d", dbID))
+#   bd equivalent:
+#     exec.Command("bd", "update", childID, "--parent", parentID)
+#   bd has native parent-child hierarchy. A single command replaces two
+#   API calls.
+#
+# ---------------------------------------------------------------------------
+# A9: Defect Routing
+# ---------------------------------------------------------------------------
+#
+# A9.1: ResolveTargetRepo()
+#   Returns the GitHub owner/repo for the project being developed.
+#   Checks t.Cfg.TargetRepo, then strips "github.com/" from ModulePath.
+#   bd equivalent: Returns the bd database path or a configured
+#   identifier. When beads is the backend, defects are filed in the
+#   same local database with a "bug" type and "defect" label.
+#
+
+requirements:
+  R1:
+    title: Configuration and Backend Selection
+    items:
+      - "R1.1: CobblerConfig must include a Tracker field (string, default \"github\") with two valid values: \"github\" (use GitHubTracker, current behavior) and \"beads\" (use BeadsTracker)"
+      - "R1.2: CobblerConfig must include a BeadsBin field (string, default \"bd\") specifying the path to the bd binary"
+      - "R1.3: The Orchestrator constructor (New) must read Tracker from Config and instantiate either GitHubTracker or BeadsTracker accordingly"
+      - "R1.4: When Tracker is \"github\" or empty, the orchestrator must behave identically to the current implementation; no existing tests may fail"
+      - "R1.5: When Tracker is \"beads\", the orchestrator must instantiate a BeadsTracker and pass it as the WorkTracker dependency"
+      - "R1.6: applyDefaults must set Tracker to \"github\" when empty"
+      - "R1.7: applyDefaults must set BeadsBin to \"bd\" when empty"
+      - "R1.8: The configuration.yaml schema must document the tracker and beads_bin fields under the cobbler section"
+
+  R2:
+    title: BeadsTracker Struct and Construction
+    items:
+      - "R2.1: BeadsTracker must be defined in a new package pkg/orchestrator/internal/beads/"
+      - "R2.2: BeadsTracker must implement the full WorkTracker interface defined in pkg/orchestrator/internal/github/issues.go"
+      - "R2.3: BeadsTracker must hold a Log field (Logger function) for diagnostic output"
+      - "R2.4: BeadsTracker must hold a BdBin field (string) for the bd binary path"
+      - "R2.5: BeadsTracker must hold a BranchExists field (BranchChecker function) for verifying git branch existence during GC"
+      - "R2.6: BeadsTracker must hold a Cfg field (RepoConfig) for issues_repo, module_path, and target_repo overrides"
+      - "R2.7: NewBeadsTracker must accept Deps and RepoConfig (same types as NewGitHubTracker) and return a *BeadsTracker"
+      - "R2.8: BeadsTracker must define a helper method bdExec(args ...string) (string, error) that runs the bd binary with the given arguments and returns trimmed stdout; the method must set cmd.Dir to the repository root when available"
+
+  R3:
+    title: "BeadsTracker.DetectGitHubRepo — Repo Detection"
+    items:
+      - "R3.1: DetectGitHubRepo must return Cfg.IssuesRepo if it is non-empty (explicit override, same behavior as GitHubTracker)"
+      - "R3.2: When Cfg.IssuesRepo is empty, DetectGitHubRepo must run bd info --json and extract the database path as the repo identifier"
+      - "R3.3: If bd info fails, DetectGitHubRepo must fall back to the module path (stripping \"github.com/\" prefix) to maintain compatibility with callers that display the repo identifier in log messages"
+      - "R3.4: DetectGitHubRepo must never return an empty string; if all resolution methods fail, it must return an error"
+
+  R4:
+    title: "BeadsTracker Label Management — EnsureCobblerLabels, EnsureCobblerGenLabel, ListRepoLabels, AddIssueLabel, RemoveIssueLabel"
+    items:
+      - "R4.1: EnsureCobblerLabels must be a no-op that returns nil; bd creates labels implicitly on first use and does not require pre-creation"
+      - "R4.2: EnsureCobblerGenLabel must be a no-op that returns nil; same rationale as R4.1"
+      - "R4.3: ListRepoLabels must run bd label list-all --json and parse the JSON output to return a []string of label names"
+      - "R4.4: AddIssueLabel must run bd label add {issueID} {label} to add a label to the specified issue"
+      - "R4.5: AddIssueLabel must convert the GitHub issue number (int) to a bd issue ID string using the ID mapping maintained by BeadsTracker (see R6)"
+      - "R4.6: RemoveIssueLabel must run bd label remove {issueID} {label} to remove a label from the specified issue"
+      - "R4.7: RemoveIssueLabel must not fail if the label does not exist on the issue; errors from bd label remove for missing labels must be logged and swallowed"
+
+  R5:
+    title: "BeadsTracker Issue ID Mapping"
+    items:
+      - "R5.1: GitHub Issues are identified by sequential integers (e.g., 42). Beads issues are identified by prefixed hex strings (e.g., bd-a3f8e9). The BeadsTracker must maintain a bidirectional mapping between the integer namespace used by callers (via WorkTracker) and the string namespace used by bd."
+      - "R5.2: BeadsTracker must store cobbler_index as a metadata field on each bd issue using --metadata or --set-metadata"
+      - "R5.3: When creating an issue, BeadsTracker must parse the bd-issued ID from the --silent output and record it in an in-memory map keyed by a synthetic integer (the cobbler_index)"
+      - "R5.4: When looking up an issue by number, BeadsTracker must first check the in-memory map; if the number is not found, it must query bd show {number} --json to resolve the ID"
+      - "R5.5: The synthetic integer used as the GitHub-compatible issue number must be derived from the cobbler_index field in the issue metadata; if cobbler_index is not set, the BeadsTracker must generate a monotonically increasing integer within the generation"
+      - "R5.6: The in-memory map must be populated lazily from ListOpenCobblerIssues and ListAllCobblerIssues responses"
+      - "R5.7: BeadsTracker must store the GitHub-compatible number in bd metadata as cobbler_number so that it survives process restarts and can be recovered by querying bd list --json"
+
+  R6:
+    title: "BeadsTracker.CreateCobblerIssue — Issue Creation"
+    items:
+      - "R6.1: CreateCobblerIssue must run bd create with --title, --description, --labels, --metadata, and --silent flags"
+      - "R6.2: The title must be prefixed with \"[measure] \" after normalizing, matching GitHubTracker behavior"
+      - "R6.3: The generation must be stored as a label using the GenLabel function (cobbler-gen-{generation}), same as GitHubTracker"
+      - "R6.4: cobbler_generation and cobbler_index must be stored as bd metadata fields (--set-metadata cobbler_generation={generation} --set-metadata cobbler_index={index}) instead of YAML front-matter in the body"
+      - "R6.5: cobbler_depends_on must NOT be stored in the body or metadata; instead, when issue.Dependency >= 0, BeadsTracker must run bd dep add {newIssueID} {dependencyIssueID} to create a native blocking dependency"
+      - "R6.6: The issue description must be passed as the raw description text from ProposedIssue.Description without any front-matter wrapper"
+      - "R6.7: CreateCobblerIssue must parse the issue ID from the --silent output of bd create"
+      - "R6.8: CreateCobblerIssue must record the mapping from cobbler_index to bd issue ID in the in-memory map (R5.3)"
+      - "R6.9: CreateCobblerIssue must return the cobbler_index as the GitHub-compatible integer, matching the return type (int, error) of the WorkTracker interface"
+      - "R6.10: When the dependency index refers to an issue from the same measure batch, BeadsTracker must resolve it through the in-memory map populated during earlier iterations of the same importIssues call"
+
+  R7:
+    title: "BeadsTracker.CreateMeasuringPlaceholder — Placeholder Issue Creation"
+    items:
+      - "R7.1: CreateMeasuringPlaceholder must run bd create with --title, --description, --ephemeral, and --silent flags"
+      - "R7.2: The --ephemeral flag marks the issue as short-lived and subject to TTL compaction, matching the transient nature of measuring placeholders"
+      - "R7.3: No cobbler labels must be applied to the placeholder (matching GitHubTracker behavior where stitch ignores issues without a gen label)"
+      - "R7.4: The placeholder must store a cobbler_number in metadata for the ID mapping"
+      - "R7.5: CreateMeasuringPlaceholder must return (number, nil) where number is the cobbler_number assigned to the placeholder"
+
+  R8:
+    title: "BeadsTracker.CloseMeasuringPlaceholder and CloseMeasuringPlaceholderWithComment"
+    items:
+      - "R8.1: CloseMeasuringPlaceholder must run bd close {issueID} to close the placeholder issue"
+      - "R8.2: CloseMeasuringPlaceholder must be best-effort; errors are logged via t.Log and not returned"
+      - "R8.3: CloseMeasuringPlaceholderWithComment must run bd comment {issueID} {comment} followed by bd close {issueID}"
+      - "R8.4: Both methods must resolve the bd issue ID from the integer number via the ID mapping (R5)"
+
+  R9:
+    title: "BeadsTracker.FinalizeMeasurePlaceholder — Placeholder Promotion"
+    items:
+      - "R9.1: FinalizeMeasurePlaceholder must rename the placeholder issue via bd update {issueID} --title {newTitle}"
+      - "R9.2: FinalizeMeasurePlaceholder must add the generation label via bd label add {issueID} {genLabel}"
+      - "R9.3: FinalizeMeasurePlaceholder must promote the ephemeral placeholder to a permanent issue via bd update {issueID} --persistent"
+      - "R9.4: For each child issue number in childIssues, FinalizeMeasurePlaceholder must set the parent via bd update {childID} --parent {issueID}"
+      - "R9.5: If a parent generation issue number is extractable from the generation name (ExtractParentIssueNumber), FinalizeMeasurePlaceholder must set the measure issue's parent to that generation issue via bd update {issueID} --parent {parentID}"
+      - "R9.6: FinalizeMeasurePlaceholder must post the summary comment via bd comment {issueID} {comment}"
+      - "R9.7: FinalizeMeasurePlaceholder must close the issue via bd close {issueID}"
+      - "R9.8: All operations in FinalizeMeasurePlaceholder are best-effort; errors are logged and do not fail the caller"
+
+  R10:
+    title: "BeadsTracker.CloseCobblerIssue — Issue Closing"
+    items:
+      - "R10.1: CloseCobblerIssue must remove the cobbler-in-progress label via bd label remove {issueID} {LabelInProgress}"
+      - "R10.2: CloseCobblerIssue must close the issue via bd close {issueID}"
+      - "R10.3: CloseCobblerIssue must NOT call PromoteReadyIssues afterward; bd natively recomputes ready state when a blocking issue is closed"
+      - "R10.4: If bd close fails, CloseCobblerIssue must return the error"
+
+  R11:
+    title: "BeadsTracker.EditIssueTitle — Title Editing"
+    items:
+      - "R11.1: EditIssueTitle must run bd update {issueID} --title {title}"
+      - "R11.2: EditIssueTitle must resolve the bd issue ID from the integer number via the ID mapping (R5)"
+
+  R12:
+    title: "BeadsTracker.CommentCobblerIssue — Commenting"
+    items:
+      - "R12.1: CommentCobblerIssue must run bd comment {issueID} {body}"
+      - "R12.2: CommentCobblerIssue must be best-effort; errors are logged via t.Log and the method returns without error"
+      - "R12.3: CommentCobblerIssue must be a no-op when the issue ID is empty or the number is <= 0"
+
+  R13:
+    title: "BeadsTracker.CloseGenerationIssues — Bulk Close"
+    items:
+      - "R13.1: CloseGenerationIssues must list all open issues for the generation via bd list --status open --label {genLabel} --limit 0 --json"
+      - "R13.2: For each open issue returned, CloseGenerationIssues must run bd close {issueID}"
+      - "R13.3: CloseGenerationIssues must return nil when generation is empty (matching GitHubTracker behavior)"
+      - "R13.4: Individual close failures must be logged but must not stop the iteration over remaining issues"
+
+  R14:
+    title: "BeadsTracker.ListOpenCobblerIssues — Open Issue Query"
+    items:
+      - "R14.1: ListOpenCobblerIssues must run bd list --status open --label {genLabel} --limit 0 --json"
+      - "R14.2: ListOpenCobblerIssues must parse the JSON output into []CobblerIssue structs"
+      - "R14.3: For each issue in the JSON response, ListOpenCobblerIssues must populate Number (from cobbler_number metadata), Title, State, Index (from cobbler_index metadata), DependsOn (from bd dep list {issueID} --json), Generation (from cobbler_generation metadata), Description, and Labels"
+      - "R14.4: ListOpenCobblerIssues must populate the in-memory ID mapping (R5.6) as a side effect"
+      - "R14.5: The DependsOn field must be derived from the bd dependency graph; if the issue has a blocking dependency, DependsOn must be set to the cobbler_index of the blocker; if no dependency exists, DependsOn must be -1"
+
+  R15:
+    title: "BeadsTracker.ListAllCobblerIssues — All Issues Query"
+    items:
+      - "R15.1: ListAllCobblerIssues must run bd list --all --label {genLabel} --limit 0 --json"
+      - "R15.2: ListAllCobblerIssues must parse the JSON output identically to ListOpenCobblerIssues (R14.2-R14.5)"
+      - "R15.3: ListAllCobblerIssues must include both open and closed issues in the response"
+
+  R16:
+    title: "BeadsTracker.FetchIssueComments — Comment Retrieval"
+    items:
+      - "R16.1: FetchIssueComments must run bd comments list {issueID} --json"
+      - "R16.2: FetchIssueComments must parse the JSON output and return a []string of comment body texts"
+      - "R16.3: If the bd command fails, FetchIssueComments must return (nil, error)"
+
+  R17:
+    title: "BeadsTracker.ListActiveIssuesContext — Measure Prompt Context"
+    items:
+      - "R17.1: ListActiveIssuesContext must call ListOpenCobblerIssues to get open issues for the generation"
+      - "R17.2: ListActiveIssuesContext must sort issues by cobbler_index ascending"
+      - "R17.3: ListActiveIssuesContext must call IssuesContextJSON (the existing pure function) to produce the JSON string"
+      - "R17.4: ListActiveIssuesContext must return (\"\", nil) when no open issues exist"
+
+  R18:
+    title: "BeadsTracker.WaitForIssuesVisible — Consistency Wait"
+    items:
+      - "R18.1: WaitForIssuesVisible must be a no-op; bd uses SQLite transactions and writes are immediately visible to subsequent reads"
+      - "R18.2: WaitForIssuesVisible must log that the wait was skipped (for diagnostic visibility)"
+
+  R19:
+    title: "BeadsTracker.PromoteReadyIssues — DAG Promotion"
+    items:
+      - "R19.1: PromoteReadyIssues must be a no-op that returns nil; bd natively computes ready state from its dependency graph"
+      - "R19.2: PromoteReadyIssues must log that promotion was skipped because bd handles it natively (for diagnostic visibility)"
+
+  R20:
+    title: "BeadsTracker.PickReadyIssue — Task Selection"
+    items:
+      - "R20.1: PickReadyIssue must query for ready issues via bd list --ready --status open --label {genLabel} --exclude-label {LabelSkipped} --sort id --limit 1 --json"
+      - "R20.2: The --ready flag delegates dependency resolution to bd; no manual DAG traversal is required"
+      - "R20.3: If no ready issues are returned, PickReadyIssue must return (CobblerIssue{}, error) with an error message matching the format used by GitHubTracker"
+      - "R20.4: PickReadyIssue must claim the picked issue by running bd update {issueID} --claim --add-label {LabelInProgress}"
+      - "R20.5: PickReadyIssue must remove the cobbler-ready label (if present) via bd label remove {issueID} {LabelReady}; errors are logged but do not fail the method"
+      - "R20.6: If the picked issue title starts with \"[measure] \", PickReadyIssue must rename it to \"[stitch] \" via bd update {issueID} --title {newTitle}"
+      - "R20.7: PickReadyIssue must return the CobblerIssue with all fields populated from the bd JSON output and metadata"
+
+  R21:
+    title: "BeadsTracker.GcStaleGenerationIssues — Garbage Collection"
+    items:
+      - "R21.1: GcStaleGenerationIssues must list all open issues with a cobbler-gen-* label via bd list --status open --label-pattern cobbler-gen-* --limit 0 --json"
+      - "R21.2: For each issue, GcStaleGenerationIssues must read the cobbler_generation metadata field to determine which generation the issue belongs to"
+      - "R21.3: GcStaleGenerationIssues must group issues by generation name and check whether each generation's branch exists locally via the BranchExists function"
+      - "R21.4: For generations whose branch no longer exists, all open issues must be closed via bd close {issueID}"
+      - "R21.5: Individual close failures must be logged but must not stop the iteration"
+
+  R22:
+    title: "BeadsTracker.LinkSubIssue — Parent-Child Linking"
+    items:
+      - "R22.1: LinkSubIssue must run bd update {childID} --parent {parentID} to set the parent-child relationship"
+      - "R22.2: LinkSubIssue must resolve both parentNumber and childNumber to bd issue IDs via the ID mapping (R5)"
+      - "R22.3: LinkSubIssue must return an error if either issue ID cannot be resolved"
+
+  R23:
+    title: "BeadsTracker.FileTargetRepoDefects — Defect Filing"
+    items:
+      - "R23.1: FileTargetRepoDefects must be a no-op with a log warning when repo is empty (matching GitHubTracker behavior)"
+      - "R23.2: For each defect string, FileTargetRepoDefects must run bd create --title {title} --description {body} --labels bug,defect --type bug --silent"
+      - "R23.3: The title must be truncated to ~70 characters (matching GitHubTracker behavior)"
+      - "R23.4: Filing is best-effort; errors from bd create are logged and do not stop iteration"
+
+  R24:
+    title: "BeadsTracker.ResolveTargetRepo — Target Repo Resolution"
+    items:
+      - "R24.1: ResolveTargetRepo must return Cfg.TargetRepo if non-empty"
+      - "R24.2: If Cfg.TargetRepo is empty and Cfg.ModulePath starts with \"github.com/\", ResolveTargetRepo must strip the prefix and return the remainder"
+      - "R24.3: If neither yields a non-empty value, ResolveTargetRepo must return an empty string"
+      - "R24.4: The behavior must be identical to GitHubTracker.ResolveTargetRepo"
+
+  R25:
+    title: "BeadsTracker.GhExec — Generic Command Execution"
+    items:
+      - "R25.1: GhExec must run bd with the given arguments via exec.Command(t.BdBin, args...)"
+      - "R25.2: GhExec must set cmd.Dir to repoRoot"
+      - "R25.3: GhExec must return trimmed stdout and any error"
+
+  R26:
+    title: "Dependency Creation During Import"
+    items:
+      - "R26.1: When CreateCobblerIssue is called with an issue whose Dependency field is >= 0, BeadsTracker must create a blocking dependency via bd dep add {newIssueID} {blockerIssueID}"
+      - "R26.2: The blocker issue ID must be resolved from the cobbler_index-to-bdID mapping populated during earlier iterations of the same import batch"
+      - "R26.3: If the blocker issue ID cannot be resolved (e.g., the dependency refers to an issue from a prior generation), BeadsTracker must log a warning and skip the dependency creation"
+      - "R26.4: Dependencies must use the \"blocks\" type (bd's default), meaning the blocker must be closed before the dependent issue becomes ready"
+
+  R27:
+    title: "JSON Output Parsing"
+    items:
+      - "R27.1: BeadsTracker must define a bdIssueJSON struct that matches the JSON schema produced by bd list --json and bd show --json"
+      - "R27.2: bdIssueJSON must include at minimum: id (string), title (string), status (string), description (string), labels ([]string), metadata (map[string]interface{}), and created_at (string)"
+      - "R27.3: parseBdIssues must convert []bdIssueJSON into []CobblerIssue by extracting cobbler_number, cobbler_index, cobbler_generation, and cobbler_depends_on from the metadata map"
+      - "R27.4: The Number field in CobblerIssue must be populated from metadata.cobbler_number (int)"
+      - "R27.5: The State field must be mapped from bd status values: \"open\" and \"in_progress\" map to \"open\"; \"closed\" maps to \"closed\""
+      - "R27.6: The DependsOn field must be populated from the dependency graph; BeadsTracker must call bd dep list {issueID} --json if dependency information is not included in the bd list output"
+      - "R27.7: parseBdIssues must be tolerant of missing metadata fields; missing cobbler_number defaults to 0, missing cobbler_index defaults to 0, missing cobbler_generation defaults to \"\", missing cobbler_depends_on defaults to -1"
+
+  R28:
+    title: "Pure Function Reuse"
+    items:
+      - "R28.1: BeadsTracker must reuse the following pure functions from the github package without modification: GenLabel, NormalizeIssueTitle, ExtractDescriptionFiles, HasLabel, IssuesContextJSON, ExtractParentIssueNumber, ParseIssueFrontMatter (for backward compatibility with issues that may have been created by GitHubTracker before a backend switch)"
+      - "R28.2: The github package must export these functions (they are already exported)"
+      - "R28.3: BeadsTracker must import the github package for these functions; no code duplication"
+
+  R29:
+    title: "Error Handling and Logging"
+    items:
+      - "R29.1: All bd CLI invocations must capture stderr via cmd.CombinedOutput() or by reading exec.ExitError.Stderr"
+      - "R29.2: When a bd command fails, the error message logged must include the command arguments and stderr output for debugging"
+      - "R29.3: Best-effort operations (commenting, label manipulation, placeholder closing) must log errors and continue; they must not return errors to the caller"
+      - "R29.4: Critical operations (issue creation, issue listing, PickReadyIssue) must return errors to the caller"
+      - "R29.5: All log messages must include a \"beads:\" prefix to distinguish them from GitHubTracker log messages"
+
+  R30:
+    title: "bd Binary Verification"
+    items:
+      - "R30.1: When the orchestrator instantiates BeadsTracker, it must verify that the bd binary is available on PATH (or at the configured BdBin path) by running bd --version"
+      - "R30.2: If bd is not available, the constructor must return an error with a clear message: \"bd binary not found at {path}; install beads or set cobbler.beads_bin in configuration.yaml\""
+      - "R30.3: The bd version output must be logged at debug level for diagnostic purposes"
+
+  R31:
+    title: "bd Database Initialization"
+    items:
+      - "R31.1: When DetectGitHubRepo is called and no .beads/ directory exists in the repository root, BeadsTracker must run bd init to initialize the database"
+      - "R31.2: bd init must be run at most once per orchestrator lifetime; subsequent calls to DetectGitHubRepo must not re-initialize"
+      - "R31.3: If bd init fails, DetectGitHubRepo must return an error"
+
+non_goals:
+  - This SRD does not define migration tooling from GitHub Issues to beads; issues created by GitHubTracker remain in GitHub
+  - This SRD does not define simultaneous dual-backend operation; only one backend is active per orchestrator instance
+  - This SRD does not modify any GitHubTracker behavior or code
+  - This SRD does not define bd database schema, compaction, or TTL policies; those are governed by bd's own configuration
+  - This SRD does not define the prompt content or Claude behavior expectations
+  - This SRD does not define the generation lifecycle (see srd002)
+  - This SRD does not define the measure/stitch workflow logic (see srd003); it only defines the WorkTracker implementation they depend on
+  - This SRD does not define concurrent backend access; the orchestrator is single-threaded with respect to issue operations
+
+acceptance_criteria:
+  - id: AC1
+    criterion: Backend selection from configuration.yaml routes to the correct WorkTracker implementation
+    traces:
+      - R1.1
+      - R1.2
+      - R1.3
+      - R1.4
+      - R1.5
+      - R1.6
+      - R1.7
+      - R1.8
+
+  - id: AC2
+    criterion: BeadsTracker struct is constructable and satisfies the WorkTracker interface at compile time
+    traces:
+      - R2.1
+      - R2.2
+      - R2.3
+      - R2.4
+      - R2.5
+      - R2.6
+      - R2.7
+      - R2.8
+
+  - id: AC3
+    criterion: Repo detection works without a GitHub remote and initializes the bd database when absent
+    traces:
+      - R3.1
+      - R3.2
+      - R3.3
+      - R3.4
+      - R31.1
+      - R31.2
+      - R31.3
+
+  - id: AC4
+    criterion: Label operations are no-ops for creation and functional for add/remove/list
+    traces:
+      - R4.1
+      - R4.2
+      - R4.3
+      - R4.4
+      - R4.5
+      - R4.6
+      - R4.7
+
+  - id: AC5
+    criterion: Issue ID mapping correctly translates between integer and bd ID namespaces across creation, query, and close operations
+    traces:
+      - R5.1
+      - R5.2
+      - R5.3
+      - R5.4
+      - R5.5
+      - R5.6
+      - R5.7
+
+  - id: AC6
+    criterion: CreateCobblerIssue creates a bd issue with correct metadata, labels, and native dependencies instead of YAML front-matter
+    traces:
+      - R6.1
+      - R6.2
+      - R6.3
+      - R6.4
+      - R6.5
+      - R6.6
+      - R6.7
+      - R6.8
+      - R6.9
+      - R6.10
+
+  - id: AC7
+    criterion: Placeholder lifecycle (create, finalize, close) works with ephemeral issues and promotion
+    traces:
+      - R7.1
+      - R7.2
+      - R7.3
+      - R7.4
+      - R7.5
+      - R8.1
+      - R8.2
+      - R8.3
+      - R8.4
+      - R9.1
+      - R9.2
+      - R9.3
+      - R9.4
+      - R9.5
+      - R9.6
+      - R9.7
+      - R9.8
+
+  - id: AC8
+    criterion: Issue closing removes labels, closes via bd, and does not call PromoteReadyIssues
+    traces:
+      - R10.1
+      - R10.2
+      - R10.3
+      - R10.4
+
+  - id: AC9
+    criterion: Issue queries (open, all, comments, active context) return correctly populated CobblerIssue structs from bd JSON output
+    traces:
+      - R14.1
+      - R14.2
+      - R14.3
+      - R14.4
+      - R14.5
+      - R15.1
+      - R15.2
+      - R15.3
+      - R16.1
+      - R16.2
+      - R16.3
+      - R17.1
+      - R17.2
+      - R17.3
+      - R17.4
+
+  - id: AC10
+    criterion: DAG promotion and visibility polling are no-ops; ready-state computation is delegated to bd
+    traces:
+      - R18.1
+      - R18.2
+      - R19.1
+      - R19.2
+
+  - id: AC11
+    criterion: PickReadyIssue uses bd --ready flag for dependency resolution and claims the task atomically
+    traces:
+      - R20.1
+      - R20.2
+      - R20.3
+      - R20.4
+      - R20.5
+      - R20.6
+      - R20.7
+
+  - id: AC12
+    criterion: GC closes issues for generations whose branches no longer exist
+    traces:
+      - R21.1
+      - R21.2
+      - R21.3
+      - R21.4
+      - R21.5
+
+  - id: AC13
+    criterion: Parent-child linking uses bd native --parent flag instead of sub_issues API
+    traces:
+      - R22.1
+      - R22.2
+      - R22.3
+
+  - id: AC14
+    criterion: Defect filing creates bug-typed bd issues with best-effort semantics
+    traces:
+      - R23.1
+      - R23.2
+      - R23.3
+      - R23.4
+
+  - id: AC15
+    criterion: Dependencies are created via bd dep add during import instead of YAML front-matter encoding
+    traces:
+      - R26.1
+      - R26.2
+      - R26.3
+      - R26.4
+
+  - id: AC16
+    criterion: JSON output from bd is correctly parsed into CobblerIssue structs with tolerant defaults for missing fields
+    traces:
+      - R27.1
+      - R27.2
+      - R27.3
+      - R27.4
+      - R27.5
+      - R27.6
+      - R27.7
+
+  - id: AC17
+    criterion: Pure functions from the github package are reused without duplication
+    traces:
+      - R28.1
+      - R28.2
+      - R28.3
+
+  - id: AC18
+    criterion: Error handling follows best-effort semantics for non-critical operations and returns errors for critical ones
+    traces:
+      - R29.1
+      - R29.2
+      - R29.3
+      - R29.4
+      - R29.5
+
+  - id: AC19
+    criterion: bd binary is verified at construction time with a clear error when unavailable
+    traces:
+      - R30.1
+      - R30.2
+      - R30.3
+
+  - id: AC20
+    criterion: Title editing, commenting, bulk close, generic exec, and target repo resolution all delegate correctly to bd
+    traces:
+      - R11.1
+      - R11.2
+      - R12.1
+      - R12.2
+      - R12.3
+      - R13.1
+      - R13.2
+      - R13.3
+      - R13.4
+      - R24.1
+      - R24.2
+      - R24.3
+      - R24.4
+      - R25.1
+      - R25.2
+      - R25.3
