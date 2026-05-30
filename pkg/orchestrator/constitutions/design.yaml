@@ -261,6 +261,24 @@ document_types:
       machine-parseable definitions. See eng10-interface-specifications for
       the full format and examples.
 
+  semantic_model:
+    location: "docs/specs/semantic-models/[domain]-[behavior].yaml"
+    format_rule: semantic-model-format
+    required_fields:
+      - name (pattern {domain}-{behavior})
+      - version (semver MAJOR.MINOR.PATCH)
+      - "data_sources (list with connector and queries)"
+      - "features (list with name, source, extraction)"
+      - "algorithm (type, parameters, logic)"
+      - output_format (type and fields)
+    purpose: |
+      Declarative behavioral specification for one agent capability. Declares
+      what the agent observes (data_sources), how it interprets observations
+      (features), how it reasons (algorithm), and what it produces
+      (output_format). Mutable layer between the SRD (stable architecture) and
+      generated code (implementation). See docs/constitutions/semantic-model.yaml
+      for the full ten-article schema (SM1-SM10).
+
   specification:
     location: docs/SPECIFICATIONS.yaml
     format_rule: specification-format
@@ -325,6 +343,7 @@ naming_conventions:
   test_suite: "test-[use-case-id].yaml (e.g., test-rel01.0-uc001-cupboard-lifecycle.yaml)"
   engineering_guideline: "eng[NN]-[short-name].yaml (e.g., eng01-git-integration.yaml)"
   interface_specification: "ifc-[kebab-case-name].yaml (e.g., ifc-generation-lifecycle.yaml)"
+  semantic_model: "[domain]-[behavior].yaml (e.g., cobbler-measure.yaml, edge-compute-capacity-predictor.yaml)"
   architecture: "ARCHITECTURE.yaml"
   vision: "VISION.yaml"
   specification: "SPECIFICATIONS.yaml"
@@ -342,7 +361,8 @@ traceability_model:
   srds: Numbered requirements (architecture points to SRDs for detail)
   use_cases: Tracer bullets (exercise architecture components via touchpoints)
   test_suites: Validation (validate use case success criteria)
-  code: Implementation (traces to SRDs via commit messages)
+  semantic_models: Behavioral specs (declarative what-the-agent-does, output_format aligns with SRD IFunctional outputs)
+  code: Implementation (traces to SRDs via commit messages and to semantic models via algorithm logic)
 
 completeness_checklists:
   vision:
@@ -405,6 +425,18 @@ completeness_checklists:
     - references list SRD or use case IDs the interface traces to
     - File saved as ifc-[kebab-case-name].yaml in docs/interfaces/
 
+  semantic_model:
+    - name matches the pattern {domain}-{behavior}
+    - version follows semver (MAJOR.MINOR.PATCH)
+    - exactly four top-level sections present (data_sources, features, algorithm, output_format) per SM1
+    - every data source declares a connector type, not an implementation URL or library (SM2)
+    - every feature references at least one data source by id and query name; feature graph is acyclic (SM3)
+    - algorithm declares a named type, parameters, and pseudocode logic (not executable code) (SM4)
+    - output_format aligns with the agent's IFunctional interface in the SRD (SM5)
+    - one coherent behavior per semantic model (SM6)
+    - no prohibitive statements ("do not", "never", "must not") — those belong in constitutions (SM8)
+    - File saved as [domain]-[behavior].yaml in docs/specs/semantic-models/
+
 sections:
   - tag: articles
     title: Core Principles
@@ -422,10 +454,10 @@ sections:
   - tag: document_types
     title: Document Types
     content: |
-      Eight document types are defined: vision, architecture, SRD, use case,
-      test suite, engineering guideline, interface specification, and
-      specification. Each has a canonical location, format rule, required
-      fields, and optional fields.
+      Eleven document types are defined: vision, architecture, SRD, use case,
+      test suite, engineering guideline, interface specification, semantic
+      model, specification, roadmap, and generation run report. Each has a
+      canonical location, format rule, required fields, and optional fields.
   - tag: naming_conventions
     title: Naming Conventions
     content: |
@@ -443,7 +475,7 @@ sections:
     content: |
       Every artifact traces through the chain: vision goals → architecture
       components → SRD requirements → use case tracer bullets → test suite
-      validation → code implementation.
+      validation → semantic model behavior → code implementation.
   - tag: completeness_checklists
     title: Completeness Checklists
     content: |
