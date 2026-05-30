@@ -226,6 +226,35 @@ func TestUninstall_RemovesCobblerDir(t *testing.T) {
 	}
 }
 
+// --- scaffoldedConstitutions ---
+
+func TestScaffoldedConstitutions_CoversAllEmbeddedConstitutions(t *testing.T) {
+	t.Parallel()
+	want := []string{
+		"design.yaml",
+		"execution.yaml",
+		"go-style.yaml",
+		"interface.yaml",
+		"issue-format.yaml",
+		"planning.yaml",
+		"semantic-model.yaml",
+		"testing.yaml",
+	}
+	for _, name := range want {
+		body, ok := scaffoldedConstitutions[name]
+		if !ok {
+			t.Errorf("scaffoldedConstitutions missing %q", name)
+			continue
+		}
+		if strings.TrimSpace(body) == "" {
+			t.Errorf("scaffoldedConstitutions[%q] is empty — //go:embed likely failed", name)
+		}
+	}
+	if len(scaffoldedConstitutions) != len(want) {
+		t.Errorf("scaffoldedConstitutions has %d entries, want %d", len(scaffoldedConstitutions), len(want))
+	}
+}
+
 // --- writeScaffoldConfig ---
 
 func TestWriteScaffoldConfig_WritesValidYAML(t *testing.T) {
