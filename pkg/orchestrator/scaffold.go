@@ -35,6 +35,27 @@ var designConstitution string
 //go:embed constitutions/testing.yaml
 var testingConstitution string
 
+//go:embed constitutions/interface.yaml
+var interfaceConstitution string
+
+//go:embed constitutions/semantic-model.yaml
+var semanticModelConstitution string
+
+// scaffoldedConstitutions maps the file names written into the consumer's
+// docs/constitutions/ directory to their embedded contents. Every constitution
+// authored as a default template lives here; new ones must be added to this
+// map so scaffold:push delivers them.
+var scaffoldedConstitutions = map[string]string{
+	"design.yaml":         designConstitution,
+	"execution.yaml":      executionConstitution,
+	"go-style.yaml":       goStyleConstitution,
+	"interface.yaml":      interfaceConstitution,
+	"issue-format.yaml":   issueFormatConstitution,
+	"planning.yaml":       planningConstitution,
+	"semantic-model.yaml": semanticModelConstitution,
+	"testing.yaml":        testingConstitution,
+}
+
 // orchestratorModule is the Go module path for this orchestrator library.
 const orchestratorModule = build.OrchestratorModule
 
@@ -66,17 +87,10 @@ func (s *Scaffolder) Scaffold(targetDir, orchestratorRoot string) error {
 	if err := os.MkdirAll(constitutionsDir, 0o755); err != nil {
 		return fmt.Errorf("creating docs/constitutions directory: %w", err)
 	}
-	constitutionFiles := map[string]string{
-		"design.yaml":    designConstitution,
-		"planning.yaml":  planningConstitution,
-		"execution.yaml": executionConstitution,
-		"go-style.yaml":  goStyleConstitution,
-		"testing.yaml":   testingConstitution,
-	}
-	for _, name := range slices.Sorted(maps.Keys(constitutionFiles)) {
+	for _, name := range slices.Sorted(maps.Keys(scaffoldedConstitutions)) {
 		p := filepath.Join(constitutionsDir, name)
 		s.logf("scaffold: writing constitution to %s", p)
-		if err := os.WriteFile(p, []byte(constitutionFiles[name]), 0o644); err != nil {
+		if err := os.WriteFile(p, []byte(scaffoldedConstitutions[name]), 0o644); err != nil {
 			return fmt.Errorf("writing %s: %w", name, err)
 		}
 	}
