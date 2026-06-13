@@ -43,6 +43,7 @@ type AnalyzeResult struct {
 	BrokenInterfaceRefs            []string // implemented_by/used_by references non-existent architecture interface (GH-1968)
 	MissingSpecFiles               []string // spec_file declared in ARCHITECTURE.yaml but file does not exist (GH-1990)
 	MissingTestSuiteRefs           []string // Use cases whose test_suite field references a non-existent test suite (GH-2140 Gap 1)
+	BareTouchpointEntries          []string // Individual touchpoint entries with no SRD reference (warning, GH-2145)
 }
 
 // AnalyzeCounts holds the artifact counts discovered during analysis.
@@ -260,6 +261,20 @@ func CollectAnalyzeResult(deps AnalyzeDeps) (AnalyzeResult, AnalyzeCounts, error
 			result.OrphanedSRDs = append(result.OrphanedSRDs, srdID)
 		}
 	}
+
+	// Check 1b: Per-entry touchpoint citation check (GH-2145).
+	// Use-case-level orphan checks see SRDs anywhere in a use case's touchpoints,
+	// so a single citation hides other entries that reference packages or files
+	// without tying back to a requirement. Flag each bare entry individually.
+	for ucID, tps := range ucTouchpoints {
+		for i, tp := range tps {
+			if !touchpointEntryCitesSRD(tp) {
+				result.BareTouchpointEntries = append(result.BareTouchpointEntries,
+					fmt.Sprintf("%s touchpoint[%d]: %q has no srd*-id reference", ucID, i, truncate(tp, 80)))
+			}
+		}
+	}
+	sort.Strings(result.BareTouchpointEntries)
 
 	// Check 2: Releases in road-map.yaml without a test suite file.
 	// Test suite IDs follow the dashed convention test-rel-<version> (GH-2140 Gap 2).
@@ -673,6 +688,7 @@ func (r AnalyzeResult) PrintReport(srdCount, ucCount, tsCount, smCount int) erro
 	PrintSection("Failed requirements (R-items complete with test failures — warning)", r.FailedRequirements)
 	// MissingWeights print removed — weights live in requirements.yaml (GH-2080).
 	PrintSection("Bare touchpoints (SRD cited without R-group references — warning)", r.BareTouchpoints)
+	PrintSection("Bare touchpoint entries (no SRD citation in this individual touchpoint — warning)", r.BareTouchpointEntries)
 
 	// GH-2140 Gap 4: warnings must be reflected in the headline. Errors still
 	// flip the exit code; warnings only change the message.
@@ -680,7 +696,8 @@ func (r AnalyzeResult) PrintReport(srdCount, ucCount, tsCount, smCount int) erro
 		len(r.UntracedSuccessCriteria) +
 		len(r.UnreachableUCs) +
 		len(r.FailedRequirements) +
-		len(r.BareTouchpoints)
+		len(r.BareTouchpoints) +
+		len(r.BareTouchpointEntries)
 
 	if hasIssues {
 		return fmt.Errorf("found consistency issues (see above)")
@@ -728,6 +745,32 @@ func ExtractID(path string) string {
 	base := filepath.Base(path)
 	ext := filepath.Ext(base)
 	return strings.TrimSuffix(base, ext)
+}
+
+// truncate returns s shortened to at most n runes, appending "..." when truncated.
+// Used to keep BareTouchpointEntries warning lines readable (GH-2145).
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	if n <= 3 {
+		return s[:n]
+	}
+	return s[:n-3] + "..."
+}
+
+// touchpointEntryCitesSRD reports whether the prose touchpoint string contains
+// at least one srd*-prefixed token, matching the lenient rule used by
+// ExtractSRDsFromTouchpoints (GH-2145).
+func touchpointEntryCitesSRD(tp string) bool {
+	for _, part := range strings.Fields(tp) {
+		cleaned := strings.TrimLeft(part, "(")
+		cleaned = strings.TrimRight(cleaned, "),.")
+		if strings.HasPrefix(cleaned, "srd") {
+			return true
+		}
+	}
+	return false
 }
 
 // LoadUseCase loads a use case YAML file and extracts key fields.

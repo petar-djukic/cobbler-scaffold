@@ -2551,3 +2551,88 @@ func TestCollectAnalyzeResult_UseCaseNoTestSuiteField(t *testing.T) {
 		t.Errorf("expected no missing test_suite refs when field absent, got %v", result.MissingTestSuiteRefs)
 	}
 }
+
+// --- GH-2145: per-entry bare touchpoint detection ---
+
+func TestBareTouchpointEntriesFlagsNonCitingTouchpoints(t *testing.T) {
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(orig)
+	setupMinimalAnalyzeDir(t)
+
+	os.WriteFile("docs/specs/software-requirements/srd001-foo.yaml",
+		[]byte("id: srd001-foo\ntitle: Foo\nrequirements:\n  R1:\n    title: Req 1\n    items:\n      - R1.1: Do X\n"), 0o644)
+	uc := `id: rel01.0-uc001-base32
+title: Base32
+touchpoints:
+  - T1: "cmd/foo — does things (srd001-foo R1)"
+  - T2: "pkg/testutils — RunDiffTests helper"
+  - T3: "pkg/sys — InstallSIGPIPEHandler"
+`
+	os.WriteFile("docs/specs/use-cases/rel01.0-uc001-base32.yaml", []byte(uc), 0o644)
+
+	result, _, err := CollectAnalyzeResult(noopDeps())
+	if err != nil {
+		t.Fatalf("CollectAnalyzeResult: %v", err)
+	}
+	if len(result.BareTouchpointEntries) != 2 {
+		t.Fatalf("expected 2 bare entries (T2 and T3), got %d: %v", len(result.BareTouchpointEntries), result.BareTouchpointEntries)
+	}
+	for _, entry := range result.BareTouchpointEntries {
+		if !strings.Contains(entry, "rel01.0-uc001-base32") {
+			t.Errorf("expected entry to name the use case, got %q", entry)
+		}
+		if !strings.Contains(entry, "touchpoint[") {
+			t.Errorf("expected entry to include indexed touchpoint label, got %q", entry)
+		}
+	}
+}
+
+func TestBareTouchpointEntriesEmptyWhenAllCite(t *testing.T) {
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(orig)
+	setupMinimalAnalyzeDir(t)
+
+	os.WriteFile("docs/specs/software-requirements/srd001-foo.yaml",
+		[]byte("id: srd001-foo\ntitle: Foo\nrequirements:\n  R1:\n    title: Req 1\n    items:\n      - R1.1: Do X\n"), 0o644)
+	os.WriteFile("docs/specs/software-requirements/srd002-bar.yaml",
+		[]byte("id: srd002-bar\ntitle: Bar\nrequirements:\n  R1:\n    title: Req 1\n    items:\n      - R1.1: Do Y\n"), 0o644)
+	uc := `id: rel01.0-uc001-init
+title: Init
+touchpoints:
+  - T1: "cmd/foo (srd001-foo R1)"
+  - T2: "pkg/bar — srd002-bar R1"
+`
+	os.WriteFile("docs/specs/use-cases/rel01.0-uc001-init.yaml", []byte(uc), 0o644)
+
+	result, _, err := CollectAnalyzeResult(noopDeps())
+	if err != nil {
+		t.Fatalf("CollectAnalyzeResult: %v", err)
+	}
+	if len(result.BareTouchpointEntries) != 0 {
+		t.Errorf("expected no bare entries when every touchpoint cites an SRD, got %v", result.BareTouchpointEntries)
+	}
+}
+
+func TestPrintReportIncludesBareTouchpointEntries(t *testing.T) {
+	r := AnalyzeResult{
+		BareTouchpointEntries: []string{
+			`rel01.0-uc001-base32 touchpoint[1]: "pkg/testutils — RunDiffTests helper" has no srd*-id reference`,
+		},
+	}
+	out := captureStdout(t, func() {
+		err := r.PrintReport(1, 1, 1, 0)
+		if err != nil {
+			t.Errorf("expected nil error for warning-only report, got %v", err)
+		}
+	})
+	if !strings.Contains(out, "Bare touchpoint entries") {
+		t.Errorf("output missing bare-entries section header, got %q", out)
+	}
+	if !strings.Contains(out, "No hard errors (1 warnings") {
+		t.Errorf("expected bare entries to count toward warning total, got %q", out)
+	}
+}
