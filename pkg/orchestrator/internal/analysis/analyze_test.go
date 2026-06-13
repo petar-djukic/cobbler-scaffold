@@ -2397,6 +2397,65 @@ func TestCollectAnalyzeResult_UseCaseTestSuiteRefValid(t *testing.T) {
 	}
 }
 
+func TestPrintReport_NoErrorsWithWarnings_HonestHeadline(t *testing.T) {
+	r := AnalyzeResult{
+		UncoveredACs: []string{"srd001 AC1", "srd001 AC2", "srd001 AC3"},
+	}
+	out := captureStdout(t, func() {
+		err := r.PrintReport(5, 10, 3, 0)
+		if err != nil {
+			t.Errorf("expected nil error when only warnings present, got %v", err)
+		}
+	})
+	if !strings.Contains(out, "No hard errors (3 warnings") {
+		t.Errorf("output missing honest warning headline, got %q", out)
+	}
+	if strings.Contains(out, "All consistency checks passed") {
+		t.Error("should not show the all-clear headline when warnings exist")
+	}
+	if !strings.Contains(out, "5 SRDs") {
+		t.Errorf("output missing SRD count, got %q", out)
+	}
+}
+
+func TestPrintReport_WarningsAcrossAllSections_CountedTogether(t *testing.T) {
+	r := AnalyzeResult{
+		UncoveredACs:            []string{"a1"},
+		UntracedSuccessCriteria: []string{"s1", "s2"},
+		UnreachableUCs:          []string{"u1"},
+		FailedRequirements:      []string{"r1"},
+		BareTouchpoints:         []string{"t1", "t2"},
+	}
+	out := captureStdout(t, func() {
+		err := r.PrintReport(1, 1, 1, 0)
+		if err != nil {
+			t.Errorf("expected nil error when only warnings present, got %v", err)
+		}
+	})
+	if !strings.Contains(out, "No hard errors (7 warnings") {
+		t.Errorf("expected aggregate warning count 7, got %q", out)
+	}
+}
+
+func TestPrintReport_ErrorsAndWarnings_ReturnError(t *testing.T) {
+	r := AnalyzeResult{
+		OrphanedSRDs: []string{"srd099-unused"},
+		UncoveredACs: []string{"a1", "a2"},
+	}
+	out := captureStdout(t, func() {
+		err := r.PrintReport(1, 1, 1, 0)
+		if err == nil {
+			t.Error("expected error when hard errors present")
+		}
+	})
+	if strings.Contains(out, "All consistency checks passed") {
+		t.Error("should not show the all-clear headline when errors exist")
+	}
+	if strings.Contains(out, "No hard errors") {
+		t.Error("should not show the warning headline when errors exist")
+	}
+}
+
 func TestCollectAnalyzeResult_UseCaseNoTestSuiteField(t *testing.T) {
 	dir := t.TempDir()
 	orig, _ := os.Getwd()

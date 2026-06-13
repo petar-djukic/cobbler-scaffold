@@ -673,15 +673,27 @@ func (r AnalyzeResult) PrintReport(srdCount, ucCount, tsCount, smCount int) erro
 	// MissingWeights print removed — weights live in requirements.yaml (GH-2080).
 	PrintSection("Bare touchpoints (SRD cited without R-group references — warning)", r.BareTouchpoints)
 
-	if !hasIssues {
-		fmt.Printf("\n✅ All consistency checks passed\n")
-		fmt.Printf("   - %d SRDs\n", srdCount)
-		fmt.Printf("   - %d use cases\n", ucCount)
-		fmt.Printf("   - %d test suites\n", tsCount)
-		fmt.Printf("   - %d semantic models\n", smCount)
-		return nil
+	// GH-2140 Gap 4: warnings must be reflected in the headline. Errors still
+	// flip the exit code; warnings only change the message.
+	warningCount := len(r.UncoveredACs) +
+		len(r.UntracedSuccessCriteria) +
+		len(r.UnreachableUCs) +
+		len(r.FailedRequirements) +
+		len(r.BareTouchpoints)
+
+	if hasIssues {
+		return fmt.Errorf("found consistency issues (see above)")
 	}
-	return fmt.Errorf("found consistency issues (see above)")
+	if warningCount > 0 {
+		fmt.Printf("\n✅ No hard errors (%d warnings — see above)\n", warningCount)
+	} else {
+		fmt.Printf("\n✅ All consistency checks passed\n")
+	}
+	fmt.Printf("   - %d SRDs\n", srdCount)
+	fmt.Printf("   - %d use cases\n", ucCount)
+	fmt.Printf("   - %d test suites\n", tsCount)
+	fmt.Printf("   - %d semantic models\n", smCount)
+	return nil
 }
 
 // AnalyzeUseCase holds the fields extracted from a use case file
