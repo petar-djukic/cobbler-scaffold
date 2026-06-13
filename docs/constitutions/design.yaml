@@ -209,7 +209,7 @@ document_types:
     location: "docs/specs/test-suites/test-rel-[release-id].yaml"
     format_rule: test-case-format
     required_fields:
-      - id (matching filename, e.g. test-rel01.0)
+      - id (matching filename, e.g. test-rel-01.0)
       - title
       - release (release ID this suite covers)
       - traces (list of use case IDs covered by this suite)
@@ -340,7 +340,7 @@ document_types:
 naming_conventions:
   srd: "srd[NNN]-[feature-name].yaml (e.g., srd001-cupboard-core.yaml)"
   use_case: "rel[NN].[N]-uc[NNN]-[short-name].yaml (e.g., rel01.0-uc001-cupboard-lifecycle.yaml)"
-  test_suite: "test-[use-case-id].yaml (e.g., test-rel01.0-uc001-cupboard-lifecycle.yaml)"
+  test_suite: "test-rel-[release-id].yaml (e.g., test-rel-01.0.yaml)"
   engineering_guideline: "eng[NN]-[short-name].yaml (e.g., eng01-git-integration.yaml)"
   interface_specification: "ifc-[kebab-case-name].yaml (e.g., ifc-generation-lifecycle.yaml)"
   semantic_model: "[domain]-[behavior].yaml (e.g., cobbler-measure.yaml, edge-compute-capacity-predictor.yaml)"

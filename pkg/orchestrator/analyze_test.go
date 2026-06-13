@@ -22,7 +22,7 @@ func TestExtractID(t *testing.T) {
 	}{
 		{"docs/specs/software-requirements/srd001-feature.yaml", "srd001-feature"},
 		{"docs/specs/use-cases/rel01.0-uc001-init.yaml", "rel01.0-uc001-init"},
-		{"docs/specs/test-suites/test-rel01.0.yaml", "test-rel01.0"},
+		{"docs/specs/test-suites/test-rel-01.0.yaml", "test-rel-01.0"},
 		{"simple.yaml", "simple"},
 	}
 	for _, tc := range cases {
@@ -130,7 +130,7 @@ func TestLoadUseCase_MissingFile(t *testing.T) {
 // --- loadTestSuite ---
 
 func TestLoadTestSuite_ParsesIDAndTraces(t *testing.T) {
-	content := `id: test-rel01.0
+	content := `id: test-rel-01.0
 title: Release 01.0 Tests
 release: rel01.0
 traces:
@@ -144,7 +144,7 @@ test_cases:
       exit_code: 0
 `
 	dir := t.TempDir()
-	path := filepath.Join(dir, "test-rel01.0.yaml")
+	path := filepath.Join(dir, "test-rel-01.0.yaml")
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -152,8 +152,8 @@ test_cases:
 	if err != nil {
 		t.Fatalf("loadTestSuite: %v", err)
 	}
-	if ts.ID != "test-rel01.0" {
-		t.Errorf("ID: got %q, want %q", ts.ID, "test-rel01.0")
+	if ts.ID != "test-rel-01.0" {
+		t.Errorf("ID: got %q, want %q", ts.ID, "test-rel-01.0")
 	}
 	if len(ts.Traces) != 2 {
 		t.Errorf("Traces: got %d, want 2", len(ts.Traces))
@@ -395,8 +395,8 @@ releases:
 		[]byte("id: rel01.0-uc001-init\ntitle: Init\ntouchpoints:\n  - T1: srd001-core R1\n"), 0o644)
 	os.WriteFile("docs/specs/software-requirements/srd001-core.yaml",
 		[]byte("id: srd001-core\ntitle: Core\nrequirements:\n  - id: R1\n    title: Req 1\n"), 0o644)
-	os.WriteFile("docs/specs/test-suites/test-rel01.0.yaml",
-		[]byte("id: test-rel01.0\ntitle: Tests\nrelease: rel01.0\ntraces:\n  - rel01.0-uc001-init\n"), 0o644)
+	os.WriteFile("docs/specs/test-suites/test-rel-01.0.yaml",
+		[]byte("id: test-rel-01.0\ntitle: Tests\nrelease: rel01.0\ntraces:\n  - rel01.0-uc001-init\n"), 0o644)
 
 	// Configure releases with one that doesn't exist.
 	o := testOrchWithCfg(Config{
@@ -446,8 +446,8 @@ releases:
 		[]byte("id: rel01.0-uc001-init\ntitle: Init\ntouchpoints:\n  - T1: srd001-core R1\n"), 0o644)
 	os.WriteFile("docs/specs/software-requirements/srd001-core.yaml",
 		[]byte("id: srd001-core\ntitle: Core\nrequirements:\n  - id: R1\n    title: Req 1\n"), 0o644)
-	os.WriteFile("docs/specs/test-suites/test-rel01.0.yaml",
-		[]byte("id: test-rel01.0\ntitle: Tests\nrelease: rel01.0\ntraces:\n  - rel01.0-uc001-init\n"), 0o644)
+	os.WriteFile("docs/specs/test-suites/test-rel-01.0.yaml",
+		[]byte("id: test-rel-01.0\ntitle: Tests\nrelease: rel01.0\ntraces:\n  - rel01.0-uc001-init\n"), 0o644)
 
 	// All configured releases exist in roadmap.
 	o := testOrchWithCfg(Config{
@@ -796,7 +796,7 @@ func TestUseCaseDoc_Validate_MissingMultipleFields(t *testing.T) {
 }
 
 func TestTestSuiteDoc_Validate_AllPresent(t *testing.T) {
-	d := &TestSuiteDoc{ID: "test-rel01.0", Title: "Tests", Release: "01.0"}
+	d := &TestSuiteDoc{ID: "test-rel-01.0", Title: "Tests", Release: "01.0"}
 	if errs := d.Validate(); len(errs) != 0 {
 		t.Errorf("expected no errors, got %v", errs)
 	}
@@ -811,7 +811,7 @@ func TestTestSuiteDoc_Validate_AllEmpty(t *testing.T) {
 }
 
 func TestTestSuiteDoc_Validate_MissingRelease(t *testing.T) {
-	d := &TestSuiteDoc{ID: "test-rel01.0", Title: "Tests"}
+	d := &TestSuiteDoc{ID: "test-rel-01.0", Title: "Tests"}
 	errs := d.Validate()
 	if len(errs) != 1 || errs[0] != "release is required" {
 		t.Errorf("got %v, want [release is required]", errs)
@@ -999,8 +999,8 @@ releases:
 		[]byte("id: rel01.0-uc001-init\ntitle: Init\ntouchpoints:\n  - T1: srd001-core R1\n"), 0o644)
 	os.WriteFile("docs/specs/software-requirements/srd001-core.yaml",
 		[]byte("id: srd001-core\ntitle: Core\nrequirements:\n  - id: R1\n    title: Req 1\n"), 0o644)
-	os.WriteFile("docs/specs/test-suites/test-rel01.0.yaml",
-		[]byte("id: test-rel01.0\ntitle: Tests\nrelease: rel01.0\ntraces:\n  - rel01.0-uc001-init\n"), 0o644)
+	os.WriteFile("docs/specs/test-suites/test-rel-01.0.yaml",
+		[]byte("id: test-rel-01.0\ntitle: Tests\nrelease: rel01.0\ntraces:\n  - rel01.0-uc001-init\n"), 0o644)
 
 	// No releases configured → no validation.
 	o := testOrchWithCfg(Config{})

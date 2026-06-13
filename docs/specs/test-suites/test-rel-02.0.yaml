@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Petar Djukic. All rights reserved.
 # SPDX-License-Identifier: MIT
 
-id: test-rel02.0
+id: test-rel-02.0
 title: Release 02.0 test suite
 release: rel02.0
 traces:
@@ -351,7 +351,7 @@ test_cases:
       docs_specs_files:
         use_cases: ["rel01.0-uc001-orchestrator-initialization.yaml"]
         srds: ["srd001-orchestrator-core.yaml"]
-        test_suites: ["test-rel01.0.yaml"]
+        test_suites: ["test-rel-01.0.yaml"]
     expected:
       top_level_nodes:
         - { label: "Use Cases", children_count: 1 }

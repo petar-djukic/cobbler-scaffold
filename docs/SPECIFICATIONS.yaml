@@ -171,7 +171,7 @@ use_case_index:
     path: specs/use-cases/rel03.0-uc001-cross-generation-comparison.yaml
 
 test_suite_index:
-  - id: test-rel01.0
+  - id: test-rel-01.0
     title: Release 01.0 test suite
     release: rel01.0
     traces:
@@ -186,9 +186,9 @@ test_suite_index:
       - rel01.0-uc009-phase-context-files
       - rel01.0-uc010-worktree-based-invocation
     test_case_count: 75
-    path: specs/test-suites/test-rel01.0.yaml
+    path: specs/test-suites/test-rel-01.0.yaml
 
-  - id: test-rel02.0
+  - id: test-rel-02.0
     title: Release 02.0 test suite
     release: rel02.0
     traces:
@@ -199,15 +199,15 @@ test_suite_index:
       - rel02.0-uc005-metrics-dashboard
       - rel02.0-uc006-specification-browser
     test_case_count: 30
-    path: specs/test-suites/test-rel02.0.yaml
+    path: specs/test-suites/test-rel-02.0.yaml
 
-  - id: test-rel03.0
+  - id: test-rel-03.0
     title: Release 03.0 test suite
     release: rel03.0
     traces:
       - rel03.0-uc001-cross-generation-comparison
     test_case_count: 11
-    path: specs/test-suites/test-rel03.0.yaml
+    path: specs/test-suites/test-rel-03.0.yaml
 
 srd_to_use_case_mapping:
   - use_case: rel01.0-uc001-orchestrator-initialization
@@ -357,9 +357,9 @@ traceability_diagram: |
       end
 
       subgraph TestSuites["Test Suites"]
-          ts1["test-rel01.0\n75 cases"]
-          ts2["test-rel02.0\n30 cases"]
-          ts3["test-rel03.0\n11 cases"]
+          ts1["test-rel-01.0\n75 cases"]
+          ts2["test-rel-02.0\n30 cases"]
+          ts3["test-rel-03.0\n11 cases"]
       end
 
       uc1 --> srd1

@@ -570,7 +570,7 @@ func TestLoadCompareTestCases_ValidDir(t *testing.T) {
     name: "go-test-only"
     go_test: "TestSomething"
 `
-	if err := os.WriteFile(filepath.Join(dir, "test-rel01.0.yaml"), []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "test-rel-01.0.yaml"), []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
 

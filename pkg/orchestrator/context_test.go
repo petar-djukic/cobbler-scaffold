@@ -234,7 +234,7 @@ func TestFileMatchesRelease(t *testing.T) {
 	}{
 		// Empty release disables filtering.
 		{"rel01.0-uc001-feature.yaml", "", true},
-		{"test-rel01.0.yaml", "", true},
+		{"test-rel-01.0.yaml", "", true},
 
 		// Use case filenames.
 		{"rel01.0-uc001-feature.yaml", "01.0", true},
@@ -245,9 +245,9 @@ func TestFileMatchesRelease(t *testing.T) {
 		{"rel01.1-uc004-minor.yaml", "01.1", true},
 
 		// Test suite filenames.
-		{"test-rel01.0.yaml", "01.0", true},
-		{"test-rel02.0.yaml", "01.0", false},
-		{"test-rel02.0.yaml", "02.0", true},
+		{"test-rel-01.0.yaml", "01.0", true},
+		{"test-rel-02.0.yaml", "01.0", false},
+		{"test-rel-02.0.yaml", "02.0", true},
 
 		// Unknown format passes through.
 		{"something-else.yaml", "01.0", true},
@@ -255,7 +255,7 @@ func TestFileMatchesRelease(t *testing.T) {
 		// Subdirectory paths.
 		{"docs/specs/use-cases/rel01.0-uc001-feature.yaml", "01.0", true},
 		{"docs/specs/use-cases/rel02.0-uc003-future.yaml", "01.0", false},
-		{"docs/specs/test-suites/test-rel01.0.yaml", "01.0", true},
+		{"docs/specs/test-suites/test-rel-01.0.yaml", "01.0", true},
 	}
 
 	for _, tt := range tests {
@@ -278,12 +278,12 @@ func TestFileMatchesRelease_ReleaseSet(t *testing.T) {
 		// In-set releases pass.
 		{"rel01.0-uc001-feature.yaml", true},
 		{"rel03.0-uc005-extra.yaml", true},
-		{"test-rel01.0.yaml", true},
-		{"test-rel03.0.yaml", true},
+		{"test-rel-01.0.yaml", true},
+		{"test-rel-03.0.yaml", true},
 
 		// Out-of-set releases are excluded.
 		{"rel02.0-uc003-skipped.yaml", false},
-		{"test-rel02.0.yaml", false},
+		{"test-rel-02.0.yaml", false},
 
 		// Unknown format passes through.
 		{"something-else.yaml", true},
@@ -334,8 +334,8 @@ func TestExtractFileRelease(t *testing.T) {
 	}{
 		{"rel01.0-uc001-feature.yaml", "01.0"},
 		{"rel02.0-uc003-future.yaml", "02.0"},
-		{"test-rel01.0.yaml", "01.0"},
-		{"test-rel03.0.yaml", "03.0"},
+		{"test-rel-01.0.yaml", "01.0"},
+		{"test-rel-03.0.yaml", "03.0"},
 		{"docs/specs/use-cases/rel01.0-uc001-feature.yaml", "01.0"},
 		{"something-else.yaml", ""},
 		{"srd001-core.yaml", ""},
@@ -378,7 +378,7 @@ func TestResolveStandardFiles(t *testing.T) {
 		"docs/ARCHITECTURE.yaml",
 		"docs/specs/software-requirements/srd001-core.yaml",
 		"docs/specs/use-cases/rel01.0-uc001-feature.yaml",
-		"docs/specs/test-suites/test-rel01.0.yaml",
+		"docs/specs/test-suites/test-rel-01.0.yaml",
 	}
 	for _, f := range standardFiles {
 		os.WriteFile(f, []byte("id: test"), 0o644)

@@ -20,7 +20,7 @@ func TestExtractID(t *testing.T) {
 	}{
 		{"docs/specs/software-requirements/srd001-feature.yaml", "srd001-feature"},
 		{"docs/specs/use-cases/rel01.0-uc001-init.yaml", "rel01.0-uc001-init"},
-		{"docs/specs/test-suites/test-rel01.0.yaml", "test-rel01.0"},
+		{"docs/specs/test-suites/test-rel-01.0.yaml", "test-rel-01.0"},
 		{"simple.yaml", "simple"},
 	}
 	for _, tc := range cases {
@@ -128,7 +128,7 @@ func TestLoadUseCase_MissingFile(t *testing.T) {
 // --- LoadTestSuite ---
 
 func TestLoadTestSuite_ParsesIDAndTraces(t *testing.T) {
-	content := `id: test-rel01.0
+	content := `id: test-rel-01.0
 title: Release 01.0 Tests
 release: rel01.0
 traces:
@@ -142,7 +142,7 @@ test_cases:
       exit_code: 0
 `
 	dir := t.TempDir()
-	path := filepath.Join(dir, "test-rel01.0.yaml")
+	path := filepath.Join(dir, "test-rel-01.0.yaml")
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -150,8 +150,8 @@ test_cases:
 	if err != nil {
 		t.Fatalf("LoadTestSuite: %v", err)
 	}
-	if ts.ID != "test-rel01.0" {
-		t.Errorf("ID: got %q, want %q", ts.ID, "test-rel01.0")
+	if ts.ID != "test-rel-01.0" {
+		t.Errorf("ID: got %q, want %q", ts.ID, "test-rel-01.0")
 	}
 	if len(ts.Traces) != 2 {
 		t.Errorf("Traces: got %d, want 2", len(ts.Traces))
@@ -410,8 +410,8 @@ releases:
 		[]byte("id: rel01.0-uc001-init\ntitle: Init\ntouchpoints:\n  - T1: srd001-core R1\n"), 0o644)
 	os.WriteFile("docs/specs/software-requirements/srd001-core.yaml",
 		[]byte("id: srd001-core\ntitle: Core\nrequirements:\n  - id: R1\n    title: Req 1\n"), 0o644)
-	os.WriteFile("docs/specs/test-suites/test-rel01.0.yaml",
-		[]byte("id: test-rel01.0\ntitle: Tests\nrelease: rel01.0\ntraces:\n  - rel01.0-uc001-init\n"), 0o644)
+	os.WriteFile("docs/specs/test-suites/test-rel-01.0.yaml",
+		[]byte("id: test-rel-01.0\ntitle: Tests\nrelease: rel01.0\ntraces:\n  - rel01.0-uc001-init\n"), 0o644)
 
 	deps := noopDeps()
 	deps.Releases = []string{"01.0", "99.0"}
@@ -457,8 +457,8 @@ releases:
 		[]byte("id: rel01.0-uc001-init\ntitle: Init\ntouchpoints:\n  - T1: srd001-core R1\n"), 0o644)
 	os.WriteFile("docs/specs/software-requirements/srd001-core.yaml",
 		[]byte("id: srd001-core\ntitle: Core\nrequirements:\n  - id: R1\n    title: Req 1\n"), 0o644)
-	os.WriteFile("docs/specs/test-suites/test-rel01.0.yaml",
-		[]byte("id: test-rel01.0\ntitle: Tests\nrelease: rel01.0\ntraces:\n  - rel01.0-uc001-init\n"), 0o644)
+	os.WriteFile("docs/specs/test-suites/test-rel-01.0.yaml",
+		[]byte("id: test-rel-01.0\ntitle: Tests\nrelease: rel01.0\ntraces:\n  - rel01.0-uc001-init\n"), 0o644)
 
 	deps := noopDeps()
 	deps.Releases = []string{"01.0"}
@@ -554,8 +554,8 @@ releases:
 		[]byte("id: rel01.0-uc001-init\ntitle: Init\ntouchpoints:\n  - T1: srd001-core R1\n"), 0o644)
 	os.WriteFile("docs/specs/software-requirements/srd001-core.yaml",
 		[]byte("id: srd001-core\ntitle: Core\nrequirements:\n  - id: R1\n    title: Req 1\n"), 0o644)
-	os.WriteFile("docs/specs/test-suites/test-rel01.0.yaml",
-		[]byte("id: test-rel01.0\ntitle: Tests\nrelease: rel01.0\ntraces:\n  - rel01.0-uc001-init\n"), 0o644)
+	os.WriteFile("docs/specs/test-suites/test-rel-01.0.yaml",
+		[]byte("id: test-rel-01.0\ntitle: Tests\nrelease: rel01.0\ntraces:\n  - rel01.0-uc001-init\n"), 0o644)
 
 	result, _, err := CollectAnalyzeResult(noopDeps())
 	if err != nil {
@@ -1553,7 +1553,7 @@ acceptance_criteria:
 `
 	os.WriteFile("docs/specs/software-requirements/srd001-core.yaml", []byte(srd), 0o644)
 
-	ts := `id: test-rel01.0
+	ts := `id: test-rel-01.0
 title: Tests
 release: rel01.0
 traces:
@@ -1564,7 +1564,7 @@ test_cases:
     traces:
       - srd001-core AC1
 `
-	os.WriteFile("docs/specs/test-suites/test-rel01.0.yaml", []byte(ts), 0o644)
+	os.WriteFile("docs/specs/test-suites/test-rel-01.0.yaml", []byte(ts), 0o644)
 	os.WriteFile("docs/specs/use-cases/rel01.0-uc001-init.yaml",
 		[]byte("id: rel01.0-uc001-init\ntitle: Init\ntouchpoints:\n  - T1: srd001-core R1\n"), 0o644)
 
@@ -1604,7 +1604,7 @@ acceptance_criteria:
 	os.WriteFile("docs/specs/software-requirements/srd001-core.yaml", []byte(srd), 0o644)
 
 	// No test suite traces to ACs
-	ts := `id: test-rel01.0
+	ts := `id: test-rel-01.0
 title: Tests
 release: rel01.0
 traces:
@@ -1613,7 +1613,7 @@ test_cases:
   - use_case: rel01.0-uc001-init
     name: Basic test
 `
-	os.WriteFile("docs/specs/test-suites/test-rel01.0.yaml", []byte(ts), 0o644)
+	os.WriteFile("docs/specs/test-suites/test-rel-01.0.yaml", []byte(ts), 0o644)
 	os.WriteFile("docs/specs/use-cases/rel01.0-uc001-init.yaml",
 		[]byte("id: rel01.0-uc001-init\ntitle: Init\ntouchpoints:\n  - T1: srd001-core R1\n"), 0o644)
 
@@ -1734,8 +1734,8 @@ func TestCollectAnalyzeResult_UnreachableUC_NoRItems(t *testing.T) {
 
 	roadmap := "id: rm\ntitle: R\nreleases:\n  - version: \"01.0\"\n    name: R1\n    status: pending\n    use_cases:\n      - id: rel01.0-uc001-init\n        summary: Init\n"
 	os.WriteFile("docs/road-map.yaml", []byte(roadmap), 0o644)
-	os.WriteFile("docs/specs/test-suites/test-rel01.0.yaml",
-		[]byte("id: test-rel01.0\ntitle: T\ntraces:\n  - rel01.0-uc001-init\n"), 0o644)
+	os.WriteFile("docs/specs/test-suites/test-rel-01.0.yaml",
+		[]byte("id: test-rel-01.0\ntitle: T\ntraces:\n  - rel01.0-uc001-init\n"), 0o644)
 
 	result, _, err := CollectAnalyzeResult(noopDeps())
 	if err != nil {
@@ -1770,8 +1770,8 @@ func TestCollectAnalyzeResult_ReachableUC_HasRItems(t *testing.T) {
 
 	roadmap := "id: rm\ntitle: R\nreleases:\n  - version: \"01.0\"\n    name: R1\n    status: pending\n    use_cases:\n      - id: rel01.0-uc001-init\n        summary: Init\n"
 	os.WriteFile("docs/road-map.yaml", []byte(roadmap), 0o644)
-	os.WriteFile("docs/specs/test-suites/test-rel01.0.yaml",
-		[]byte("id: test-rel01.0\ntitle: T\ntraces:\n  - rel01.0-uc001-init\ntest_cases:\n  - name: tc1\n    use_case: rel01.0-uc001-init\n    traces:\n      - srd001-core AC1\n"), 0o644)
+	os.WriteFile("docs/specs/test-suites/test-rel-01.0.yaml",
+		[]byte("id: test-rel-01.0\ntitle: T\ntraces:\n  - rel01.0-uc001-init\ntest_cases:\n  - name: tc1\n    use_case: rel01.0-uc001-init\n    traces:\n      - srd001-core AC1\n"), 0o644)
 
 	result, _, err := CollectAnalyzeResult(noopDeps())
 	if err != nil {
@@ -1800,8 +1800,8 @@ func TestCollectAnalyzeResult_UnreachableUC_MissingSRD(t *testing.T) {
 
 	roadmap := "id: rm\ntitle: R\nreleases:\n  - version: \"01.0\"\n    name: R1\n    status: pending\n    use_cases:\n      - id: rel01.0-uc001-init\n        summary: Init\n"
 	os.WriteFile("docs/road-map.yaml", []byte(roadmap), 0o644)
-	os.WriteFile("docs/specs/test-suites/test-rel01.0.yaml",
-		[]byte("id: test-rel01.0\ntitle: T\ntraces:\n  - rel01.0-uc001-init\n"), 0o644)
+	os.WriteFile("docs/specs/test-suites/test-rel-01.0.yaml",
+		[]byte("id: test-rel-01.0\ntitle: T\ntraces:\n  - rel01.0-uc001-init\n"), 0o644)
 
 	result, _, err := CollectAnalyzeResult(noopDeps())
 	if err != nil {
@@ -1836,8 +1836,8 @@ func TestCollectAnalyzeResult_BareTouchpoint_FlagsMissingRGroups(t *testing.T) {
 
 	roadmap := "id: rm\ntitle: R\nreleases:\n  - version: \"01.0\"\n    name: R1\n    status: pending\n    use_cases:\n      - id: rel01.0-uc001-users\n        summary: Users\n"
 	os.WriteFile("docs/road-map.yaml", []byte(roadmap), 0o644)
-	os.WriteFile("docs/specs/test-suites/test-rel01.0.yaml",
-		[]byte("id: test-rel01.0\ntitle: T\ntraces:\n  - rel01.0-uc001-users\n"), 0o644)
+	os.WriteFile("docs/specs/test-suites/test-rel-01.0.yaml",
+		[]byte("id: test-rel-01.0\ntitle: T\ntraces:\n  - rel01.0-uc001-users\n"), 0o644)
 
 	result, _, err := CollectAnalyzeResult(noopDeps())
 	if err != nil {
@@ -1872,8 +1872,8 @@ func TestCollectAnalyzeResult_BareTouchpoint_NotFlaggedWithRGroups(t *testing.T)
 
 	roadmap := "id: rm\ntitle: R\nreleases:\n  - version: \"01.0\"\n    name: R1\n    status: pending\n    use_cases:\n      - id: rel01.0-uc001-users\n        summary: Users\n"
 	os.WriteFile("docs/road-map.yaml", []byte(roadmap), 0o644)
-	os.WriteFile("docs/specs/test-suites/test-rel01.0.yaml",
-		[]byte("id: test-rel01.0\ntitle: T\ntraces:\n  - rel01.0-uc001-users\n"), 0o644)
+	os.WriteFile("docs/specs/test-suites/test-rel-01.0.yaml",
+		[]byte("id: test-rel-01.0\ntitle: T\ntraces:\n  - rel01.0-uc001-users\n"), 0o644)
 
 	result, _, err := CollectAnalyzeResult(noopDeps())
 	if err != nil {
@@ -1901,8 +1901,8 @@ func TestCollectAnalyzeResult_UCIDPrefixMismatch_Pass(t *testing.T) {
 
 	roadmap := "id: rm\ntitle: R\nreleases:\n  - version: \"01.0\"\n    name: Core\n    status: done\n    use_cases:\n      - id: rel01.0-uc001-init\n        summary: Init\n        status: done\n"
 	os.WriteFile("docs/road-map.yaml", []byte(roadmap), 0o644)
-	os.WriteFile("docs/specs/test-suites/test-rel01.0.yaml",
-		[]byte("id: test-rel01.0\ntitle: T\ntraces:\n  - rel01.0-uc001-init\n"), 0o644)
+	os.WriteFile("docs/specs/test-suites/test-rel-01.0.yaml",
+		[]byte("id: test-rel-01.0\ntitle: T\ntraces:\n  - rel01.0-uc001-init\n"), 0o644)
 
 	result, _, err := CollectAnalyzeResult(noopDeps())
 	if err != nil {
@@ -2318,5 +2318,236 @@ implemented_by:
 	}
 	if len(result.BrokenInterfaceRefs) != 0 {
 		t.Errorf("expected interface resolved from spec file alone, got broken refs: %v", result.BrokenInterfaceRefs)
+	}
+}
+
+// --- GH-2140 Gap 1: use-case test_suite reference validation ---
+
+func TestLoadUseCase_ParsesTestSuiteField(t *testing.T) {
+	content := `id: rel01.0-uc001-init
+title: Initialization
+test_suite: test-rel-01.0
+touchpoints:
+  - T1: Core component (srd001-core R1)
+`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "rel01.0-uc001-init.yaml")
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	uc, err := LoadUseCase(path)
+	if err != nil {
+		t.Fatalf("LoadUseCase: %v", err)
+	}
+	if uc.TestSuite != "test-rel-01.0" {
+		t.Errorf("TestSuite: got %q, want %q", uc.TestSuite, "test-rel-01.0")
+	}
+}
+
+func TestCollectAnalyzeResult_UseCaseMissingTestSuiteRef(t *testing.T) {
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(orig)
+	setupMinimalAnalyzeDir(t)
+
+	os.WriteFile("docs/specs/software-requirements/srd001-core.yaml",
+		[]byte("id: srd001-core\ntitle: Core\nrequirements:\n  R1:\n    title: Req 1\n    items:\n      - R1.1: Do X\n"), 0o644)
+	os.WriteFile("docs/specs/use-cases/rel01.0-uc001-init.yaml",
+		[]byte("id: rel01.0-uc001-init\ntitle: Init\ntest_suite: test-rel-nonexistent\ntouchpoints:\n  - T1: srd001-core R1\n"), 0o644)
+	os.WriteFile("docs/specs/test-suites/test-rel-01.0.yaml",
+		[]byte("id: test-rel-01.0\ntitle: Tests\nrelease: rel01.0\ntraces:\n  - rel01.0-uc001-init\n"), 0o644)
+
+	result, _, err := CollectAnalyzeResult(noopDeps())
+	if err != nil {
+		t.Fatalf("CollectAnalyzeResult: %v", err)
+	}
+	if len(result.MissingTestSuiteRefs) != 1 {
+		t.Fatalf("expected 1 missing test_suite ref, got %d: %v", len(result.MissingTestSuiteRefs), result.MissingTestSuiteRefs)
+	}
+	msg := result.MissingTestSuiteRefs[0]
+	if !strings.Contains(msg, "rel01.0-uc001-init") {
+		t.Errorf("expected message to mention UC ID, got %q", msg)
+	}
+	if !strings.Contains(msg, "test-rel-nonexistent") {
+		t.Errorf("expected message to mention the missing test_suite ID, got %q", msg)
+	}
+}
+
+func TestCollectAnalyzeResult_UseCaseTestSuiteRefValid(t *testing.T) {
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(orig)
+	setupMinimalAnalyzeDir(t)
+
+	os.WriteFile("docs/specs/software-requirements/srd001-core.yaml",
+		[]byte("id: srd001-core\ntitle: Core\nrequirements:\n  R1:\n    title: Req 1\n    items:\n      - R1.1: Do X\n"), 0o644)
+	os.WriteFile("docs/specs/use-cases/rel01.0-uc001-init.yaml",
+		[]byte("id: rel01.0-uc001-init\ntitle: Init\ntest_suite: test-rel-01.0\ntouchpoints:\n  - T1: srd001-core R1\n"), 0o644)
+	os.WriteFile("docs/specs/test-suites/test-rel-01.0.yaml",
+		[]byte("id: test-rel-01.0\ntitle: Tests\nrelease: rel01.0\ntraces:\n  - rel01.0-uc001-init\n"), 0o644)
+
+	result, _, err := CollectAnalyzeResult(noopDeps())
+	if err != nil {
+		t.Fatalf("CollectAnalyzeResult: %v", err)
+	}
+	if len(result.MissingTestSuiteRefs) != 0 {
+		t.Errorf("expected no missing test_suite refs, got %v", result.MissingTestSuiteRefs)
+	}
+}
+
+// --- GH-2140 Gap 2: test-suite ID convention (dashed) ---
+
+func TestCollectAnalyzeResult_ReleaseTestSuiteResolved_Dashed(t *testing.T) {
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(orig)
+	setupMinimalAnalyzeDir(t)
+
+	roadmap := `id: test-roadmap
+title: Test Roadmap
+releases:
+  - version: "01.0"
+    name: Core
+    status: done
+    use_cases:
+      - id: rel01.0-uc001-init
+        summary: Init
+        status: done
+`
+	os.WriteFile("docs/road-map.yaml", []byte(roadmap), 0o644)
+	os.WriteFile("docs/specs/software-requirements/srd001-core.yaml",
+		[]byte("id: srd001-core\ntitle: Core\nrequirements:\n  R1:\n    title: Req 1\n    items:\n      - R1.1: Do X\n"), 0o644)
+	os.WriteFile("docs/specs/use-cases/rel01.0-uc001-init.yaml",
+		[]byte("id: rel01.0-uc001-init\ntitle: Init\ntouchpoints:\n  - T1: srd001-core R1\n"), 0o644)
+	os.WriteFile("docs/specs/test-suites/test-rel-01.0.yaml",
+		[]byte("id: test-rel-01.0\ntitle: Tests\nrelease: rel01.0\ntraces:\n  - rel01.0-uc001-init\n"), 0o644)
+
+	result, _, err := CollectAnalyzeResult(noopDeps())
+	if err != nil {
+		t.Fatalf("CollectAnalyzeResult: %v", err)
+	}
+	if len(result.ReleasesWithoutTestSuites) != 0 {
+		t.Errorf("expected release 01.0 to resolve via dashed test suite id, got %v", result.ReleasesWithoutTestSuites)
+	}
+}
+
+func TestCollectAnalyzeResult_ReleaseTestSuiteMissing_NoDash(t *testing.T) {
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(orig)
+	setupMinimalAnalyzeDir(t)
+
+	roadmap := `id: test-roadmap
+title: Test Roadmap
+releases:
+  - version: "01.0"
+    name: Core
+    status: done
+    use_cases:
+      - id: rel01.0-uc001-init
+        summary: Init
+        status: done
+`
+	os.WriteFile("docs/road-map.yaml", []byte(roadmap), 0o644)
+	os.WriteFile("docs/specs/software-requirements/srd001-core.yaml",
+		[]byte("id: srd001-core\ntitle: Core\nrequirements:\n  R1:\n    title: Req 1\n    items:\n      - R1.1: Do X\n"), 0o644)
+	os.WriteFile("docs/specs/use-cases/rel01.0-uc001-init.yaml",
+		[]byte("id: rel01.0-uc001-init\ntitle: Init\ntouchpoints:\n  - T1: srd001-core R1\n"), 0o644)
+	// Legacy no-dash id — must no longer satisfy the check.
+	os.WriteFile("docs/specs/test-suites/legacy.yaml",
+		[]byte("id: test-rel01.0\ntitle: Tests\nrelease: rel01.0\ntraces:\n  - rel01.0-uc001-init\n"), 0o644)
+
+	result, _, err := CollectAnalyzeResult(noopDeps())
+	if err != nil {
+		t.Fatalf("CollectAnalyzeResult: %v", err)
+	}
+	if len(result.ReleasesWithoutTestSuites) != 1 || result.ReleasesWithoutTestSuites[0] != "01.0" {
+		t.Errorf("expected release 01.0 reported as missing when only legacy no-dash id present, got %v", result.ReleasesWithoutTestSuites)
+	}
+}
+
+func TestPrintReport_NoErrorsWithWarnings_HonestHeadline(t *testing.T) {
+	r := AnalyzeResult{
+		UncoveredACs: []string{"srd001 AC1", "srd001 AC2", "srd001 AC3"},
+	}
+	out := captureStdout(t, func() {
+		err := r.PrintReport(5, 10, 3, 0)
+		if err != nil {
+			t.Errorf("expected nil error when only warnings present, got %v", err)
+		}
+	})
+	if !strings.Contains(out, "No hard errors (3 warnings") {
+		t.Errorf("output missing honest warning headline, got %q", out)
+	}
+	if strings.Contains(out, "All consistency checks passed") {
+		t.Error("should not show the all-clear headline when warnings exist")
+	}
+	if !strings.Contains(out, "5 SRDs") {
+		t.Errorf("output missing SRD count, got %q", out)
+	}
+}
+
+func TestPrintReport_WarningsAcrossAllSections_CountedTogether(t *testing.T) {
+	r := AnalyzeResult{
+		UncoveredACs:            []string{"a1"},
+		UntracedSuccessCriteria: []string{"s1", "s2"},
+		UnreachableUCs:          []string{"u1"},
+		FailedRequirements:      []string{"r1"},
+		BareTouchpoints:         []string{"t1", "t2"},
+	}
+	out := captureStdout(t, func() {
+		err := r.PrintReport(1, 1, 1, 0)
+		if err != nil {
+			t.Errorf("expected nil error when only warnings present, got %v", err)
+		}
+	})
+	if !strings.Contains(out, "No hard errors (7 warnings") {
+		t.Errorf("expected aggregate warning count 7, got %q", out)
+	}
+}
+
+func TestPrintReport_ErrorsAndWarnings_ReturnError(t *testing.T) {
+	r := AnalyzeResult{
+		OrphanedSRDs: []string{"srd099-unused"},
+		UncoveredACs: []string{"a1", "a2"},
+	}
+	out := captureStdout(t, func() {
+		err := r.PrintReport(1, 1, 1, 0)
+		if err == nil {
+			t.Error("expected error when hard errors present")
+		}
+	})
+	if strings.Contains(out, "All consistency checks passed") {
+		t.Error("should not show the all-clear headline when errors exist")
+	}
+	if strings.Contains(out, "No hard errors") {
+		t.Error("should not show the warning headline when errors exist")
+	}
+}
+
+func TestCollectAnalyzeResult_UseCaseNoTestSuiteField(t *testing.T) {
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(orig)
+	setupMinimalAnalyzeDir(t)
+
+	os.WriteFile("docs/specs/software-requirements/srd001-core.yaml",
+		[]byte("id: srd001-core\ntitle: Core\nrequirements:\n  R1:\n    title: Req 1\n    items:\n      - R1.1: Do X\n"), 0o644)
+	os.WriteFile("docs/specs/use-cases/rel01.0-uc001-init.yaml",
+		[]byte("id: rel01.0-uc001-init\ntitle: Init\ntouchpoints:\n  - T1: srd001-core R1\n"), 0o644)
+	os.WriteFile("docs/specs/test-suites/test-rel-01.0.yaml",
+		[]byte("id: test-rel-01.0\ntitle: Tests\nrelease: rel01.0\ntraces:\n  - rel01.0-uc001-init\n"), 0o644)
+
+	result, _, err := CollectAnalyzeResult(noopDeps())
+	if err != nil {
+		t.Fatalf("CollectAnalyzeResult: %v", err)
+	}
+	if len(result.MissingTestSuiteRefs) != 0 {
+		t.Errorf("expected no missing test_suite refs when field absent, got %v", result.MissingTestSuiteRefs)
 	}
 }

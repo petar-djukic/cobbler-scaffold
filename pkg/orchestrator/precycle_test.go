@@ -302,8 +302,8 @@ func TestRunPreCycleAnalysis_WritesFile(t *testing.T) {
 		[]byte("id: rel01.0-uc001-init\ntitle: Init\ntouchpoints:\n  - T1: srd001-core R1\n"), 0o644)
 	os.WriteFile("docs/specs/software-requirements/srd001-core.yaml",
 		[]byte("id: srd001-core\ntitle: Core\nrequirements:\n  - id: R1\n    title: Req 1\n"), 0o644)
-	os.WriteFile("docs/specs/test-suites/test-rel01.0.yaml",
-		[]byte("id: test-rel01.0\ntitle: Tests\nrelease: rel01.0\ntraces:\n  - rel01.0-uc001-init\n"), 0o644)
+	os.WriteFile("docs/specs/test-suites/test-rel-01.0.yaml",
+		[]byte("id: test-rel-01.0\ntitle: Tests\nrelease: rel01.0\ntraces:\n  - rel01.0-uc001-init\n"), 0o644)
 
 	scratchDir := filepath.Join(dir, ".cobbler")
 	o := testOrchWithCfg(Config{Cobbler: CobblerConfig{Dir: scratchDir}})

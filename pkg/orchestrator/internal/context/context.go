@@ -1611,9 +1611,9 @@ func ExtractFileRelease(path string) string {
 		if idx := strings.Index(rest, "-"); idx > 0 {
 			return rest[:idx]
 		}
-	case strings.HasPrefix(base, "test-rel"):
-		// test-rel01.0.yaml -> extract "01.0"
-		rest := strings.TrimPrefix(base, "test-rel")
+	case strings.HasPrefix(base, "test-rel-"):
+		// test-rel-01.0.yaml -> extract "01.0" (GH-2140 Gap 2: dashed convention)
+		rest := strings.TrimPrefix(base, "test-rel-")
 		return strings.TrimSuffix(rest, ".yaml")
 	}
 	return ""
