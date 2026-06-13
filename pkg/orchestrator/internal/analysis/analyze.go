@@ -261,9 +261,10 @@ func CollectAnalyzeResult(deps AnalyzeDeps) (AnalyzeResult, AnalyzeCounts, error
 		}
 	}
 
-	// Check 2: Releases in road-map.yaml without a test suite file
+	// Check 2: Releases in road-map.yaml without a test suite file.
+	// Test suite IDs follow the dashed convention test-rel-<version> (GH-2140 Gap 2).
 	for releaseID := range roadmapReleaseIDs {
-		if !testSuiteIDs["test-rel"+releaseID] {
+		if !testSuiteIDs["test-rel-"+releaseID] {
 			result.ReleasesWithoutTestSuites = append(result.ReleasesWithoutTestSuites, releaseID)
 		}
 	}

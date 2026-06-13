@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Petar Djukic. All rights reserved.
 # SPDX-License-Identifier: MIT
 
-id: test-rel03.0
+id: test-rel-03.0
 title: Release 03.0 test suite
 release: rel03.0
 traces:
