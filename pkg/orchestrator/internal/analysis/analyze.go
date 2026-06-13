@@ -42,6 +42,7 @@ type AnalyzeResult struct {
 	UCIDPrefixMismatch             []string // Use case ID prefix doesn't match assigned release in roadmap (GH-1964)
 	BrokenInterfaceRefs            []string // implemented_by/used_by references non-existent architecture interface (GH-1968)
 	MissingSpecFiles               []string // spec_file declared in ARCHITECTURE.yaml but file does not exist (GH-1990)
+	MissingTestSuiteRefs           []string // Use cases whose test_suite field references a non-existent test suite (GH-2140 Gap 1)
 }
 
 // AnalyzeCounts holds the artifact counts discovered during analysis.
@@ -142,6 +143,7 @@ func CollectAnalyzeResult(deps AnalyzeDeps) (AnalyzeResult, AnalyzeCounts, error
 	ucToSRDs := make(map[string][]string)      // use case ID -> SRD IDs from touchpoints
 	ucTouchpoints := make(map[string][]string) // use case ID -> raw touchpoint strings
 	ucSuccessCriteria := make(map[string][]SuccessCriterion) // use case ID -> success criteria
+	ucToTestSuite := make(map[string]string)   // use case ID -> declared test_suite reference (GH-2140 Gap 1)
 	srdToReleases := make(map[string]map[string]bool) // SRD ID -> set of releases that reference it
 	for _, path := range ucFiles {
 		uc, err := LoadUseCase(path)
@@ -154,6 +156,9 @@ func CollectAnalyzeResult(deps AnalyzeDeps) (AnalyzeResult, AnalyzeCounts, error
 		ucTouchpoints[uc.ID] = uc.Touchpoints
 		if len(uc.SuccessCriteria) > 0 {
 			ucSuccessCriteria[uc.ID] = uc.SuccessCriteria
+		}
+		if uc.TestSuite != "" {
+			ucToTestSuite[uc.ID] = uc.TestSuite
 		}
 		release := ExtractFileRelease(path)
 		if release != "" {
@@ -262,6 +267,15 @@ func CollectAnalyzeResult(deps AnalyzeDeps) (AnalyzeResult, AnalyzeCounts, error
 			result.ReleasesWithoutTestSuites = append(result.ReleasesWithoutTestSuites, releaseID)
 		}
 	}
+
+	// Check 2b: Use-case test_suite references must resolve to a known test suite (GH-2140 Gap 1).
+	for ucID, ts := range ucToTestSuite {
+		if !testSuiteIDs[ts] {
+			result.MissingTestSuiteRefs = append(result.MissingTestSuiteRefs,
+				fmt.Sprintf("%s: test_suite %q not found", ucID, ts))
+		}
+	}
+	sort.Strings(result.MissingTestSuiteRefs)
 
 	// Check 3: Orphaned test suites (traces don't reference any known use case)
 	for testSuiteID, traces := range testSuiteToUCs {
@@ -634,6 +648,7 @@ func (r AnalyzeResult) PrintReport(srdCount, ucCount, tsCount, smCount int) erro
 	hasIssues := false
 	hasIssues = PrintSection("Orphaned SRDs (no use case references them)", r.OrphanedSRDs) || hasIssues
 	hasIssues = PrintSection("Releases without test suites (no docs/specs/test-suites/test-<release>.yaml)", r.ReleasesWithoutTestSuites) || hasIssues
+	hasIssues = PrintSection("Use cases referencing non-existent test suites (test_suite field unresolved)", r.MissingTestSuiteRefs) || hasIssues
 	hasIssues = PrintSection("Orphaned test suites (traces don't reference any known use case)", r.OrphanedTestSuites) || hasIssues
 	hasIssues = PrintSection("Broken touchpoints (use case references non-existent SRD)", r.BrokenTouchpoints) || hasIssues
 	hasIssues = PrintSection("Use cases not in roadmap", r.UseCasesNotInRoadmap) || hasIssues
@@ -675,6 +690,7 @@ type AnalyzeUseCase struct {
 	ID              string
 	Touchpoints     []string
 	SuccessCriteria []SuccessCriterion
+	TestSuite       string
 }
 
 // AnalyzeTestSuite holds the fields extracted from a test suite file
@@ -712,6 +728,7 @@ func LoadUseCase(path string) (*AnalyzeUseCase, error) {
 		ID              string              `yaml:"id"`
 		Touchpoints     []map[string]string `yaml:"touchpoints"`
 		SuccessCriteria []SuccessCriterion  `yaml:"success_criteria"`
+		TestSuite       string              `yaml:"test_suite"`
 	}
 	if err := yaml.Unmarshal(data, &raw); err != nil {
 		return nil, err
@@ -728,6 +745,7 @@ func LoadUseCase(path string) (*AnalyzeUseCase, error) {
 		ID:              raw.ID,
 		Touchpoints:     touchpointStrings,
 		SuccessCriteria: raw.SuccessCriteria,
+		TestSuite:       raw.TestSuite,
 	}, nil
 }
 

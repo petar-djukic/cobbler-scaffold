@@ -2320,3 +2320,102 @@ implemented_by:
 		t.Errorf("expected interface resolved from spec file alone, got broken refs: %v", result.BrokenInterfaceRefs)
 	}
 }
+
+// --- GH-2140 Gap 1: use-case test_suite reference validation ---
+
+func TestLoadUseCase_ParsesTestSuiteField(t *testing.T) {
+	content := `id: rel01.0-uc001-init
+title: Initialization
+test_suite: test-rel-01.0
+touchpoints:
+  - T1: Core component (srd001-core R1)
+`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "rel01.0-uc001-init.yaml")
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	uc, err := LoadUseCase(path)
+	if err != nil {
+		t.Fatalf("LoadUseCase: %v", err)
+	}
+	if uc.TestSuite != "test-rel-01.0" {
+		t.Errorf("TestSuite: got %q, want %q", uc.TestSuite, "test-rel-01.0")
+	}
+}
+
+func TestCollectAnalyzeResult_UseCaseMissingTestSuiteRef(t *testing.T) {
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(orig)
+	setupMinimalAnalyzeDir(t)
+
+	os.WriteFile("docs/specs/software-requirements/srd001-core.yaml",
+		[]byte("id: srd001-core\ntitle: Core\nrequirements:\n  R1:\n    title: Req 1\n    items:\n      - R1.1: Do X\n"), 0o644)
+	os.WriteFile("docs/specs/use-cases/rel01.0-uc001-init.yaml",
+		[]byte("id: rel01.0-uc001-init\ntitle: Init\ntest_suite: test-rel-nonexistent\ntouchpoints:\n  - T1: srd001-core R1\n"), 0o644)
+	os.WriteFile("docs/specs/test-suites/test-rel01.0.yaml",
+		[]byte("id: test-rel01.0\ntitle: Tests\nrelease: rel01.0\ntraces:\n  - rel01.0-uc001-init\n"), 0o644)
+
+	result, _, err := CollectAnalyzeResult(noopDeps())
+	if err != nil {
+		t.Fatalf("CollectAnalyzeResult: %v", err)
+	}
+	if len(result.MissingTestSuiteRefs) != 1 {
+		t.Fatalf("expected 1 missing test_suite ref, got %d: %v", len(result.MissingTestSuiteRefs), result.MissingTestSuiteRefs)
+	}
+	msg := result.MissingTestSuiteRefs[0]
+	if !strings.Contains(msg, "rel01.0-uc001-init") {
+		t.Errorf("expected message to mention UC ID, got %q", msg)
+	}
+	if !strings.Contains(msg, "test-rel-nonexistent") {
+		t.Errorf("expected message to mention the missing test_suite ID, got %q", msg)
+	}
+}
+
+func TestCollectAnalyzeResult_UseCaseTestSuiteRefValid(t *testing.T) {
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(orig)
+	setupMinimalAnalyzeDir(t)
+
+	os.WriteFile("docs/specs/software-requirements/srd001-core.yaml",
+		[]byte("id: srd001-core\ntitle: Core\nrequirements:\n  R1:\n    title: Req 1\n    items:\n      - R1.1: Do X\n"), 0o644)
+	os.WriteFile("docs/specs/use-cases/rel01.0-uc001-init.yaml",
+		[]byte("id: rel01.0-uc001-init\ntitle: Init\ntest_suite: test-rel01.0\ntouchpoints:\n  - T1: srd001-core R1\n"), 0o644)
+	os.WriteFile("docs/specs/test-suites/test-rel01.0.yaml",
+		[]byte("id: test-rel01.0\ntitle: Tests\nrelease: rel01.0\ntraces:\n  - rel01.0-uc001-init\n"), 0o644)
+
+	result, _, err := CollectAnalyzeResult(noopDeps())
+	if err != nil {
+		t.Fatalf("CollectAnalyzeResult: %v", err)
+	}
+	if len(result.MissingTestSuiteRefs) != 0 {
+		t.Errorf("expected no missing test_suite refs, got %v", result.MissingTestSuiteRefs)
+	}
+}
+
+func TestCollectAnalyzeResult_UseCaseNoTestSuiteField(t *testing.T) {
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(orig)
+	setupMinimalAnalyzeDir(t)
+
+	os.WriteFile("docs/specs/software-requirements/srd001-core.yaml",
+		[]byte("id: srd001-core\ntitle: Core\nrequirements:\n  R1:\n    title: Req 1\n    items:\n      - R1.1: Do X\n"), 0o644)
+	os.WriteFile("docs/specs/use-cases/rel01.0-uc001-init.yaml",
+		[]byte("id: rel01.0-uc001-init\ntitle: Init\ntouchpoints:\n  - T1: srd001-core R1\n"), 0o644)
+	os.WriteFile("docs/specs/test-suites/test-rel01.0.yaml",
+		[]byte("id: test-rel01.0\ntitle: Tests\nrelease: rel01.0\ntraces:\n  - rel01.0-uc001-init\n"), 0o644)
+
+	result, _, err := CollectAnalyzeResult(noopDeps())
+	if err != nil {
+		t.Fatalf("CollectAnalyzeResult: %v", err)
+	}
+	if len(result.MissingTestSuiteRefs) != 0 {
+		t.Errorf("expected no missing test_suite refs when field absent, got %v", result.MissingTestSuiteRefs)
+	}
+}
