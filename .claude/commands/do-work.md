@@ -47,7 +47,7 @@ When selecting from available sub-issues, **prefer documentation sub-issues over
 
 Use this workflow when the deliverable is **YAML documentation** under `docs/`: PRDs, use cases, test suites, ARCHITECTURE, engineering guidelines, SPECIFICATIONS.
 
-Read VISION.yaml and ARCHITECTURE.yaml for context. For PRDs scan existing `docs/specs/product-requirements/`; for use cases `docs/specs/use-cases/`; for test suites `docs/specs/test-suites/`.
+Read docs/VISION.yaml and docs/ARCHITECTURE.yaml for context. For PRDs scan existing `docs/specs/product-requirements/`; for use cases `docs/specs/use-cases/`; for test suites `docs/specs/test-suites/`.
 
 ## 1. Select a documentation task
 
@@ -82,18 +82,25 @@ Read VISION.yaml and ARCHITECTURE.yaml for context. For PRDs scan existing `docs
 1. **Check completeness** against Acceptance Criteria and the format rule checklist
 2. **Run `mage analyze`** to validate documentation consistency. Fix any issues before proceeding.
 3. **Calculate metrics**: tokens used; run `mage stats` for LOC and doc word counts
-4. **Log metrics and close**:
+4. **Log completion**:
 
    ```bash
-   gh issue comment <number> --repo <owner>/<repo> --body "tokens: <count>"
-   gh issue close <number> --repo <owner>/<repo>
+   gh issue comment <number> --repo <owner>/<repo> --body "Completed in commit <sha>.
+
+   <summary of work>
+
+   tokens: <count>"
    ```
+
+   Do not close the sub-issue manually. The commit message contains `Closes #<number>`, which auto-closes it when the PR merges.
 
 5. **Commit** changes:
 
    ```bash
    git add -A
-   git commit -m "Add <doc name> (<output path>) (GH-<parent>#<sub-issue>)
+   git commit -m "Add <doc name> (<output path>) (GH-<parent>)
+
+   Closes #<sub-issue>
 
    Stats:
      Lines of code (Go, production): <prod_loc> (+<delta>)
@@ -106,7 +113,7 @@ Read VISION.yaml and ARCHITECTURE.yaml for context. For PRDs scan existing `docs
 
 ## 5. After completing the last sub-issue (documentation)
 
-When you close a sub-issue and the open count drops to 0:
+After completing work on a sub-issue, check whether all sub-issues have completion comments. If all have been completed:
 
 1. **Review all docs** created or modified during the epic for consistency
 2. **Verify parent issue acceptance criteria**
@@ -124,7 +131,7 @@ Use this workflow when the deliverable is **implementation**: packages, internal
 
 Follow the **code-prd-architecture-linking** rule: code must correspond to existing PRDs and architecture; commits must mention PRDs.
 
-Read VISION.yaml and ARCHITECTURE.yaml for context.
+Read docs/VISION.yaml and docs/ARCHITECTURE.yaml for context.
 
 ## 1. Select a code task
 
@@ -155,18 +162,25 @@ Read VISION.yaml and ARCHITECTURE.yaml for context.
 
 1. **Run any tests** to verify your work
 2. **Calculate metrics**: tokens used; run `mage stats` for LOC deltas
-3. **Log metrics and close**:
+3. **Log completion**:
 
    ```bash
-   gh issue comment <number> --repo <owner>/<repo> --body "tokens: <count>"
-   gh issue close <number> --repo <owner>/<repo>
+   gh issue comment <number> --repo <owner>/<repo> --body "Completed in commit <sha>.
+
+   <summary of work>
+
+   tokens: <count>"
    ```
+
+   Do not close the sub-issue manually. The commit message contains `Closes #<number>`, which auto-closes it when the PR merges.
 
 4. **Commit** changes. **Commit message must mention which PRDs are implemented**:
 
    ```bash
    git add -A
-   git commit -m "Implement X (prd-feature-name) (GH-<parent>#<sub-issue>)
+   git commit -m "Implement X (prd-feature-name) (GH-<parent>)
+
+   Closes #<sub-issue>
 
    - Description of changes
 
@@ -181,14 +195,7 @@ Read VISION.yaml and ARCHITECTURE.yaml for context.
 
 ## 5. After completing the last sub-issue (code)
 
-When you close a sub-issue, check the open count:
-
-```bash
-gh api repos/<owner>/<repo>/issues/<parent>/sub_issues \
-  --jq '[.[] | select(.state=="open")] | length'
-```
-
-If it reaches 0, perform a **thorough code inspection**:
+After completing work on a sub-issue, check whether all sub-issues have completion comments. If all have been completed, perform a **thorough code inspection**:
 
 1. **Read all files** created or modified during the epic
 2. **Check for inconsistencies**: naming conventions, error handling, duplication, test coverage gaps

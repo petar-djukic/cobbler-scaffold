@@ -27,7 +27,7 @@ If arguments contain an issue number (e.g. `42` or `#42`), use that issue. If ar
 
 ## Phase 2 -- Gather Project Context
 
-1. Read VISION.yaml, ARCHITECTURE.yaml, road-map.yaml, and `docs/constitutions/design.yaml`.
+1. Read docs/VISION.yaml, docs/ARCHITECTURE.yaml, docs/road-map.yaml, and `docs/constitutions/design.yaml`.
 2. Read READMEs for product requirements and use cases relevant to the issue.
 3. List open sub-issues already attached to this parent (in case this is a resumed session):
    ```bash
@@ -223,12 +223,12 @@ For the **multi-sub-issue path**, trigger Phase 5 when ALL sub-issues on the par
 
 1. If the issue is recurring (see Phase 6), execute Phase 6 now — before merging — so the next instance exists before this one closes.
 
-2. For the multi-sub-issue path only — verify all sub-issues are closed:
+2. For the multi-sub-issue path only — verify all sub-issues have been completed (each has a completion comment). List sub-issues:
    ```bash
    gh api repos/<owner>/<repo>/issues/<number>/sub_issues \
-     --jq '[.[] | select(.state=="open")] | length'
+     --jq '[.[] | {number: .number, title: .title, state: .state}]'
    ```
-   If the count is not 0, do not proceed — report which sub-issues are still open.
+   If any sub-issue lacks a completion comment, do not proceed — report which sub-issues still need work.
 
 3. For the single-issue path — add a comment to the parent issue summarizing what was done:
    ```bash
@@ -266,11 +266,14 @@ For the **multi-sub-issue path**, trigger Phase 5 when ALL sub-issues on the par
    - [ ] Documentation reviewed for consistency
 
    Closes #<number>
+   Closes #<sub-issue-1>
+   Closes #<sub-issue-2>
+   ...
    EOF
    )"
    ```
 
-   The `Closes #<number>` line auto-closes the parent GitHub issue when the PR merges.
+   The `Closes #<number>` lines auto-close the parent and all sub-issues when the PR merges. For the single-issue path, only the parent `Closes` line is needed. Sub-issue commits also contain `Closes #<sub-issue>` as a redundant safeguard.
 
 6. Merge the pull request and delete the remote feature branch:
    ```bash
@@ -289,16 +292,20 @@ For the **multi-sub-issue path**, trigger Phase 5 when ALL sub-issues on the par
    git branch -d gh-<number>-<slug>
    ```
 
-9. Verify the parent GitHub issue was closed by the merge:
+9. Verify all issues were closed by the merge. Check the parent and every sub-issue:
    ```bash
    gh issue view <number> --repo <owner>/<repo> --json state -q .state
+   # For multi-sub-issue path, also check each sub-issue:
+   gh api repos/<owner>/<repo>/issues/<number>/sub_issues \
+     --jq '[.[] | select(.state=="open") | {number: .number, title: .title}]'
    ```
-   If still open, close it explicitly:
+   If any issue is still open, warn the user and close it explicitly:
    ```bash
-   gh issue close <number> --repo <owner>/<repo> --comment "Completed via PR #<pr-number>"
+   # WARNING: GitHub did not auto-close issue #<N> from the PR merge.
+   gh issue close <N> --repo <owner>/<repo> --comment "Completed via PR #<pr-number>. Auto-close did not trigger."
    ```
 
-10. Report the PR URL and confirm the issue is closed.
+10. Report the PR URL and confirm all issues (parent and sub-issues) are closed.
 
 **Note:** Phase 5 may happen in a later session. When running `/do-work` and closing the last sub-issue, check the open sub-issue count and execute Phase 5 automatically if it reaches 0.
 

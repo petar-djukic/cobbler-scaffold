@@ -4,9 +4,9 @@
 
 Read the following files to understand the project:
 
-1. **VISION.yaml** - Project goals and boundaries
-2. **ARCHITECTURE.yaml** - System design and components
-3. **road-map.yaml** - Release schedule and use case status
+1. **docs/VISION.yaml** - Project goals and boundaries
+2. **docs/ARCHITECTURE.yaml** - System design and components
+3. **docs/road-map.yaml** - Release schedule and use case status
 4. **docs/constitutions/design.yaml** - Documentation format rules and standards
 5. **docs/specs/product-requirements/README.md** (if exists)
 6. **docs/specs/use-cases/README.md** (if exists)
@@ -15,7 +15,7 @@ First, check the current state of work:
 
 1. Run `gh issue list --repo <owner>/<repo>` to see open issues
 2. Check what's in progress, what's completed, what's pending
-3. **Check road-map.yaml** for release schedule and use case status
+3. **Check docs/road-map.yaml** for release schedule and use case status
 4. **Run `mage analyze`** to identify specification issues:
    - Orphaned PRDs (not referenced by use cases)
    - Missing test suites (use cases without test suites)
@@ -56,7 +56,7 @@ Don't create any issues yet - just propose the breakdown so we can discuss it.
 
 After we agree on the plan and you create issues:
 
-- **Create issues with `gh issue create --repo <owner>/<repo>`**
+- **Create each issue using `/gh-issue-push`**, not `gh issue create` directly. `/gh-issue-push` searches for ripple effects before drafting the issue body, ensuring every affected file and field is enumerated. Issues created without this step will miss cross-references.
 - To link a sub-issue to a parent, use:
 
   ```bash
@@ -70,4 +70,4 @@ After you implement work:
 - Commit your changes with a clear message
 - Log token usage: `gh issue comment <id> --repo <owner>/<repo> --body "tokens: N"`
 - Close completed issues: `gh issue close <id> --repo <owner>/<repo>`
-- File any new issues via `gh issue create`; note them for the user if not created in this session
+- File any new issues via `/gh-issue-push`; note them for the user if not created in this session
