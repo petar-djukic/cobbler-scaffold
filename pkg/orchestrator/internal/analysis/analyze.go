@@ -44,6 +44,10 @@ type AnalyzeResult struct {
 	MissingSpecFiles               []string // spec_file declared in ARCHITECTURE.yaml but file does not exist (GH-1990)
 	MissingTestSuiteRefs           []string // Use cases whose test_suite field references a non-existent test suite (GH-2140 Gap 1)
 	BareTouchpointEntries          []string // Individual touchpoint entries with no SRD reference (warning, GH-2145)
+	PaperVocabularyIssues          []string // P1: prose exists but vocabulary registry empty (warning, GH-2149)
+	PaperPlaceholderErrors         []string // P3: placeholder names no artifact or artifact absent (GH-2149)
+	PaperBrokenCitations           []string // P4: citation key unresolved against bibliography (GH-2149)
+	PaperForbiddenTerms            []string // P5: forbidden term occurs in publication prose (warning, GH-2149)
 }
 
 // AnalyzeCounts holds the artifact counts discovered during analysis.
@@ -624,6 +628,16 @@ func CollectAnalyzeResult(deps AnalyzeDeps) (AnalyzeResult, AnalyzeCounts, error
 	result.ConstitutionDrift = DetectConstitutionDrift(deps.Log)
 	deps.Log("analyze: constitution drift found %d file(s)", len(result.ConstitutionDrift))
 
+	// Check 8b: Paper constitution checks (P1, P3, P4, P5). No-op unless
+	// docs/constitutions/paper.yaml is scaffolded into the project.
+	paper := RunPaperChecks(deps.Log)
+	result.PaperVocabularyIssues = paper.VocabularyIssues
+	result.PaperPlaceholderErrors = paper.PlaceholderErrors
+	result.PaperBrokenCitations = paper.BrokenCitations
+	result.PaperForbiddenTerms = paper.ForbiddenTerms
+	deps.Log("analyze: paper checks found %d placeholder, %d citation error(s), %d forbidden-term, %d vocabulary warning(s)",
+		len(paper.PlaceholderErrors), len(paper.BrokenCitations), len(paper.ForbiddenTerms), len(paper.VocabularyIssues))
+
 	// Check 14: Semantic model validation.
 	smErrs, smCount := ValidateSemanticModels(srdFiles)
 	result.SemanticModelErrors = smErrs
@@ -682,6 +696,8 @@ func (r AnalyzeResult) PrintReport(srdCount, ucCount, tsCount, smCount int) erro
 	hasIssues = PrintSection("Broken interface refs (implemented_by/used_by references non-existent architecture interface)", r.BrokenInterfaceRefs) || hasIssues
 	hasIssues = PrintSection("Missing spec files (spec_file declared in ARCHITECTURE.yaml but file does not exist)", r.MissingSpecFiles) || hasIssues
 	hasIssues = PrintSection("Uncovered R-items (R-item not traced by any acceptance criterion)", r.UncoveredRItems) || hasIssues
+	hasIssues = PrintSection("Paper placeholder errors (placeholder names no artifact or artifact absent — P3)", r.PaperPlaceholderErrors) || hasIssues
+	hasIssues = PrintSection("Paper broken citations (citation key unresolved against bibliography — P4)", r.PaperBrokenCitations) || hasIssues
 	PrintSection("Uncovered ACs (AC not covered by any test case — warning)", r.UncoveredACs)
 	PrintSection("Untraced success criteria (S-item with no AC trace — warning)", r.UntracedSuccessCriteria)
 	PrintSection("Unreachable UCs (touchpoint SRDs have no R-items — warning)", r.UnreachableUCs)
@@ -689,6 +705,8 @@ func (r AnalyzeResult) PrintReport(srdCount, ucCount, tsCount, smCount int) erro
 	// MissingWeights print removed — weights live in requirements.yaml (GH-2080).
 	PrintSection("Bare touchpoints (SRD cited without R-group references — warning)", r.BareTouchpoints)
 	PrintSection("Bare touchpoint entries (no SRD citation in this individual touchpoint — warning)", r.BareTouchpointEntries)
+	PrintSection("Paper vocabulary registry empty (prose exists, no terms of art declared — P1 warning)", r.PaperVocabularyIssues)
+	PrintSection("Paper forbidden terms (declared forbidden term occurs in prose — P5 warning)", r.PaperForbiddenTerms)
 
 	// GH-2140 Gap 4: warnings must be reflected in the headline. Errors still
 	// flip the exit code; warnings only change the message.
@@ -697,7 +715,9 @@ func (r AnalyzeResult) PrintReport(srdCount, ucCount, tsCount, smCount int) erro
 		len(r.UnreachableUCs) +
 		len(r.FailedRequirements) +
 		len(r.BareTouchpoints) +
-		len(r.BareTouchpointEntries)
+		len(r.BareTouchpointEntries) +
+		len(r.PaperVocabularyIssues) +
+		len(r.PaperForbiddenTerms)
 
 	if hasIssues {
 		return fmt.Errorf("found consistency issues (see above)")
