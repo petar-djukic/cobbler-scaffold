@@ -28,6 +28,9 @@ type Prompt mg.Namespace
 // Stats groups the stats targets (LOC, tokens).
 type Stats mg.Namespace
 
+// Paper groups the paper build and placeholder-report targets.
+type Paper mg.Namespace
+
 // Tests: run directly with go test:
 //   go test -tags=usecase -v -count=1 -timeout 1800s ./tests/rel01.0/...          # all
 //   go test -tags=usecase -v ./tests/rel01.0/uc001/                               # one UC
@@ -143,6 +146,16 @@ func (Stats) Tokens() error { return newOrch().TokenStats() }
 
 // Generator prints a status report for the current generation run.
 func (Stats) Generator() error { return newOrch().Stats.GeneratorStats() }
+
+// --- Paper targets ---
+
+// Pdf builds the paper PDF from paper/paper.md via pandoc + pdflatex + bibtex +
+// pdflatex + pdflatex. It requires pandoc and a LaTeX distribution on PATH and
+// returns a clear error naming the first missing binary.
+func (Paper) Pdf() error { return orchestrator.BuildPaperPDF("") }
+
+// Placeholders counts and reports the data placeholders remaining under paper/.
+func (Paper) Placeholders() error { return orchestrator.ReportPaperPlaceholders("") }
 
 // --- Prompt targets ---
 
