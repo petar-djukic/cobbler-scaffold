@@ -17,40 +17,40 @@ import (
 
 // AnalyzeResult holds the results of the Analyze operation.
 type AnalyzeResult struct {
-	OrphanedSRDs              []string // SRDs with no use cases referencing them
-	ReleasesWithoutTestSuites []string // Releases in road-map.yaml with no test-rel*.yaml file
-	OrphanedTestSuites        []string // Test suites whose traces don't match any known use case
-	BrokenTouchpoints         []string // Use case touchpoints referencing non-existent SRDs
-	UseCasesNotInRoadmap      []string // Use cases not listed in road-map.yaml
-	SchemaErrors              []string // YAML files with fields not matching typed structs
-	ConstitutionDrift         []string // Files in docs/constitutions/ that differ from embedded copies
-	BrokenCitations                []string // Touchpoints citing non-existent requirement groups in SRDs
-	InvalidReleases                []string // Configured releases not found in road-map.yaml
-	SRDsSpanningMultipleReleases   []string // SRDs referenced by use cases from more than one release
-	DependsOnViolations            []string // depends_on symbols not in referenced package_contract, or srd_id missing
-	DependencyRuleViolations       []string // component_dependencies violating an allowed=false dependency_rule
-	BrokenStructRefs               []string // struct_refs pointing to non-existent SRD or requirement group
-	ComponentDepViolations         []string // depends_on entries not reflected in component_dependencies
-	SemanticModelErrors            []string // semantic model validation errors (SM1, SM3, SM7)
-	UncoveredRItems                []string // R-items not covered by any acceptance criterion
-	UncoveredACs                   []string // ACs not covered by any test case (warning)
-	UntracedSuccessCriteria        []string // S-items with no AC traces (warning)
-	UnreachableUCs                 []string // UCs whose touchpoint SRDs have no R-items (warning)
-	FailedRequirements             []string // R-items marked complete_with_failures (warning)
+	OrphanedSRDs                 []string // SRDs with no use cases referencing them
+	ReleasesWithoutTestSuites    []string // Releases in road-map.yaml with no test-rel*.yaml file
+	OrphanedTestSuites           []string // Test suites whose traces don't match any known use case
+	BrokenTouchpoints            []string // Use case touchpoints referencing non-existent SRDs
+	UseCasesNotInRoadmap         []string // Use cases not listed in road-map.yaml
+	SchemaErrors                 []string // YAML files with fields not matching typed structs
+	ConstitutionDrift            []string // Files in docs/constitutions/ that differ from embedded copies
+	BrokenCitations              []string // Touchpoints citing non-existent requirement groups in SRDs
+	InvalidReleases              []string // Configured releases not found in road-map.yaml
+	SRDsSpanningMultipleReleases []string // SRDs referenced by use cases from more than one release
+	DependsOnViolations          []string // depends_on symbols not in referenced package_contract, or srd_id missing
+	DependencyRuleViolations     []string // component_dependencies violating an allowed=false dependency_rule
+	BrokenStructRefs             []string // struct_refs pointing to non-existent SRD or requirement group
+	ComponentDepViolations       []string // depends_on entries not reflected in component_dependencies
+	SemanticModelErrors          []string // semantic model validation errors (SM1, SM3, SM7)
+	UncoveredRItems              []string // R-items not covered by any acceptance criterion
+	UncoveredACs                 []string // ACs not covered by any test case (warning)
+	UntracedSuccessCriteria      []string // S-items with no AC traces (warning)
+	UnreachableUCs               []string // UCs whose touchpoint SRDs have no R-items (warning)
+	FailedRequirements           []string // R-items marked complete_with_failures (warning)
 	// MissingWeights removed — weights live in requirements.yaml, not SRDs (GH-2080).
-	BareTouchpoints                []string // Touchpoints citing SRDs without R-group references (warning, GH-1961)
-	UCIDPrefixMismatch             []string // Use case ID prefix doesn't match assigned release in roadmap (GH-1964)
-	BrokenInterfaceRefs            []string // implemented_by/used_by references non-existent architecture interface (GH-1968)
-	MissingSpecFiles               []string // spec_file declared in ARCHITECTURE.yaml but file does not exist (GH-1990)
-	MissingTestSuiteRefs           []string // Use cases whose test_suite field references a non-existent test suite (GH-2140 Gap 1)
-	BareTouchpointEntries          []string // Individual touchpoint entries with no SRD reference (warning, GH-2145)
-	PaperVocabularyIssues          []string // P1: prose exists but vocabulary registry empty (warning, GH-2149)
-	PaperPlaceholderErrors         []string // P3: placeholder names no artifact or artifact absent (GH-2149)
-	PaperBrokenCitations           []string // P4: citation key unresolved against bibliography (GH-2149)
-	PaperForbiddenTerms            []string // P5: forbidden term occurs in publication prose (warning, GH-2149)
-	ExperimentGateViolations       []string // E2: experiment missing a declared gate field (GH-2149)
-	ExperimentMissingMemos         []string // E5: failed experiment with no decision memo (warning, GH-2149)
-	ExperimentManifestErrors       []string // E6: manifest integrity or unresolved id reference (GH-2149)
+	BareTouchpoints          []string // Touchpoints citing SRDs without R-group references (warning, GH-1961)
+	UCIDPrefixMismatch       []string // Use case ID prefix doesn't match assigned release in roadmap (GH-1964)
+	BrokenInterfaceRefs      []string // implemented_by/used_by references non-existent architecture interface (GH-1968)
+	MissingSpecFiles         []string // spec_file declared in ARCHITECTURE.yaml but file does not exist (GH-1990)
+	MissingTestSuiteRefs     []string // Use cases whose test_suite field references a non-existent test suite (GH-2140 Gap 1)
+	BareTouchpointEntries    []string // Individual touchpoint entries with no SRD reference (warning, GH-2145)
+	PaperVocabularyIssues    []string // P1: prose exists but vocabulary registry empty (warning, GH-2149)
+	PaperPlaceholderErrors   []string // P3: placeholder names no artifact or artifact absent (GH-2149)
+	PaperBrokenCitations     []string // P4: citation key unresolved against bibliography (GH-2149)
+	PaperForbiddenTerms      []string // P5: forbidden term occurs in publication prose (warning, GH-2149)
+	ExperimentGateViolations []string // E2: experiment missing a declared gate field (GH-2149)
+	ExperimentMissingMemos   []string // E5: failed experiment with no decision memo (warning, GH-2149)
+	ExperimentManifestErrors []string // E6: manifest integrity or unresolved id reference (GH-2149)
 }
 
 // AnalyzeCounts holds the artifact counts discovered during analysis.
@@ -64,7 +64,7 @@ type AnalyzeCounts struct {
 // AnalyzeDeps holds dependencies for analysis operations.
 type AnalyzeDeps struct {
 	Log                    Logger
-	Releases               []string             // configured release versions
+	Releases               []string              // configured release versions
 	ValidateDocSchemas     func() []string       // schema validation (uses context types)
 	ValidatePromptTemplate func(string) []string // prompt template validation
 }
@@ -82,13 +82,13 @@ func CollectAnalyzeResult(deps AnalyzeDeps) (AnalyzeResult, AnalyzeCounts, error
 		return result, AnalyzeCounts{}, fmt.Errorf("globbing SRDs: %w", err)
 	}
 	srdIDs := make(map[string]bool)
-	srdReqGroups := make(map[string]map[string]bool)    // SRD ID -> set of requirement group keys
-	srdExports := make(map[string]map[string]bool)       // SRD ID -> set of exported symbol names
-	srdDependsOn := make(map[string][]SRDDependsOn)      // SRD ID -> depends_on entries
-	srdStructRefs := make(map[string][]SRDStructRef)     // SRD ID -> struct_refs entries
-	srdACs := make(map[string][]AcceptanceCriterion)     // SRD ID -> acceptance criteria
-	srdRItems := make(map[string][]string)               // SRD ID -> all R-item IDs (R1.1, R1.2, etc.)
-	srdInterfaceRefs := make(map[string][]string)        // SRD ID -> all interface names from implemented_by + used_by
+	srdReqGroups := make(map[string]map[string]bool) // SRD ID -> set of requirement group keys
+	srdExports := make(map[string]map[string]bool)   // SRD ID -> set of exported symbol names
+	srdDependsOn := make(map[string][]SRDDependsOn)  // SRD ID -> depends_on entries
+	srdStructRefs := make(map[string][]SRDStructRef) // SRD ID -> struct_refs entries
+	srdACs := make(map[string][]AcceptanceCriterion) // SRD ID -> acceptance criteria
+	srdRItems := make(map[string][]string)           // SRD ID -> all R-item IDs (R1.1, R1.2, etc.)
+	srdInterfaceRefs := make(map[string][]string)    // SRD ID -> all interface names from implemented_by + used_by
 	for _, path := range srdFiles {
 		id := ExtractID(path)
 		if id != "" {
@@ -148,11 +148,11 @@ func CollectAnalyzeResult(deps AnalyzeDeps) (AnalyzeResult, AnalyzeCounts, error
 		return result, AnalyzeCounts{}, fmt.Errorf("globbing use cases: %w", err)
 	}
 	ucIDs := make(map[string]bool)
-	ucToSRDs := make(map[string][]string)      // use case ID -> SRD IDs from touchpoints
-	ucTouchpoints := make(map[string][]string) // use case ID -> raw touchpoint strings
+	ucToSRDs := make(map[string][]string)                    // use case ID -> SRD IDs from touchpoints
+	ucTouchpoints := make(map[string][]string)               // use case ID -> raw touchpoint strings
 	ucSuccessCriteria := make(map[string][]SuccessCriterion) // use case ID -> success criteria
-	ucToTestSuite := make(map[string]string)   // use case ID -> declared test_suite reference (GH-2140 Gap 1)
-	srdToReleases := make(map[string]map[string]bool) // SRD ID -> set of releases that reference it
+	ucToTestSuite := make(map[string]string)                 // use case ID -> declared test_suite reference (GH-2140 Gap 1)
+	srdToReleases := make(map[string]map[string]bool)        // SRD ID -> set of releases that reference it
 	for _, path := range ucFiles {
 		uc, err := LoadUseCase(path)
 		if err != nil {
@@ -206,10 +206,10 @@ func CollectAnalyzeResult(deps AnalyzeDeps) (AnalyzeResult, AnalyzeCounts, error
 
 	// 4. Load road-map.yaml — collect release IDs, use case IDs, and depends_on
 	roadmapUCs := make(map[string]bool)
-	roadmapUCToRelease := make(map[string]string)            // use case ID -> assigned release version
+	roadmapUCToRelease := make(map[string]string) // use case ID -> assigned release version
 	roadmapReleaseIDs := make(map[string]bool)
-	roadmapAllVersions := make(map[string]bool)             // all release versions (including those without UCs)
-	releaseDependsOn := make(map[string][]string)            // release version -> depends_on entries
+	roadmapAllVersions := make(map[string]bool)   // all release versions (including those without UCs)
+	releaseDependsOn := make(map[string][]string) // release version -> depends_on entries
 	if data, err := os.ReadFile("docs/road-map.yaml"); err == nil {
 		var roadmap struct {
 			Releases []struct {
@@ -762,9 +762,9 @@ type AnalyzeUseCase struct {
 // AnalyzeTestSuite holds the fields extracted from a test suite file
 // that are needed for cross-artifact consistency checks.
 type AnalyzeTestSuite struct {
-	ID        string              `yaml:"id"`
-	Traces    []string            `yaml:"traces"`
-	TestCases []AnalyzeTestCase   `yaml:"test_cases"`
+	ID        string            `yaml:"id"`
+	Traces    []string          `yaml:"traces"`
+	TestCases []AnalyzeTestCase `yaml:"test_cases"`
 }
 
 // AnalyzeTestCase holds the fields of a single test case within a
