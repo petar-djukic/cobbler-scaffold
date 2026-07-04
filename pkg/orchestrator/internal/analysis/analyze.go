@@ -48,6 +48,9 @@ type AnalyzeResult struct {
 	PaperPlaceholderErrors         []string // P3: placeholder names no artifact or artifact absent (GH-2149)
 	PaperBrokenCitations           []string // P4: citation key unresolved against bibliography (GH-2149)
 	PaperForbiddenTerms            []string // P5: forbidden term occurs in publication prose (warning, GH-2149)
+	ExperimentGateViolations       []string // E2: experiment missing a declared gate field (GH-2149)
+	ExperimentMissingMemos         []string // E5: failed experiment with no decision memo (warning, GH-2149)
+	ExperimentManifestErrors       []string // E6: manifest integrity or unresolved id reference (GH-2149)
 }
 
 // AnalyzeCounts holds the artifact counts discovered during analysis.
@@ -638,6 +641,15 @@ func CollectAnalyzeResult(deps AnalyzeDeps) (AnalyzeResult, AnalyzeCounts, error
 	deps.Log("analyze: paper checks found %d placeholder, %d citation error(s), %d forbidden-term, %d vocabulary warning(s)",
 		len(paper.PlaceholderErrors), len(paper.BrokenCitations), len(paper.ForbiddenTerms), len(paper.VocabularyIssues))
 
+	// Check 8c: Experiments constitution checks (E2, E5, E6). No-op unless
+	// docs/constitutions/experiments.yaml and its manifest are present.
+	experiments := RunExperimentChecks(deps.Log)
+	result.ExperimentGateViolations = experiments.GateViolations
+	result.ExperimentMissingMemos = experiments.MissingMemos
+	result.ExperimentManifestErrors = experiments.ManifestErrors
+	deps.Log("analyze: experiment checks found %d gate, %d manifest error(s), %d missing-memo warning(s)",
+		len(experiments.GateViolations), len(experiments.ManifestErrors), len(experiments.MissingMemos))
+
 	// Check 14: Semantic model validation.
 	smErrs, smCount := ValidateSemanticModels(srdFiles)
 	result.SemanticModelErrors = smErrs
@@ -698,6 +710,8 @@ func (r AnalyzeResult) PrintReport(srdCount, ucCount, tsCount, smCount int) erro
 	hasIssues = PrintSection("Uncovered R-items (R-item not traced by any acceptance criterion)", r.UncoveredRItems) || hasIssues
 	hasIssues = PrintSection("Paper placeholder errors (placeholder names no artifact or artifact absent — P3)", r.PaperPlaceholderErrors) || hasIssues
 	hasIssues = PrintSection("Paper broken citations (citation key unresolved against bibliography — P4)", r.PaperBrokenCitations) || hasIssues
+	hasIssues = PrintSection("Experiment gate violations (experiment missing a declared gate field — E2)", r.ExperimentGateViolations) || hasIssues
+	hasIssues = PrintSection("Experiment manifest errors (missing/duplicate id or unresolved exp:<id> reference — E6)", r.ExperimentManifestErrors) || hasIssues
 	PrintSection("Uncovered ACs (AC not covered by any test case — warning)", r.UncoveredACs)
 	PrintSection("Untraced success criteria (S-item with no AC trace — warning)", r.UntracedSuccessCriteria)
 	PrintSection("Unreachable UCs (touchpoint SRDs have no R-items — warning)", r.UnreachableUCs)
@@ -707,6 +721,7 @@ func (r AnalyzeResult) PrintReport(srdCount, ucCount, tsCount, smCount int) erro
 	PrintSection("Bare touchpoint entries (no SRD citation in this individual touchpoint — warning)", r.BareTouchpointEntries)
 	PrintSection("Paper vocabulary registry empty (prose exists, no terms of art declared — P1 warning)", r.PaperVocabularyIssues)
 	PrintSection("Paper forbidden terms (declared forbidden term occurs in prose — P5 warning)", r.PaperForbiddenTerms)
+	PrintSection("Experiment missing memos (failed gate has no decision memo — E5 warning)", r.ExperimentMissingMemos)
 
 	// GH-2140 Gap 4: warnings must be reflected in the headline. Errors still
 	// flip the exit code; warnings only change the message.
@@ -717,7 +732,8 @@ func (r AnalyzeResult) PrintReport(srdCount, ucCount, tsCount, smCount int) erro
 		len(r.BareTouchpoints) +
 		len(r.BareTouchpointEntries) +
 		len(r.PaperVocabularyIssues) +
-		len(r.PaperForbiddenTerms)
+		len(r.PaperForbiddenTerms) +
+		len(r.ExperimentMissingMemos)
 
 	if hasIssues {
 		return fmt.Errorf("found consistency issues (see above)")
