@@ -1,0 +1,113 @@
+# Paper Constitution
+#
+# This constitution governs sessions that touch publication prose: papers,
+# preprints, and the figures and tables that accompany them. Include it in a
+# project that produces a written publication (for example an AAAI or NeurIPS
+# submission). Scaffold it alongside the other constitutions; analyze activates
+# its mechanical checks only when this file is present.
+#
+# Each article records how it is enforced. An article marked "analyze" is
+# checked mechanically by mage analyze. An article marked "advisory" states a
+# rule that a human reviewer applies; analyze does not check it.
+
+articles:
+  - id: P1
+    title: Vocabulary registry
+    enforcement: analyze
+    rule: |
+      The project declares its fixed terms of art in one place, the vocabulary
+      block of project_registry. Publication prose uses registry terms and no
+      others for the concepts they name. Coined internal names — pattern-language
+      labels, codenames, working titles — never appear in publication prose. When
+      a concept earns a name in the paper, that name enters the registry first.
+
+  - id: P2
+    title: Verdict neutrality
+    enforcement: advisory
+    rule: |
+      No section asserts an experimental outcome that does not trace to a
+      committed decision memo. Pre-written verdict prose is a violation even when
+      a placeholder guards the number. We describe apparatus and method before
+      results exist; we state the outcome only after the memo that records it
+      lands in the repository.
+
+  - id: P3
+    title: Placeholder traceability
+    enforcement: analyze
+    rule: |
+      Every data placeholder names its source artifact. Filling a placeholder
+      requires that artifact to exist in the repository. A placeholder whose
+      artifact is absent is a violation. Zero placeholders is a release gate: the
+      paper does not ship while any placeholder remains. The placeholder pattern
+      lives in project_registry.
+
+  - id: P4
+    title: Citation integrity
+    enforcement: analyze
+    rule: |
+      Every citation key resolves against the bibliography. The build fails on an
+      unresolved key. A single-pass build that renders a bare marker in place of
+      a citation is a violation. The bibliography files live in project_registry.
+
+  - id: P5
+    title: Forbidden terms
+    enforcement: analyze
+    rule: |
+      The project declares a forbidden-terms list in project_registry. Analyze
+      greps publication prose and reports each occurrence. The list holds the
+      words the project has chosen to avoid — marketing adjectives, hedges, and
+      house style-guide bans.
+
+  - id: P6
+    title: Auditability
+    enforcement: advisory
+    rule: |
+      Every article in this constitution is either checked mechanically by
+      analyze or marked advisory. An article with no enforcement value is itself
+      a violation. Adding an article obliges the author to state how it is
+      enforced.
+
+# project_registry holds the project-specific values the articles reference.
+# The template ships these empty or with sensible defaults; the consuming
+# project fills them. analyze reads this block to run the P1, P3, P4, and P5
+# checks.
+project_registry:
+  # P1: term -> definition. The fixed terms of art. Prose uses these names for
+  # their concepts and no coined alternatives.
+  vocabulary: {}
+
+  # P5: terms analyze greps for in publication prose. Each occurrence is
+  # reported.
+  forbidden_terms: []
+
+  # P3: the regular expression that matches a data placeholder. The first
+  # capture group names the source artifact the placeholder depends on.
+  placeholder_pattern: '\{\{DATA:([^}]+)\}\}'
+
+  # P1, P3, P5: the files treated as publication prose. Globs are relative to
+  # the repository root.
+  prose_globs:
+    - paper/**/*.md
+    - paper/**/*.tex
+
+  # P4: the bibliography files whose keys a citation may resolve against.
+  bibliography:
+    - paper/references.bib
+
+sections:
+  - tag: articles
+    title: Core Principles
+    content: |
+      Six articles govern publication prose: a vocabulary registry that fixes the
+      terms of art, verdict neutrality that forbids outcomes without a memo,
+      placeholder traceability that ties every number to an artifact, citation
+      integrity that fails the build on an unresolved key, a forbidden-terms list
+      the build enforces, and auditability that obliges every article to declare
+      how it is checked.
+  - tag: project_registry
+    title: Project Registry
+    content: |
+      The registry holds the project-specific values the articles reference: the
+      vocabulary, the forbidden-terms list, the placeholder pattern, the prose
+      globs, and the bibliography. Analyze reads the registry to run the
+      mechanical checks. A project without a paper leaves this file unscaffolded.

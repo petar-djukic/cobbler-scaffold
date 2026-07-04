@@ -21,6 +21,9 @@ const (
 	binLint     = "golangci-lint"
 	binMage     = "mage"
 	binSecurity = "security"
+	binPandoc   = "pandoc"
+	binPdflatex = "pdflatex"
+	binBibtex   = "bibtex"
 )
 
 // Directory and file path constants.

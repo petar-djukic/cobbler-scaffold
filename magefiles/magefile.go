@@ -49,6 +49,9 @@ type Validate mg.Namespace
 // Constitution groups constitution preview targets.
 type Constitution mg.Namespace
 
+// Paper groups the paper build and placeholder-report targets.
+type Paper mg.Namespace
+
 // baseCfg holds the configuration loaded from configuration.yaml.
 var baseCfg orchestrator.Config
 
@@ -358,3 +361,13 @@ func (Validate) Weights(input string) error { return newOrch().ValidateTaskWeigh
 // Preview reads a constitution YAML file and prints its sections as markdown to stdout.
 // Pass the path to a constitution YAML file (e.g., mage constitution:preview pkg/orchestrator/constitutions/execution.yaml).
 func (Constitution) Preview(file string) error { return newOrch().ConstitutionPreviewFile(file) }
+
+// --- Paper targets ---
+
+// Pdf builds the paper PDF from paper/paper.md via pandoc + pdflatex + bibtex +
+// pdflatex + pdflatex. It requires pandoc and a LaTeX distribution on PATH and
+// returns a clear error naming the first missing binary.
+func (Paper) Pdf() error { return orchestrator.BuildPaperPDF("") }
+
+// Placeholders counts and reports the data placeholders remaining under paper/.
+func (Paper) Placeholders() error { return orchestrator.ReportPaperPlaceholders("") }

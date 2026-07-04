@@ -59,6 +59,8 @@ sections:
             design.yaml                 — specification authoring rules (editable)
             planning.yaml               — measure phase rules (editable)
             execution.yaml              — stitch phase rules (editable)
+            paper.yaml                  — publication prose rules (editable)
+            experiments.yaml            — experiment program rules (editable)
         magefiles/
           orchestrator.go               — Mage targets (copied from orchestrator repo)
           version.go.tmpl               — version seed template (if main package found)
@@ -67,6 +69,15 @@ sections:
 
       The magefiles/ directory keeps build tooling dependencies separate from
       the project's own go.mod.
+
+      Scaffold delivers every constitution, but two of them apply only to some
+      projects. Include paper.yaml in a project that produces a written
+      publication; its articles govern vocabulary, citations, and placeholders in
+      publication prose. Include experiments.yaml in a project that reports
+      empirical results; its articles govern the experiment gate, artifact
+      retention, and the evidence manifest. A project that does neither may delete
+      both files. Analyze runs a constitution's mechanical checks only when its
+      file is present, so an unused constitution costs nothing.
 
   - title: Claude Execution Modes
     content: |

@@ -1,0 +1,103 @@
+# Experiments Constitution
+#
+# This constitution governs sessions that propose, run, or analyze experiments.
+# Include it in a project that reports empirical results. Scaffold it alongside
+# the other constitutions; analyze activates its mechanical checks only when this
+# file is present.
+#
+# Each article records how it is enforced. An article marked "analyze" is checked
+# mechanically by mage analyze. An article marked "advisory" states a rule that a
+# human reviewer applies; analyze does not check it. These articles generalize
+# the lessons of an experiment program learned the expensive way.
+
+articles:
+  - id: E1
+    title: Instruments are deterministic
+    enforcement: advisory
+    rule: |
+      No judge model, learned classifier, or stochastic component sits anywhere
+      in a measurement pipeline. Two readers of the same artifacts reach the same
+      result. A measurement whose value depends on a sampled model output is not a
+      measurement.
+
+  - id: E2
+    title: Gate before numbers
+    enforcement: analyze
+    rule: |
+      Every experiment declares its question, its claims, its apparatus, and both
+      interpretations — the pass reading and the fail reading — in the evidence
+      manifest before any run. The gate is stated before data exists. An
+      experiment that holds a result without a complete gate is a violation. The
+      gate fields live in project_registry.
+
+  - id: E3
+    title: Artifact retention
+    enforcement: advisory
+    rule: |
+      Every run retains what re-derivation needs: traces, final states, seeds, and
+      configs. A result that cannot be re-derived from committed artifacts does not
+      exist. We commit the artifacts with the result, not a summary of them.
+
+  - id: E4
+    title: Determinism under seed
+    enforcement: advisory
+    rule: |
+      Generators and harnesses are reproducible under recorded seeds. The same
+      seed yields the same run. The seed is part of the retained artifacts named
+      in E3.
+
+  - id: E5
+    title: Negative results are recorded, not rerun
+    enforcement: analyze
+    rule: |
+      A failed gate produces a decision memo and a design revision, never a quiet
+      retry until green. A failed experiment with no memo in the memo directory is
+      a violation. The memo records what the fail reading meant and what the design
+      does about it. The memo directory lives in project_registry.
+
+  - id: E6
+    title: Manifest is the source of truth
+    enforcement: analyze
+    rule: |
+      Experiment status lives in the evidence manifest. Issues and papers
+      reference manifest ids. A reference to an experiment id that does not resolve
+      to a manifest entry is a violation. The manifest path lives in
+      project_registry.
+
+# project_registry holds the project-specific values the articles reference.
+# The template ships these with sensible defaults; the consuming project adjusts
+# them. analyze reads this block to run the E2, E5, and E6 checks.
+project_registry:
+  # E2, E5, E6: the evidence manifest, the source of truth for experiment status.
+  # Path is relative to the repository root.
+  manifest_path: docs/experiments/manifest.yaml
+
+  # E2: the fields every experiment declares before a run. An experiment holding
+  # a result must carry all of these.
+  gate_fields:
+    - question
+    - claims
+    - apparatus
+    - interpret_pass
+    - interpret_fail
+
+  # E5: the directory holding a decision memo for each failed gate. A failed
+  # experiment must have a memo here.
+  memo_dir: docs/experiments/decisions
+
+sections:
+  - tag: articles
+    title: Core Principles
+    content: |
+      Six articles govern experiments: deterministic instruments that two readers
+      read alike, a gate declared before numbers exist, artifact retention that
+      makes every result re-derivable, determinism under a recorded seed, negative
+      results recorded in a memo rather than retried, and a manifest that holds the
+      single source of truth for experiment status.
+  - tag: project_registry
+    title: Project Registry
+    content: |
+      The registry holds the project-specific values the articles reference: the
+      manifest path, the gate fields, and the memo directory. Analyze reads the
+      registry to run the mechanical checks. A project without experiments leaves
+      this file unscaffolded.
