@@ -41,6 +41,12 @@ var interfaceConstitution string
 //go:embed constitutions/semantic-model.yaml
 var semanticModelConstitution string
 
+//go:embed constitutions/paper.yaml
+var paperConstitution string
+
+//go:embed constitutions/experiments.yaml
+var experimentsConstitution string
+
 // scaffoldedConstitutions maps the file names written into the consumer's
 // docs/constitutions/ directory to their embedded contents. Every constitution
 // authored as a default template lives here; new ones must be added to this
@@ -48,9 +54,11 @@ var semanticModelConstitution string
 var scaffoldedConstitutions = map[string]string{
 	"design.yaml":         designConstitution,
 	"execution.yaml":      executionConstitution,
+	"experiments.yaml":    experimentsConstitution,
 	"go-style.yaml":       goStyleConstitution,
 	"interface.yaml":      interfaceConstitution,
 	"issue-format.yaml":   issueFormatConstitution,
+	"paper.yaml":          paperConstitution,
 	"planning.yaml":       planningConstitution,
 	"semantic-model.yaml": semanticModelConstitution,
 	"testing.yaml":        testingConstitution,

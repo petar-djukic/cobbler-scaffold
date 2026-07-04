@@ -233,9 +233,11 @@ func TestScaffoldedConstitutions_CoversAllEmbeddedConstitutions(t *testing.T) {
 	want := []string{
 		"design.yaml",
 		"execution.yaml",
+		"experiments.yaml",
 		"go-style.yaml",
 		"interface.yaml",
 		"issue-format.yaml",
+		"paper.yaml",
 		"planning.yaml",
 		"semantic-model.yaml",
 		"testing.yaml",
